@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="一提到 Kubernetes，最容易先聊的是这些话题：  集群怎么搭 节点怎么加 Helm 怎么装 Pod、Service、Ingress 分别是什么  这些内容当然重要，但对测试团队来说，日常最常处理的往往不是“概念理解”，而是更具体的现场问题：  某个版本在测试环境里发布后，Pod 一直起不来 服务已经 Running，但页面还是 502 或 404 接口偶发超时，测试结果不稳定，但应用日志里">
+<meta property="og:type" content="article">
+<meta property="og:title" content="云原生-01-测试团队在Kubernetes场景里最常处理哪些真实问题">
+<meta property="og:url" content="https://paynewinnt.github.io/2023/08/19/%E4%BA%91%E5%8E%9F%E7%94%9F-01-%E6%B5%8B%E8%AF%95%E5%9B%A2%E9%98%9F%E5%9C%A8Kubernetes%E5%9C%BA%E6%99%AF%E9%87%8C%E6%9C%80%E5%B8%B8%E5%A4%84%E7%90%86%E5%93%AA%E4%BA%9B%E7%9C%9F%E5%AE%9E%E9%97%AE%E9%A2%98/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="一提到 Kubernetes，最容易先聊的是这些话题：  集群怎么搭 节点怎么加 Helm 怎么装 Pod、Service、Ingress 分别是什么  这些内容当然重要，但对测试团队来说，日常最常处理的往往不是“概念理解”，而是更具体的现场问题：  某个版本在测试环境里发布后，Pod 一直起不来 服务已经 Running，但页面还是 502 或 404 接口偶发超时，测试结果不稳定，但应用日志里">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2023-08-19T12:30:00.000Z">
+<meta property="article:modified_time" content="2023-08-19T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="工程实践">
+<meta property="article:tag" content="Kubernetes">
+<meta property="article:tag" content="Ingress">
+<meta property="article:tag" content="测试环境">
+<meta property="article:tag" content="容器排障">
+<meta property="article:tag" content="ConfigMap">
+<meta property="article:tag" content="发布验证">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2023/08/19/%E4%BA%91%E5%8E%9F%E7%94%9F-01-%E6%B5%8B%E8%AF%95%E5%9B%A2%E9%98%9F%E5%9C%A8Kubernetes%E5%9C%BA%E6%99%AF%E9%87%8C%E6%9C%80%E5%B8%B8%E5%A4%84%E7%90%86%E5%93%AA%E4%BA%9B%E7%9C%9F%E5%AE%9E%E9%97%AE%E9%A2%98/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2023/08/19/%E4%BA%91%E5%8E%9F%E7%94%9F-01-%E6%B5%8B%E8%AF%95%E5%9B%A2%E9%98%9F%E5%9C%A8Kubernetes%E5%9C%BA%E6%99%AF%E9%87%8C%E6%9C%80%E5%B8%B8%E5%A4%84%E7%90%86%E5%93%AA%E4%BA%9B%E7%9C%9F%E5%AE%9E%E9%97%AE%E9%A2%98/","path":"2023/08/19/云原生-01-测试团队在Kubernetes场景里最常处理哪些真实问题/","title":"云原生-01-测试团队在Kubernetes场景里最常处理哪些真实问题"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>云原生-01-测试团队在Kubernetes场景里最常处理哪些真实问题 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E5%85%88%E6%8A%8A%E9%97%AE%E9%A2%98%E5%88%86%E5%B1%82%EF%BC%8C%E5%88%AB%E6%8A%8A%E6%89%80%E6%9C%89%E5%BC%82%E5%B8%B8%E9%83%BD%E5%8F%AB%E2%80%9C%E7%8E%AF%E5%A2%83%E9%97%AE%E9%A2%98%E2%80%9D"><span class="nav-number">1.</span> <span class="nav-text">一、先把问题分层，别把所有异常都叫“环境问题”</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%8F%91%E5%B8%83%E5%B1%82%EF%BC%9A%E7%89%88%E6%9C%AC%E5%88%B0%E5%BA%95%E6%9C%89%E6%B2%A1%E6%9C%89%E7%9C%9F%E6%AD%A3%E5%8F%91%E5%B8%83%E6%88%90%E5%8A%9F"><span class="nav-number">1.1.</span> <span class="nav-text">1. 发布层：版本到底有没有真正发布成功</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%BF%90%E8%A1%8C%E5%B1%82%EF%BC%9A%E6%9C%8D%E5%8A%A1%E6%9C%89%E6%B2%A1%E6%9C%89%E7%9C%9F%E6%AD%A3%E7%A8%B3%E5%AE%9A%E8%BF%90%E8%A1%8C"><span class="nav-number">1.2.</span> <span class="nav-text">2. 运行层：服务有没有真正稳定运行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%BD%91%E7%BB%9C%E5%B1%82%EF%BC%9A%E6%B5%81%E9%87%8F%E5%88%B0%E5%BA%95%E5%8D%A1%E5%9C%A8%E4%BA%86%E5%93%AA%E4%B8%80%E6%AE%B5"><span class="nav-number">1.3.</span> <span class="nav-text">3. 网络层：流量到底卡在了哪一段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E9%85%8D%E7%BD%AE%E5%B1%82%EF%BC%9A%E4%BB%A3%E7%A0%81%E6%B2%A1%E9%94%99%EF%BC%8C%E4%BD%86%E8%B7%91%E7%9A%84%E4%B8%8D%E6%98%AF%E9%A2%84%E6%9C%9F%E9%85%8D%E7%BD%AE"><span class="nav-number">1.4.</span> <span class="nav-text">4. 配置层：代码没错，但跑的不是预期配置</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E8%AF%81%E6%8D%AE%E5%B1%82%EF%BC%9A%E9%97%AE%E9%A2%98%E5%87%BA%E7%8E%B0%E5%90%8E%E8%83%BD%E4%B8%8D%E8%83%BD%E5%BF%AB%E9%80%9F%E9%97%AD%E7%8E%AF"><span class="nav-number">1.5.</span> <span class="nav-text">5. 证据层：问题出现后能不能快速闭环</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E6%B5%8B%E8%AF%95%E5%9B%A2%E9%98%9F%E5%9C%A8-Kubernetes-%E9%87%8C%E6%9C%80%E5%B8%B8%E5%A4%84%E7%90%86%E7%9A%84-7-%E7%B1%BB%E7%9C%9F%E5%AE%9E%E9%97%AE%E9%A2%98"><span class="nav-number">2.</span> <span class="nav-text">二、测试团队在 Kubernetes 里最常处理的 7 类真实问题</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%89%88%E6%9C%AC%E6%9B%B4%E6%96%B0%E4%BA%86%EF%BC%8C%E4%BD%86%E4%B8%9A%E5%8A%A1%E4%BB%8D%E7%84%B6%E8%B7%91%E5%9C%A8%E6%97%A7%E5%89%AF%E6%9C%AC%E4%B8%8A"><span class="nav-number">2.1.</span> <span class="nav-text">1. 版本更新了，但业务仍然跑在旧副本上</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Pod-%E8%B5%B7%E4%B8%8D%E6%9D%A5%EF%BC%8C%E6%88%96%E8%80%85%E8%83%BD%E8%B5%B7%E4%BD%86%E5%BE%88%E5%BF%AB%E9%87%8D%E5%90%AF"><span class="nav-number">2.2.</span> <span class="nav-text">2. Pod 起不来，或者能起但很快重启</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E9%A1%B5%E9%9D%A2%E6%88%96%E6%8E%A5%E5%8F%A3%E4%B8%8D%E9%80%9A%EF%BC%8C%E4%BD%86%E5%AE%B9%E5%99%A8%E6%97%A5%E5%BF%97%E6%B2%A1%E6%9C%89%E6%98%8E%E6%98%BE%E5%BC%82%E5%B8%B8"><span class="nav-number">2.3.</span> <span class="nav-text">3. 页面或接口不通，但容器日志没有明显异常</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%90%8C%E4%B8%80%E4%B8%AA%E7%89%88%E6%9C%AC%E5%9C%A8%E4%B8%A4%E4%B8%AA%E7%8E%AF%E5%A2%83%E8%A1%A8%E7%8E%B0%E4%B8%8D%E5%90%8C"><span class="nav-number">2.4.</span> <span class="nav-text">4. 同一个版本在两个环境表现不同</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%8E%8B%E6%B5%8B%E6%88%96%E6%89%B9%E9%87%8F%E5%9B%9E%E5%BD%92%E6%97%B6%E6%9C%8D%E5%8A%A1%E6%B3%A2%E5%8A%A8%E6%98%8E%E6%98%BE"><span class="nav-number">2.5.</span> <span class="nav-text">5. 压测或批量回归时服务波动明显</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E5%9B%9E%E5%BD%92%E5%A4%B1%E8%B4%A5%E5%90%8E%EF%BC%8C%E8%AF%81%E6%8D%AE%E7%95%99%E4%B8%8D%E4%BD%8F"><span class="nav-number">2.6.</span> <span class="nav-text">6. 回归失败后，证据留不住</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-%E7%8E%AF%E5%A2%83%E6%80%A7%E5%A4%B1%E8%B4%A5%E5%92%8C%E4%B8%9A%E5%8A%A1%E6%80%A7%E5%A4%B1%E8%B4%A5%E6%B7%B7%E5%9C%A8%E4%B8%80%E8%B5%B7"><span class="nav-number">2.7.</span> <span class="nav-text">7. 环境性失败和业务性失败混在一起</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E6%B5%8B%E8%AF%95%E5%9B%A2%E9%98%9F%E5%9C%A8-Kubernetes-%E7%8E%B0%E5%9C%BA%E7%9A%84%E6%9C%80%E5%B0%8F%E6%8E%92%E6%9F%A5%E9%AA%A8%E6%9E%B6"><span class="nav-number">3.</span> <span class="nav-text">三、测试团队在 Kubernetes 现场的最小排查骨架</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%85%88%E7%A1%AE%E8%AE%A4%E5%AF%B9%E8%B1%A1%EF%BC%9A%E5%88%B0%E5%BA%95%E6%98%AF%E5%93%AA%E6%AC%A1%E5%8F%91%E5%B8%83%E3%80%81%E5%93%AA%E4%B8%AA%E5%91%BD%E5%90%8D%E7%A9%BA%E9%97%B4%E3%80%81%E5%93%AA%E4%B8%AA%E6%9C%8D%E5%8A%A1"><span class="nav-number">3.1.</span> <span class="nav-text">1. 先确认对象：到底是哪次发布、哪个命名空间、哪个服务</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%86%8D%E7%A1%AE%E8%AE%A4%E5%8F%91%E5%B8%83%EF%BC%9A%E7%89%88%E6%9C%AC%E6%9C%89%E6%B2%A1%E6%9C%89%E7%9C%9F%E7%9A%84%E8%90%BD%E4%B8%8B%E5%8E%BB"><span class="nav-number">3.2.</span> <span class="nav-text">2. 再确认发布：版本有没有真的落下去</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%86%8D%E7%A1%AE%E8%AE%A4%E8%BF%90%E8%A1%8C%EF%BC%9A%E6%9C%8D%E5%8A%A1%E6%98%AF%E4%B8%8D%E6%98%AF%E7%A8%B3%E5%AE%9A%E5%8F%AF%E7%94%A8"><span class="nav-number">3.3.</span> <span class="nav-text">3. 再确认运行：服务是不是稳定可用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%86%8D%E7%A1%AE%E8%AE%A4%E7%BD%91%E7%BB%9C%EF%BC%9A%E6%B5%81%E9%87%8F%E6%98%AF%E5%90%A6%E7%9C%9F%E7%9A%84%E5%88%B0%E8%BE%BE%E7%9B%AE%E6%A0%87%E5%AE%B9%E5%99%A8"><span class="nav-number">3.4.</span> <span class="nav-text">4. 再确认网络：流量是否真的到达目标容器</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%86%8D%E7%A1%AE%E8%AE%A4%E9%85%8D%E7%BD%AE%EF%BC%9A%E5%AE%B9%E5%99%A8%E9%87%8C%E5%AE%9E%E9%99%85%E7%94%9F%E6%95%88%E7%9A%84%E6%98%AF%E4%BB%80%E4%B9%88"><span class="nav-number">3.5.</span> <span class="nav-text">5. 再确认配置：容器里实际生效的是什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E6%9C%80%E5%90%8E%E6%94%B6%E8%AF%81%E6%8D%AE%EF%BC%9A%E6%8A%8A%E4%B8%80%E6%AC%A1%E5%A4%B1%E8%B4%A5%E5%8F%98%E6%88%90%E5%8F%AF%E5%A4%8D%E7%9B%98%E7%9A%84%E9%97%AE%E9%A2%98%E5%8C%85"><span class="nav-number">3.6.</span> <span class="nav-text">6. 最后收证据：把一次失败变成可复盘的问题包</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E8%BF%99%E4%BA%9B%E5%B8%B8%E8%A7%81%E5%9D%91%EF%BC%8C%E6%AF%94%E5%8D%95%E7%BA%AF%E7%9A%84%E4%B8%9A%E5%8A%A1%E7%BC%BA%E9%99%B7%E6%9B%B4%E5%AE%B9%E6%98%93%E6%8B%96%E6%85%A2%E6%B5%8B%E8%AF%95%E6%95%88%E7%8E%87"><span class="nav-number">4.</span> <span class="nav-text">四、这些常见坑，比单纯的业务缺陷更容易拖慢测试效率</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%8A%8A-Running-%E5%BD%93%E6%88%90%E2%80%9C%E6%9C%8D%E5%8A%A1%E5%B7%B2%E5%B0%B1%E7%BB%AA%E2%80%9D"><span class="nav-number">4.1.</span> <span class="nav-text">1. 把 Running 当成“服务已就绪”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%9B%9E%E5%BD%92%E5%A4%B1%E8%B4%A5%E5%90%8E%E6%89%8D%E4%B8%B4%E6%97%B6%E5%8E%BB%E6%8A%93%E7%8E%B0%E5%9C%BA"><span class="nav-number">4.2.</span> <span class="nav-text">2. 回归失败后才临时去抓现场</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%8F%AA%E7%9C%8B%E5%BA%94%E7%94%A8%E6%97%A5%E5%BF%97%EF%BC%8C%E4%B8%8D%E7%9C%8B%E4%BA%8B%E4%BB%B6%E5%92%8C%E6%8E%A2%E9%92%88"><span class="nav-number">4.3.</span> <span class="nav-text">3. 只看应用日志，不看事件和探针</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%8F%AA%E7%9C%8B-Ingress%EF%BC%8C%E4%B8%8D%E7%9C%8B-Service-%E5%92%8C-Endpoints"><span class="nav-number">4.4.</span> <span class="nav-text">4. 只看 Ingress，不看 Service 和 Endpoints</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E9%85%8D%E7%BD%AE%E5%8F%98%E6%9B%B4%E5%90%8E%E6%B2%A1%E6%9C%89%E5%AE%9A%E4%B9%89%E2%80%9C%E4%BD%95%E6%97%B6%E7%94%9F%E6%95%88%E2%80%9D"><span class="nav-number">4.5.</span> <span class="nav-text">5. 配置变更后没有定义“何时生效”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E6%B5%8B%E8%AF%95%E6%8A%A5%E5%91%8A%E4%B8%8D%E5%B8%A6%E9%9B%86%E7%BE%A4%E7%8E%B0%E5%9C%BA"><span class="nav-number">4.6.</span> <span class="nav-text">6. 测试报告不带集群现场</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E6%8A%8A-Kubernetes-%E9%97%AE%E9%A2%98%E6%B2%BB%E7%90%86%E6%88%90%E6%B5%8B%E8%AF%95%E8%B5%84%E4%BA%A7%EF%BC%8C%E5%85%B3%E9%94%AE%E5%9C%A8%E4%B8%89%E4%B8%AA%E5%8A%A8%E4%BD%9C"><span class="nav-number">5.</span> <span class="nav-text">五、把 Kubernetes 问题治理成测试资产，关键在三个动作</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%BB%99%E5%9B%9E%E5%BD%92%E5%92%8C%E5%86%92%E7%83%9F%E8%A1%A5%E4%B8%8A%E7%8E%AF%E5%A2%83%E5%89%8D%E7%BD%AE%E6%8E%A2%E6%B4%BB"><span class="nav-number">5.1.</span> <span class="nav-text">1. 给回归和冒烟补上环境前置探活</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E7%BB%99%E5%A4%B1%E8%B4%A5%E7%BB%93%E6%9E%9C%E8%A1%A5%E4%B8%8A%E9%9B%86%E7%BE%A4%E7%8E%B0%E5%9C%BA%E6%91%98%E8%A6%81"><span class="nav-number">5.2.</span> <span class="nav-text">2. 给失败结果补上集群现场摘要</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%8A%8A%E7%8E%AF%E5%A2%83%E6%80%A7%E5%A4%B1%E8%B4%A5%E5%92%8C%E4%B8%9A%E5%8A%A1%E6%80%A7%E5%A4%B1%E8%B4%A5%E5%85%88%E5%88%86%E6%B5%81"><span class="nav-number">5.3.</span> <span class="nav-text">3. 把环境性失败和业务性失败先分流</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E7%9C%9F%E5%AE%9E%E6%A1%88%E4%BE%8B%EF%BC%9A%E5%8F%91%E5%B8%83%E5%90%8E%E6%8E%A5%E5%8F%A3%E6%89%B9%E9%87%8F%E8%B6%85%E6%97%B6%EF%BC%8C%E9%97%AE%E9%A2%98%E4%B8%8D%E5%9C%A8%E4%BB%A3%E7%A0%81%E8%80%8C%E5%9C%A8%E6%B5%81%E9%87%8F%E6%A0%B9%E6%9C%AC%E6%B2%A1%E8%BF%9B%E7%9B%AE%E6%A0%87%E5%89%AF%E6%9C%AC"><span class="nav-number">6.</span> <span class="nav-text">六、真实案例：发布后接口批量超时，问题不在代码而在流量根本没进目标副本</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9C%BA%E6%99%AF"><span class="nav-number">6.1.</span> <span class="nav-text">场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%89%A7%E8%A1%8C"><span class="nav-number">6.2.</span> <span class="nav-text">执行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8E%B0%E8%B1%A1"><span class="nav-number">6.3.</span> <span class="nav-text">现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%92%E6%9F%A5"><span class="nav-number">6.4.</span> <span class="nav-text">排查</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BF%AE%E5%A4%8D"><span class="nav-number">6.5.</span> <span class="nav-text">修复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E7%BB%93%E8%AF%AD"><span class="nav-number">7.</span> <span class="nav-text">七、结语</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2023/08/19/%E4%BA%91%E5%8E%9F%E7%94%9F-01-%E6%B5%8B%E8%AF%95%E5%9B%A2%E9%98%9F%E5%9C%A8Kubernetes%E5%9C%BA%E6%99%AF%E9%87%8C%E6%9C%80%E5%B8%B8%E5%A4%84%E7%90%86%E5%93%AA%E4%BA%9B%E7%9C%9F%E5%AE%9E%E9%97%AE%E9%A2%98/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="云原生-01-测试团队在Kubernetes场景里最常处理哪些真实问题 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          云原生-01-测试团队在Kubernetes场景里最常处理哪些真实问题
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2023-08-19 20:30:00" itemprop="dateCreated datePublished" datetime="2023-08-19T20:30:00+08:00">2023-08-19</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/%E4%BA%91%E5%8E%9F%E7%94%9F/" itemprop="url" rel="index"><span itemprop="name">云原生</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>5.1k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>18 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>一提到 Kubernetes，最容易先聊的是这些话题：</p>
+<ul>
+<li>集群怎么搭</li>
+<li>节点怎么加</li>
+<li>Helm 怎么装</li>
+<li>Pod、Service、Ingress 分别是什么</li>
+</ul>
+<p>这些内容当然重要，但对测试团队来说，日常最常处理的往往不是“概念理解”，而是更具体的现场问题：</p>
+<ul>
+<li>某个版本在测试环境里发布后，Pod 一直起不来</li>
+<li>服务已经 Running，但页面还是 502 或 404</li>
+<li>接口偶发超时，测试结果不稳定，但应用日志里看不出明显报错</li>
+<li>配置明明改过，容器里实际跑的却还是旧逻辑</li>
+<li>冒烟用例失败后，没人能快速回答问题到底出在镜像、配置、网络还是依赖服务</li>
+</ul>
+<p>如果把 Kubernetes 只当成部署容器的平台，测试团队会很容易陷入一种被动状态：</p>
+<ul>
+<li>应用起不来，只能等运维排</li>
+<li>接口不通，只能等开发看</li>
+<li>环境波动，只能把失败先归为“环境问题”</li>
+<li>证据散落在流水线、日志平台、Kibana、Prometheus 和聊天记录里，最后没人说得清根因</li>
+</ul>
+<p>真正更贴近测试工作的视角应该是：</p>
+<p><strong>Kubernetes 不是一个额外的概念层，而是测试环境、发布链路、服务连通性、配置治理和证据收集方式都被重新组织之后的新现场。</strong></p>
+<p>所以测试团队在 Kubernetes 场景里最常处理的真实问题，通常集中在下面五层：</p>
+<ul>
+<li>发布层：镜像、版本、滚动更新、回滚是否正常</li>
+<li>运行层：Pod、容器、探针、资源限制是否稳定</li>
+<li>网络层：Service、Ingress、DNS、网络策略是否通畅</li>
+<li>配置层：ConfigMap、Secret、环境变量和外部依赖是否一致</li>
+<li>证据层：日志、事件、监控、发布记录是否能串成一条时间线</li>
+</ul>
+<p>这篇文章不讲空泛的云原生概述，只聚焦一个问题：</p>
+<p><strong>测试团队在 Kubernetes 场景里最常处理哪些真实问题，以及这些问题应该怎么分层、怎么排、怎么把证据收清。</strong></p>
+<h2 id="一、先把问题分层，别把所有异常都叫“环境问题”"><a href="#一、先把问题分层，别把所有异常都叫“环境问题”" class="headerlink" title="一、先把问题分层，别把所有异常都叫“环境问题”"></a>一、先把问题分层，别把所有异常都叫“环境问题”</h2><p>Kubernetes 场景里的很多故障之所以越排越乱，不是因为系统太复杂，而是因为问题没有先分层。</p>
+<p>测试执行失败之后，如果排查起点只是：</p>
+<ul>
+<li>这个环境不稳定</li>
+<li>集群好像有问题</li>
+<li>K8s 抽风了</li>
+</ul>
+<p>后面的排查就很容易失去方向。</p>
+<p>更合适的方式，是先把问题按下面五层拆开。</p>
+<h3 id="1-发布层：版本到底有没有真正发布成功"><a href="#1-发布层：版本到底有没有真正发布成功" class="headerlink" title="1. 发布层：版本到底有没有真正发布成功"></a>1. 发布层：版本到底有没有真正发布成功</h3><p>测试团队最常碰到的第一类问题，不是业务逻辑错，而是<strong>版本根本没有以预期方式落到环境里</strong>。</p>
+<p>典型现象包括：</p>
+<ul>
+<li>流水线显示发布成功，但 Pod 实际还是旧镜像</li>
+<li>Deployment 更新了，测试流量却还落在旧副本上</li>
+<li>某个 Pod 已经重建，但新旧配置混跑</li>
+<li>回滚后页面恢复了，但一部分接口仍然命中旧逻辑</li>
+</ul>
+<p>这一层最该先确认的是：</p>
+<ul>
+<li>当前命名空间下实际跑的是哪个镜像 tag</li>
+<li>Deployment 的 <code>generation</code> 和 <code>observedGeneration</code> 是否对齐</li>
+<li>ReplicaSet 是否真的完成切换</li>
+<li>滚动更新期间是否存在旧 Pod 残留</li>
+<li>回滚动作是只改了镜像，还是连配置一起回退</li>
+</ul>
+<p>很多测试失败一开始看像业务回归，后面追下来其实只是版本没有换干净。</p>
+<h3 id="2-运行层：服务有没有真正稳定运行"><a href="#2-运行层：服务有没有真正稳定运行" class="headerlink" title="2. 运行层：服务有没有真正稳定运行"></a>2. 运行层：服务有没有真正稳定运行</h3><p>第二类高频问题是服务“看起来活着”，但实际上没有进入稳定可用状态。</p>
+<p>典型现象包括：</p>
+<ul>
+<li>Pod 状态在 <code>CrashLoopBackOff</code></li>
+<li>容器频繁重启</li>
+<li>Readiness probe 一直不过</li>
+<li>应用启动很慢，冒烟任务比服务准备更早开始</li>
+<li>压测时某些副本被 OOMKilled</li>
+</ul>
+<p>这一层真正需要回答的是：</p>
+<ul>
+<li>进程是否成功启动</li>
+<li>启动后有没有立刻退出</li>
+<li>探针失败是因为应用没准备好，还是探针设计不合理</li>
+<li>容器资源限制是不是太紧</li>
+<li>节点资源是否已经接近上限</li>
+</ul>
+<p>只看 Pod 是不是 <code>Running</code> 远远不够。<code>Running</code> 只能说明容器在跑，不代表服务真的可用。</p>
+<h3 id="3-网络层：流量到底卡在了哪一段"><a href="#3-网络层：流量到底卡在了哪一段" class="headerlink" title="3. 网络层：流量到底卡在了哪一段"></a>3. 网络层：流量到底卡在了哪一段</h3><p>第三类问题最常见，也最容易被误判成“应用异常”。</p>
+<p>测试场景里常见的网络问题包括：</p>
+<ul>
+<li>Ingress 已经配了，外部访问还是 404 或 502</li>
+<li>服务名能解析，但连接超时</li>
+<li>页面能打开，接口请求偶发失败</li>
+<li>同一个集群里 A 服务调 B 服务失败</li>
+<li>测试环境可以访问，流水线节点却访问不了</li>
+</ul>
+<p>这一层不能只问“能不能访问”，而要继续拆：</p>
+<ul>
+<li>DNS 是否解析正确</li>
+<li>Ingress 是否命中了预期规则</li>
+<li>Service 的 selector 是否选中了正确的 Pod</li>
+<li>Endpoints 是否已经生成</li>
+<li>容器监听端口和 Service 暴露端口是否一致</li>
+<li>网络策略是否挡住了跨命名空间或跨节点访问</li>
+</ul>
+<p>很多“服务没起来”的结论，最后根因其实是流量根本没打到目标容器。</p>
+<h3 id="4-配置层：代码没错，但跑的不是预期配置"><a href="#4-配置层：代码没错，但跑的不是预期配置" class="headerlink" title="4. 配置层：代码没错，但跑的不是预期配置"></a>4. 配置层：代码没错，但跑的不是预期配置</h3><p>Kubernetes 场景里，配置问题的比例通常比传统部署更高。</p>
+<p>原因很简单：配置被拆成了更多层，而且经常通过环境变量、ConfigMap、Secret、挂载文件和外部配置中心共同生效。</p>
+<p>典型现象包括：</p>
+<ul>
+<li>容器里读取到的环境变量和发布单填写的不一致</li>
+<li>ConfigMap 已更新，但应用没有重载</li>
+<li>Secret 已变更，老 Pod 仍在使用旧凭据</li>
+<li>相同镜像在两个命名空间里表现不同</li>
+<li>测试环境偶发访问错库、错缓存、错消息队列</li>
+</ul>
+<p>这类问题的难点不在“有没有配置”，而在<strong>最终生效的是哪一份配置</strong>。</p>
+<p>所以配置层至少要回答四个问题：</p>
+<ul>
+<li>配置源是什么</li>
+<li>配置注入方式是什么</li>
+<li>配置何时生效</li>
+<li>配置变更后是否要求重启或滚动更新</li>
+</ul>
+<h3 id="5-证据层：问题出现后能不能快速闭环"><a href="#5-证据层：问题出现后能不能快速闭环" class="headerlink" title="5. 证据层：问题出现后能不能快速闭环"></a>5. 证据层：问题出现后能不能快速闭环</h3><p>第五层经常被忽略，但它直接决定排障效率。</p>
+<p>已经有：</p>
+<ul>
+<li>集群事件</li>
+<li>容器日志</li>
+<li>Prometheus 指标</li>
+<li>Grafana 看板</li>
+<li>流水线记录</li>
+<li>测试报告</li>
+</ul>
+<p>但一旦出现问题，真正的现场依然很难还原，因为这些证据没有按同一个执行对象收口。</p>
+<p>最常见的失真表现是：</p>
+<ul>
+<li>只知道某次回归失败，不知道命中了哪一次发布</li>
+<li>只拿到了应用日志，没有抓到 Pod 重建前的旧日志</li>
+<li>看到错误率升高，但对不上具体 Pod 和具体时间窗</li>
+<li>报告里只有“接口超时”，没有配套的事件、探针和资源证据</li>
+</ul>
+<p>Kubernetes 场景下，如果证据层没有收清，前四层的问题就算定位到了，也很难高效复盘。</p>
+<h2 id="二、测试团队在-Kubernetes-里最常处理的-7-类真实问题"><a href="#二、测试团队在-Kubernetes-里最常处理的-7-类真实问题" class="headerlink" title="二、测试团队在 Kubernetes 里最常处理的 7 类真实问题"></a>二、测试团队在 Kubernetes 里最常处理的 7 类真实问题</h2><p>把问题按层拆开之后，测试团队日常最常遇到的其实是下面 7 类。</p>
+<h3 id="1-版本更新了，但业务仍然跑在旧副本上"><a href="#1-版本更新了，但业务仍然跑在旧副本上" class="headerlink" title="1. 版本更新了，但业务仍然跑在旧副本上"></a>1. 版本更新了，但业务仍然跑在旧副本上</h3><p>这种问题通常出现在滚动更新、缓存路由、Ingress 转发或 Service selector 配置不一致时。</p>
+<p>表面现象通常是：</p>
+<ul>
+<li>同一条用例一会儿通过，一会儿失败</li>
+<li>某个接口只有部分返回值和新版本一致</li>
+<li>前端页面已经是新样式，后端接口却还是旧逻辑</li>
+</ul>
+<p>这里最关键的不是重跑，而是先确认：</p>
+<ul>
+<li>新旧 ReplicaSet 数量</li>
+<li>当前 Pod 的镜像 digest</li>
+<li>Service 实际挂载的 endpoints</li>
+<li>是否有旧 Pod 未被摘流</li>
+</ul>
+<h3 id="2-Pod-起不来，或者能起但很快重启"><a href="#2-Pod-起不来，或者能起但很快重启" class="headerlink" title="2. Pod 起不来，或者能起但很快重启"></a>2. Pod 起不来，或者能起但很快重启</h3><p>这是最典型的运行层问题，常见根因包括：</p>
+<ul>
+<li>启动参数错误</li>
+<li>依赖服务不可达</li>
+<li>配置缺失</li>
+<li>JVM、Node 或 Python 应用启动时资源不足</li>
+<li>探针过早触发导致容器反复被杀</li>
+</ul>
+<p>这类问题最容易被误判成“代码挂了”，但实际常常是部署和运行条件不满足。</p>
+<h3 id="3-页面或接口不通，但容器日志没有明显异常"><a href="#3-页面或接口不通，但容器日志没有明显异常" class="headerlink" title="3. 页面或接口不通，但容器日志没有明显异常"></a>3. 页面或接口不通，但容器日志没有明显异常</h3><p>这通常是网络层问题。</p>
+<p>常见根因包括：</p>
+<ul>
+<li>Ingress host 或 path 规则配置不匹配</li>
+<li>Service 端口映射错误</li>
+<li>应用监听 <code>127.0.0.1</code> 而不是 <code>0.0.0.0</code></li>
+<li>上游转发超时</li>
+<li>网关证书或 TLS 配置不一致</li>
+</ul>
+<p>如果只盯应用日志，很容易在错误方向上浪费大量时间。</p>
+<h3 id="4-同一个版本在两个环境表现不同"><a href="#4-同一个版本在两个环境表现不同" class="headerlink" title="4. 同一个版本在两个环境表现不同"></a>4. 同一个版本在两个环境表现不同</h3><p>这类问题很多时候不是镜像问题，而是配置和依赖差异。</p>
+<p>最常见的差异点有：</p>
+<ul>
+<li>环境变量不一致</li>
+<li>ConfigMap 内容不同</li>
+<li>Secret 指向不同账号</li>
+<li>外部中间件地址不同</li>
+<li>DNS 或服务发现配置不同</li>
+</ul>
+<p>只要环境配置是漂移状态，测试结果就很难稳定。</p>
+<h3 id="5-压测或批量回归时服务波动明显"><a href="#5-压测或批量回归时服务波动明显" class="headerlink" title="5. 压测或批量回归时服务波动明显"></a>5. 压测或批量回归时服务波动明显</h3><p>这类问题往往和资源限制、弹性策略、节点分布有关。</p>
+<p>例如：</p>
+<ul>
+<li><code>requests</code> 太低导致调度看起来没问题，实际运行被抢占</li>
+<li><code>limits</code> 太紧导致峰值时 OOM</li>
+<li>HPA 指标滞后，扩容来不及</li>
+<li>大量并发流量都打到同一个节点或同一批旧 Pod</li>
+</ul>
+<p>如果测试团队只从业务接口看超时，很难解释为什么“平时能跑，一压就散”。</p>
+<h3 id="6-回归失败后，证据留不住"><a href="#6-回归失败后，证据留不住" class="headerlink" title="6. 回归失败后，证据留不住"></a>6. 回归失败后，证据留不住</h3><p>Kubernetes 环境里，Pod 是动态对象，旧容器和旧事件很容易很快消失。</p>
+<p>这会带来两个很现实的问题：</p>
+<ul>
+<li>问题复现一次后，再想回看第一次失败现场时证据已经不在</li>
+<li>只知道最近有过重启，但拿不到重启前最后几秒的日志和事件</li>
+</ul>
+<p>所以回归和冒烟一旦失败，证据收集动作必须尽量前置，而不是等人工再去看。</p>
+<h3 id="7-环境性失败和业务性失败混在一起"><a href="#7-环境性失败和业务性失败混在一起" class="headerlink" title="7. 环境性失败和业务性失败混在一起"></a>7. 环境性失败和业务性失败混在一起</h3><p>Kubernetes 场景里，环境波动和业务缺陷更容易互相伪装。</p>
+<p>例如：</p>
+<ul>
+<li>接口 500，可能是代码异常，也可能是依赖服务连接信息错误</li>
+<li>登录超时，可能是业务链路慢，也可能是 Ingress 或 DNS 波动</li>
+<li>某条用例失败，可能是逻辑回归，也可能是 Pod 在执行中途被驱逐</li>
+</ul>
+<p>如果测试报告没有把 Kubernetes 现场证据一起带上，很多失败最终只能先人工归类，反馈效率会明显下降。</p>
+<h2 id="三、测试团队在-Kubernetes-现场的最小排查骨架"><a href="#三、测试团队在-Kubernetes-现场的最小排查骨架" class="headerlink" title="三、测试团队在 Kubernetes 现场的最小排查骨架"></a>三、测试团队在 Kubernetes 现场的最小排查骨架</h2><p>Kubernetes 问题一旦上来就满屏命令，排查通常会失控。更有效的方式是先有一套固定骨架。</p>
+<p>下面这套骨架更适合测试团队在回归、冒烟、联调和发布校验时快速收口。</p>
+<h3 id="1-先确认对象：到底是哪次发布、哪个命名空间、哪个服务"><a href="#1-先确认对象：到底是哪次发布、哪个命名空间、哪个服务" class="headerlink" title="1. 先确认对象：到底是哪次发布、哪个命名空间、哪个服务"></a>1. 先确认对象：到底是哪次发布、哪个命名空间、哪个服务</h3><p>先固定下面三个对象：</p>
+<ul>
+<li>发布版本或镜像 tag</li>
+<li>命名空间</li>
+<li>服务名、Deployment 名、Pod 名</li>
+</ul>
+<p>如果这一步都不固定，后面看日志、查 Pod、看事件都可能看错对象。</p>
+<h3 id="2-再确认发布：版本有没有真的落下去"><a href="#2-再确认发布：版本有没有真的落下去" class="headerlink" title="2. 再确认发布：版本有没有真的落下去"></a>2. 再确认发布：版本有没有真的落下去</h3><p>建议优先看下面几类信息：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">kubectl -n &lt;namespace&gt; get deploy &lt;deploy-name&gt;</span><br><span class="line">kubectl -n &lt;namespace&gt; rollout status deploy/&lt;deploy-name&gt;</span><br><span class="line">kubectl -n &lt;namespace&gt; get rs -l app=&lt;app-name&gt;</span><br><span class="line">kubectl -n &lt;namespace&gt; get pods -o wide -l app=&lt;app-name&gt;</span><br></pre></td></tr></table></figure>
+
+<p>这一层主要看：</p>
+<ul>
+<li>rollout 是否完成</li>
+<li>ReplicaSet 是否已经切换</li>
+<li>是否仍然存在旧 Pod</li>
+<li>Pod 是否分布异常</li>
+</ul>
+<h3 id="3-再确认运行：服务是不是稳定可用"><a href="#3-再确认运行：服务是不是稳定可用" class="headerlink" title="3. 再确认运行：服务是不是稳定可用"></a>3. 再确认运行：服务是不是稳定可用</h3><p>这一层优先看：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">kubectl -n &lt;namespace&gt; describe pod &lt;pod-name&gt;</span><br><span class="line">kubectl -n &lt;namespace&gt; logs &lt;pod-name&gt; --<span class="built_in">tail</span>=200</span><br><span class="line">kubectl -n &lt;namespace&gt; logs &lt;pod-name&gt; --previous --<span class="built_in">tail</span>=200</span><br><span class="line">kubectl -n &lt;namespace&gt; top pod</span><br></pre></td></tr></table></figure>
+
+<p>重点观察：</p>
+<ul>
+<li>容器退出码</li>
+<li>探针失败信息</li>
+<li>OOMKilled、Back-off、ImagePullBackOff 等事件</li>
+<li>当前和上一个容器实例日志</li>
+</ul>
+<h3 id="4-再确认网络：流量是否真的到达目标容器"><a href="#4-再确认网络：流量是否真的到达目标容器" class="headerlink" title="4. 再确认网络：流量是否真的到达目标容器"></a>4. 再确认网络：流量是否真的到达目标容器</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">kubectl -n &lt;namespace&gt; get svc &lt;svc-name&gt;</span><br><span class="line">kubectl -n &lt;namespace&gt; get endpoints &lt;svc-name&gt;</span><br><span class="line">kubectl -n &lt;namespace&gt; describe ingress &lt;ingress-name&gt;</span><br><span class="line">kubectl -n &lt;namespace&gt; <span class="built_in">exec</span> -it &lt;pod-name&gt; -- sh</span><br></pre></td></tr></table></figure>
+
+<p>这里不是为了把所有网络问题都自己解决，而是先把边界切清：</p>
+<ul>
+<li>DNS 是否能解析</li>
+<li>Service 有没有 endpoints</li>
+<li>Ingress 规则有没有命中</li>
+<li>容器内是否能访问依赖服务</li>
+</ul>
+<h3 id="5-再确认配置：容器里实际生效的是什么"><a href="#5-再确认配置：容器里实际生效的是什么" class="headerlink" title="5. 再确认配置：容器里实际生效的是什么"></a>5. 再确认配置：容器里实际生效的是什么</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">kubectl -n &lt;namespace&gt; get configmap</span><br><span class="line">kubectl -n &lt;namespace&gt; describe configmap &lt;configmap-name&gt;</span><br><span class="line">kubectl -n &lt;namespace&gt; describe secret &lt;secret-name&gt;</span><br><span class="line">kubectl -n &lt;namespace&gt; <span class="built_in">exec</span> -it &lt;pod-name&gt; -- <span class="built_in">env</span></span><br></pre></td></tr></table></figure>
+
+<p>重点看：</p>
+<ul>
+<li>环境变量和预期是否一致</li>
+<li>ConfigMap 是否已经被新 Pod 挂载</li>
+<li>Secret 是否更新后未重启</li>
+<li>同名配置在不同环境里是否漂移</li>
+</ul>
+<h3 id="6-最后收证据：把一次失败变成可复盘的问题包"><a href="#6-最后收证据：把一次失败变成可复盘的问题包" class="headerlink" title="6. 最后收证据：把一次失败变成可复盘的问题包"></a>6. 最后收证据：把一次失败变成可复盘的问题包</h3><p>至少要收下面这些证据：</p>
+<ul>
+<li>发布版本、镜像 tag、流水线编号</li>
+<li>失败时间窗</li>
+<li>目标 Pod 列表和状态</li>
+<li>关键事件</li>
+<li>当前日志和前一个实例日志</li>
+<li>Service、Endpoints、Ingress 快照</li>
+<li>相关监控图或错误率截图</li>
+</ul>
+<p>对测试团队来说，最重要的不是命令记得有多全，而是每次失败都能按照同一顺序收出同一组证据。</p>
+<h2 id="四、这些常见坑，比单纯的业务缺陷更容易拖慢测试效率"><a href="#四、这些常见坑，比单纯的业务缺陷更容易拖慢测试效率" class="headerlink" title="四、这些常见坑，比单纯的业务缺陷更容易拖慢测试效率"></a>四、这些常见坑，比单纯的业务缺陷更容易拖慢测试效率</h2><h3 id="1-把-Running-当成“服务已就绪”"><a href="#1-把-Running-当成“服务已就绪”" class="headerlink" title="1. 把 Running 当成“服务已就绪”"></a>1. 把 <code>Running</code> 当成“服务已就绪”</h3><p>很多自动化链路只看 Pod 状态，不看 readiness，结果服务还没准备好，冒烟就已经开始。</p>
+<p>后果通常是：</p>
+<ul>
+<li>第一轮失败很多</li>
+<li>补跑又都通过</li>
+<li>现象很容易被判断成用例不稳定</li>
+</ul>
+<p>实际上根因只是校验开始得太早。</p>
+<h3 id="2-回归失败后才临时去抓现场"><a href="#2-回归失败后才临时去抓现场" class="headerlink" title="2. 回归失败后才临时去抓现场"></a>2. 回归失败后才临时去抓现场</h3><p>Kubernetes 环境变化快，Pod 重建、日志轮转、事件淘汰都可能让证据很快消失。</p>
+<p>失败后再临时人工进入集群抓日志，经常已经错过最关键的几分钟。</p>
+<h3 id="3-只看应用日志，不看事件和探针"><a href="#3-只看应用日志，不看事件和探针" class="headerlink" title="3. 只看应用日志，不看事件和探针"></a>3. 只看应用日志，不看事件和探针</h3><p>应用日志适合看业务错误，但不适合解释容器为什么起不来、为什么被杀、为什么没被摘流。</p>
+<p>如果缺少 <code>describe pod</code> 和事件信息，很容易漏掉真正的运行层根因。</p>
+<h3 id="4-只看-Ingress，不看-Service-和-Endpoints"><a href="#4-只看-Ingress，不看-Service-和-Endpoints" class="headerlink" title="4. 只看 Ingress，不看 Service 和 Endpoints"></a>4. 只看 Ingress，不看 Service 和 Endpoints</h3><p>很多访问问题最后并不是网关没转，而是后端根本没有有效 endpoints。</p>
+<p>如果一开始只盯 Ingress 配置，很容易陷入错误方向。</p>
+<h3 id="5-配置变更后没有定义“何时生效”"><a href="#5-配置变更后没有定义“何时生效”" class="headerlink" title="5. 配置变更后没有定义“何时生效”"></a>5. 配置变更后没有定义“何时生效”</h3><p>配置已经改了，只是这几个问题还没有定义清楚：</p>
+<ul>
+<li>是热加载生效，还是必须重启</li>
+<li>是所有副本同步生效，还是滚动替换</li>
+<li>是立刻生效，还是下一次调度生效</li>
+</ul>
+<p>没有这些边界，测试结果就很难解释。</p>
+<h3 id="6-测试报告不带集群现场"><a href="#6-测试报告不带集群现场" class="headerlink" title="6. 测试报告不带集群现场"></a>6. 测试报告不带集群现场</h3><p>如果报告里只有接口失败截图，没有版本、Pod、事件、日志摘要和监控证据，Kubernetes 场景里的问题推进效率会很差。</p>
+<p>因为研发、运维、测试看到的是不同现场，很难快速对齐。</p>
+<h2 id="五、把-Kubernetes-问题治理成测试资产，关键在三个动作"><a href="#五、把-Kubernetes-问题治理成测试资产，关键在三个动作" class="headerlink" title="五、把 Kubernetes 问题治理成测试资产，关键在三个动作"></a>五、把 Kubernetes 问题治理成测试资产，关键在三个动作</h2><p>测试团队如果长期在 Kubernetes 环境里做回归、联调和发布校验，最值得先建设的不是更多命令，而是下面三个动作。</p>
+<h3 id="1-给回归和冒烟补上环境前置探活"><a href="#1-给回归和冒烟补上环境前置探活" class="headerlink" title="1. 给回归和冒烟补上环境前置探活"></a>1. 给回归和冒烟补上环境前置探活</h3><p>在业务用例开始前，先做一层轻量环境检查：</p>
+<ul>
+<li>Deployment rollout 是否完成</li>
+<li>Pod readiness 是否全部通过</li>
+<li>Service endpoints 是否存在</li>
+<li>关键依赖接口是否可达</li>
+</ul>
+<p>这层探活可以明显减少把环境波动误判成业务缺陷的次数。</p>
+<h3 id="2-给失败结果补上集群现场摘要"><a href="#2-给失败结果补上集群现场摘要" class="headerlink" title="2. 给失败结果补上集群现场摘要"></a>2. 给失败结果补上集群现场摘要</h3><p>每次失败都尽量自动收下面几类摘要：</p>
+<ul>
+<li>失败时间窗内的 Pod 状态变化</li>
+<li>最近事件摘要</li>
+<li>关键日志片段</li>
+<li>服务路由和 endpoints 快照</li>
+<li>资源使用峰值</li>
+</ul>
+<p>这样问题单和测试报告会更像“现场问题包”，而不只是“失败通知”。</p>
+<h3 id="3-把环境性失败和业务性失败先分流"><a href="#3-把环境性失败和业务性失败先分流" class="headerlink" title="3. 把环境性失败和业务性失败先分流"></a>3. 把环境性失败和业务性失败先分流</h3><p>更合适的做法是先把失败归为三类：</p>
+<ul>
+<li>业务失败</li>
+<li>环境失败</li>
+<li>待确认失败</li>
+</ul>
+<p>然后再要求每一类最少附哪些证据。</p>
+<p>这样比简单地把所有失败都算进通过率或失败率，更能体现 Kubernetes 场景里的真实质量状态。</p>
+<h2 id="六、真实案例：发布后接口批量超时，问题不在代码而在流量根本没进目标副本"><a href="#六、真实案例：发布后接口批量超时，问题不在代码而在流量根本没进目标副本" class="headerlink" title="六、真实案例：发布后接口批量超时，问题不在代码而在流量根本没进目标副本"></a>六、真实案例：发布后接口批量超时，问题不在代码而在流量根本没进目标副本</h2><p>下面用一个更接近现场的问题，把前面的排查骨架串起来。</p>
+<h3 id="场景"><a href="#场景" class="headerlink" title="场景"></a>场景</h3><p>某个测试环境在发布新版本后，回归任务里有一批核心接口连续超时。</p>
+<p>现象一开始很像业务严重回归：</p>
+<ul>
+<li>登录后多个接口超时</li>
+<li>页面部分区域空白</li>
+<li>自动化脚本连续失败</li>
+<li>研发反馈本地联调正常</li>
+</ul>
+<p>流水线侧显示 Deployment 已经发布完成，测试报告里只有接口超时和页面空白，没有更具体的集群信息。</p>
+<h3 id="执行"><a href="#执行" class="headerlink" title="执行"></a>执行</h3><p>先按固定骨架收现场：</p>
+<ol>
+<li>确认发布单、命名空间、服务名和镜像 tag</li>
+<li>查看 Deployment rollout 状态</li>
+<li>查看当前 Pod、ReplicaSet 和 Service endpoints</li>
+<li>查看 Ingress 规则和后端服务端口</li>
+<li>抽查目标 Pod 的应用日志、事件和 readiness 状态</li>
+</ol>
+<h3 id="现象"><a href="#现象" class="headerlink" title="现象"></a>现象</h3><p>现场很快暴露出几个关键信号：</p>
+<ul>
+<li>Deployment 的 rollout 已结束</li>
+<li>新 Pod 都是 <code>Running</code></li>
+<li>但 Service 的 endpoints 只有一部分</li>
+<li>某些新 Pod 的 readiness 一直没通过</li>
+<li>Ingress 后端指向的 Service 端口和应用实际监听端口不一致</li>
+</ul>
+<p>进一步看日志后发现，应用本身已经启动，只是 readiness 检查命中的路径和新版本路由改动不一致，导致一部分副本始终没有被加入 endpoints。与此同时，Service 的端口映射也有一处遗漏，流量经过 Ingress 后无法正确落到新副本。</p>
+<h3 id="排查"><a href="#排查" class="headerlink" title="排查"></a>排查</h3><p>这一轮排查真正起作用的不是某条复杂命令，而是顺序没有乱：</p>
+<ol>
+<li>先确认不是“没发布成功”</li>
+<li>再确认 Pod 不是“根本起不来”</li>
+<li>然后把网络路径拆到 Ingress、Service、Endpoints</li>
+<li>最后才把问题收敛到 readiness 和端口映射</li>
+</ol>
+<p>如果一开始只看应用日志，问题很容易被收敛成接口处理逻辑变慢；如果只看流水线结果，又容易把结论落到发布成功、问题在业务代码。</p>
+<h3 id="修复"><a href="#修复" class="headerlink" title="修复"></a>修复</h3><p>最终修复动作包括：</p>
+<ul>
+<li>修正 readiness 检查路径</li>
+<li>修正 Service 目标端口映射</li>
+<li>发布前补一层 Service endpoints 和 readiness 联合检查</li>
+<li>回归失败时自动附带 Pod 状态、事件和 endpoints 快照</li>
+</ul>
+<p>修复完成后，同类问题的收敛速度明显提高，因为团队已经不再把“接口超时”直接等同于“代码超时”，而是先按发布、运行、网络和配置分层排查。</p>
+<h2 id="七、结语"><a href="#七、结语" class="headerlink" title="七、结语"></a>七、结语</h2><p>测试团队在 Kubernetes 场景里最常处理的真实问题，通常并不抽象，反而非常具体：</p>
+<ul>
+<li>版本有没有真正切换</li>
+<li>服务是不是稳定可用</li>
+<li>流量有没有打到目标副本</li>
+<li>配置到底生效了没有</li>
+<li>失败现场能不能被完整留下</li>
+</ul>
+<p>只要把这些问题分层，再用一套固定的最小排查骨架收现场，很多原本看起来像“复杂云原生故障”的问题，都会变成可以逐层切边界、逐层收证据的工程问题。</p>
+<p>对测试团队来说，Kubernetes 最值得先掌握的不是更多概念，而是：</p>
+<p><strong>把一次业务失败快速拆成发布问题、运行问题、网络问题、配置问题或证据问题。</strong></p>
+<p>这一步一旦做稳，后面的自动化探活、失败分流、环境治理和平台化证据收集，才有真正落地的基础。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E5%B7%A5%E7%A8%8B%E5%AE%9E%E8%B7%B5/" rel="tag"># 工程实践</a>
+              <a href="/tags/Kubernetes/" rel="tag"># Kubernetes</a>
+              <a href="/tags/Ingress/" rel="tag"># Ingress</a>
+              <a href="/tags/%E6%B5%8B%E8%AF%95%E7%8E%AF%E5%A2%83/" rel="tag"># 测试环境</a>
+              <a href="/tags/%E5%AE%B9%E5%99%A8%E6%8E%92%E9%9A%9C/" rel="tag"># 容器排障</a>
+              <a href="/tags/ConfigMap/" rel="tag"># ConfigMap</a>
+              <a href="/tags/%E5%8F%91%E5%B8%83%E9%AA%8C%E8%AF%81/" rel="tag"># 发布验证</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2023/08/12/%E6%80%A7%E8%83%BD%E6%B5%8B%E8%AF%95-10-%E6%80%A7%E8%83%BD%E6%B5%8B%E8%AF%95%E5%A6%82%E4%BD%95%E4%B8%BA%E6%9E%B6%E6%9E%84%E4%BC%98%E5%8C%96%E6%8F%90%E4%BE%9B%E4%BE%9D%E6%8D%AE/" rel="prev" title="性能测试：性能测试如何为架构优化提供依据">
+                  <i class="fa fa-angle-left"></i> 性能测试：性能测试如何为架构优化提供依据
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2023/08/26/%E4%BA%91%E5%8E%9F%E7%94%9F-02-Kubernetes%E5%9C%A8%E6%B5%8B%E8%AF%95%E7%8E%AF%E5%A2%83%E4%B8%AD%E7%9A%84%E9%83%A8%E7%BD%B2%E6%89%A9%E5%AE%B9%E9%9A%94%E7%A6%BB%E5%92%8C%E5%9B%9E%E6%94%B6%E6%80%8E%E4%B9%88%E5%81%9A/" rel="next" title="云原生-02-Kubernetes在测试环境中的部署扩容隔离和回收怎么做">
+                  云原生-02-Kubernetes在测试环境中的部署扩容隔离和回收怎么做 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

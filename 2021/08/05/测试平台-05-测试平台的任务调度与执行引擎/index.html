@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="测试平台做到一定阶段后，最容易暴露问题的模块通常不是：  任务列表页 报告展示页 配置页面  而是平台最底层、但最容易被写轻的一层： 任务调度与执行引擎。 早期做平台，往往会把执行链路写成下面这种样子：  页面点一次执行 后端收一个请求 直接起进程或者调脚本 跑完把结果回写数据库  刚开始任务量少时，这种做法看起来完全能用。 但只要平台开始承载真实使用，问题会很快冒出来：  同一时间多个任务一起跑">
+<meta property="og:type" content="article">
+<meta property="og:title" content="测试平台-05-测试平台的任务调度与执行引擎">
+<meta property="og:url" content="https://paynewinnt.github.io/2021/08/05/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-05-%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E7%9A%84%E4%BB%BB%E5%8A%A1%E8%B0%83%E5%BA%A6%E4%B8%8E%E6%89%A7%E8%A1%8C%E5%BC%95%E6%93%8E/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="测试平台做到一定阶段后，最容易暴露问题的模块通常不是：  任务列表页 报告展示页 配置页面  而是平台最底层、但最容易被写轻的一层： 任务调度与执行引擎。 早期做平台，往往会把执行链路写成下面这种样子：  页面点一次执行 后端收一个请求 直接起进程或者调脚本 跑完把结果回写数据库  刚开始任务量少时，这种做法看起来完全能用。 但只要平台开始承载真实使用，问题会很快冒出来：  同一时间多个任务一起跑">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2021-08-05T12:30:00.000Z">
+<meta property="article:modified_time" content="2021-08-05T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="测试平台">
+<meta property="article:tag" content="工程化">
+<meta property="article:tag" content="任务调度">
+<meta property="article:tag" content="实战">
+<meta property="article:tag" content="架构设计">
+<meta property="article:tag" content="测试平台开发">
+<meta property="article:tag" content="执行引擎">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2021/08/05/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-05-%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E7%9A%84%E4%BB%BB%E5%8A%A1%E8%B0%83%E5%BA%A6%E4%B8%8E%E6%89%A7%E8%A1%8C%E5%BC%95%E6%93%8E/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2021/08/05/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-05-%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E7%9A%84%E4%BB%BB%E5%8A%A1%E8%B0%83%E5%BA%A6%E4%B8%8E%E6%89%A7%E8%A1%8C%E5%BC%95%E6%93%8E/","path":"2021/08/05/测试平台-05-测试平台的任务调度与执行引擎/","title":"测试平台-05-测试平台的任务调度与执行引擎"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>测试平台-05-测试平台的任务调度与执行引擎 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E8%B0%83%E5%BA%A6%E5%92%8C%E6%89%A7%E8%A1%8C%EF%BC%8C%E6%9C%80%E5%A5%BD%E5%85%88%E5%88%86%E6%88%90%E4%B8%A4%E5%B1%82%E7%9C%8B"><span class="nav-number">1.</span> <span class="nav-text">一、调度和执行，最好先分成两层看</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%B0%83%E5%BA%A6%E5%B1%82"><span class="nav-number">1.1.</span> <span class="nav-text">1. 调度层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%89%A7%E8%A1%8C%E5%B1%82"><span class="nav-number">1.2.</span> <span class="nav-text">2. 执行层</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E6%89%A7%E8%A1%8C%E9%93%BE%E8%B7%AF%E6%9C%80%E5%85%88%E8%A6%81%E6%98%8E%E7%A1%AE%E7%9A%84%EF%BC%8C%E4%B8%8D%E6%98%AF%E6%8A%80%E6%9C%AF%E6%A0%88%EF%BC%8C%E8%80%8C%E6%98%AF%E7%8A%B6%E6%80%81%E6%9C%BA"><span class="nav-number">2.</span> <span class="nav-text">二、执行链路最先要明确的，不是技术栈，而是状态机</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E8%B0%83%E5%BA%A6%E5%B1%82%E7%9C%9F%E6%AD%A3%E8%A6%81%E8%A7%A3%E5%86%B3%E7%9A%84%EF%BC%8C%E4%B8%8D%E5%8F%AA%E6%98%AF%E6%8E%92%E9%98%9F%EF%BC%8C%E8%80%8C%E6%98%AF%E8%B5%84%E6%BA%90%E5%86%B2%E7%AA%81"><span class="nav-number">3.</span> <span class="nav-text">三、调度层真正要解决的，不只是排队，而是资源冲突</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%BB%BB%E5%8A%A1%E9%9C%80%E8%A6%81%E5%93%AA%E4%BA%9B%E8%B5%84%E6%BA%90"><span class="nav-number">3.1.</span> <span class="nav-text">1. 任务需要哪些资源</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%BF%99%E4%BA%9B%E8%B5%84%E6%BA%90%E5%BD%93%E5%89%8D%E6%98%AF%E5%90%A6%E5%8F%AF%E7%94%A8"><span class="nav-number">3.2.</span> <span class="nav-text">2. 这些资源当前是否可用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%BB%BB%E5%8A%A1%E6%98%AF%E5%90%A6%E5%85%81%E8%AE%B8%E6%8E%92%E9%98%9F%E7%AD%89%E5%BE%85"><span class="nav-number">3.3.</span> <span class="nav-text">3. 任务是否允许排队等待</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E8%B5%84%E6%BA%90%E9%87%8A%E6%94%BE%E5%90%8E%EF%BC%8C%E8%B0%81%E5%85%88%E8%A1%A5%E4%BD%8D"><span class="nav-number">3.4.</span> <span class="nav-text">4. 资源释放后，谁先补位</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E6%9B%B4%E6%8E%A8%E8%8D%90%E7%9A%84%E4%B8%80%E5%A5%97%E6%89%A7%E8%A1%8C%E9%AA%A8%E6%9E%B6"><span class="nav-number">4.</span> <span class="nav-text">四、更推荐的一套执行骨架</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%BB%BB%E5%8A%A1%E5%AE%9A%E4%B9%89%E5%B1%82"><span class="nav-number">4.1.</span> <span class="nav-text">1. 任务定义层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%BB%BB%E5%8A%A1%E5%AE%9E%E4%BE%8B%E5%B1%82"><span class="nav-number">4.2.</span> <span class="nav-text">2. 任务实例层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%B0%83%E5%BA%A6%E5%99%A8"><span class="nav-number">4.3.</span> <span class="nav-text">3. 调度器</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%89%A7%E8%A1%8C%E4%BB%A3%E7%90%86"><span class="nav-number">4.4.</span> <span class="nav-text">4. 执行代理</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%94%B6%E5%B0%BE%E4%B8%8E%E5%9B%9E%E6%94%B6%E5%99%A8"><span class="nav-number">4.5.</span> <span class="nav-text">5. 收尾与回收器</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E4%BB%BB%E5%8A%A1%E6%89%A7%E8%A1%8C%E4%B8%8D%E8%A6%81%E7%9B%B4%E6%8E%A5%E7%BB%91%E6%AD%BB%E2%80%9C%E6%89%A7%E8%A1%8C%E5%91%BD%E4%BB%A4%E2%80%9D%EF%BC%8C%E6%9C%80%E5%A5%BD%E6%8A%BD%E6%88%90%E6%A0%87%E5%87%86%E5%8D%8F%E8%AE%AE"><span class="nav-number">5.</span> <span class="nav-text">五、任务执行不要直接绑死“执行命令”，最好抽成标准协议</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E6%9C%80%E5%B0%8F%E5%8F%AF%E6%89%A7%E8%A1%8C%E5%AE%9E%E8%B7%B5%EF%BC%9A%E4%B8%80%E6%9D%A1%E4%BB%BB%E5%8A%A1%E6%80%8E%E4%B9%88%E4%BB%8E%E5%85%A5%E9%98%9F%E8%B7%91%E5%88%B0%E5%9B%9E%E6%94%B6"><span class="nav-number">6.</span> <span class="nav-text">六、最小可执行实践：一条任务怎么从入队跑到回收</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%BB%BA-3-%E5%BC%A0%E6%A0%B8%E5%BF%83%E8%A1%A8"><span class="nav-number">6.1.</span> <span class="nav-text">1. 建 3 张核心表</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%85%88%E6%8A%8A%E6%89%A7%E8%A1%8C%E5%85%A5%E5%8F%A3%E6%94%B6%E6%88%90%E7%BB%9F%E4%B8%80%E6%A0%BC%E5%BC%8F"><span class="nav-number">6.2.</span> <span class="nav-text">2. 先把执行入口收成统一格式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%B0%83%E5%BA%A6%E5%99%A8%E5%9B%BA%E5%AE%9A%E5%91%A8%E6%9C%9F%E6%89%AB%E5%BE%85%E6%89%A7%E8%A1%8C%E5%AE%9E%E4%BE%8B"><span class="nav-number">6.3.</span> <span class="nav-text">3. 调度器固定周期扫待执行实例</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%89%A7%E8%A1%8C%E4%BB%A3%E7%90%86%E5%8F%AA%E5%81%9A%E4%B8%80%E4%BB%B6%E4%BA%8B%EF%BC%9A%E5%8F%AF%E9%9D%A0%E5%9B%9E%E4%BC%A0"><span class="nav-number">6.4.</span> <span class="nav-text">4. 执行代理只做一件事：可靠回传</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%8D%95%E7%8B%AC%E5%81%9A%E4%B8%80%E4%B8%AA%E8%B6%85%E6%97%B6%E4%B8%8E%E5%A4%B1%E8%81%94%E5%9B%9E%E6%94%B6%E4%BB%BB%E5%8A%A1"><span class="nav-number">6.5.</span> <span class="nav-text">5. 单独做一个超时与失联回收任务</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E7%8E%B0%E5%9C%BA%E8%A7%82%E5%AF%9F%E7%82%B9%EF%BC%9A%E4%BB%BB%E5%8A%A1%E8%B7%91%E4%B8%8D%E7%A8%B3%E6%97%B6%E5%85%88%E7%9C%8B%E5%93%AA%E5%87%A0%E4%BB%B6%E4%BA%8B"><span class="nav-number">7.</span> <span class="nav-text">七、现场观察点：任务跑不稳时先看哪几件事</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%BB%BB%E5%8A%A1%E6%9C%89%E6%B2%A1%E6%9C%89%E7%9C%9F%E7%9A%84%E8%BF%9B%E5%85%A5%E6%AD%A3%E7%A1%AE%E7%8A%B6%E6%80%81"><span class="nav-number">7.1.</span> <span class="nav-text">1. 任务有没有真的进入正确状态</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%B5%84%E6%BA%90%E7%A7%9F%E7%BA%A6%E6%9C%89%E6%B2%A1%E6%9C%89%E5%BC%82%E5%B8%B8"><span class="nav-number">7.2.</span> <span class="nav-text">2. 资源租约有没有异常</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%89%A7%E8%A1%8C%E8%8A%82%E7%82%B9%E6%98%AF%E5%90%A6%E7%9C%9F%E7%9A%84%E6%8E%A5%E5%88%B0%E4%BA%86%E4%BB%BB%E5%8A%A1"><span class="nav-number">7.3.</span> <span class="nav-text">3. 执行节点是否真的接到了任务</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%89%A7%E8%A1%8C%E7%8E%B0%E5%9C%BA%E6%98%AF%E5%90%A6%E6%9C%89%E8%AF%81%E6%8D%AE"><span class="nav-number">7.4.</span> <span class="nav-text">4. 执行现场是否有证据</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%9B%9E%E6%94%B6%E5%99%A8%E6%9C%89%E6%B2%A1%E6%9C%89%E6%AD%A3%E5%B8%B8%E5%B7%A5%E4%BD%9C"><span class="nav-number">7.5.</span> <span class="nav-text">5. 回收器有没有正常工作</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E7%9C%9F%E5%AE%9E%E9%A1%B9%E7%9B%AE%E9%87%8C%E6%9C%80%E5%AE%B9%E6%98%93%E8%B8%A9%E7%9A%84-6-%E4%B8%AA%E5%9D%91"><span class="nav-number">8.</span> <span class="nav-text">八、真实项目里最容易踩的 6 个坑</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%8A%8A%E4%BB%BB%E5%8A%A1%E5%AE%9A%E4%B9%89%E5%92%8C%E4%BB%BB%E5%8A%A1%E5%AE%9E%E4%BE%8B%E6%B7%B7%E5%86%99"><span class="nav-number">8.1.</span> <span class="nav-text">1. 把任务定义和任务实例混写</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%B2%A1%E6%9C%89%E8%B5%84%E6%BA%90%E7%A7%9F%E7%BA%A6"><span class="nav-number">8.2.</span> <span class="nav-text">2. 没有资源租约</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%89%A7%E8%A1%8C%E7%8A%B6%E6%80%81%E5%8F%AA%E9%9D%A0%E5%89%8D%E7%AB%AF%E8%BD%AE%E8%AF%A2"><span class="nav-number">8.3.</span> <span class="nav-text">3. 执行状态只靠前端轮询</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%B2%A1%E6%9C%89%E5%BF%83%E8%B7%B3%E6%9C%BA%E5%88%B6"><span class="nav-number">8.4.</span> <span class="nav-text">4. 没有心跳机制</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E8%B6%85%E6%97%B6%E5%90%8E%E5%8F%AA%E6%94%B9%E7%8A%B6%E6%80%81%EF%BC%8C%E4%B8%8D%E6%B8%85%E7%8E%B0%E5%9C%BA"><span class="nav-number">8.5.</span> <span class="nav-text">5. 超时后只改状态，不清现场</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E5%A4%B1%E8%B4%A5%E9%87%8D%E8%AF%95%E6%B2%A1%E6%9C%89%E5%88%86%E5%B1%82"><span class="nav-number">8.6.</span> <span class="nav-text">6. 失败重试没有分层</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E7%9C%9F%E5%AE%9E%E6%A1%88%E4%BE%8B%E5%9E%8B%E6%AE%B5%E8%90%BD%EF%BC%9A%E4%B8%80%E6%AC%A1%E2%80%9C%E5%B9%B3%E5%8F%B0%E8%B6%8A%E6%9D%A5%E8%B6%8A%E5%8D%A1%E2%80%9D%E7%9A%84%E9%97%AE%E9%A2%98%E6%9C%80%E5%90%8E%E5%B9%B6%E4%B8%8D%E6%98%AF%E6%95%B0%E6%8D%AE%E5%BA%93%E6%85%A2"><span class="nav-number">9.</span> <span class="nav-text">九、真实案例型段落：一次“平台越来越卡”的问题最后并不是数据库慢</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9C%BA%E6%99%AF"><span class="nav-number">9.1.</span> <span class="nav-text">场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%89%A7%E8%A1%8C"><span class="nav-number">9.2.</span> <span class="nav-text">执行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8E%B0%E8%B1%A1"><span class="nav-number">9.3.</span> <span class="nav-text">现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%92%E6%9F%A5"><span class="nav-number">9.4.</span> <span class="nav-text">排查</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BF%AE%E5%A4%8D"><span class="nav-number">9.5.</span> <span class="nav-text">修复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E4%BB%BB%E5%8A%A1%E8%B0%83%E5%BA%A6%E4%B8%8E%E6%89%A7%E8%A1%8C%E5%BC%95%E6%93%8E%E7%9A%84%E4%B8%80%E4%B8%AA%E5%88%A4%E6%96%AD%E6%A0%87%E5%87%86"><span class="nav-number">10.</span> <span class="nav-text">十、任务调度与执行引擎的一个判断标准</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2021/08/05/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-05-%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E7%9A%84%E4%BB%BB%E5%8A%A1%E8%B0%83%E5%BA%A6%E4%B8%8E%E6%89%A7%E8%A1%8C%E5%BC%95%E6%93%8E/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="测试平台-05-测试平台的任务调度与执行引擎 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          测试平台-05-测试平台的任务调度与执行引擎
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2021-08-05 20:30:00" itemprop="dateCreated datePublished" datetime="2021-08-05T20:30:00+08:00">2021-08-05</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0/" itemprop="url" rel="index"><span itemprop="name">测试平台</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>3.4k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>13 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>测试平台做到一定阶段后，最容易暴露问题的模块通常不是：</p>
+<ul>
+<li>任务列表页</li>
+<li>报告展示页</li>
+<li>配置页面</li>
+</ul>
+<p>而是平台最底层、但最容易被写轻的一层：</p>
+<p><strong>任务调度与执行引擎。</strong></p>
+<p>早期做平台，往往会把执行链路写成下面这种样子：</p>
+<ul>
+<li>页面点一次执行</li>
+<li>后端收一个请求</li>
+<li>直接起进程或者调脚本</li>
+<li>跑完把结果回写数据库</li>
+</ul>
+<p>刚开始任务量少时，这种做法看起来完全能用。</p>
+<p>但只要平台开始承载真实使用，问题会很快冒出来：</p>
+<ul>
+<li>同一时间多个任务一起跑，资源抢占开始失控</li>
+<li>任务执行到一半挂掉，平台不知道它到底算失败还是还在跑</li>
+<li>执行机断开、进程退出、日志没回传，状态卡在“运行中”</li>
+<li>重试做得太粗，错误任务被重复放大</li>
+<li>同一个环境被多个任务同时占用，结果彼此干扰</li>
+</ul>
+<p>所以测试平台的执行能力，本质上不是“把脚本跑起来”这么简单，而是：</p>
+<p><strong>把一次任务从“申请执行”推进到“可追踪地完成”，并且在异常情况下也能被正确收敛。</strong></p>
+<p>这篇文章就只讲这个问题：</p>
+<p><strong>测试平台的任务调度与执行引擎，到底该怎么设计，才不至于后面越跑越乱。</strong></p>
+<h2 id="一、调度和执行，最好先分成两层看"><a href="#一、调度和执行，最好先分成两层看" class="headerlink" title="一、调度和执行，最好先分成两层看"></a>一、调度和执行，最好先分成两层看</h2><p>很多平台最容易犯的一个错误，就是把调度和执行写成同一个模块。</p>
+<p>例如：</p>
+<ul>
+<li>接口收到了执行请求</li>
+<li>立刻判断资源</li>
+<li>直接起任务</li>
+<li>顺手写状态</li>
+<li>顺手收日志</li>
+</ul>
+<p>看起来链路短，但后面几乎一定会出问题。</p>
+<p>更推荐一开始就把它拆成两层：</p>
+<h3 id="1-调度层"><a href="#1-调度层" class="headerlink" title="1. 调度层"></a>1. 调度层</h3><p>调度层回答的是：</p>
+<ul>
+<li>哪些任务可以进入执行队列</li>
+<li>哪个任务先跑</li>
+<li>当前资源是否允许它跑</li>
+<li>是否需要排队、延迟、限流、重试</li>
+</ul>
+<p>它关心的是“谁先执行、在哪里执行、什么时候执行”。</p>
+<h3 id="2-执行层"><a href="#2-执行层" class="headerlink" title="2. 执行层"></a>2. 执行层</h3><p>执行层回答的是：</p>
+<ul>
+<li>任务在执行机上怎么真正跑起来</li>
+<li>执行日志、产物、状态怎么回传</li>
+<li>失败、超时、中断怎么处理</li>
+</ul>
+<p>它关心的是“任务怎么跑、怎么收尾、怎么留证据”。</p>
+<p>这两层一旦混在一起，后面最容易出现的症状就是：</p>
+<ul>
+<li>状态机混乱</li>
+<li>排队规则写在执行器里</li>
+<li>执行器开始感知页面逻辑</li>
+<li>重试逻辑到处散落</li>
+</ul>
+<h2 id="二、执行链路最先要明确的，不是技术栈，而是状态机"><a href="#二、执行链路最先要明确的，不是技术栈，而是状态机" class="headerlink" title="二、执行链路最先要明确的，不是技术栈，而是状态机"></a>二、执行链路最先要明确的，不是技术栈，而是状态机</h2><p>很多平台讨论执行引擎时，最容易先聊：</p>
+<ul>
+<li>用不用消息队列</li>
+<li>用不用 Redis</li>
+<li>用 goroutine 还是 worker pool</li>
+</ul>
+<p>这些都重要，但不是第一步。</p>
+<p>第一步应该先回答：</p>
+<p><strong>一条任务从创建到结束，中间到底会经历哪些状态。</strong></p>
+<p>如果状态机没想清楚，后面再好的技术选型都只是把混乱放大。</p>
+<p>更常用的一套最小状态流转通常是：</p>
+<ul>
+<li><code>pending</code>：任务已创建，等待调度</li>
+<li><code>queued</code>：任务已进入候选队列，等待资源</li>
+<li><code>dispatching</code>：调度器已选中，准备分发到执行节点</li>
+<li><code>running</code>：执行器已真正开始运行</li>
+<li><code>success</code>：执行成功完成</li>
+<li><code>failed</code>：执行失败完成</li>
+<li><code>timeout</code>：超过最大执行窗口</li>
+<li><code>canceled</code>：被主动取消</li>
+<li><code>lost</code>：平台和执行现场失联，需要人工或守护程序收敛</li>
+</ul>
+<p>这里最容易被漏掉的就是 <code>dispatching</code> 和 <code>lost</code>。</p>
+<p>因为真实平台里经常会出现下面这种中间态：</p>
+<ul>
+<li>平台已经把任务发出去了</li>
+<li>执行节点还没来得及确认</li>
+<li>或者节点短暂失联</li>
+</ul>
+<p>如果没有中间状态，平台就很容易出现“双发”或者“假卡死”。</p>
+<h2 id="三、调度层真正要解决的，不只是排队，而是资源冲突"><a href="#三、调度层真正要解决的，不只是排队，而是资源冲突" class="headerlink" title="三、调度层真正要解决的，不只是排队，而是资源冲突"></a>三、调度层真正要解决的，不只是排队，而是资源冲突</h2><p>调度这件事很容易被理解成：</p>
+<ul>
+<li>先进先出</li>
+<li>优先级高的先跑</li>
+</ul>
+<p>这当然是一部分，但测试平台里的调度难点往往不在“队列算法”本身，而在：</p>
+<p><strong>资源约束非常复杂。</strong></p>
+<p>测试平台里常见的资源不只是机器 CPU 和内存，还包括：</p>
+<ul>
+<li>测试环境名额</li>
+<li>真机设备</li>
+<li>浏览器节点</li>
+<li>共享账号</li>
+<li>测试数据池</li>
+<li>外部依赖配额</li>
+</ul>
+<p>也就是说，一条任务能不能跑，不只是看“有没有空 worker”，还要看：</p>
+<ul>
+<li>它需要的环境现在是否被占用</li>
+<li>它需要的设备是否健康</li>
+<li>同类任务是否超过并发上限</li>
+<li>是否会挤占高优任务的执行窗口</li>
+</ul>
+<p>所以调度层最好至少能回答 4 个问题：</p>
+<h3 id="1-任务需要哪些资源"><a href="#1-任务需要哪些资源" class="headerlink" title="1. 任务需要哪些资源"></a>1. 任务需要哪些资源</h3><p>例如：</p>
+<ul>
+<li>环境：<code>test-a</code></li>
+<li>设备：<code>android-17</code></li>
+<li>执行节点标签：<code>ui-runner</code></li>
+<li>并发槽位：<code>1</code></li>
+</ul>
+<h3 id="2-这些资源当前是否可用"><a href="#2-这些资源当前是否可用" class="headerlink" title="2. 这些资源当前是否可用"></a>2. 这些资源当前是否可用</h3><p>不仅要看有没有，还要看：</p>
+<ul>
+<li>是否健康</li>
+<li>是否被别人租约占用</li>
+<li>是否满足版本或能力要求</li>
+</ul>
+<h3 id="3-任务是否允许排队等待"><a href="#3-任务是否允许排队等待" class="headerlink" title="3. 任务是否允许排队等待"></a>3. 任务是否允许排队等待</h3><p>有些任务适合排队：</p>
+<ul>
+<li>夜间回归</li>
+<li>非紧急冒烟</li>
+</ul>
+<p>有些任务不适合排太久：</p>
+<ul>
+<li>提测验收</li>
+<li>发布前阻塞校验</li>
+</ul>
+<h3 id="4-资源释放后，谁先补位"><a href="#4-资源释放后，谁先补位" class="headerlink" title="4. 资源释放后，谁先补位"></a>4. 资源释放后，谁先补位</h3><p>如果没有明确规则，就很容易出现：</p>
+<ul>
+<li>低优先级任务长期占满资源</li>
+<li>高优任务永远插不进来</li>
+</ul>
+<h2 id="四、更推荐的一套执行骨架"><a href="#四、更推荐的一套执行骨架" class="headerlink" title="四、更推荐的一套执行骨架"></a>四、更推荐的一套执行骨架</h2><p>如果现在从 0 到 1 做一版测试平台执行链路，更推荐先把骨架收成下面几层。</p>
+<h3 id="1-任务定义层"><a href="#1-任务定义层" class="headerlink" title="1. 任务定义层"></a>1. 任务定义层</h3><p>负责存：</p>
+<ul>
+<li>任务类型</li>
+<li>执行入口</li>
+<li>默认参数</li>
+<li>资源需求模板</li>
+<li>超时阈值</li>
+</ul>
+<p>这里不存运行态。</p>
+<h3 id="2-任务实例层"><a href="#2-任务实例层" class="headerlink" title="2. 任务实例层"></a>2. 任务实例层</h3><p>每次执行都生成一条独立实例，负责存：</p>
+<ul>
+<li>触发来源</li>
+<li>实际参数</li>
+<li>当前状态</li>
+<li>分配到的资源</li>
+<li>开始结束时间</li>
+</ul>
+<p>这是平台后面做追踪、回放、审计的基础。</p>
+<h3 id="3-调度器"><a href="#3-调度器" class="headerlink" title="3. 调度器"></a>3. 调度器</h3><p>负责：</p>
+<ul>
+<li>从 <code>pending/queued</code> 任务里挑候选</li>
+<li>根据优先级、资源、限流规则排序</li>
+<li>为任务申请租约</li>
+<li>把任务分配给合适的执行节点</li>
+</ul>
+<h3 id="4-执行代理"><a href="#4-执行代理" class="headerlink" title="4. 执行代理"></a>4. 执行代理</h3><p>部署在执行节点上，负责：</p>
+<ul>
+<li>拉取任务</li>
+<li>准备运行目录</li>
+<li>拉起脚本、容器或命令</li>
+<li>持续回传心跳、日志和状态</li>
+</ul>
+<h3 id="5-收尾与回收器"><a href="#5-收尾与回收器" class="headerlink" title="5. 收尾与回收器"></a>5. 收尾与回收器</h3><p>负责：</p>
+<ul>
+<li>超时任务终止</li>
+<li>僵尸任务清理</li>
+<li>租约释放</li>
+<li>日志补采</li>
+<li>产物归档</li>
+</ul>
+<p>这块如果没有单独设计，后面“卡运行中”几乎一定会成为平台顽疾。</p>
+<h2 id="五、任务执行不要直接绑死“执行命令”，最好抽成标准协议"><a href="#五、任务执行不要直接绑死“执行命令”，最好抽成标准协议" class="headerlink" title="五、任务执行不要直接绑死“执行命令”，最好抽成标准协议"></a>五、任务执行不要直接绑死“执行命令”，最好抽成标准协议</h2><p>很多平台第一版执行器最常见的写法是：</p>
+<ul>
+<li>后端拼一个 shell 命令</li>
+<li>远端机器执行</li>
+<li>拿 exit code 当最终结果</li>
+</ul>
+<p>这种做法能启动很快，但上限很低。</p>
+<p>因为测试平台真正要关心的，不只是命令返回值，还包括：</p>
+<ul>
+<li>执行开始没</li>
+<li>中间跑到哪一步</li>
+<li>日志是否完整</li>
+<li>中途是否重试过</li>
+<li>产物在哪</li>
+<li>为什么失败</li>
+</ul>
+<p>所以更推荐把“执行任务”抽成一套标准协议，至少包含：</p>
+<ul>
+<li><code>prepare</code></li>
+<li><code>start</code></li>
+<li><code>heartbeat</code></li>
+<li><code>append_log</code></li>
+<li><code>report_artifact</code></li>
+<li><code>finish</code></li>
+</ul>
+<p>这样平台和执行器之间就不会只靠“一条命令是否退出成功”来沟通。</p>
+<h2 id="六、最小可执行实践：一条任务怎么从入队跑到回收"><a href="#六、最小可执行实践：一条任务怎么从入队跑到回收" class="headerlink" title="六、最小可执行实践：一条任务怎么从入队跑到回收"></a>六、最小可执行实践：一条任务怎么从入队跑到回收</h2><p>如果要把这件事做成可以直接落地的第一版，更推荐下面这个顺序。</p>
+<h3 id="1-建-3-张核心表"><a href="#1-建-3-张核心表" class="headerlink" title="1. 建 3 张核心表"></a>1. 建 3 张核心表</h3><ul>
+<li><code>task_definition</code></li>
+<li><code>task_execution</code></li>
+<li><code>resource_lease</code></li>
+</ul>
+<p>其中：</p>
+<ul>
+<li><code>task_definition</code> 只存静态定义</li>
+<li><code>task_execution</code> 存一次次运行实例</li>
+<li><code>resource_lease</code> 存环境、设备、账号等资源占用</li>
+</ul>
+<h3 id="2-先把执行入口收成统一格式"><a href="#2-先把执行入口收成统一格式" class="headerlink" title="2. 先把执行入口收成统一格式"></a>2. 先把执行入口收成统一格式</h3><p>例如任务定义里至少明确：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;task_type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;api_regression&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;entrypoint&quot;</span><span class="punctuation">:</span> <span class="string">&quot;pytest -m smoke&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;timeout_seconds&quot;</span><span class="punctuation">:</span> <span class="number">1800</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;resource_requirements&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;runner_tag&quot;</span><span class="punctuation">:</span> <span class="string">&quot;api&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;env&quot;</span><span class="punctuation">:</span> <span class="string">&quot;test-a&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;device&quot;</span><span class="punctuation">:</span> <span class="string">&quot;&quot;</span></span><br><span class="line">  <span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>这一步的价值不在字段本身，而在于后面调度器终于知道一条任务要消耗什么。</p>
+<h3 id="3-调度器固定周期扫待执行实例"><a href="#3-调度器固定周期扫待执行实例" class="headerlink" title="3. 调度器固定周期扫待执行实例"></a>3. 调度器固定周期扫待执行实例</h3><p>第一版完全没必要上来就做得很复杂。</p>
+<p>可以先每 <code>3-5</code> 秒扫一次：</p>
+<ul>
+<li>找出 <code>pending/queued</code> 任务</li>
+<li>判断资源是否可满足</li>
+<li>给可执行任务分配租约</li>
+<li>把状态切到 <code>dispatching</code></li>
+</ul>
+<h3 id="4-执行代理只做一件事：可靠回传"><a href="#4-执行代理只做一件事：可靠回传" class="headerlink" title="4. 执行代理只做一件事：可靠回传"></a>4. 执行代理只做一件事：可靠回传</h3><p>执行器不要一开始塞太多业务逻辑。</p>
+<p>第一版把这几件事做好就够：</p>
+<ul>
+<li>拉取任务</li>
+<li>起执行进程</li>
+<li>每 <code>5-10</code> 秒发一次心跳</li>
+<li>流式回传日志</li>
+<li>结束时上传产物和退出状态</li>
+</ul>
+<h3 id="5-单独做一个超时与失联回收任务"><a href="#5-单独做一个超时与失联回收任务" class="headerlink" title="5. 单独做一个超时与失联回收任务"></a>5. 单独做一个超时与失联回收任务</h3><p>这一步会拖到后面做，但其实应该尽早做。</p>
+<p>它至少要能处理：</p>
+<ul>
+<li>超过执行阈值</li>
+<li>长时间没有心跳</li>
+<li>节点已经下线</li>
+<li>资源租约未释放</li>
+</ul>
+<h2 id="七、现场观察点：任务跑不稳时先看哪几件事"><a href="#七、现场观察点：任务跑不稳时先看哪几件事" class="headerlink" title="七、现场观察点：任务跑不稳时先看哪几件事"></a>七、现场观察点：任务跑不稳时先看哪几件事</h2><p>当平台执行链路开始出问题时，排查起点通常不该先盯页面，而是先看下面这张排查顺序。</p>
+<h3 id="1-任务有没有真的进入正确状态"><a href="#1-任务有没有真的进入正确状态" class="headerlink" title="1. 任务有没有真的进入正确状态"></a>1. 任务有没有真的进入正确状态</h3><p>先确认：</p>
+<ul>
+<li>是停在 <code>pending</code></li>
+<li>还是停在 <code>queued</code></li>
+<li>还是卡在 <code>dispatching</code></li>
+<li>还是 <code>running</code> 但没有心跳</li>
+</ul>
+<p>不同状态，问题根因通常完全不同。</p>
+<h3 id="2-资源租约有没有异常"><a href="#2-资源租约有没有异常" class="headerlink" title="2. 资源租约有没有异常"></a>2. 资源租约有没有异常</h3><p>例如：</p>
+<ul>
+<li>任务已经结束，但资源没释放</li>
+<li>任务没开始，却先抢占了资源</li>
+<li>一个资源被多任务同时占用</li>
+</ul>
+<h3 id="3-执行节点是否真的接到了任务"><a href="#3-执行节点是否真的接到了任务" class="headerlink" title="3. 执行节点是否真的接到了任务"></a>3. 执行节点是否真的接到了任务</h3><p>这里要看：</p>
+<ul>
+<li>节点在线状态</li>
+<li>最近心跳</li>
+<li>最近拉取记录</li>
+<li>任务下发日志</li>
+</ul>
+<h3 id="4-执行现场是否有证据"><a href="#4-执行现场是否有证据" class="headerlink" title="4. 执行现场是否有证据"></a>4. 执行现场是否有证据</h3><p>例如：</p>
+<ul>
+<li>运行目录是否生成</li>
+<li>标准输出是否有内容</li>
+<li>日志是否持续回传</li>
+<li>截图、报告、产物是否落盘</li>
+</ul>
+<h3 id="5-回收器有没有正常工作"><a href="#5-回收器有没有正常工作" class="headerlink" title="5. 回收器有没有正常工作"></a>5. 回收器有没有正常工作</h3><p>很多平台不是不会执行，而是执行完以后收不干净，导致：</p>
+<ul>
+<li>页面一直显示运行中</li>
+<li>下次执行拿不到资源</li>
+<li>报告和状态脱节</li>
+</ul>
+<h2 id="八、真实项目里最容易踩的-6-个坑"><a href="#八、真实项目里最容易踩的-6-个坑" class="headerlink" title="八、真实项目里最容易踩的 6 个坑"></a>八、真实项目里最容易踩的 6 个坑</h2><h3 id="1-把任务定义和任务实例混写"><a href="#1-把任务定义和任务实例混写" class="headerlink" title="1. 把任务定义和任务实例混写"></a>1. 把任务定义和任务实例混写</h3><p>后果通常是一次执行把“默认配置”给污染了。</p>
+<h3 id="2-没有资源租约"><a href="#2-没有资源租约" class="headerlink" title="2. 没有资源租约"></a>2. 没有资源租约</h3><p>结果就是同一环境、同一设备被并发任务互相踩。</p>
+<h3 id="3-执行状态只靠前端轮询"><a href="#3-执行状态只靠前端轮询" class="headerlink" title="3. 执行状态只靠前端轮询"></a>3. 执行状态只靠前端轮询</h3><p>一旦后端没有标准状态机，前端轮询只会把混乱更快暴露出来。</p>
+<h3 id="4-没有心跳机制"><a href="#4-没有心跳机制" class="headerlink" title="4. 没有心跳机制"></a>4. 没有心跳机制</h3><p>任务死了，平台却还以为它活着。</p>
+<h3 id="5-超时后只改状态，不清现场"><a href="#5-超时后只改状态，不清现场" class="headerlink" title="5. 超时后只改状态，不清现场"></a>5. 超时后只改状态，不清现场</h3><p>这种最危险，因为表面上超时结束了，实际上进程和资源还在占着。</p>
+<h3 id="6-失败重试没有分层"><a href="#6-失败重试没有分层" class="headerlink" title="6. 失败重试没有分层"></a>6. 失败重试没有分层</h3><p>有些失败该直接重试：</p>
+<ul>
+<li>节点短时失联</li>
+<li>网络抖动</li>
+</ul>
+<p>有些失败根本不该自动重试：</p>
+<ul>
+<li>用例断言失败</li>
+<li>环境数据脏</li>
+<li>账号权限错误</li>
+</ul>
+<h2 id="九、真实案例型段落：一次“平台越来越卡”的问题最后并不是数据库慢"><a href="#九、真实案例型段落：一次“平台越来越卡”的问题最后并不是数据库慢" class="headerlink" title="九、真实案例型段落：一次“平台越来越卡”的问题最后并不是数据库慢"></a>九、真实案例型段落：一次“平台越来越卡”的问题最后并不是数据库慢</h2><h3 id="场景"><a href="#场景" class="headerlink" title="场景"></a>场景</h3><p>某次平台接入夜间回归后，团队开始频繁反馈：</p>
+<ul>
+<li>任务提交后长时间不开始</li>
+<li>页面上很多任务一直显示运行中</li>
+<li>新任务经常提示资源不足</li>
+</ul>
+<p>最开始最直观的想法是：</p>
+<ul>
+<li>数据库慢了</li>
+<li>队列表太大了</li>
+</ul>
+<h3 id="执行"><a href="#执行" class="headerlink" title="执行"></a>执行</h3><p>现场先做了 4 组检查：</p>
+<ul>
+<li>看待执行任务分布在哪些状态</li>
+<li>查资源租约表里有没有长时间未释放的记录</li>
+<li>查执行节点最近心跳和任务拉取日志</li>
+<li>抽 5 条“运行中”任务看现场目录和进程</li>
+</ul>
+<h3 id="现象"><a href="#现象" class="headerlink" title="现象"></a>现象</h3><p>很快发现两个异常：</p>
+<ul>
+<li>大量任务卡在 <code>running</code>，但最近心跳已经断了很久</li>
+<li>多个测试环境长期被占用，租约没有回收</li>
+</ul>
+<p>进一步看执行机，发现有一批历史进程已经退出了，但平台里对应任务还没结束。</p>
+<h3 id="排查"><a href="#排查" class="headerlink" title="排查"></a>排查</h3><p>继续顺着状态链路排，最后确认：</p>
+<ul>
+<li>执行代理在任务退出时会上报 <code>finish</code></li>
+<li>但如果节点短时重连，部分 <code>finish</code> 回传会丢</li>
+<li>平台又没有独立的失联回收器</li>
+<li>所以任务会永久停在 <code>running</code></li>
+<li>租约也因为只在 <code>finish</code> 时释放，跟着一起泄漏</li>
+</ul>
+<p>这时候平台表面看起来像“越来越卡”，但根因并不是数据库吞吐，而是：</p>
+<p><strong>执行链路缺了一段异常收敛能力。</strong></p>
+<h3 id="修复"><a href="#修复" class="headerlink" title="修复"></a>修复</h3><p>最后做了 4 个动作：</p>
+<ul>
+<li>增加“心跳超时自动转 <code>lost</code>”规则</li>
+<li>为 <code>lost/timeout</code> 任务补统一回收器</li>
+<li>租约释放从“只在 finish 时释放”改成“回收器兜底释放”</li>
+<li>页面把“运行中但无心跳”单独标红，避免假稳定</li>
+</ul>
+<p>修完之后，平台平均排队时间明显下降，最关键的是“卡死任务”不再持续累积。</p>
+<h2 id="十、任务调度与执行引擎的一个判断标准"><a href="#十、任务调度与执行引擎的一个判断标准" class="headerlink" title="十、任务调度与执行引擎的一个判断标准"></a>十、任务调度与执行引擎的一个判断标准</h2><p>判断一个测试平台的执行链路是否成熟，通常不会先看：</p>
+<ul>
+<li>页面做得是否完整</li>
+<li>支持多少任务类型</li>
+</ul>
+<p>更看下面几件事：</p>
+<ul>
+<li>任务状态是否可解释</li>
+<li>资源冲突是否可控</li>
+<li>执行失败是否可收敛</li>
+<li>证据链是否完整</li>
+<li>异常情况下平台是否还能把现场收干净</li>
+</ul>
+<p>如果这些做不到，平台看起来再丰富，本质上也只是：</p>
+<p><strong>一个把脚本集中放到页面上的壳。</strong></p>
+<p>真正的测试平台，不只是“能点执行”，而是：</p>
+<p><strong>能让任务可靠地被安排、执行、观察、回收，并在异常时仍然保持秩序。</strong></p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0/" rel="tag"># 测试平台</a>
+              <a href="/tags/%E5%B7%A5%E7%A8%8B%E5%8C%96/" rel="tag"># 工程化</a>
+              <a href="/tags/%E4%BB%BB%E5%8A%A1%E8%B0%83%E5%BA%A6/" rel="tag"># 任务调度</a>
+              <a href="/tags/%E5%AE%9E%E6%88%98/" rel="tag"># 实战</a>
+              <a href="/tags/%E6%9E%B6%E6%9E%84%E8%AE%BE%E8%AE%A1/" rel="tag"># 架构设计</a>
+              <a href="/tags/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E5%BC%80%E5%8F%91/" rel="tag"># 测试平台开发</a>
+              <a href="/tags/%E6%89%A7%E8%A1%8C%E5%BC%95%E6%93%8E/" rel="tag"># 执行引擎</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2021/07/29/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-04-%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E7%9A%84%E6%9D%83%E9%99%90%E6%A8%A1%E5%9E%8B%E8%AE%BE%E8%AE%A1/" rel="prev" title="测试平台-04-测试平台的权限模型设计">
+                  <i class="fa fa-angle-left"></i> 测试平台-04-测试平台的权限模型设计
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2021/08/12/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-06-%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E7%9A%84%E7%8E%AF%E5%A2%83%E7%AE%A1%E7%90%86%E8%AE%BE%E8%AE%A1/" rel="next" title="测试平台-06-测试平台的环境管理设计">
+                  测试平台-06-测试平台的环境管理设计 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="第一次做 FreeSWITCH 性能测试时，目标都写得很直接：  看能扛多少并发 看 CPS 能打多高 看电话能不能大量打通  这些目标当然都对，但如果测试设计只停留在这一层，最后很容易得到一堆不太能用的结果：  屏幕上数字很多，但不知道自己到底在测什么 呼叫失败了，但不知道是账号、路由、媒体还是下游服务先出问题 FreeSWITCH 指标看起来不算差，但全链路就是不稳定 明明是脚本或配置问题，最">
+<meta property="og:type" content="article">
+<meta property="og:title" content="SIP测试-03-FreeSWITCH性能测试怎么做">
+<meta property="og:url" content="https://paynewinnt.github.io/2020/06/11/SIP%E6%B5%8B%E8%AF%95-03-FreeSWITCH%E6%80%A7%E8%83%BD%E6%B5%8B%E8%AF%95%E6%80%8E%E4%B9%88%E5%81%9A/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="第一次做 FreeSWITCH 性能测试时，目标都写得很直接：  看能扛多少并发 看 CPS 能打多高 看电话能不能大量打通  这些目标当然都对，但如果测试设计只停留在这一层，最后很容易得到一堆不太能用的结果：  屏幕上数字很多，但不知道自己到底在测什么 呼叫失败了，但不知道是账号、路由、媒体还是下游服务先出问题 FreeSWITCH 指标看起来不算差，但全链路就是不稳定 明明是脚本或配置问题，最">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2020-06-11T12:30:00.000Z">
+<meta property="article:modified_time" content="2020-06-11T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="排障">
+<meta property="article:tag" content="SIP">
+<meta property="article:tag" content="SIPp">
+<meta property="article:tag" content="FreeSWITCH">
+<meta property="article:tag" content="语音测试">
+<meta property="article:tag" content="实战">
+<meta property="article:tag" content="信令与压测">
+<meta property="article:tag" content="全链路压测">
+<meta property="article:tag" content="性能测试">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2020/06/11/SIP%E6%B5%8B%E8%AF%95-03-FreeSWITCH%E6%80%A7%E8%83%BD%E6%B5%8B%E8%AF%95%E6%80%8E%E4%B9%88%E5%81%9A/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2020/06/11/SIP%E6%B5%8B%E8%AF%95-03-FreeSWITCH%E6%80%A7%E8%83%BD%E6%B5%8B%E8%AF%95%E6%80%8E%E4%B9%88%E5%81%9A/","path":"2020/06/11/SIP测试-03-FreeSWITCH性能测试怎么做/","title":"SIP测试-03-FreeSWITCH性能测试怎么做"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>SIP测试-03-FreeSWITCH性能测试怎么做 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E5%81%9A-FreeSWITCH-%E6%80%A7%E8%83%BD%E6%B5%8B%E8%AF%95%E4%B9%8B%E5%89%8D%EF%BC%8C%E5%85%88%E6%8A%8A%E8%A2%AB%E6%B5%8B%E5%AF%B9%E8%B1%A1%E8%AF%B4%E6%B8%85%E6%A5%9A"><span class="nav-number">1.</span> <span class="nav-text">一、做 FreeSWITCH 性能测试之前，先把被测对象说清楚</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%B3%A8%E5%86%8C%E8%83%BD%E5%8A%9B"><span class="nav-number">1.1.</span> <span class="nav-text">1. 注册能力</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%91%BC%E5%8F%AB%E5%BB%BA%E7%AB%8B%E8%83%BD%E5%8A%9B"><span class="nav-number">1.2.</span> <span class="nav-text">2. 呼叫建立能力</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E9%80%9A%E8%AF%9D%E4%BF%9D%E6%8C%81%E4%B8%8E%E6%8C%82%E6%96%AD%E8%83%BD%E5%8A%9B"><span class="nav-number">1.3.</span> <span class="nav-text">3. 通话保持与挂断能力</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%BF%A1%E4%BB%A4-%E5%AA%92%E4%BD%93%E8%83%BD%E5%8A%9B"><span class="nav-number">1.4.</span> <span class="nav-text">4. 信令 + 媒体能力</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E4%BD%9C%E4%B8%BA%E5%85%A8%E9%93%BE%E8%B7%AF%E8%8A%82%E7%82%B9%E7%9A%84%E6%89%BF%E5%8E%8B%E8%83%BD%E5%8A%9B"><span class="nav-number">1.5.</span> <span class="nav-text">5. 作为全链路节点的承压能力</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E4%B8%8D%E5%BB%BA%E8%AE%AE%E4%B8%80%E4%B8%8A%E6%9D%A5%E5%B0%B1%E5%81%9A%E2%80%9C%E6%95%B4%E5%A5%97%E5%A4%A7%E5%8E%8B%E2%80%9D%EF%BC%8C%E8%80%8C%E6%98%AF%E5%85%88%E6%8B%86-4-%E4%B8%AA%E9%98%B6%E6%AE%B5"><span class="nav-number">2.</span> <span class="nav-text">二、不建议一上来就做“整套大压”，而是先拆 4 个阶段</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5-1%EF%BC%9A%E6%B3%A8%E5%86%8C%E6%91%B8%E5%BA%95"><span class="nav-number">2.1.</span> <span class="nav-text">阶段 1：注册摸底</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5-2%EF%BC%9A%E7%BA%AF%E4%BF%A1%E4%BB%A4%E5%91%BC%E5%8F%AB%E6%91%B8%E5%BA%95"><span class="nav-number">2.2.</span> <span class="nav-text">阶段 2：纯信令呼叫摸底</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5-3%EF%BC%9A%E5%8A%A0%E5%85%A5%E5%AA%92%E4%BD%93"><span class="nav-number">2.3.</span> <span class="nav-text">阶段 3：加入媒体</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5-4%EF%BC%9A%E5%8A%A0%E5%85%A5%E5%A4%96%E9%83%A8%E6%9C%8D%E5%8A%A1%E6%88%96%E5%85%A8%E9%93%BE%E8%B7%AF"><span class="nav-number">2.4.</span> <span class="nav-text">阶段 4：加入外部服务或全链路</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E5%81%9A-FreeSWITCH-%E6%80%A7%E8%83%BD%E6%B5%8B%E8%AF%95%E6%97%B6%EF%BC%8C%E6%AF%94%E6%80%BB%E6%95%B0%E5%AD%97%E6%9B%B4%E9%87%8D%E8%A6%81%E7%9A%84%E6%98%AF%E5%87%A0%E4%B8%AA%E6%8B%90%E7%82%B9"><span class="nav-number">3.</span> <span class="nav-text">三、做 FreeSWITCH 性能测试时，比总数字更重要的是几个拐点</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E6%9B%B4%E5%B8%B8%E7%94%A8%E7%9A%84%E4%B8%80%E5%A5%97%E8%A7%82%E6%B5%8B%E7%82%B9"><span class="nav-number">4.</span> <span class="nav-text">四、更常用的一套观测点</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-SIPp-%E6%89%A7%E8%A1%8C%E9%9D%A2"><span class="nav-number">4.1.</span> <span class="nav-text">1. SIPp 执行面</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-FreeSWITCH-%E8%BF%9B%E7%A8%8B%E5%92%8C%E4%BC%9A%E8%AF%9D%E9%9D%A2"><span class="nav-number">4.2.</span> <span class="nav-text">2. FreeSWITCH 进程和会话面</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%B3%BB%E7%BB%9F%E8%B5%84%E6%BA%90%E9%9D%A2"><span class="nav-number">4.3.</span> <span class="nav-text">3. 系统资源面</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%B8%8B%E6%B8%B8%E4%BE%9D%E8%B5%96%E9%9D%A2"><span class="nav-number">4.4.</span> <span class="nav-text">4. 下游依赖面</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E6%9B%B4%E9%80%82%E5%90%88%E7%9A%84%E4%B8%80%E5%A5%97%E6%9C%80%E5%B0%8F%E6%89%A7%E8%A1%8C%E9%AA%A8%E6%9E%B6"><span class="nav-number">5.</span> <span class="nav-text">五、更适合的一套最小执行骨架</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E6%AD%A3%E5%BC%8F%E5%8E%8B%E6%B5%8B%E5%89%8D%EF%BC%8C%E5%85%88%E8%BF%87%E4%B8%80%E9%81%8D%E7%8E%AF%E5%A2%83%E6%A3%80%E6%9F%A5%E8%A1%A8"><span class="nav-number">6.</span> <span class="nav-text">六、正式压测前，先过一遍环境检查表</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E7%9C%9F%E5%AE%9E%E6%A1%88%E4%BE%8B%E5%9E%8B%E6%AE%B5%E8%90%BD%EF%BC%9A%E4%B8%80%E6%AC%A1%E2%80%9C%E7%8E%B0%E5%9C%BA%E9%83%BD%E5%88%A4%E6%96%AD%E6%98%AF-FreeSWITCH-%E6%89%9B%E4%B8%8D%E4%BD%8F%EF%BC%8C%E7%BB%93%E6%9E%9C%E4%B8%BB%E5%9B%A0%E5%8D%B4%E4%B8%8D%E6%98%AF%E5%AE%83%E2%80%9D%E7%9A%84%E6%8E%92%E6%9F%A5"><span class="nav-number">7.</span> <span class="nav-text">七、真实案例型段落：一次“现场都判断是 FreeSWITCH 扛不住，结果主因却不是它”的排查</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9C%BA%E6%99%AF"><span class="nav-number">7.1.</span> <span class="nav-text">场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%89%A7%E8%A1%8C"><span class="nav-number">7.2.</span> <span class="nav-text">执行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8E%B0%E8%B1%A1"><span class="nav-number">7.3.</span> <span class="nav-text">现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%92%E6%9F%A5"><span class="nav-number">7.4.</span> <span class="nav-text">排查</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BF%AE%E5%A4%8D"><span class="nav-number">7.5.</span> <span class="nav-text">修复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E6%9B%B4%E5%B8%B8%E7%94%A8%E7%9A%84%E4%B8%80%E5%A5%97%E6%8E%92%E6%9F%A5%E9%A1%BA%E5%BA%8F"><span class="nav-number">8.</span> <span class="nav-text">八、更常用的一套排查顺序</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E5%81%9A%E5%AE%8C-FreeSWITCH-%E6%80%A7%E8%83%BD%E6%B5%8B%E8%AF%95%E5%90%8E%EF%BC%8C%E6%9B%B4%E5%B8%8C%E6%9C%9B%E8%BE%93%E5%87%BA%E4%BB%80%E4%B9%88%E7%BB%93%E8%AE%BA"><span class="nav-number">9.</span> <span class="nav-text">九、做完 FreeSWITCH 性能测试后，更希望输出什么结论</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%BB%93%E8%AF%AD"><span class="nav-number">10.</span> <span class="nav-text">结语</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2020/06/11/SIP%E6%B5%8B%E8%AF%95-03-FreeSWITCH%E6%80%A7%E8%83%BD%E6%B5%8B%E8%AF%95%E6%80%8E%E4%B9%88%E5%81%9A/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="SIP测试-03-FreeSWITCH性能测试怎么做 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          SIP测试-03-FreeSWITCH性能测试怎么做
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2020-06-11 20:30:00" itemprop="dateCreated datePublished" datetime="2020-06-11T20:30:00+08:00">2020-06-11</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/SIP%E6%B5%8B%E8%AF%95/" itemprop="url" rel="index"><span itemprop="name">SIP测试</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>2.9k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>10 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>第一次做 <code>FreeSWITCH</code> 性能测试时，目标都写得很直接：</p>
+<ul>
+<li>看能扛多少并发</li>
+<li>看 CPS 能打多高</li>
+<li>看电话能不能大量打通</li>
+</ul>
+<p>这些目标当然都对，但如果测试设计只停留在这一层，最后很容易得到一堆不太能用的结果：</p>
+<ul>
+<li>屏幕上数字很多，但不知道自己到底在测什么</li>
+<li>呼叫失败了，但不知道是账号、路由、媒体还是下游服务先出问题</li>
+<li>FreeSWITCH 指标看起来不算差，但全链路就是不稳定</li>
+<li>明明是脚本或配置问题，最后却被写成 FreeSWITCH 性能瓶颈</li>
+</ul>
+<p>所以更准确地说的 <code>FreeSWITCH</code> 性能测试，重点不是“把电话打起来”，而是把下面这几件事讲清楚：</p>
+<ul>
+<li>这次到底是在测哪一层能力</li>
+<li>FreeSWITCH 在整条语音链路里承担了什么角色</li>
+<li>哪个指标最先说明它开始退化</li>
+<li>当前问题是不是它的主责任，而不是别的层带出来的伴生现象</li>
+</ul>
+<h2 id="一、做-FreeSWITCH-性能测试之前，先把被测对象说清楚"><a href="#一、做-FreeSWITCH-性能测试之前，先把被测对象说清楚" class="headerlink" title="一、做 FreeSWITCH 性能测试之前，先把被测对象说清楚"></a>一、做 FreeSWITCH 性能测试之前，先把被测对象说清楚</h2><p>很多语音压测失败，不是因为工具不行，而是因为测试对象一开始就没定义清楚。</p>
+<p>如果测试对象是 FreeSWITCH，通常可以先拆成下面几类：</p>
+<h3 id="1-注册能力"><a href="#1-注册能力" class="headerlink" title="1. 注册能力"></a>1. 注册能力</h3><p>测试的是：</p>
+<ul>
+<li>大量账号注册时认证和注册状态是否稳定</li>
+<li>注册速率上来以后，sofia profile 是否先出异常</li>
+</ul>
+<h3 id="2-呼叫建立能力"><a href="#2-呼叫建立能力" class="headerlink" title="2. 呼叫建立能力"></a>2. 呼叫建立能力</h3><p>测试的是：</p>
+<ul>
+<li><code>INVITE -&gt; 180/183 -&gt; 200 -&gt; ACK</code> 是否稳定</li>
+<li>拨号计划、路由和桥接能力是否能承受目标流量</li>
+</ul>
+<h3 id="3-通话保持与挂断能力"><a href="#3-通话保持与挂断能力" class="headerlink" title="3. 通话保持与挂断能力"></a>3. 通话保持与挂断能力</h3><p>测试的是：</p>
+<ul>
+<li>已建立通话在持续一段时间后是否仍然稳定</li>
+<li><code>BYE</code> 和结束清理是否正常</li>
+</ul>
+<h3 id="4-信令-媒体能力"><a href="#4-信令-媒体能力" class="headerlink" title="4. 信令 + 媒体能力"></a>4. 信令 + 媒体能力</h3><p>测试的是：</p>
+<ul>
+<li>FreeSWITCH 不只是能接通，还能不能稳定桥接媒体</li>
+<li>RTP、编解码、媒体时长是否会把资源进一步拉高</li>
+</ul>
+<h3 id="5-作为全链路节点的承压能力"><a href="#5-作为全链路节点的承压能力" class="headerlink" title="5. 作为全链路节点的承压能力"></a>5. 作为全链路节点的承压能力</h3><p>测试的是：</p>
+<ul>
+<li>它在接入外部网关、机器人服务、识别服务时，是否会成为最先拖垮整条链路的点</li>
+</ul>
+<p>这一步非常关键。<br>因为如果你自己都没说清楚“这次到底测 FreeSWITCH 的哪一层能力”，后面的结果几乎一定会混。</p>
+<h2 id="二、不建议一上来就做“整套大压”，而是先拆-4-个阶段"><a href="#二、不建议一上来就做“整套大压”，而是先拆-4-个阶段" class="headerlink" title="二、不建议一上来就做“整套大压”，而是先拆 4 个阶段"></a>二、不建议一上来就做“整套大压”，而是先拆 4 个阶段</h2><p>如果要设计一轮 FreeSWITCH 性能测试，通常会按下面顺序推进。</p>
+<h3 id="阶段-1：注册摸底"><a href="#阶段-1：注册摸底" class="headerlink" title="阶段 1：注册摸底"></a>阶段 1：注册摸底</h3><p>先回答：</p>
+<ul>
+<li>注册脚本能不能稳定跑</li>
+<li><code>401/407</code> 是否符合预期</li>
+<li>账号池和密码是否都正确</li>
+</ul>
+<h3 id="阶段-2：纯信令呼叫摸底"><a href="#阶段-2：纯信令呼叫摸底" class="headerlink" title="阶段 2：纯信令呼叫摸底"></a>阶段 2：纯信令呼叫摸底</h3><p>先回答：</p>
+<ul>
+<li>路由和拨号计划是否正确</li>
+<li>主叫、被叫、桥接逻辑是否走通</li>
+<li>高并发下失败码从哪一类开始抬头</li>
+</ul>
+<h3 id="阶段-3：加入媒体"><a href="#阶段-3：加入媒体" class="headerlink" title="阶段 3：加入媒体"></a>阶段 3：加入媒体</h3><p>再回答：</p>
+<ul>
+<li>FreeSWITCH 桥接媒体时资源变化如何</li>
+<li>是信令先退化，还是媒体上来后才开始退化</li>
+</ul>
+<h3 id="阶段-4：加入外部服务或全链路"><a href="#阶段-4：加入外部服务或全链路" class="headerlink" title="阶段 4：加入外部服务或全链路"></a>阶段 4：加入外部服务或全链路</h3><p>最后才回答：</p>
+<ul>
+<li>整条电话系统承压时，FreeSWITCH 还是不是主瓶颈</li>
+<li>它是问题源头，还是被下游拖慢的中间层</li>
+</ul>
+<p>这个顺序的价值在于：</p>
+<ul>
+<li>每一层都能做独立结论</li>
+<li>问题出现时更容易缩小范围</li>
+<li>不会把“FreeSWITCH 问题”和“整条语音链路问题”混为一谈</li>
+</ul>
+<h2 id="三、做-FreeSWITCH-性能测试时，比总数字更重要的是几个拐点"><a href="#三、做-FreeSWITCH-性能测试时，比总数字更重要的是几个拐点" class="headerlink" title="三、做 FreeSWITCH 性能测试时，比总数字更重要的是几个拐点"></a>三、做 FreeSWITCH 性能测试时，比总数字更重要的是几个拐点</h2><p>最常见的问题是：</p>
+<ul>
+<li>FreeSWITCH 能扛多少 CPS</li>
+<li>最大并发通话是多少</li>
+</ul>
+<p>这些数字当然重要，但真正有价值的结论通常不是一个单点值，而是几个拐点。</p>
+<p>例如：</p>
+<ul>
+<li>在什么 CPS 之前注册和呼叫都处于健康区</li>
+<li>从什么点开始 <code>480/486/500/503</code> 明显增加</li>
+<li>从什么点开始通话建立成功率下降</li>
+<li>从什么点开始媒体接通率或挂断稳定性变差</li>
+</ul>
+<p>所以更愿意把结论写成：</p>
+<ul>
+<li><code>30 CPS</code> 以内稳定</li>
+<li><code>50 CPS</code> 开始出现少量失败码</li>
+<li><code>80 CPS</code> 后接通率明显下降</li>
+<li>加入媒体后拐点提前出现</li>
+</ul>
+<p>这种表达比“最大扛到 100 CPS”更有决策价值。</p>
+<h2 id="四、更常用的一套观测点"><a href="#四、更常用的一套观测点" class="headerlink" title="四、更常用的一套观测点"></a>四、更常用的一套观测点</h2><p>做 FreeSWITCH 性能测试时，通常会同时准备 4 组观测面。</p>
+<h3 id="1-SIPp-执行面"><a href="#1-SIPp-执行面" class="headerlink" title="1. SIPp 执行面"></a>1. SIPp 执行面</h3><p>主要看：</p>
+<ul>
+<li>CPS &#x2F; 呼叫发起速率</li>
+<li>当前并发通话数</li>
+<li>失败码分布</li>
+<li><code>trace_err</code> 和 <code>trace_msg</code> 中的异常模式</li>
+</ul>
+<h3 id="2-FreeSWITCH-进程和会话面"><a href="#2-FreeSWITCH-进程和会话面" class="headerlink" title="2. FreeSWITCH 进程和会话面"></a>2. FreeSWITCH 进程和会话面</h3><p>主要看：</p>
+<ul>
+<li>会话数</li>
+<li>每秒新建会话趋势</li>
+<li>进程 CPU &#x2F; 内存</li>
+<li>sofia profile 状态</li>
+<li>通话建立和释放是否及时</li>
+</ul>
+<h3 id="3-系统资源面"><a href="#3-系统资源面" class="headerlink" title="3. 系统资源面"></a>3. 系统资源面</h3><p>主要看：</p>
+<ul>
+<li>CPU</li>
+<li>内存</li>
+<li>文件句柄</li>
+<li>网络连接</li>
+<li>RTP &#x2F; SIP 端口使用情况</li>
+</ul>
+<h3 id="4-下游依赖面"><a href="#4-下游依赖面" class="headerlink" title="4. 下游依赖面"></a>4. 下游依赖面</h3><p>如果接了网关或服务，还要看：</p>
+<ul>
+<li>外部网关状态</li>
+<li>机器人或语音服务响应</li>
+<li>数据库或配置服务是否开始拖慢链路</li>
+</ul>
+<p>不建议只看一张 SIPp 屏幕图。<br>因为那样你只能看到“结果不好”，很难看到“是谁先变坏”。</p>
+<h2 id="五、更适合的一套最小执行骨架"><a href="#五、更适合的一套最小执行骨架" class="headerlink" title="五、更适合的一套最小执行骨架"></a>五、更适合的一套最小执行骨架</h2><p>如果是一次新的 FreeSWITCH 性能测试，执行流程通常可以先收成这样的骨架：</p>
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>目标</th>
+<th>典型动作</th>
+<th>关键观察</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>阶段 1</td>
+<td>注册验证</td>
+<td>主叫&#x2F;被叫批量注册</td>
+<td>注册成功率、挑战码</td>
+</tr>
+<tr>
+<td>阶段 2</td>
+<td>单通话验证</td>
+<td>单主叫 + 单被叫呼叫</td>
+<td>报文链路完整性</td>
+</tr>
+<tr>
+<td>阶段 3</td>
+<td>小并发摸底</td>
+<td><code>10-30 CPS</code></td>
+<td>失败码、路由稳定性</td>
+</tr>
+<tr>
+<td>阶段 4</td>
+<td>中高并发</td>
+<td><code>50 CPS+</code></td>
+<td>接通率、会话数、资源</td>
+</tr>
+<tr>
+<td>阶段 5</td>
+<td>加媒体或全链路</td>
+<td>RTP &#x2F; 外部服务接入</td>
+<td>拐点是否前移</td>
+</tr>
+</tbody></table>
+<p>一个更接近现场的执行节奏通常是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">注册验证 -&gt; 单链路呼叫 -&gt; 小并发纯信令 -&gt; 中并发纯信令 -&gt; 加媒体 -&gt; 加全链路</span><br></pre></td></tr></table></figure>
+
+<p>这个顺序看起来保守，但特别适合真实项目。<br>因为你越早把问题拆清，后面越不容易浪费时间。</p>
+<h2 id="六、正式压测前，先过一遍环境检查表"><a href="#六、正式压测前，先过一遍环境检查表" class="headerlink" title="六、正式压测前，先过一遍环境检查表"></a>六、正式压测前，先过一遍环境检查表</h2><p>FreeSWITCH 性能测试最怕环境没收好，结果把环境问题写成性能问题。</p>
+<p>通常会先确认下面这些项：</p>
+<table>
+<thead>
+<tr>
+<th>检查项</th>
+<th>目的</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>账号池是否已准备</td>
+<td>避免注册或呼叫因账号错误失败</td>
+</tr>
+<tr>
+<td>拨号计划和号码范围是否对齐</td>
+<td>避免路由假失败</td>
+</tr>
+<tr>
+<td>ACL &#x2F; 白名单是否已放通</td>
+<td>避免请求被拦截</td>
+</tr>
+<tr>
+<td><code>max-sessions</code>、<code>sessions-per-second</code> 是否匹配测试目标</td>
+<td>避免配置先卡死</td>
+</tr>
+<tr>
+<td>SIPp 压测机句柄和端口是否足够</td>
+<td>避免工具侧先顶住</td>
+</tr>
+<tr>
+<td>日志级别和 trace 策略是否合理</td>
+<td>避免日志本身拖垮执行</td>
+</tr>
+</tbody></table>
+<p>这张表看起来朴素，但特别有用。<br>因为 FreeSWITCH 性能测试里，前置配置问题真的非常常见。</p>
+<h2 id="七、真实案例型段落：一次“现场都判断是-FreeSWITCH-扛不住，结果主因却不是它”的排查"><a href="#七、真实案例型段落：一次“现场都判断是-FreeSWITCH-扛不住，结果主因却不是它”的排查" class="headerlink" title="七、真实案例型段落：一次“现场都判断是 FreeSWITCH 扛不住，结果主因却不是它”的排查"></a>七、真实案例型段落：一次“现场都判断是 FreeSWITCH 扛不住，结果主因却不是它”的排查</h2><h3 id="场景"><a href="#场景" class="headerlink" title="场景"></a>场景</h3><p>一次电话系统压测里，目标是验证 FreeSWITCH 在较高并发呼叫下的表现。<br>现场一开始很快出现了明显异常：</p>
+<ul>
+<li>接通率下降</li>
+<li>失败码开始增多</li>
+<li>部分通话建立慢</li>
+</ul>
+<p>团队最初的判断很一致：</p>
+<ul>
+<li>这轮压测的对象是 FreeSWITCH</li>
+<li>所以问题大概率就是 FreeSWITCH 扛不住了</li>
+</ul>
+<h3 id="执行"><a href="#执行" class="headerlink" title="执行"></a>执行</h3><p>当时执行方式已经进入较高强度：</p>
+<ol>
+<li>主叫和被叫都完成注册</li>
+<li>主叫侧持续发起较高 CPS 呼叫</li>
+<li>被叫和外部服务也一起参与</li>
+<li>现场同时观察 SIPp 结果和基础监控</li>
+</ol>
+<h3 id="现象"><a href="#现象" class="headerlink" title="现象"></a>现象</h3><p>表面现象看起来很像 FreeSWITCH 出问题：</p>
+<ul>
+<li>呼叫成功率变差</li>
+<li>延迟上升</li>
+<li>部分失败码开始集中出现</li>
+</ul>
+<p>但一个不太对劲的地方是：</p>
+<ul>
+<li>FreeSWITCH 进程资源虽然上涨，但并没有先出现明显打满</li>
+<li>某些轮次里，信令能建立，但后续链路却开始拖长</li>
+</ul>
+<h3 id="排查"><a href="#排查" class="headerlink" title="排查"></a>排查</h3><p>我当时没有直接接受“就是 FreeSWITCH 顶不住”这个结论，而是按顺序拆：</p>
+<ol>
+<li>先看纯信令层是否已经明显失败</li>
+<li>再看失败码更像路由、占线还是服务异常</li>
+<li>对齐 FreeSWITCH 资源曲线和失败出现时间</li>
+<li>再看下游服务响应是否在同一时间窗口开始抖动</li>
+</ol>
+<p>这一轮排下来，真正更早出现异常的不是 FreeSWITCH 本身，而是下游服务响应开始变慢，导致：</p>
+<ul>
+<li>呼叫建立后的后续动作变慢</li>
+<li>整体链路时长变长</li>
+<li>会话占用时间被拉长</li>
+<li>最后反过来把 FreeSWITCH 会话压力继续放大</li>
+</ul>
+<p>也就是说：</p>
+<p><strong>FreeSWITCH 后面也变差了，但它更像被整条链路拖进风险区，而不是最早的主瓶颈。</strong></p>
+<h3 id="修复"><a href="#修复" class="headerlink" title="修复"></a>修复</h3><p>修复动作不是盲目给 FreeSWITCH 加资源，而是分两步：</p>
+<ol>
+<li>先把纯信令层和全链路层测试结果拆开</li>
+<li>优先处理下游服务响应和链路时长问题，再回头复测 FreeSWITCH</li>
+</ol>
+<p>拆开后很快发现：</p>
+<ul>
+<li>纯信令层的 FreeSWITCH 承压能力其实比最初判断高</li>
+<li>真正让整条链路崩得更快的，是下游服务把通话时长和会话占用拉长了</li>
+</ul>
+<p>这个案例对我很重要，因为它说明：</p>
+<p><strong>做 FreeSWITCH 性能测试时，最怕的不是它真的有瓶颈，而是你过早把所有问题都归到它头上。</strong></p>
+<h2 id="八、更常用的一套排查顺序"><a href="#八、更常用的一套排查顺序" class="headerlink" title="八、更常用的一套排查顺序"></a>八、更常用的一套排查顺序</h2><p>如果现场发现呼叫成功率下降，可以按下面顺序排：</p>
+<ol>
+<li>先确认是注册失败多了，还是呼叫建立失败多了</li>
+<li>再看失败码分布是路由类、鉴权类、占线类还是服务异常类</li>
+<li>再对齐 FreeSWITCH 会话数、CPU、内存和失败出现时间</li>
+<li>如果加了媒体或外部服务，再看是不是链路时长被拉长</li>
+<li>最后再判断 FreeSWITCH 是主因、次因还是伴生现象</li>
+</ol>
+<p>这套顺序可以明显减少误判。</p>
+<h2 id="九、做完-FreeSWITCH-性能测试后，更希望输出什么结论"><a href="#九、做完-FreeSWITCH-性能测试后，更希望输出什么结论" class="headerlink" title="九、做完 FreeSWITCH 性能测试后，更希望输出什么结论"></a>九、做完 FreeSWITCH 性能测试后，更希望输出什么结论</h2><p>如果要写报告，通常不会只写：</p>
+<ul>
+<li>FreeSWITCH 最大支持多少并发</li>
+</ul>
+<p>更想写成下面这种形式：</p>
+<ul>
+<li>在纯信令场景下，<code>30 CPS</code> 以内稳定，<code>50 CPS</code> 开始出现少量失败码</li>
+<li>加入媒体后，退化拐点明显前移，说明桥接媒体带来的资源成本不能忽略</li>
+<li>在全链路模式下，最先退化的并不是 FreeSWITCH 本身，而是下游服务导致通话占用时长放大</li>
+<li>当前安全工作区、风险区和建议优化方向分别是什么</li>
+</ul>
+<p>这种结论才更适合拿去做：</p>
+<ul>
+<li>容量评估</li>
+<li>架构讨论</li>
+<li>下轮优化优先级排序</li>
+</ul>
+<h2 id="结语"><a href="#结语" class="headerlink" title="结语"></a>结语</h2><p>做 FreeSWITCH 性能测试，真正重要的不是把 <code>SIPp</code> 参数配到多大，而是先搞清楚自己到底在测：</p>
+<ul>
+<li>注册</li>
+<li>呼叫建立</li>
+<li>通话保持</li>
+<li>媒体桥接</li>
+<li>还是整条语音链路</li>
+</ul>
+<p>只有把对象拆清、阶段拆清、观测点拆清，FreeSWITCH 性能测试的结果才会真正有判断价值，而不是只留下一个看起来很热闹的 CPS 数字。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E6%8E%92%E9%9A%9C/" rel="tag"># 排障</a>
+              <a href="/tags/SIP/" rel="tag"># SIP</a>
+              <a href="/tags/SIPp/" rel="tag"># SIPp</a>
+              <a href="/tags/FreeSWITCH/" rel="tag"># FreeSWITCH</a>
+              <a href="/tags/%E8%AF%AD%E9%9F%B3%E6%B5%8B%E8%AF%95/" rel="tag"># 语音测试</a>
+              <a href="/tags/%E5%AE%9E%E6%88%98/" rel="tag"># 实战</a>
+              <a href="/tags/%E4%BF%A1%E4%BB%A4%E4%B8%8E%E5%8E%8B%E6%B5%8B/" rel="tag"># 信令与压测</a>
+              <a href="/tags/%E5%85%A8%E9%93%BE%E8%B7%AF%E5%8E%8B%E6%B5%8B/" rel="tag"># 全链路压测</a>
+              <a href="/tags/%E6%80%A7%E8%83%BD%E6%B5%8B%E8%AF%95/" rel="tag"># 性能测试</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2020/06/04/SIP%E6%B5%8B%E8%AF%95-02-SIPp%E5%9C%A8%E8%AF%AD%E9%9F%B3%E7%B3%BB%E7%BB%9F%E5%8E%8B%E6%B5%8B%E4%B8%AD%E7%9A%84%E4%BD%BF%E7%94%A8%E6%96%B9%E5%BC%8F/" rel="prev" title="SIP测试-02-SIPp在语音系统压测中的使用方式">
+                  <i class="fa fa-angle-left"></i> SIP测试-02-SIPp在语音系统压测中的使用方式
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2020/06/18/SIP%E6%B5%8B%E8%AF%95-04-%E4%BF%A1%E4%BB%A4%E4%B8%8E%E5%AA%92%E4%BD%93%E5%85%A8%E9%93%BE%E8%B7%AF%E5%8E%8B%E6%B5%8B%E7%9A%84%E8%AE%BE%E8%AE%A1%E6%96%B9%E6%B3%95/" rel="next" title="SIP测试-04-信令与媒体全链路压测的设计方法">
+                  SIP测试-04-信令与媒体全链路压测的设计方法 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="第一次用 Wireshark 时，通常都会有同一个感受：  信息很多 很强大 但一打开包，还是不知道先看什么  这也是 Wireshark 最容易被用偏的地方。它不是“看到什么分析什么”的工具，而是一个把杂乱流量压缩成少数关键事实的工具。 如果 tcpdump 更像现场先钉住“包有没有来回”，那 Wireshark 更像是在第二步回答：  到底是哪一段开始慢 是谁先断的 是建连问题、传输问题还是应">
+<meta property="og:type" content="article">
+<meta property="og:title" content="问题定位-02-Wireshark分析网络问题的基本套路">
+<meta property="og:url" content="https://paynewinnt.github.io/2021/05/20/%E9%97%AE%E9%A2%98%E5%AE%9A%E4%BD%8D-02-Wireshark%E5%88%86%E6%9E%90%E7%BD%91%E7%BB%9C%E9%97%AE%E9%A2%98%E7%9A%84%E5%9F%BA%E6%9C%AC%E5%A5%97%E8%B7%AF/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="第一次用 Wireshark 时，通常都会有同一个感受：  信息很多 很强大 但一打开包，还是不知道先看什么  这也是 Wireshark 最容易被用偏的地方。它不是“看到什么分析什么”的工具，而是一个把杂乱流量压缩成少数关键事实的工具。 如果 tcpdump 更像现场先钉住“包有没有来回”，那 Wireshark 更像是在第二步回答：  到底是哪一段开始慢 是谁先断的 是建连问题、传输问题还是应">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2021-05-20T12:30:00.000Z">
+<meta property="article:modified_time" content="2021-05-20T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="排障">
+<meta property="article:tag" content="实战">
+<meta property="article:tag" content="网络排障">
+<meta property="article:tag" content="问题定位">
+<meta property="article:tag" content="抓包分析">
+<meta property="article:tag" content="问题定位与抓包分析">
+<meta property="article:tag" content="Wireshark">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2021/05/20/%E9%97%AE%E9%A2%98%E5%AE%9A%E4%BD%8D-02-Wireshark%E5%88%86%E6%9E%90%E7%BD%91%E7%BB%9C%E9%97%AE%E9%A2%98%E7%9A%84%E5%9F%BA%E6%9C%AC%E5%A5%97%E8%B7%AF/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2021/05/20/%E9%97%AE%E9%A2%98%E5%AE%9A%E4%BD%8D-02-Wireshark%E5%88%86%E6%9E%90%E7%BD%91%E7%BB%9C%E9%97%AE%E9%A2%98%E7%9A%84%E5%9F%BA%E6%9C%AC%E5%A5%97%E8%B7%AF/","path":"2021/05/20/问题定位-02-Wireshark分析网络问题的基本套路/","title":"问题定位-02-Wireshark分析网络问题的基本套路"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>问题定位-02-Wireshark分析网络问题的基本套路 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81Wireshark-%E6%9C%80%E5%85%88%E8%A7%A3%E5%86%B3%E7%9A%84%EF%BC%8C%E4%B8%8D%E6%98%AF%E2%80%9C%E7%9C%8B%E6%87%82%E6%AF%8F%E4%B8%AA%E5%8C%85%E2%80%9D%EF%BC%8C%E8%80%8C%E6%98%AF%E2%80%9C%E5%85%88%E7%BC%A9%E5%B0%8F%E8%8C%83%E5%9B%B4%E2%80%9D"><span class="nav-number">1.</span> <span class="nav-text">一、Wireshark 最先解决的，不是“看懂每个包”，而是“先缩小范围”</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E6%9B%B4%E5%B8%B8%E7%94%A8%E7%9A%84%E4%B8%80%E5%A5%97%E5%9F%BA%E6%9C%AC%E5%88%86%E6%9E%90%E9%A1%BA%E5%BA%8F"><span class="nav-number">2.</span> <span class="nav-text">二、更常用的一套基本分析顺序</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%85%88%E6%89%BE%E5%85%B3%E9%94%AE%E4%BC%9A%E8%AF%9D"><span class="nav-number">2.1.</span> <span class="nav-text">1. 先找关键会话</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%86%8D%E7%9C%8B%E8%BF%99%E6%9D%A1%E4%BC%9A%E8%AF%9D%E7%9A%84%E6%97%B6%E9%97%B4%E7%BA%BF"><span class="nav-number">2.2.</span> <span class="nav-text">2. 再看这条会话的时间线</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%86%8D%E5%88%A4%E6%96%AD%E5%BC%82%E5%B8%B8%E6%98%AF%E5%8F%91%E7%94%9F%E5%9C%A8%E5%BB%BA%E8%BF%9E%E3%80%81%E4%BC%A0%E8%BE%93%E8%BF%98%E6%98%AF%E5%BA%94%E7%94%A8%E9%98%B6%E6%AE%B5"><span class="nav-number">2.3.</span> <span class="nav-text">3. 再判断异常是发生在建连、传输还是应用阶段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%9C%80%E5%90%8E%E6%89%8D%E7%9C%8B%E6%9B%B4%E7%BB%86%E7%9A%84%E5%8D%8F%E8%AE%AE%E5%86%85%E5%AE%B9"><span class="nav-number">2.4.</span> <span class="nav-text">4. 最后才看更细的协议内容</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E6%9C%80%E6%9C%89%E4%BB%B7%E5%80%BC%E7%9A%84-5-%E4%B8%AA%E9%AB%98%E9%A2%91%E8%A7%82%E5%AF%9F%E7%82%B9"><span class="nav-number">3.</span> <span class="nav-text">三、最有价值的 5 个高频观察点</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-TCP-%E4%B8%89%E6%AC%A1%E6%8F%A1%E6%89%8B"><span class="nav-number">3.1.</span> <span class="nav-text">1. TCP 三次握手</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E9%87%8D%E4%BC%A0"><span class="nav-number">3.2.</span> <span class="nav-text">2. 重传</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-RST"><span class="nav-number">3.3.</span> <span class="nav-text">3. RST</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-DNS-%E8%AF%B7%E6%B1%82%E4%B8%8E%E5%93%8D%E5%BA%94"><span class="nav-number">3.4.</span> <span class="nav-text">4. DNS 请求与响应</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E9%A6%96%E5%8C%85%E5%93%8D%E5%BA%94%E6%97%B6%E9%97%B4"><span class="nav-number">3.5.</span> <span class="nav-text">5. 首包响应时间</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E5%87%A0%E4%B8%AA%E9%9D%9E%E5%B8%B8%E5%AE%9E%E7%94%A8%E7%9A%84%E6%98%BE%E7%A4%BA%E8%BF%87%E6%BB%A4%E6%80%9D%E8%B7%AF"><span class="nav-number">4.</span> <span class="nav-text">四、几个非常实用的显示过滤思路</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%9C%8B%E6%9F%90%E4%B8%AA-IP"><span class="nav-number">4.1.</span> <span class="nav-text">1. 看某个 IP</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E7%9C%8B%E6%9F%90%E4%B8%AA%E7%AB%AF%E5%8F%A3"><span class="nav-number">4.2.</span> <span class="nav-text">2. 看某个端口</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%90%8C%E6%97%B6%E9%99%90%E5%AE%9A-IP-%E5%92%8C%E7%AB%AF%E5%8F%A3"><span class="nav-number">4.3.</span> <span class="nav-text">3. 同时限定 IP 和端口</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E7%9C%8B-DNS"><span class="nav-number">4.4.</span> <span class="nav-text">4. 看 DNS</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E7%9C%8B-HTTP"><span class="nav-number">4.5.</span> <span class="nav-text">5. 看 HTTP</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E7%9C%8B%E5%8D%95%E6%9D%A1-TCP-%E4%BC%9A%E8%AF%9D"><span class="nav-number">4.6.</span> <span class="nav-text">6. 看单条 TCP 会话</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E6%9B%B4%E5%B8%B8%E7%94%A8%E7%9A%84%E6%9C%80%E5%B0%8F%E5%AE%9E%E6%88%98%E9%AA%A8%E6%9E%B6"><span class="nav-number">5.</span> <span class="nav-text">五、更常用的最小实战骨架</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%85%88%E5%AE%9A%E4%BD%8D%E9%97%AE%E9%A2%98%E6%97%B6%E9%97%B4%E6%AE%B5"><span class="nav-number">5.1.</span> <span class="nav-text">1. 先定位问题时间段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%86%8D%E5%AE%9A%E4%BD%8D%E7%9B%AE%E6%A0%87%E4%BC%9A%E8%AF%9D"><span class="nav-number">5.2.</span> <span class="nav-text">2. 再定位目标会话</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%86%8D%E6%B2%BF%E6%97%B6%E9%97%B4%E7%BA%BF%E7%9C%8B%E5%9B%9B%E4%BB%B6%E4%BA%8B"><span class="nav-number">5.3.</span> <span class="nav-text">3. 再沿时间线看四件事</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%9C%80%E5%90%8E%E5%86%8D%E6%8A%8A%E7%BB%93%E8%AE%BA%E5%86%99%E6%88%90%E4%B8%80%E5%8F%A5%E4%BA%BA%E8%83%BD%E7%9C%8B%E6%87%82%E7%9A%84%E8%AF%9D"><span class="nav-number">5.4.</span> <span class="nav-text">4. 最后再把结论写成一句人能看懂的话</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E6%9C%80%E5%AE%B9%E6%98%93%E8%B8%A9%E7%9A%84%E5%87%A0%E4%B8%AA%E5%9D%91"><span class="nav-number">6.</span> <span class="nav-text">六、最容易踩的几个坑</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%B8%80%E4%B8%8A%E6%9D%A5%E5%B0%B1%E7%9C%8B%E5%AD%97%E6%AE%B5%E7%BB%86%E8%8A%82"><span class="nav-number">6.1.</span> <span class="nav-text">1. 一上来就看字段细节</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%B2%A1%E6%8A%8A%E8%8C%83%E5%9B%B4%E7%BC%A9%E5%88%B0%E5%8D%95%E6%9D%A1%E6%B5%81"><span class="nav-number">6.2.</span> <span class="nav-text">2. 没把范围缩到单条流</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%8A%8A%E2%80%9C%E7%9C%8B%E5%88%B0%E9%87%8D%E4%BC%A0%E2%80%9D%E7%9B%B4%E6%8E%A5%E5%BD%93%E6%A0%B9%E5%9B%A0"><span class="nav-number">6.3.</span> <span class="nav-text">3. 把“看到重传”直接当根因</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%B8%8D%E7%BB%93%E5%90%88%E6%8A%93%E5%8C%85%E4%B9%8B%E5%A4%96%E7%9A%84%E4%BF%A1%E6%81%AF"><span class="nav-number">6.4.</span> <span class="nav-text">4. 不结合抓包之外的信息</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E7%9C%9F%E5%AE%9E%E6%A1%88%E4%BE%8B%EF%BC%9A%E4%B8%BA%E4%BB%80%E4%B9%88%E6%8E%A5%E5%8F%A3%E8%B6%85%E6%97%B6%E7%9C%8B%E8%B5%B7%E6%9D%A5%E5%83%8F%E6%9C%8D%E5%8A%A1%E6%85%A2%EF%BC%8C%E6%9C%80%E5%90%8E%E5%8D%B4%E4%B8%8D%E6%98%AF%E6%9C%8D%E5%8A%A1%E6%9C%AC%E8%BA%AB%E7%9A%84%E9%97%AE%E9%A2%98"><span class="nav-number">7.</span> <span class="nav-text">七、真实案例：为什么接口超时看起来像服务慢，最后却不是服务本身的问题</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9C%BA%E6%99%AF"><span class="nav-number">7.1.</span> <span class="nav-text">场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%89%A7%E8%A1%8C"><span class="nav-number">7.2.</span> <span class="nav-text">执行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8E%B0%E8%B1%A1"><span class="nav-number">7.3.</span> <span class="nav-text">现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%92%E6%9F%A5"><span class="nav-number">7.4.</span> <span class="nav-text">排查</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BF%AE%E5%A4%8D"><span class="nav-number">7.5.</span> <span class="nav-text">修复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E6%80%8E%E4%B9%88%E6%8A%8A-Wireshark-%E7%94%A8%E6%88%90%E7%A8%B3%E5%AE%9A%E8%83%BD%E5%8A%9B"><span class="nav-number">8.</span> <span class="nav-text">八、怎么把 Wireshark 用成稳定能力</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E5%86%99%E5%9C%A8%E6%9C%80%E5%90%8E"><span class="nav-number">9.</span> <span class="nav-text">九、写在最后</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2021/05/20/%E9%97%AE%E9%A2%98%E5%AE%9A%E4%BD%8D-02-Wireshark%E5%88%86%E6%9E%90%E7%BD%91%E7%BB%9C%E9%97%AE%E9%A2%98%E7%9A%84%E5%9F%BA%E6%9C%AC%E5%A5%97%E8%B7%AF/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="问题定位-02-Wireshark分析网络问题的基本套路 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          问题定位-02-Wireshark分析网络问题的基本套路
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2021-05-20 20:30:00" itemprop="dateCreated datePublished" datetime="2021-05-20T20:30:00+08:00">2021-05-20</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/%E9%97%AE%E9%A2%98%E5%AE%9A%E4%BD%8D/" itemprop="url" rel="index"><span itemprop="name">问题定位</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>2.3k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>8 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>第一次用 <code>Wireshark</code> 时，通常都会有同一个感受：</p>
+<ul>
+<li>信息很多</li>
+<li>很强大</li>
+<li>但一打开包，还是不知道先看什么</li>
+</ul>
+<p>这也是 <code>Wireshark</code> 最容易被用偏的地方。<br>它不是“看到什么分析什么”的工具，而是一个把杂乱流量压缩成少数关键事实的工具。</p>
+<p>如果 <code>tcpdump</code> 更像现场先钉住“包有没有来回”，那 <code>Wireshark</code> 更像是在第二步回答：</p>
+<ul>
+<li>到底是哪一段开始慢</li>
+<li>是谁先断的</li>
+<li>是建连问题、传输问题还是应用问题</li>
+<li>这些现象能不能串成一条完整时间线</li>
+</ul>
+<p>所以这篇文章不讲菜单大全，只讲一个更实用的问题：</p>
+<p><strong>抓到包之后，怎么用 Wireshark 按套路把问题快速看清楚。</strong></p>
+<h2 id="一、Wireshark-最先解决的，不是“看懂每个包”，而是“先缩小范围”"><a href="#一、Wireshark-最先解决的，不是“看懂每个包”，而是“先缩小范围”" class="headerlink" title="一、Wireshark 最先解决的，不是“看懂每个包”，而是“先缩小范围”"></a>一、Wireshark 最先解决的，不是“看懂每个包”，而是“先缩小范围”</h2><p>很多分析失败，不是因为看不懂协议，而是因为包太多、范围太大。</p>
+<p>我用 <code>Wireshark</code> 的第一步几乎从来都不是点开某个包细看，而是先把范围收窄到：</p>
+<ul>
+<li>某一条会话</li>
+<li>某一组端口</li>
+<li>某一个目标 IP</li>
+<li>某一种异常现象</li>
+</ul>
+<p>如果这一步不先做，后面很容易淹在噪音里。</p>
+<h2 id="二、更常用的一套基本分析顺序"><a href="#二、更常用的一套基本分析顺序" class="headerlink" title="二、更常用的一套基本分析顺序"></a>二、更常用的一套基本分析顺序</h2><p>如果是网络或接口问题，通常按下面顺序看。</p>
+<h3 id="1-先找关键会话"><a href="#1-先找关键会话" class="headerlink" title="1. 先找关键会话"></a>1. 先找关键会话</h3><p>最先做的是把问题对应的那条流量找出来。</p>
+<p>常见收敛方式：</p>
+<ul>
+<li>按目标 IP</li>
+<li>按目标端口</li>
+<li>按时间范围</li>
+<li>按 <code>tcp.stream</code></li>
+<li>按协议类型，比如 <code>http</code>、<code>dns</code></li>
+</ul>
+<p>例如先用显示过滤器把范围收窄：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">ip.addr == 10.10.10.12 &amp;&amp; tcp.port == 443</span><br></pre></td></tr></table></figure>
+
+<p>如果是 HTTP 问题，也可能先看：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">http</span><br></pre></td></tr></table></figure>
+
+<p>或者：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">dns</span><br></pre></td></tr></table></figure>
+
+<h3 id="2-再看这条会话的时间线"><a href="#2-再看这条会话的时间线" class="headerlink" title="2. 再看这条会话的时间线"></a>2. 再看这条会话的时间线</h3><p>范围缩小后，最先看的通常不是字段细节，而是时间线。</p>
+<p>重点回答：</p>
+<ul>
+<li>TCP 三次握手是否正常</li>
+<li>建连花了多久</li>
+<li>请求什么时候发出</li>
+<li>首个响应什么时候回来</li>
+<li>中间有没有重传、RST、窗口异常</li>
+</ul>
+<p>只要时间线拉清楚，很多问题方向就会很快变明白。</p>
+<h3 id="3-再判断异常是发生在建连、传输还是应用阶段"><a href="#3-再判断异常是发生在建连、传输还是应用阶段" class="headerlink" title="3. 再判断异常是发生在建连、传输还是应用阶段"></a>3. 再判断异常是发生在建连、传输还是应用阶段</h3><p>这一步非常关键。</p>
+<p>典型判断方式：</p>
+<ul>
+<li>握手都没成功：更像端口、链路、路由、防火墙问题</li>
+<li>握手正常但请求发不完整：更像发送路径或连接异常</li>
+<li>请求发出正常但响应迟迟不回：更像应用处理慢或下游慢</li>
+<li>响应回来途中出现异常：更像中间层或回包路径问题</li>
+</ul>
+<h3 id="4-最后才看更细的协议内容"><a href="#4-最后才看更细的协议内容" class="headerlink" title="4. 最后才看更细的协议内容"></a>4. 最后才看更细的协议内容</h3><p>比如：</p>
+<ul>
+<li>HTTP 状态码</li>
+<li>DNS 响应内容</li>
+<li>TLS 握手阶段</li>
+<li>某些具体字段是否异常</li>
+</ul>
+<p>如果一开始就钻字段，很容易在错误层级上花太久时间。</p>
+<h2 id="三、最有价值的-5-个高频观察点"><a href="#三、最有价值的-5-个高频观察点" class="headerlink" title="三、最有价值的 5 个高频观察点"></a>三、最有价值的 5 个高频观察点</h2><p>如果只说最常用的，通常优先盯下面这 5 类现象。</p>
+<h3 id="1-TCP-三次握手"><a href="#1-TCP-三次握手" class="headerlink" title="1. TCP 三次握手"></a>1. TCP 三次握手</h3><p>先看：</p>
+<ul>
+<li><code>SYN</code></li>
+<li><code>SYN, ACK</code></li>
+<li><code>ACK</code></li>
+</ul>
+<p>它能最快回答：</p>
+<ul>
+<li>端口是否可达</li>
+<li>对端是否有响应</li>
+<li>建连是否慢</li>
+</ul>
+<p>如果这里就不正常，后面大多数应用层分析都没必要太早展开。</p>
+<h3 id="2-重传"><a href="#2-重传" class="headerlink" title="2. 重传"></a>2. 重传</h3><p>看到大量 <code>Retransmission</code>，通常先考虑：</p>
+<ul>
+<li>丢包</li>
+<li>链路不稳</li>
+<li>某段网络质量差</li>
+<li>对端没及时回应</li>
+</ul>
+<p>重传不是根因，但它很能提示方向。</p>
+<h3 id="3-RST"><a href="#3-RST" class="headerlink" title="3. RST"></a>3. RST</h3><p>看到 <code>RST</code> 时，会特别注意：</p>
+<ul>
+<li>是哪一端发的</li>
+<li>是建连阶段还是传输阶段</li>
+<li>是立即拒绝还是中途异常断开</li>
+</ul>
+<p>这经常能快速判断：</p>
+<ul>
+<li>端口没监听</li>
+<li>服务主动断开</li>
+<li>某层代理提前断链</li>
+</ul>
+<h3 id="4-DNS-请求与响应"><a href="#4-DNS-请求与响应" class="headerlink" title="4. DNS 请求与响应"></a>4. DNS 请求与响应</h3><p>很多“服务超时”最后不是服务慢，而是：</p>
+<ul>
+<li>域名没解出来</li>
+<li>解析到了错误地址</li>
+<li>DNS 请求发出后没回</li>
+</ul>
+<p>这类在 <code>Wireshark</code> 里非常容易看清楚。</p>
+<h3 id="5-首包响应时间"><a href="#5-首包响应时间" class="headerlink" title="5. 首包响应时间"></a>5. 首包响应时间</h3><p>如果 TCP 正常、请求发出正常，但响应首包很久才回来，那方向通常更偏：</p>
+<ul>
+<li>应用处理慢</li>
+<li>数据库慢</li>
+<li>下游服务慢</li>
+<li>线程池或连接池耗尽</li>
+</ul>
+<h2 id="四、几个非常实用的显示过滤思路"><a href="#四、几个非常实用的显示过滤思路" class="headerlink" title="四、几个非常实用的显示过滤思路"></a>四、几个非常实用的显示过滤思路</h2><p>显示过滤器不是越复杂越好，能快速把范围缩到问题点最重要。</p>
+<h3 id="1-看某个-IP"><a href="#1-看某个-IP" class="headerlink" title="1. 看某个 IP"></a>1. 看某个 IP</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">ip.addr == 10.10.10.12</span><br></pre></td></tr></table></figure>
+
+<h3 id="2-看某个端口"><a href="#2-看某个端口" class="headerlink" title="2. 看某个端口"></a>2. 看某个端口</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">tcp.port == 443</span><br></pre></td></tr></table></figure>
+
+<h3 id="3-同时限定-IP-和端口"><a href="#3-同时限定-IP-和端口" class="headerlink" title="3. 同时限定 IP 和端口"></a>3. 同时限定 IP 和端口</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">ip.addr == 10.10.10.12 &amp;&amp; tcp.port == 443</span><br></pre></td></tr></table></figure>
+
+<h3 id="4-看-DNS"><a href="#4-看-DNS" class="headerlink" title="4. 看 DNS"></a>4. 看 DNS</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">dns</span><br></pre></td></tr></table></figure>
+
+<h3 id="5-看-HTTP"><a href="#5-看-HTTP" class="headerlink" title="5. 看 HTTP"></a>5. 看 HTTP</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">http</span><br></pre></td></tr></table></figure>
+
+<h3 id="6-看单条-TCP-会话"><a href="#6-看单条-TCP-会话" class="headerlink" title="6. 看单条 TCP 会话"></a>6. 看单条 TCP 会话</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">tcp.stream == 7</span><br></pre></td></tr></table></figure>
+
+<p>这个特别好用。<br>很多复杂问题一旦锁定到一条 <code>tcp.stream</code>，分析难度会直接降很多。</p>
+<h2 id="五、更常用的最小实战骨架"><a href="#五、更常用的最小实战骨架" class="headerlink" title="五、更常用的最小实战骨架"></a>五、更常用的最小实战骨架</h2><p>如果拿到一个 <code>pcap</code> 文件，通常会这样开始。</p>
+<h3 id="1-先定位问题时间段"><a href="#1-先定位问题时间段" class="headerlink" title="1. 先定位问题时间段"></a>1. 先定位问题时间段</h3><p>例如业务方说：</p>
+<ul>
+<li>10:21 左右开始超时</li>
+</ul>
+<p>那先看这个时间窗附近，而不是从头翻。</p>
+<h3 id="2-再定位目标会话"><a href="#2-再定位目标会话" class="headerlink" title="2. 再定位目标会话"></a>2. 再定位目标会话</h3><p>例如：</p>
+<ul>
+<li>某个目标 IP</li>
+<li>某个服务端口</li>
+<li>某个请求路径对应的 HTTP 会话</li>
+</ul>
+<h3 id="3-再沿时间线看四件事"><a href="#3-再沿时间线看四件事" class="headerlink" title="3. 再沿时间线看四件事"></a>3. 再沿时间线看四件事</h3><ul>
+<li>是否成功建连</li>
+<li>请求是否完整发出</li>
+<li>响应是否回来</li>
+<li>异常是在哪个时刻第一次出现</li>
+</ul>
+<h3 id="4-最后再把结论写成一句人能看懂的话"><a href="#4-最后再把结论写成一句人能看懂的话" class="headerlink" title="4. 最后再把结论写成一句人能看懂的话"></a>4. 最后再把结论写成一句人能看懂的话</h3><p>例如：</p>
+<ul>
+<li>握手正常，请求发出正常，但服务端首包 8 秒后才返回，问题更偏应用处理慢</li>
+<li>客户端能发出 <code>SYN</code>，但服务端没有任何响应，问题更偏链路或服务未监听</li>
+<li>服务端已回包，但客户端未收到，问题更偏回包路径异常</li>
+</ul>
+<p><code>Wireshark</code> 分析如果最后不能落成一句清楚的话，就说明分析还没收住。</p>
+<h2 id="六、最容易踩的几个坑"><a href="#六、最容易踩的几个坑" class="headerlink" title="六、最容易踩的几个坑"></a>六、最容易踩的几个坑</h2><h3 id="1-一上来就看字段细节"><a href="#1-一上来就看字段细节" class="headerlink" title="1. 一上来就看字段细节"></a>1. 一上来就看字段细节</h3><p>这通常会让人陷进局部，却没先搞清楚整体时间线。</p>
+<h3 id="2-没把范围缩到单条流"><a href="#2-没把范围缩到单条流" class="headerlink" title="2. 没把范围缩到单条流"></a>2. 没把范围缩到单条流</h3><p>只在全局流量里来回翻，容易把不同请求混在一起。</p>
+<h3 id="3-把“看到重传”直接当根因"><a href="#3-把“看到重传”直接当根因" class="headerlink" title="3. 把“看到重传”直接当根因"></a>3. 把“看到重传”直接当根因</h3><p>重传本身只是现象。<br>真正还要继续判断：</p>
+<ul>
+<li>为什么会重传</li>
+<li>是谁先不回应</li>
+</ul>
+<h3 id="4-不结合抓包之外的信息"><a href="#4-不结合抓包之外的信息" class="headerlink" title="4. 不结合抓包之外的信息"></a>4. 不结合抓包之外的信息</h3><p><code>Wireshark</code> 很强，但它通常要和下面这些一起看更准：</p>
+<ul>
+<li>应用日志</li>
+<li>监控时间线</li>
+<li>请求发起时间</li>
+<li>服务端处理时间</li>
+</ul>
+<p>只看包，不看上下文，也容易误判。</p>
+<h2 id="七、真实案例：为什么接口超时看起来像服务慢，最后却不是服务本身的问题"><a href="#七、真实案例：为什么接口超时看起来像服务慢，最后却不是服务本身的问题" class="headerlink" title="七、真实案例：为什么接口超时看起来像服务慢，最后却不是服务本身的问题"></a>七、真实案例：为什么接口超时看起来像服务慢，最后却不是服务本身的问题</h2><h3 id="场景"><a href="#场景" class="headerlink" title="场景"></a>场景</h3><p>一个内部接口偶发超时，前端侧表现是：</p>
+<ul>
+<li>点击查询后长时间等待</li>
+<li>最后报超时</li>
+</ul>
+<p>服务端侧的第一判断是：</p>
+<ul>
+<li>是不是查询逻辑太慢</li>
+</ul>
+<p>因为应用日志里也能看到少量慢请求。</p>
+<h3 id="执行"><a href="#执行" class="headerlink" title="执行"></a>执行</h3><p>先拿到了对应时间段的抓包文件，然后在 <code>Wireshark</code> 里按下面顺序收敛：</p>
+<ol>
+<li>先过滤目标 IP 和端口</li>
+<li>再定位到具体 <code>tcp.stream</code></li>
+<li>按时间线看握手、请求、响应</li>
+</ol>
+<h3 id="现象"><a href="#现象" class="headerlink" title="现象"></a>现象</h3><p>看下来发现：</p>
+<ul>
+<li>TCP 建连本身是正常的</li>
+<li>请求报文也完整发出了</li>
+<li>但服务端响应前，客户端侧已经出现了明显的重传</li>
+<li>同一时间段还有多个流出现类似现象</li>
+</ul>
+<p>这就说明问题不像单个请求逻辑慢，更像链路层面有异常。</p>
+<h3 id="排查"><a href="#排查" class="headerlink" title="排查"></a>排查</h3><p>继续结合网络侧排查后，定位到某段链路在特定时间窗丢包明显，导致请求和响应过程中都出现了重传和延迟放大。</p>
+<p>也就是说：</p>
+<ul>
+<li>服务端确实有少量慢日志</li>
+<li>但那不是主因</li>
+<li>主因是链路抖动导致整体时延被放大</li>
+</ul>
+<h3 id="修复"><a href="#修复" class="headerlink" title="修复"></a>修复</h3><p>最终修复动作并不是优化接口代码，而是：</p>
+<ol>
+<li>先处理异常链路</li>
+<li>再复测相同场景</li>
+<li>确认抓包中的重传明显下降</li>
+<li>再回头看服务端慢日志是否仍异常</li>
+</ol>
+<p>这个案例很典型地说明：</p>
+<p><strong>Wireshark 的价值，不只是“看到包”，而是把看起来像应用慢的问题，及时纠偏到真正异常的那一层。</strong></p>
+<h2 id="八、怎么把-Wireshark-用成稳定能力"><a href="#八、怎么把-Wireshark-用成稳定能力" class="headerlink" title="八、怎么把 Wireshark 用成稳定能力"></a>八、怎么把 Wireshark 用成稳定能力</h2><p>更合适的做法是把它沉淀成一套固定动作：</p>
+<ul>
+<li>先收窄范围，不先钻细节</li>
+<li>先看时间线，不先看字段</li>
+<li>先判断问题层级，不先急着定根因</li>
+<li>先把结论压缩成一句话，再继续细化</li>
+</ul>
+<p>只要这几个动作固定下来，<code>Wireshark</code> 就不会只是“会用界面的人能看两眼”的工具，而会真正变成排障里的第二层证据工具。</p>
+<h2 id="九、写在最后"><a href="#九、写在最后" class="headerlink" title="九、写在最后"></a>九、写在最后</h2><p><code>Wireshark</code> 最有用的地方，不是把包看得更复杂，而是把问题看得更清楚。</p>
+<p>很多时候你真正需要的并不是解释每一个包，而是把下面这几件事讲明白：</p>
+<ul>
+<li>哪条流有问题</li>
+<li>问题先出现在哪个时刻</li>
+<li>异常更像建连、传输还是应用</li>
+<li>现象和结论之间能不能连起来</li>
+</ul>
+<p>如果这几件事能用 <code>Wireshark</code> 快速回答，它在问题定位里的价值就已经出来了。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E6%8E%92%E9%9A%9C/" rel="tag"># 排障</a>
+              <a href="/tags/%E5%AE%9E%E6%88%98/" rel="tag"># 实战</a>
+              <a href="/tags/%E7%BD%91%E7%BB%9C%E6%8E%92%E9%9A%9C/" rel="tag"># 网络排障</a>
+              <a href="/tags/%E9%97%AE%E9%A2%98%E5%AE%9A%E4%BD%8D/" rel="tag"># 问题定位</a>
+              <a href="/tags/%E6%8A%93%E5%8C%85%E5%88%86%E6%9E%90/" rel="tag"># 抓包分析</a>
+              <a href="/tags/%E9%97%AE%E9%A2%98%E5%AE%9A%E4%BD%8D%E4%B8%8E%E6%8A%93%E5%8C%85%E5%88%86%E6%9E%90/" rel="tag"># 问题定位与抓包分析</a>
+              <a href="/tags/Wireshark/" rel="tag"># Wireshark</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2021/05/13/%E9%97%AE%E9%A2%98%E5%AE%9A%E4%BD%8D-01-tcpdump%E5%9C%A8%E9%97%AE%E9%A2%98%E5%AE%9A%E4%BD%8D%E4%B8%AD%E7%9A%84%E9%AB%98%E9%A2%91%E7%94%A8%E6%B3%95/" rel="prev" title="问题定位-01-tcpdump在问题定位中的高频用法">
+                  <i class="fa fa-angle-left"></i> 问题定位-01-tcpdump在问题定位中的高频用法
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2021/05/27/%E9%97%AE%E9%A2%98%E5%AE%9A%E4%BD%8D-03-Charles%E5%9C%A8App%E6%8A%93%E5%8C%85%E4%B8%AD%E7%9A%84%E5%AE%9E%E6%88%98%E7%BB%8F%E9%AA%8C/" rel="next" title="问题定位-03-Charles在App抓包中的实战经验">
+                  问题定位-03-Charles在App抓包中的实战经验 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

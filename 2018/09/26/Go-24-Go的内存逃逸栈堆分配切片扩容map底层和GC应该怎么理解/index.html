@@ -1,0 +1,917 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="围绕一个批量日志解析器，把 Go 里的内存逃逸、栈堆分配、slice 扩容、map 底层行为和 GC 串成一条完整的内存模型理解链，既能解释常见追问点，也能解释真实项目里的内存和性能现象。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Go：内存逃逸、栈堆分配、切片扩容、map 底层和 GC 应该怎么理解">
+<meta property="og:url" content="https://paynewinnt.github.io/2018/09/26/Go-24-Go%E7%9A%84%E5%86%85%E5%AD%98%E9%80%83%E9%80%B8%E6%A0%88%E5%A0%86%E5%88%86%E9%85%8D%E5%88%87%E7%89%87%E6%89%A9%E5%AE%B9map%E5%BA%95%E5%B1%82%E5%92%8CGC%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E7%90%86%E8%A7%A3/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="围绕一个批量日志解析器，把 Go 里的内存逃逸、栈堆分配、slice 扩容、map 底层行为和 GC 串成一条完整的内存模型理解链，既能解释常见追问点，也能解释真实项目里的内存和性能现象。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2018-09-26T12:30:00.000Z">
+<meta property="article:modified_time" content="2018-09-26T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="Go">
+<meta property="article:tag" content="Go专题">
+<meta property="article:tag" content="map">
+<meta property="article:tag" content="内存模型">
+<meta property="article:tag" content="内存">
+<meta property="article:tag" content="slice">
+<meta property="article:tag" content="GC">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2018/09/26/Go-24-Go%E7%9A%84%E5%86%85%E5%AD%98%E9%80%83%E9%80%B8%E6%A0%88%E5%A0%86%E5%88%86%E9%85%8D%E5%88%87%E7%89%87%E6%89%A9%E5%AE%B9map%E5%BA%95%E5%B1%82%E5%92%8CGC%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E7%90%86%E8%A7%A3/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2018/09/26/Go-24-Go%E7%9A%84%E5%86%85%E5%AD%98%E9%80%83%E9%80%B8%E6%A0%88%E5%A0%86%E5%88%86%E9%85%8D%E5%88%87%E7%89%87%E6%89%A9%E5%AE%B9map%E5%BA%95%E5%B1%82%E5%92%8CGC%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E7%90%86%E8%A7%A3/","path":"2018/09/26/Go-24-Go的内存逃逸栈堆分配切片扩容map底层和GC应该怎么理解/","title":"Go：内存逃逸、栈堆分配、切片扩容、map 底层和 GC 应该怎么理解"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>Go：内存逃逸、栈堆分配、切片扩容、map 底层和 GC 应该怎么理解 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E8%BF%99%E7%AF%87%E6%96%87%E7%AB%A0%E8%A6%81%E8%A7%A3%E5%86%B3%E4%BB%80%E4%B9%88%E9%97%AE%E9%A2%98"><span class="nav-number">1.</span> <span class="nav-text">一、这篇文章要解决什么问题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E5%85%88%E7%BB%99%E4%B8%80%E4%B8%AA%E5%8F%AF%E5%A4%8D%E8%BF%B0%E7%9A%84%E6%80%BB%E5%9B%9E%E7%AD%94"><span class="nav-number">2.</span> <span class="nav-text">二、先给一个可复述的总回答</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E8%B4%AF%E7%A9%BF%E5%85%A8%E6%96%87%E7%9A%84%E5%B0%8F%E5%9C%BA%E6%99%AF%EF%BC%9A%E6%89%B9%E9%87%8F%E6%97%A5%E5%BF%97%E8%A7%A3%E6%9E%90%E5%99%A8"><span class="nav-number">3.</span> <span class="nav-text">三、贯穿全文的小场景：批量日志解析器</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E5%85%88%E7%9C%8B%E6%9C%80%E5%B0%8F%E5%8F%AF%E8%BF%90%E8%A1%8C%E7%89%88%E6%9C%AC"><span class="nav-number">4.</span> <span class="nav-text">四、先看最小可运行版本</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E6%A0%88%E5%92%8C%E5%A0%86%E5%85%88%E6%80%8E%E4%B9%88%E5%8C%BA%E5%88%86"><span class="nav-number">5.</span> <span class="nav-text">五、栈和堆先怎么区分</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E5%86%85%E5%AD%98%E9%80%83%E9%80%B8%E5%88%B0%E5%BA%95%E6%98%AF%E4%BB%80%E4%B9%88"><span class="nav-number">6.</span> <span class="nav-text">六、内存逃逸到底是什么</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E5%93%AA%E4%BA%9B%E5%86%99%E6%B3%95%E6%9C%80%E5%AE%B9%E6%98%93%E8%AE%A9%E5%AF%B9%E8%B1%A1%E9%80%83%E5%88%B0%E5%A0%86%E4%B8%8A"><span class="nav-number">7.</span> <span class="nav-text">七、哪些写法最容易让对象逃到堆上</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%BF%94%E5%9B%9E%E5%B1%80%E9%83%A8%E5%8F%98%E9%87%8F%E7%9A%84%E5%9C%B0%E5%9D%80"><span class="nav-number">7.1.</span> <span class="nav-text">1. 返回局部变量的地址</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E9%97%AD%E5%8C%85%E6%88%96-goroutine-%E6%8C%81%E6%9C%89%E5%B1%80%E9%83%A8%E5%8F%98%E9%87%8F"><span class="nav-number">7.2.</span> <span class="nav-text">2. 闭包或 goroutine 持有局部变量</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%8A%8A%E5%AF%B9%E8%B1%A1%E6%94%BE%E8%BF%9B%E5%A0%86%E4%B8%8A%E7%9A%84%E5%AE%B9%E5%99%A8"><span class="nav-number">7.3.</span> <span class="nav-text">3. 把对象放进堆上的容器</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%A4%A7%E5%AF%B9%E8%B1%A1%E6%88%96%E5%A4%A7%E5%B0%8F%E9%9A%BE%E4%BB%A5%E9%9D%99%E6%80%81%E7%A1%AE%E5%AE%9A%E7%9A%84%E5%AF%B9%E8%B1%A1"><span class="nav-number">7.4.</span> <span class="nav-text">4. 大对象或大小难以静态确定的对象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%8E%A5%E5%8F%A3%E8%A3%85%E7%AE%B1%E4%B9%8B%E5%90%8E%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F%E7%BB%A7%E7%BB%AD%E5%A4%96%E6%89%A9"><span class="nav-number">7.5.</span> <span class="nav-text">5. 接口装箱之后生命周期继续外扩</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E6%80%8E%E4%B9%88%E7%94%A8%E7%BC%96%E8%AF%91%E5%99%A8%E9%AA%8C%E8%AF%81%E9%80%83%E9%80%B8%E7%BB%93%E8%AE%BA"><span class="nav-number">8.</span> <span class="nav-text">八、怎么用编译器验证逃逸结论</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E9%80%83%E9%80%B8%E4%B8%8D%E6%98%AF%E5%8E%9F%E7%BD%AA%EF%BC%8C%E5%85%B3%E9%94%AE%E7%9C%8B%E5%AF%B9%E8%B1%A1%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F"><span class="nav-number">9.</span> <span class="nav-text">九、逃逸不是原罪，关键看对象生命周期</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E5%88%87%E7%89%87%E4%B8%BA%E4%BB%80%E4%B9%88%E6%80%BB%E5%92%8C%E6%89%A9%E5%AE%B9%E7%BB%91%E5%9C%A8%E4%B8%80%E8%B5%B7"><span class="nav-number">10.</span> <span class="nav-text">十、切片为什么总和扩容绑在一起</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E5%88%87%E7%89%87%E6%89%A9%E5%AE%B9%E5%90%8E%E4%B8%BA%E4%BB%80%E4%B9%88%E6%9C%89%E6%97%B6%E5%BD%B1%E5%93%8D%E5%8E%9F%E6%95%B0%E6%8D%AE"><span class="nav-number">11.</span> <span class="nav-text">十一、切片扩容后为什么有时影响原数据</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E9%94%99%E8%AF%AF%E7%A4%BA%E4%BE%8B%EF%BC%9A%E5%B0%8F%E5%88%87%E7%89%87%E6%8B%96%E4%BD%8F%E5%A4%A7%E5%BA%95%E5%B1%82%E6%95%B0%E7%BB%84"><span class="nav-number">12.</span> <span class="nav-text">十二、错误示例：小切片拖住大底层数组</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81%E5%88%87%E7%89%87%E5%AE%B9%E9%87%8F%E8%A7%84%E5%88%92%E6%80%8E%E4%B9%88%E5%81%9A%E6%9B%B4%E7%A8%B3"><span class="nav-number">13.</span> <span class="nav-text">十三、切片容量规划怎么做更稳</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%B7%B2%E7%9F%A5%E4%B8%8A%E7%95%8C%E6%97%B6%E9%A2%84%E5%88%86%E9%85%8D"><span class="nav-number">13.1.</span> <span class="nav-text">1. 已知上界时预分配</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%8F%AA%E4%BF%9D%E7%95%99%E6%9C%80%E8%BF%91-N-%E6%9D%A1%E6%97%B6%E5%81%9A%E7%8E%AF%E5%BD%A2%E7%AA%97%E5%8F%A3%E6%88%96%E5%9B%BA%E5%AE%9A%E4%B8%8A%E7%95%8C"><span class="nav-number">13.2.</span> <span class="nav-text">2. 只保留最近 N 条时做环形窗口或固定上界</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E9%95%BF%E5%AF%BF%E5%91%BD%E5%88%87%E7%89%87%E9%87%8C%E5%B0%91%E6%94%BE%E5%A4%A7%E5%AF%B9%E8%B1%A1%E6%8C%87%E9%92%88"><span class="nav-number">13.3.</span> <span class="nav-text">3. 长寿命切片里少放大对象指针</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%A4%84%E7%90%86%E5%AE%8C%E5%A4%A7%E5%88%87%E7%89%87%E5%90%8E%E5%8F%8A%E6%97%B6%E6%96%AD%E5%BC%80%E5%BC%95%E7%94%A8"><span class="nav-number">13.4.</span> <span class="nav-text">4. 处理完大切片后及时断开引用</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81map-%E5%BA%95%E5%B1%82%E5%88%B0%E5%BA%95%E5%9C%A8%E8%A7%A3%E5%86%B3%E4%BB%80%E4%B9%88%E9%97%AE%E9%A2%98"><span class="nav-number">14.</span> <span class="nav-text">十四、map 底层到底在解决什么问题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%94%E3%80%81map-%E4%B8%BA%E4%BB%80%E4%B9%88%E6%97%A0%E5%BA%8F%E3%80%81%E4%B8%BA%E4%BB%80%E4%B9%88%E5%B9%B6%E5%8F%91%E5%86%99%E4%B8%8D%E5%AE%89%E5%85%A8"><span class="nav-number">15.</span> <span class="nav-text">十五、map 为什么无序、为什么并发写不安全</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E9%81%8D%E5%8E%86%E6%97%A0%E5%BA%8F"><span class="nav-number">15.1.</span> <span class="nav-text">1. 遍历无序</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%B9%B6%E5%8F%91%E5%86%99%E4%B8%8D%E5%AE%89%E5%85%A8"><span class="nav-number">15.2.</span> <span class="nav-text">2. 并发写不安全</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AD%E3%80%81map-%E5%85%83%E7%B4%A0%E4%B8%BA%E4%BB%80%E4%B9%88%E4%B8%8D%E8%83%BD%E7%9B%B4%E6%8E%A5%E5%8F%96%E5%9C%B0%E5%9D%80%E6%94%B9%E5%AD%97%E6%AE%B5"><span class="nav-number">16.</span> <span class="nav-text">十六、map 元素为什么不能直接取地址改字段</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%83%E3%80%81%E9%94%99%E8%AF%AF%E7%A4%BA%E4%BE%8B%EF%BC%9Anil-map%E3%80%81%E5%80%BC%E4%BF%AE%E6%94%B9%E5%92%8C%E7%83%AD%E7%82%B9-key"><span class="nav-number">17.</span> <span class="nav-text">十七、错误示例：nil map、值修改和热点 key</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-nil-map-%E5%8F%AF%E4%BB%A5%E8%AF%BB%EF%BC%8C%E5%86%99%E4%BC%9A-panic"><span class="nav-number">17.1.</span> <span class="nav-text">1. nil map 可以读，写会 panic</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%AF%AF%E6%8A%8A-map-value-%E5%BD%93%E6%88%90%E5%8F%AF%E5%8E%9F%E5%9C%B0%E4%BF%AE%E6%94%B9%E5%AF%B9%E8%B1%A1"><span class="nav-number">17.2.</span> <span class="nav-text">2. 误把 map value 当成可原地修改对象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%83%AD%E7%82%B9-key-%E4%B8%8B%E7%9A%84%E5%AD%97%E7%AC%A6%E4%B8%B2%E6%8B%BC%E6%8E%A5%E5%92%8C%E4%B8%B4%E6%97%B6%E5%AF%B9%E8%B1%A1"><span class="nav-number">17.3.</span> <span class="nav-text">3. 热点 key 下的字符串拼接和临时对象</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AB%E3%80%81GC-%E5%9C%A8%E8%BF%99%E6%9D%A1%E9%93%BE%E9%87%8C%E6%89%AE%E6%BC%94%E4%BB%80%E4%B9%88%E8%A7%92%E8%89%B2"><span class="nav-number">18.</span> <span class="nav-text">十八、GC 在这条链里扮演什么角色</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B9%9D%E3%80%81%E9%80%83%E9%80%B8%E3%80%81slice%E3%80%81map-%E6%80%8E%E4%B9%88%E4%B8%80%E8%B5%B7%E5%BD%B1%E5%93%8D-GC-%E5%8E%8B%E5%8A%9B"><span class="nav-number">19.</span> <span class="nav-text">十九、逃逸、slice、map 怎么一起影响 GC 压力</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E9%80%83%E9%80%B8%E8%AE%A9%E7%9F%AD%E5%91%BD%E5%AF%B9%E8%B1%A1%E8%BF%9B%E5%85%A5%E5%A0%86"><span class="nav-number">19.1.</span> <span class="nav-text">1. 逃逸让短命对象进入堆</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-slice-%E6%89%A9%E5%AE%B9%E4%BC%9A%E5%88%B6%E9%80%A0%E6%96%B0%E7%9A%84%E5%BA%95%E5%B1%82%E6%95%B0%E7%BB%84"><span class="nav-number">19.2.</span> <span class="nav-text">2. slice 扩容会制造新的底层数组</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%B0%8F%E5%88%87%E7%89%87%E8%AF%AF%E6%8C%81%E6%9C%89%E5%A4%A7%E6%95%B0%E7%BB%84%E4%BC%9A%E6%8B%89%E9%AB%98%E5%AD%98%E6%B4%BB%E5%86%85%E5%AD%98"><span class="nav-number">19.3.</span> <span class="nav-text">3. 小切片误持有大数组会拉高存活内存</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-map-%E9%87%8C%E6%94%BE%E6%8C%87%E9%92%88%E4%BC%9A%E5%A2%9E%E5%8A%A0%E5%AF%B9%E8%B1%A1%E6%95%B0%E5%92%8C%E6%89%AB%E6%8F%8F%E8%BE%B9"><span class="nav-number">19.4.</span> <span class="nav-text">4. map 里放指针会增加对象数和扫描边</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E9%95%BF%E5%AF%BF%E5%91%BD%E7%BC%93%E5%AD%98%E7%BB%93%E6%9E%84%E4%BC%9A%E6%8A%8A%E7%9F%AD%E5%91%BD%E6%95%B0%E6%8D%AE%E5%8F%98%E6%88%90%E9%95%BF%E5%91%BD%E6%95%B0%E6%8D%AE"><span class="nav-number">19.5.</span> <span class="nav-text">5. 长寿命缓存结构会把短命数据变成长命数据</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E3%80%81%E6%80%8E%E4%B9%88%E7%94%A8%E6%B5%8B%E8%AF%95%E5%92%8C%E5%9F%BA%E5%87%86%E6%8A%8A%E5%88%A4%E6%96%AD%E8%90%BD%E5%9C%B0"><span class="nav-number">20.</span> <span class="nav-text">二十、怎么用测试和基准把判断落地</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%80%E3%80%81%E7%BA%BF%E4%B8%8A%E6%8E%92%E9%9A%9C%E8%AF%A5%E4%BB%8E%E5%93%AA%E9%87%8C%E4%B8%8B%E6%89%8B"><span class="nav-number">21.</span> <span class="nav-text">二十一、线上排障该从哪里下手</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%85%88%E7%9C%8B%E6%98%AF%E4%B8%8D%E6%98%AF%E5%88%86%E9%85%8D%E5%A4%AA%E5%A4%9A"><span class="nav-number">21.1.</span> <span class="nav-text">1. 先看是不是分配太多</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%86%8D%E7%9C%8B%E6%98%AF%E4%B8%8D%E6%98%AF%E4%BF%9D%E6%B4%BB%E5%A4%AA%E4%B9%85"><span class="nav-number">21.2.</span> <span class="nav-text">2. 再看是不是保活太久</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%86%8D%E7%9C%8B%E6%98%AF%E4%B8%8D%E6%98%AF%E7%BB%93%E6%9E%84%E9%80%89%E5%9E%8B%E5%B8%A6%E6%9D%A5%E7%9A%84%E6%89%AB%E6%8F%8F%E6%88%90%E6%9C%AC"><span class="nav-number">21.3.</span> <span class="nav-text">3. 再看是不是结构选型带来的扫描成本</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%9C%80%E5%90%8E%E5%86%8D%E8%80%83%E8%99%91%E5%B1%80%E9%83%A8%E6%8A%80%E5%B7%A7"><span class="nav-number">21.4.</span> <span class="nav-text">4. 最后再考虑局部技巧</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%8C%E3%80%81%E8%BE%B9%E7%95%8C%E6%9D%A1%E4%BB%B6%E5%88%AB%E6%BC%8F"><span class="nav-number">22.</span> <span class="nav-text">二十二、边界条件别漏</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-new-T-%E4%B8%8D%E6%98%AF%E2%80%9C%E5%A0%86%E5%88%86%E9%85%8D%E5%85%B3%E9%94%AE%E5%AD%97%E2%80%9D"><span class="nav-number">22.1.</span> <span class="nav-text">1. new(T) 不是“堆分配关键字”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-make-%E4%B9%9F%E4%B8%8D%E6%98%AF%E2%80%9C%E5%8F%AA%E5%9C%A8%E6%A0%88%E4%B8%8A%E2%80%9D"><span class="nav-number">22.2.</span> <span class="nav-text">2. make 也不是“只在栈上”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-nil-slice-%E5%92%8C-nil-map-%E8%A1%8C%E4%B8%BA%E4%B8%8D%E5%90%8C"><span class="nav-number">22.3.</span> <span class="nav-text">3. nil slice 和 nil map 行为不同</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%88%A0%E9%99%A4-map-%E5%85%83%E7%B4%A0%E5%90%8E%EF%BC%8C%E7%A9%BA%E9%97%B4%E4%B8%8D%E4%BB%A3%E8%A1%A8%E4%BC%9A%E7%AB%8B%E5%88%BB%E5%9B%9E%E5%88%B0%E5%88%9D%E5%A7%8B%E6%B0%B4%E5%B9%B3"><span class="nav-number">22.4.</span> <span class="nav-text">4. 删除 map 元素后，空间不代表会立刻回到初始水平</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E8%BF%94%E5%9B%9E%E5%B0%8F%E7%BB%93%E6%9E%84%E4%BD%93%E5%80%BC%EF%BC%8C%E6%9C%AA%E5%BF%85%E6%AF%94%E8%BF%94%E5%9B%9E%E6%8C%87%E9%92%88%E5%B7%AE"><span class="nav-number">22.5.</span> <span class="nav-text">5. 返回小结构体值，未必比返回指针差</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%89%E3%80%81%E7%BB%83%E4%B9%A0%E9%A2%98"><span class="nav-number">23.</span> <span class="nav-text">二十三、练习题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%9B%9B%E3%80%81%E7%BB%93%E8%AF%AD"><span class="nav-number">24.</span> <span class="nav-text">二十四、结语</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2018/09/26/Go-24-Go%E7%9A%84%E5%86%85%E5%AD%98%E9%80%83%E9%80%B8%E6%A0%88%E5%A0%86%E5%88%86%E9%85%8D%E5%88%87%E7%89%87%E6%89%A9%E5%AE%B9map%E5%BA%95%E5%B1%82%E5%92%8CGC%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E7%90%86%E8%A7%A3/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="Go：内存逃逸、栈堆分配、切片扩容、map 底层和 GC 应该怎么理解 | 大道至简">
+      <meta itemprop="description" content="围绕一个批量日志解析器，把 Go 里的内存逃逸、栈堆分配、slice 扩容、map 底层行为和 GC 串成一条完整的内存模型理解链，既能解释常见追问点，也能解释真实项目里的内存和性能现象。">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Go：内存逃逸、栈堆分配、切片扩容、map 底层和 GC 应该怎么理解
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2018-09-26 20:30:00" itemprop="dateCreated datePublished" datetime="2018-09-26T20:30:00+08:00">2018-09-26</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>6.2k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>23 分钟</span>
+    </span>
+</div>
+
+            <div class="post-description">围绕一个批量日志解析器，把 Go 里的内存逃逸、栈堆分配、slice 扩容、map 底层行为和 GC 串成一条完整的内存模型理解链，既能解释常见追问点，也能解释真实项目里的内存和性能现象。</div>
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>代码评审和线上排障里，这几个词经常被连着提：内存逃逸、栈、堆、slice 扩容、map 底层、GC。</p>
+<p>拆开看像一组零散概念，放回一段真实代码里，它们其实描述的是同一件事：<strong>对象在哪分配，谁持有它，容量怎么增长，什么时候释放，GC 要扫描多少内容。</strong></p>
+<p>一段日志处理代码里，常见的症状通常长这样：</p>
+<ul>
+<li>批量解析吞吐还能接受，但内存曲线持续上扬</li>
+<li><code>append</code> 之后，原切片里的数据也变了</li>
+<li><code>map</code> 遍历输出顺序每次都不一样</li>
+<li>只截了一小段 <code>[]byte</code>，进程占用却一直下不来</li>
+<li><code>allocs/op</code> 比预期高，GC 次数也偏多</li>
+</ul>
+<p>这篇文章不按词条背定义，而是围绕一个小场景把这些问题接成一条链：<strong>批量日志解析器</strong>。</p>
+<h2 id="一、这篇文章要解决什么问题"><a href="#一、这篇文章要解决什么问题" class="headerlink" title="一、这篇文章要解决什么问题"></a>一、这篇文章要解决什么问题</h2><p>读完这一篇，应该能独立回答这些问题：</p>
+<ol>
+<li>Go 里的栈和堆分别适合承载什么样的对象</li>
+<li>内存逃逸到底是什么意思，为什么它和 <code>new</code>、<code>&amp;</code> 不是简单一一对应</li>
+<li>slice 为什么像“动态数组”，却又经常改到原数据</li>
+<li>map 底层到底是怎么做查找和扩容的，为什么遍历无序、并发写不安全</li>
+<li>GC 在这条链里到底看见了什么，哪些写法会放大 GC 压力</li>
+<li>工程里怎么验证推断，而不是靠打印猜</li>
+<li>短时间里怎么把这些概念组织成一段完整回答</li>
+</ol>
+<p>如果这些点能串起来，后面写缓存、日志、批处理、聚合器、任务执行器时，内存相关的问题会更容易收束。</p>
+<h2 id="二、先给一个可复述的总回答"><a href="#二、先给一个可复述的总回答" class="headerlink" title="二、先给一个可复述的总回答"></a>二、先给一个可复述的总回答</h2><p>如果只给 60 到 90 秒，可以按下面这条顺序回答：</p>
+<ol>
+<li><p><strong>先讲分配位置</strong><br>Go 并不是按语法上的 <code>new</code>、<code>&amp;</code> 来决定栈堆，而是由编译器做逃逸分析。当前函数栈帧内可以安全承载的对象优先放栈上，生命周期可能超过当前栈帧，或者编译器无法证明安全的对象，会放到堆上。</p>
+</li>
+<li><p><strong>再讲 slice</strong><br>slice 不是数组本身，而是对底层数组的一层描述，包含指针、长度和容量。<code>append</code> 没超容量时，常常还在原数组上写；超了容量，就会分配新数组并搬迁数据。</p>
+</li>
+<li><p><strong>再讲 map</strong><br>map 本质上是哈希表。查找均摊接近 <code>O(1)</code>，扩容时元素位置可能变化，所以遍历顺序不承诺稳定，元素也不能直接取地址改字段，并发写要做同步。</p>
+</li>
+<li><p><strong>最后讲 GC</strong><br>堆对象越多、指针越多、被长时间持有的大块内存越多，GC 负担越重。逃逸、slice 扩容、map 里存指针，这三类写法都会直接影响堆大小和扫描成本。</p>
+</li>
+<li><p><strong>落回工程结论</strong><br>工程里重点不是“消灭所有逃逸”，而是控制对象生命周期、减少不必要分配、避免误持有大底层数组、为热点结构做容量规划，并用 <code>-gcflags=-m</code>、<code>benchmem</code>、<code>pprof</code> 去验证。</p>
+</li>
+</ol>
+<p>后面的正文，就是把这段回答拆开。</p>
+<h2 id="三、贯穿全文的小场景：批量日志解析器"><a href="#三、贯穿全文的小场景：批量日志解析器" class="headerlink" title="三、贯穿全文的小场景：批量日志解析器"></a>三、贯穿全文的小场景：批量日志解析器</h2><p>假设现在有一个最小批量日志解析器，它要做这几件事：</p>
+<ol>
+<li>接收一批日志行</li>
+<li>解析出服务名、状态码、耗时和消息</li>
+<li>统计每个服务的请求数和错误数</li>
+<li>记录最近几条错误日志</li>
+<li>把聚合结果交给后续告警组件</li>
+</ol>
+<p>原始输入先简化成字符串：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">order-api,200,18,ok</span><br><span class="line">order-api,500,34,db timeout</span><br><span class="line">user-api,200,12,ok</span><br><span class="line">billing-api,503,61,upstream unavailable</span><br></pre></td></tr></table></figure>
+
+<p>这个场景里几种结构的分工很清楚：</p>
+<ul>
+<li><code>[]string</code> 或 <code>[][]byte</code>：承接一批动态长度输入</li>
+<li><code>[]Record</code>：保存解析后的结果，涉及 slice 扩容和底层数组复用</li>
+<li><code>map[string]ServiceStat</code>：做按服务聚合</li>
+<li><code>[]Record</code> 或 <code>[N]Record</code>：保存最近错误，用来对比动态切片和固定容量容器</li>
+</ul>
+<p>也正是这几个结构，把栈堆、逃逸、GC 串到了一起。</p>
+<h2 id="四、先看最小可运行版本"><a href="#四、先看最小可运行版本" class="headerlink" title="四、先看最小可运行版本"></a>四、先看最小可运行版本</h2><p>先把最小版本立住：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> parser</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">	<span class="string">&quot;strconv&quot;</span></span><br><span class="line">	<span class="string">&quot;strings&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Record <span class="keyword">struct</span> &#123;</span><br><span class="line">	Service <span class="type">string</span></span><br><span class="line">	Code    <span class="type">int</span></span><br><span class="line">	CostMS  <span class="type">int</span></span><br><span class="line">	Message <span class="type">string</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> ServiceStat <span class="keyword">struct</span> &#123;</span><br><span class="line">	Count      <span class="type">int</span></span><br><span class="line">	ErrorCount <span class="type">int</span></span><br><span class="line">	LastCodes  []<span class="type">int</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Report <span class="keyword">struct</span> &#123;</span><br><span class="line">	Records      []Record</span><br><span class="line">	Stats        <span class="keyword">map</span>[<span class="type">string</span>]ServiceStat</span><br><span class="line">	RecentErrors []Record</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Process</span><span class="params">(lines []<span class="type">string</span>)</span></span> Report &#123;</span><br><span class="line">	report := Report&#123;</span><br><span class="line">		Records:      <span class="built_in">make</span>([]Record, <span class="number">0</span>, <span class="built_in">len</span>(lines)),</span><br><span class="line">		Stats:        <span class="built_in">make</span>(<span class="keyword">map</span>[<span class="type">string</span>]ServiceStat, <span class="built_in">len</span>(lines)),</span><br><span class="line">		RecentErrors: <span class="built_in">make</span>([]Record, <span class="number">0</span>, <span class="number">8</span>),</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> _, line := <span class="keyword">range</span> lines &#123;</span><br><span class="line">		parts := strings.SplitN(line, <span class="string">&quot;,&quot;</span>, <span class="number">4</span>)</span><br><span class="line">		<span class="keyword">if</span> <span class="built_in">len</span>(parts) != <span class="number">4</span> &#123;</span><br><span class="line">			<span class="keyword">continue</span></span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		code, err := strconv.Atoi(parts[<span class="number">1</span>])</span><br><span class="line">		<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">			<span class="keyword">continue</span></span><br><span class="line">		&#125;</span><br><span class="line">		cost, err := strconv.Atoi(parts[<span class="number">2</span>])</span><br><span class="line">		<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">			<span class="keyword">continue</span></span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		record := Record&#123;</span><br><span class="line">			Service: parts[<span class="number">0</span>],</span><br><span class="line">			Code:    code,</span><br><span class="line">			CostMS:  cost,</span><br><span class="line">			Message: parts[<span class="number">3</span>],</span><br><span class="line">		&#125;</span><br><span class="line">		report.Records = <span class="built_in">append</span>(report.Records, record)</span><br><span class="line"></span><br><span class="line">		stat := report.Stats[record.Service]</span><br><span class="line">		stat.Count++</span><br><span class="line">		<span class="keyword">if</span> record.Code &gt;= <span class="number">500</span> &#123;</span><br><span class="line">			stat.ErrorCount++</span><br><span class="line">			stat.LastCodes = <span class="built_in">append</span>(stat.LastCodes, record.Code)</span><br><span class="line">			report.RecentErrors = <span class="built_in">append</span>(report.RecentErrors, record)</span><br><span class="line">		&#125;</span><br><span class="line">		report.Stats[record.Service] = stat</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> report</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这段代码已经把本文的几个关键问题都带出来了：</p>
+<ul>
+<li><code>record</code> 这个局部变量到底放栈还是堆</li>
+<li><code>report.Records</code> 什么时候会扩容</li>
+<li><code>stat.LastCodes</code> 为什么有时会反复分配</li>
+<li><code>map</code> 里的 <code>ServiceStat</code> 为什么要读出来、改完、再写回去</li>
+<li><code>RecentErrors</code> 持有的对象会不会拉高 GC 压力</li>
+</ul>
+<h2 id="五、栈和堆先怎么区分"><a href="#五、栈和堆先怎么区分" class="headerlink" title="五、栈和堆先怎么区分"></a>五、栈和堆先怎么区分</h2><p>先把两个概念摆正：</p>
+<ul>
+<li><strong>栈</strong>更适合承载生命周期短、大小相对可控、作用域清晰的对象</li>
+<li><strong>堆</strong>更适合承载生命周期跨函数、被多个对象共享、大小或生存期难以静态证明的对象</li>
+</ul>
+<p>在 Go 里，栈对象和堆对象最关键的区别不是“谁更高级”，而是：</p>
+<ol>
+<li>栈对象跟随函数栈帧创建和回收，离开作用域后回收路径很直接</li>
+<li>堆对象由运行时统一管理，何时回收取决于是否还可达</li>
+<li>堆对象一旦变多，就会把 GC 扫描成本带起来</li>
+</ol>
+<p>最小例子：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">sum</span><span class="params">(a, b <span class="type">int</span>)</span></span> <span class="type">int</span> &#123;</span><br><span class="line">	total := a + b</span><br><span class="line">	<span class="keyword">return</span> total</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这里的 <code>total</code> 生命周期只在函数内部，通常适合放在栈上。</p>
+<p>再看另一个例子：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">newCount</span><span class="params">()</span></span> *<span class="type">int</span> &#123;</span><br><span class="line">	n := <span class="number">1</span></span><br><span class="line">	<span class="keyword">return</span> &amp;n</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>n</code> 的地址被返回后，生命周期已经超过当前函数栈帧，编译器通常会把它安排到堆上。</p>
+<h2 id="六、内存逃逸到底是什么"><a href="#六、内存逃逸到底是什么" class="headerlink" title="六、内存逃逸到底是什么"></a>六、内存逃逸到底是什么</h2><p>内存逃逸的核心定义可以压成一句话：</p>
+<p><strong>一个对象本来有机会放在当前函数栈上，但它的引用需要活得更久，或者编译器无法证明栈上安全，于是把它放到了堆上。</strong></p>
+<p>这个定义里有两个重点：</p>
+<ol>
+<li>逃逸是<strong>编译器分析结果</strong></li>
+<li>逃逸判断看的是<strong>生命周期和可证明性</strong></li>
+</ol>
+<p>所以这几组关系都不是简单等号：</p>
+<ul>
+<li><code>new(T)</code> 不等于一定上堆</li>
+<li><code>&amp;x</code> 不等于一定上堆</li>
+<li>返回值是值类型，不等于一定不逃逸</li>
+<li>没写指针，不等于堆分配就不会发生</li>
+</ul>
+<p>一个例子能看清这件事：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">buildRecord</span><span class="params">(service <span class="type">string</span>, code <span class="type">int</span>)</span></span> *Record &#123;</span><br><span class="line">	record := Record&#123;</span><br><span class="line">		Service: service,</span><br><span class="line">		Code:    code,</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> &amp;record</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这里不是因为用了 <code>&amp;record</code> 这行语法才显得“危险”，真正的原因是：返回后调用方还要继续使用这个对象。</p>
+<h2 id="七、哪些写法最容易让对象逃到堆上"><a href="#七、哪些写法最容易让对象逃到堆上" class="headerlink" title="七、哪些写法最容易让对象逃到堆上"></a>七、哪些写法最容易让对象逃到堆上</h2><p>工程里最常见的几类触发点如下：</p>
+<h3 id="1-返回局部变量的地址"><a href="#1-返回局部变量的地址" class="headerlink" title="1. 返回局部变量的地址"></a>1. 返回局部变量的地址</h3><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">buildCounter</span><span class="params">()</span></span> *<span class="type">int</span> &#123;</span><br><span class="line">	n := <span class="number">0</span></span><br><span class="line">	<span class="keyword">return</span> &amp;n</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="2-闭包或-goroutine-持有局部变量"><a href="#2-闭包或-goroutine-持有局部变量" class="headerlink" title="2. 闭包或 goroutine 持有局部变量"></a>2. 闭包或 goroutine 持有局部变量</h3><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">spawn</span><span class="params">(records []Record)</span></span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> <span class="type">int</span> &#123;</span><br><span class="line">	count := <span class="built_in">len</span>(records)</span><br><span class="line">	<span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> <span class="type">int</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> count</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>闭包返回后仍然要读 <code>count</code>，编译器往往需要把相关对象放到更长寿命的位置。</p>
+<h3 id="3-把对象放进堆上的容器"><a href="#3-把对象放进堆上的容器" class="headerlink" title="3. 把对象放进堆上的容器"></a>3. 把对象放进堆上的容器</h3><p>例如切片扩容后的底层数组、map 内部结构、长寿命对象字段，都会延长引用链。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">collect</span><span class="params">(lines []<span class="type">string</span>)</span></span> []*Record &#123;</span><br><span class="line">	out := <span class="built_in">make</span>([]*Record, <span class="number">0</span>, <span class="built_in">len</span>(lines))</span><br><span class="line">	<span class="keyword">for</span> _, line := <span class="keyword">range</span> lines &#123;</span><br><span class="line">		r := &amp;Record&#123;Service: line&#125;</span><br><span class="line">		out = <span class="built_in">append</span>(out, r)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> out</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这里每个 <code>Record</code> 都会跟着 <code>out</code> 一起活下去。</p>
+<h3 id="4-大对象或大小难以静态确定的对象"><a href="#4-大对象或大小难以静态确定的对象" class="headerlink" title="4. 大对象或大小难以静态确定的对象"></a>4. 大对象或大小难以静态确定的对象</h3><p>这类场景不要求每次都上堆，但编译器更难在栈上做保守而高效的安排。</p>
+<h3 id="5-接口装箱之后生命周期继续外扩"><a href="#5-接口装箱之后生命周期继续外扩" class="headerlink" title="5. 接口装箱之后生命周期继续外扩"></a>5. 接口装箱之后生命周期继续外扩</h3><p>接口本身不是“逃逸开关”，但如果一个值装进接口后，需要在当前函数之外继续存在，或者被放进长寿命结构里，也可能引出堆分配。</p>
+<h2 id="八、怎么用编译器验证逃逸结论"><a href="#八、怎么用编译器验证逃逸结论" class="headerlink" title="八、怎么用编译器验证逃逸结论"></a>八、怎么用编译器验证逃逸结论</h2><p>讨论逃逸时，最稳的做法不是只看代码外形，而是直接看编译器结论。</p>
+<p>常用命令：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">go build -gcflags=<span class="string">&quot;-m=2&quot;</span> ./...</span><br></pre></td></tr></table></figure>
+
+<p>对单文件实验，也可以直接：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">go build -gcflags=<span class="string">&quot;-m=2&quot;</span> main.go</span><br></pre></td></tr></table></figure>
+
+<p>输出里经常能看到类似信息：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">./main.go:14:2: moved to heap: record</span><br><span class="line">./main.go:20:9: &amp;Record&#123;...&#125; escapes to heap</span><br><span class="line">./main.go:27:14: make([]Record, 0, len(lines)) escapes to heap</span><br></pre></td></tr></table></figure>
+
+<p>这里有两个阅读要点：</p>
+<ol>
+<li><strong>具体措辞会随 Go 版本变化</strong></li>
+<li><strong>重点不是逐字背输出，而是看谁在逃逸、为什么逃逸</strong></li>
+</ol>
+<p>如果看到某个对象逃逸，不要立刻把它归类成“坏代码”。下一步更重要：这个对象是不是热点路径上的短命对象，它的数量是不是会在高并发下快速放大。</p>
+<h2 id="九、逃逸不是原罪，关键看对象生命周期"><a href="#九、逃逸不是原罪，关键看对象生命周期" class="headerlink" title="九、逃逸不是原罪，关键看对象生命周期"></a>九、逃逸不是原罪，关键看对象生命周期</h2><p>逃逸本身不是 bug，也不是需要被清零的指标。</p>
+<p>有些对象放堆上是合理的，甚至是表达语义最清楚的方式：</p>
+<ul>
+<li>结果对象需要在多个组件间共享</li>
+<li>缓存条目本来就要长期存在</li>
+<li>请求上下文要跨多个函数流转</li>
+<li>goroutine 闭包需要读取外部状态</li>
+</ul>
+<p>工程里更有价值的问题是：</p>
+<ol>
+<li>这些堆对象是不是必要</li>
+<li>这些对象会不会在热点路径里大量产生</li>
+<li>这些对象有没有被意外持有太久</li>
+<li>它们是不是包含太多指针，导致 GC 扫描变重</li>
+</ol>
+<p>例如 <code>map[string]*ServiceStat</code> 和 <code>map[string]ServiceStat</code> 都能写，但两者的对象数量、指针数量和可变方式并不一样，后面会展开。</p>
+<h2 id="十、切片为什么总和扩容绑在一起"><a href="#十、切片为什么总和扩容绑在一起" class="headerlink" title="十、切片为什么总和扩容绑在一起"></a>十、切片为什么总和扩容绑在一起</h2><p>理解 slice，先记住它不是“变长数组”这句口语化描述本身，而是要记住它的三个字段：</p>
+<ol>
+<li>指向底层数组的指针</li>
+<li>长度 <code>len</code></li>
+<li>容量 <code>cap</code></li>
+</ol>
+<p>也就是说，slice 自己只是一个小描述符，真正存元素的是底层数组。</p>
+<p>最小例子：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">base := []<span class="type">int</span>&#123;<span class="number">10</span>, <span class="number">20</span>, <span class="number">30</span>, <span class="number">40</span>&#125;</span><br><span class="line">part := base[:<span class="number">2</span>]</span><br></pre></td></tr></table></figure>
+
+<p>此时：</p>
+<ul>
+<li><code>part</code> 长度是 2</li>
+<li><code>part</code> 容量通常还是从起始位置到底层数组末尾的长度</li>
+<li><code>part[0]</code>、<code>part[1]</code> 和 <code>base</code> 共享同一块底层数组</li>
+</ul>
+<p><code>append</code> 的行为也就顺理成章了：</p>
+<ol>
+<li>追加后如果没超 <code>cap</code>，还在原底层数组上写</li>
+<li>追加后如果超 <code>cap</code>，运行时会分配新的底层数组，把旧数据搬过去，再写新元素</li>
+</ol>
+<p>如果只答“slice 会自动扩容”，信息量还不够。更关键的是把“扩到哪里、会不会共享原数组”说出来。</p>
+<h2 id="十一、切片扩容后为什么有时影响原数据"><a href="#十一、切片扩容后为什么有时影响原数据" class="headerlink" title="十一、切片扩容后为什么有时影响原数据"></a>十一、切片扩容后为什么有时影响原数据</h2><p>这是 slice 题里最常被追问的一段。</p>
+<p>先看例子：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">base := []<span class="type">int</span>&#123;<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>&#125;</span><br><span class="line"></span><br><span class="line">a := base[:<span class="number">2</span>]</span><br><span class="line">b := <span class="built_in">append</span>(a, <span class="number">9</span>)</span><br><span class="line"></span><br><span class="line">fmt.Println(base)</span><br><span class="line">fmt.Println(a)</span><br><span class="line">fmt.Println(b)</span><br></pre></td></tr></table></figure>
+
+<p>如果 <code>a</code> 追加时容量还够，<code>9</code> 会直接写进 <code>base</code> 的后续位置，结果通常接近：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">[1 2 9 4]</span><br><span class="line">[1 2]</span><br><span class="line">[1 2 9]</span><br></pre></td></tr></table></figure>
+
+<p>再看另一个版本：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">base := []<span class="type">int</span>&#123;<span class="number">1</span>, <span class="number">2</span>&#125;</span><br><span class="line"></span><br><span class="line">a := base[:<span class="number">2</span>]</span><br><span class="line">b := <span class="built_in">append</span>(a, <span class="number">9</span>)</span><br></pre></td></tr></table></figure>
+
+<p>这里原切片容量已经满了，<code>append</code> 会触发扩容，<code>b</code> 很可能拿到一块新数组，<code>base</code> 不会被改。</p>
+<p>这就是为什么看起来同样的 <code>append</code>，结果却不同。<br>决定因素不是“是不是 append”，而是<strong>追加时有没有复用原底层数组</strong>。</p>
+<p>如果明确不想共享底层数组，可以这样截断容量：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">a := base[:<span class="number">2</span>:<span class="number">2</span>]</span><br><span class="line">b := <span class="built_in">append</span>(a, <span class="number">9</span>)</span><br></pre></td></tr></table></figure>
+
+<p>也可以主动复制：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">b := <span class="built_in">append</span>([]<span class="type">int</span>(<span class="literal">nil</span>), a...)</span><br><span class="line">b = <span class="built_in">append</span>(b, <span class="number">9</span>)</span><br></pre></td></tr></table></figure>
+
+<h2 id="十二、错误示例：小切片拖住大底层数组"><a href="#十二、错误示例：小切片拖住大底层数组" class="headerlink" title="十二、错误示例：小切片拖住大底层数组"></a>十二、错误示例：小切片拖住大底层数组</h2><p>这是排内存问题时非常高频的一类坑。</p>
+<p>假设解析器一次把整个批次文件读进内存：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">pickPrefix</span><span class="params">(batch []<span class="type">byte</span>)</span></span> []<span class="type">byte</span> &#123;</span><br><span class="line">	<span class="keyword">for</span> i, b := <span class="keyword">range</span> batch &#123;</span><br><span class="line">		<span class="keyword">if</span> b == <span class="string">&#x27;\n&#x27;</span> &#123;</span><br><span class="line">			<span class="keyword">return</span> batch[:i]</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> batch</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>如果 <code>batch</code> 是 32MB 的大缓冲区，<code>pickPrefix</code> 返回的只是前几十个字节，但它依旧引用着原来那 32MB 底层数组。</p>
+<p>后面哪怕只把这小段结果放进一个长寿命切片里，整块大内存都还活着。</p>
+<p>更稳的写法是主动复制需要的部分：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">pickPrefix</span><span class="params">(batch []<span class="type">byte</span>)</span></span> []<span class="type">byte</span> &#123;</span><br><span class="line">	<span class="keyword">for</span> i, b := <span class="keyword">range</span> batch &#123;</span><br><span class="line">		<span class="keyword">if</span> b == <span class="string">&#x27;\n&#x27;</span> &#123;</span><br><span class="line">			<span class="keyword">return</span> <span class="built_in">append</span>([]<span class="type">byte</span>(<span class="literal">nil</span>), batch[:i]...)</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> <span class="built_in">append</span>([]<span class="type">byte</span>(<span class="literal">nil</span>), batch...)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这个例子和 GC 的关系很直接：<br><strong>GC 回收的是不可达对象，不是“你主观上不想要的那部分字节”。</strong><br>只要还有一个小切片指向大数组，大数组就还可达。</p>
+<h2 id="十三、切片容量规划怎么做更稳"><a href="#十三、切片容量规划怎么做更稳" class="headerlink" title="十三、切片容量规划怎么做更稳"></a>十三、切片容量规划怎么做更稳</h2><p>写批处理、聚合器、日志解析器时，slice 的容量规划很有价值，因为它直接影响两件事：</p>
+<ol>
+<li>分配次数</li>
+<li>数据搬迁次数</li>
+</ol>
+<p>几个常用策略：</p>
+<h3 id="1-已知上界时预分配"><a href="#1-已知上界时预分配" class="headerlink" title="1. 已知上界时预分配"></a>1. 已知上界时预分配</h3><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">records := <span class="built_in">make</span>([]Record, <span class="number">0</span>, <span class="built_in">len</span>(lines))</span><br></pre></td></tr></table></figure>
+
+<h3 id="2-只保留最近-N-条时做环形窗口或固定上界"><a href="#2-只保留最近-N-条时做环形窗口或固定上界" class="headerlink" title="2. 只保留最近 N 条时做环形窗口或固定上界"></a>2. 只保留最近 N 条时做环形窗口或固定上界</h3><p>如果 <code>RecentErrors</code> 只需要最近 8 条，没必要让它无限长。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> <span class="built_in">len</span>(report.RecentErrors) &lt; <span class="number">8</span> &#123;</span><br><span class="line">	report.RecentErrors = <span class="built_in">append</span>(report.RecentErrors, record)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>或者直接用固定大小数组加下标轮转。</p>
+<h3 id="3-长寿命切片里少放大对象指针"><a href="#3-长寿命切片里少放大对象指针" class="headerlink" title="3. 长寿命切片里少放大对象指针"></a>3. 长寿命切片里少放大对象指针</h3><p>如果切片本身要活很久，里面塞满指针会增加堆对象数量和 GC 扫描成本。<br>短小结构体按值存储，往往更紧凑。</p>
+<h3 id="4-处理完大切片后及时断开引用"><a href="#4-处理完大切片后及时断开引用" class="headerlink" title="4. 处理完大切片后及时断开引用"></a>4. 处理完大切片后及时断开引用</h3><p>局部变量离开作用域后自然会失效；如果它被更长寿命对象持有，就需要显式改写引用关系。</p>
+<h2 id="十四、map-底层到底在解决什么问题"><a href="#十四、map-底层到底在解决什么问题" class="headerlink" title="十四、map 底层到底在解决什么问题"></a>十四、map 底层到底在解决什么问题</h2><p>把 map 先放回抽象层看，它解决的是：<strong>按 key 快速定位 value。</strong></p>
+<p>Go 的 map 本质上是哈希表。对外需要记住的是这几个稳定事实：</p>
+<ol>
+<li>key 会先参与哈希计算</li>
+<li>哈希结果会决定元素落到哪个桶或组</li>
+<li>冲突发生时，需要在同桶或同组里继续比较</li>
+<li>装载变高后，map 会增长，元素位置可能变化</li>
+</ol>
+<p>不同 Go 版本会调整具体布局和增长细节，但下面这些行为是写业务和解释现象都绕不过去的：</p>
+<ul>
+<li>查找、插入、删除平均复杂度接近 <code>O(1)</code></li>
+<li>遍历顺序不承诺稳定</li>
+<li>扩容时元素位置可能变化</li>
+<li>key 需要可比较</li>
+<li>一旦有并发写，就需要同步保护</li>
+</ul>
+<p>在日志解析器里，<code>map[string]ServiceStat</code> 就是在做“按服务名聚合”的工作。<br>不用 map，通常就要退回到线性扫描，复杂度会从一批 <code>O(n)</code> 聚合退化出额外成本。</p>
+<h2 id="十五、map-为什么无序、为什么并发写不安全"><a href="#十五、map-为什么无序、为什么并发写不安全" class="headerlink" title="十五、map 为什么无序、为什么并发写不安全"></a>十五、map 为什么无序、为什么并发写不安全</h2><h3 id="1-遍历无序"><a href="#1-遍历无序" class="headerlink" title="1. 遍历无序"></a>1. 遍历无序</h3><p>map 的目标是高效查找，不是维持插入顺序。<br>元素经过哈希分布后，本来就不会天然保留“录入顺序”。</p>
+<p>所以下面这种写法不应该作为稳定输出依赖：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">for</span> service, stat := <span class="keyword">range</span> report.Stats &#123;</span><br><span class="line">	fmt.Println(service, stat.Count)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>如果要稳定输出，做法通常是：</p>
+<ol>
+<li>先把 key 收集到切片</li>
+<li>排序</li>
+<li>再按序读取 map</li>
+</ol>
+<h3 id="2-并发写不安全"><a href="#2-并发写不安全" class="headerlink" title="2. 并发写不安全"></a>2. 并发写不安全</h3><p>map 在运行时可能扩容、搬迁、更新内部状态。<br>多个 goroutine 同时写，或者一边写一边没有同步地读，都会破坏内部一致性。</p>
+<p>一个经验判断可以这样记：</p>
+<ul>
+<li>纯并发读，且期间没有写入，通常可行</li>
+<li>只要引入写，就该加锁、分片锁，或者评估 <code>sync.Map</code></li>
+</ul>
+<p>日志解析器如果并发汇总多个批次，直接共享一个普通 map 写入，风险就会立刻出现。</p>
+<h2 id="十六、map-元素为什么不能直接取地址改字段"><a href="#十六、map-元素为什么不能直接取地址改字段" class="headerlink" title="十六、map 元素为什么不能直接取地址改字段"></a>十六、map 元素为什么不能直接取地址改字段</h2><p>看这段代码：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> ServiceStat <span class="keyword">struct</span> &#123;</span><br><span class="line">	Count <span class="type">int</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">bad</span><span class="params">()</span></span> &#123;</span><br><span class="line">	m := <span class="keyword">map</span>[<span class="type">string</span>]ServiceStat&#123;</span><br><span class="line">		<span class="string">&quot;order-api&quot;</span>: &#123;Count: <span class="number">1</span>&#125;,</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	m[<span class="string">&quot;order-api&quot;</span>].Count++</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这段代码编译不过。<br>原因不在语法挑剔，而在于 map 扩容后元素位置可能变化，运行时不能向你承诺这个元素地址长期稳定。</p>
+<p>正确写法通常是“取值、修改、写回”：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">stat := m[<span class="string">&quot;order-api&quot;</span>]</span><br><span class="line">stat.Count++</span><br><span class="line">m[<span class="string">&quot;order-api&quot;</span>] = stat</span><br></pre></td></tr></table></figure>
+
+<p>如果确实需要频繁原地修改，也可以把 value 设计成指针：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">m := <span class="keyword">map</span>[<span class="type">string</span>]*ServiceStat&#123;</span><br><span class="line">	<span class="string">&quot;order-api&quot;</span>: &#123;Count: <span class="number">1</span>&#125;,</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">m[<span class="string">&quot;order-api&quot;</span>].Count++</span><br></pre></td></tr></table></figure>
+
+<p>但这个选择会引入新的工程权衡：</p>
+<ul>
+<li>多了额外堆对象</li>
+<li>多了更多指针</li>
+<li>GC 扫描成本会变高</li>
+</ul>
+<p>这就是“性能优化不能只看写法顺不顺手”的典型例子。</p>
+<h2 id="十七、错误示例：nil-map、值修改和热点-key"><a href="#十七、错误示例：nil-map、值修改和热点-key" class="headerlink" title="十七、错误示例：nil map、值修改和热点 key"></a>十七、错误示例：nil map、值修改和热点 key</h2><p>map 相关的高频坑，工程里通常集中在这几类。</p>
+<h3 id="1-nil-map-可以读，写会-panic"><a href="#1-nil-map-可以读，写会-panic" class="headerlink" title="1. nil map 可以读，写会 panic"></a>1. nil map 可以读，写会 panic</h3><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> m <span class="keyword">map</span>[<span class="type">string</span>]<span class="type">int</span></span><br><span class="line">fmt.Println(m[<span class="string">&quot;x&quot;</span>]) <span class="comment">// 0</span></span><br><span class="line">m[<span class="string">&quot;x&quot;</span>] = <span class="number">1</span>          <span class="comment">// panic</span></span><br></pre></td></tr></table></figure>
+
+<p>修复方式很直接：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">m := <span class="built_in">make</span>(<span class="keyword">map</span>[<span class="type">string</span>]<span class="type">int</span>)</span><br></pre></td></tr></table></figure>
+
+<h3 id="2-误把-map-value-当成可原地修改对象"><a href="#2-误把-map-value-当成可原地修改对象" class="headerlink" title="2. 误把 map value 当成可原地修改对象"></a>2. 误把 map value 当成可原地修改对象</h3><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Item <span class="keyword">struct</span> &#123;</span><br><span class="line">	Count <span class="type">int</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">bad</span><span class="params">()</span></span> &#123;</span><br><span class="line">	m := <span class="keyword">map</span>[<span class="type">string</span>]Item&#123;<span class="string">&quot;a&quot;</span>: &#123;Count: <span class="number">1</span>&#125;&#125;</span><br><span class="line">	m[<span class="string">&quot;a&quot;</span>].Count = <span class="number">2</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>要么读改写回，要么改成指针 value。</p>
+<h3 id="3-热点-key-下的字符串拼接和临时对象"><a href="#3-热点-key-下的字符串拼接和临时对象" class="headerlink" title="3. 热点 key 下的字符串拼接和临时对象"></a>3. 热点 key 下的字符串拼接和临时对象</h3><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">key := service + <span class="string">&quot;:&quot;</span> + strconv.Itoa(code)</span><br><span class="line">stats[key]++</span><br></pre></td></tr></table></figure>
+
+<p>如果这段在高频路径上持续构造临时字符串，分配和哈希开销都会被放大。<br>这时就要评估：</p>
+<ul>
+<li>key 设计是否过于临时</li>
+<li>是否能拆成多级结构</li>
+<li>是否能复用已有字段，减少中间对象</li>
+</ul>
+<h2 id="十八、GC-在这条链里扮演什么角色"><a href="#十八、GC-在这条链里扮演什么角色" class="headerlink" title="十八、GC 在这条链里扮演什么角色"></a>十八、GC 在这条链里扮演什么角色</h2><p>GC 不是孤立存在的末尾章节，它贯穿整条链。</p>
+<p>高层理解可以抓这几个点：</p>
+<ol>
+<li>Go 运行时会从根对象出发，标记仍然可达的堆对象</li>
+<li>不可达的堆对象才有机会在后续阶段被回收</li>
+<li>为了减少长时间停顿，Go 会把大部分 GC 工作做成并发执行</li>
+<li>但再怎么并发，堆对象数量、指针数量、存活对象规模，仍然会影响 GC 总成本</li>
+</ol>
+<p>所以 GC 的视角不是“这段代码优不优雅”，而是：</p>
+<ul>
+<li>有多少堆对象</li>
+<li>这些对象之间有多少引用</li>
+<li>哪些对象会活过多轮 GC</li>
+<li>哪些对象其实已经没业务价值，但还被引用链挂着</li>
+</ul>
+<p>这也是为什么内存问题排查时，光盯着“哪行分配了对象”还不够，还要看“谁把它留住了”。</p>
+<h2 id="十九、逃逸、slice、map-怎么一起影响-GC-压力"><a href="#十九、逃逸、slice、map-怎么一起影响-GC-压力" class="headerlink" title="十九、逃逸、slice、map 怎么一起影响 GC 压力"></a>十九、逃逸、slice、map 怎么一起影响 GC 压力</h2><p>把前面几个概念接起来，GC 压力通常来自下面这几条链路。</p>
+<h3 id="1-逃逸让短命对象进入堆"><a href="#1-逃逸让短命对象进入堆" class="headerlink" title="1. 逃逸让短命对象进入堆"></a>1. 逃逸让短命对象进入堆</h3><p>局部对象如果本来能在栈里结束，却因为返回地址、闭包持有、长寿命引用而进入堆，就会进入 GC 管辖范围。</p>
+<h3 id="2-slice-扩容会制造新的底层数组"><a href="#2-slice-扩容会制造新的底层数组" class="headerlink" title="2. slice 扩容会制造新的底层数组"></a>2. slice 扩容会制造新的底层数组</h3><p>热点路径上持续扩容，就会不断申请新数组并搬迁数据。<br>旧数组何时释放，取决于是否还有引用。</p>
+<h3 id="3-小切片误持有大数组会拉高存活内存"><a href="#3-小切片误持有大数组会拉高存活内存" class="headerlink" title="3. 小切片误持有大数组会拉高存活内存"></a>3. 小切片误持有大数组会拉高存活内存</h3><p>这类问题最隐蔽，因为代码里看见的是几十字节，堆上活着的却可能是几十 MB。</p>
+<h3 id="4-map-里放指针会增加对象数和扫描边"><a href="#4-map-里放指针会增加对象数和扫描边" class="headerlink" title="4. map 里放指针会增加对象数和扫描边"></a>4. map 里放指针会增加对象数和扫描边</h3><p><code>map[string]*ServiceStat</code> 修改起来方便，但对象更多、指针更多。<br><code>map[string]ServiceStat</code> 读改写回稍显啰嗦，但对象通常更集中。</p>
+<h3 id="5-长寿命缓存结构会把短命数据变成长命数据"><a href="#5-长寿命缓存结构会把短命数据变成长命数据" class="headerlink" title="5. 长寿命缓存结构会把短命数据变成长命数据"></a>5. 长寿命缓存结构会把短命数据变成长命数据</h3><p>如果解析器把整批 <code>Record</code> 都挂进一个长期存在的缓存，哪怕单次请求结束了，这批对象也还在。<br>从 GC 角度看，这不是“本轮请求的临时数据”，而是“服务级常驻数据”。</p>
+<h2 id="二十、怎么用测试和基准把判断落地"><a href="#二十、怎么用测试和基准把判断落地" class="headerlink" title="二十、怎么用测试和基准把判断落地"></a>二十、怎么用测试和基准把判断落地</h2><p>写这类代码时，比较稳的验证链路是三件套：</p>
+<ol>
+<li>单元测试验证行为正确</li>
+<li>基准测试验证时间和分配</li>
+<li>profile 验证热点和保活关系</li>
+</ol>
+<p>先看一个最小测试：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestProcess</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">	lines := []<span class="type">string</span>&#123;</span><br><span class="line">		<span class="string">&quot;order-api,200,18,ok&quot;</span>,</span><br><span class="line">		<span class="string">&quot;order-api,500,34,db timeout&quot;</span>,</span><br><span class="line">		<span class="string">&quot;user-api,200,12,ok&quot;</span>,</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	report := Process(lines)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> got := report.Stats[<span class="string">&quot;order-api&quot;</span>].Count; got != <span class="number">2</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;order-api count = %d, want 2&quot;</span>, got)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> got := report.Stats[<span class="string">&quot;order-api&quot;</span>].ErrorCount; got != <span class="number">1</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;order-api error count = %d, want 1&quot;</span>, got)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(report.RecentErrors) != <span class="number">1</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;recent errors = %d, want 1&quot;</span>, <span class="built_in">len</span>(report.RecentErrors))</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>再看一个基准：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">BenchmarkProcess</span><span class="params">(b *testing.B)</span></span> &#123;</span><br><span class="line">	lines := <span class="built_in">make</span>([]<span class="type">string</span>, <span class="number">0</span>, <span class="number">10000</span>)</span><br><span class="line">	<span class="keyword">for</span> i := <span class="number">0</span>; i &lt; <span class="number">10000</span>; i++ &#123;</span><br><span class="line">		lines = <span class="built_in">append</span>(lines, <span class="string">&quot;order-api,500,34,db timeout&quot;</span>)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	b.ReportAllocs()</span><br><span class="line">	<span class="keyword">for</span> i := <span class="number">0</span>; i &lt; b.N; i++ &#123;</span><br><span class="line">		_ = Process(lines)</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>执行：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">go <span class="built_in">test</span> -bench=. -benchmem</span><br></pre></td></tr></table></figure>
+
+<p>这里重点看：</p>
+<ul>
+<li><code>ns/op</code></li>
+<li><code>B/op</code></li>
+<li><code>allocs/op</code></li>
+</ul>
+<p>如果只是把 <code>ns/op</code> 降下来了，<code>allocs/op</code> 却明显上去了，就还不能说这次修改是健康的。</p>
+<h2 id="二十一、线上排障该从哪里下手"><a href="#二十一、线上排障该从哪里下手" class="headerlink" title="二十一、线上排障该从哪里下手"></a>二十一、线上排障该从哪里下手</h2><p>线上出现内存上涨、GC 偏频繁、吞吐掉下去时，排查顺序可以比较固定：</p>
+<h3 id="1-先看是不是分配太多"><a href="#1-先看是不是分配太多" class="headerlink" title="1. 先看是不是分配太多"></a>1. 先看是不是分配太多</h3><ul>
+<li>benchmark 的 <code>allocs/op</code></li>
+<li><code>pprof</code> 的 <code>alloc_space</code></li>
+<li>热点路径是不是在反复造临时对象</li>
+</ul>
+<h3 id="2-再看是不是保活太久"><a href="#2-再看是不是保活太久" class="headerlink" title="2. 再看是不是保活太久"></a>2. 再看是不是保活太久</h3><ul>
+<li>heap profile 里哪些对象活着</li>
+<li>是谁在引用它们</li>
+<li>有没有小切片挂住大数组</li>
+</ul>
+<h3 id="3-再看是不是结构选型带来的扫描成本"><a href="#3-再看是不是结构选型带来的扫描成本" class="headerlink" title="3. 再看是不是结构选型带来的扫描成本"></a>3. 再看是不是结构选型带来的扫描成本</h3><ul>
+<li><code>map[string]*T</code> 是否真的有必要</li>
+<li>长寿命切片里是不是塞了太多指针</li>
+<li>大对象是否被缓存层长时间持有</li>
+</ul>
+<h3 id="4-最后再考虑局部技巧"><a href="#4-最后再考虑局部技巧" class="headerlink" title="4. 最后再考虑局部技巧"></a>4. 最后再考虑局部技巧</h3><ul>
+<li>预分配容量</li>
+<li>减少中间字符串</li>
+<li>缩短对象生命周期</li>
+<li>用值语义替代部分指针语义</li>
+</ul>
+<p>如果需要进一步观察 GC 节奏，可以打开：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">GODEBUG=gctrace=1 ./your-app</span><br></pre></td></tr></table></figure>
+
+<p>它能帮助判断 GC 频率、暂停和堆规模是否异常。</p>
+<h2 id="二十二、边界条件别漏"><a href="#二十二、边界条件别漏" class="headerlink" title="二十二、边界条件别漏"></a>二十二、边界条件别漏</h2><p>这几个边界条件在讨论和项目里都很容易被追问：</p>
+<h3 id="1-new-T-不是“堆分配关键字”"><a href="#1-new-T-不是“堆分配关键字”" class="headerlink" title="1. new(T) 不是“堆分配关键字”"></a>1. <code>new(T)</code> 不是“堆分配关键字”</h3><p>它表达的是“拿到一个 <code>*T</code>”，到底栈还是堆，仍然看逃逸分析。</p>
+<h3 id="2-make-也不是“只在栈上”"><a href="#2-make-也不是“只在栈上”" class="headerlink" title="2. make 也不是“只在栈上”"></a>2. <code>make</code> 也不是“只在栈上”</h3><p><code>slice</code>、<code>map</code>、<code>chan</code> 的底层结构最终在哪，依然看具体生命周期和实现需要。</p>
+<h3 id="3-nil-slice-和-nil-map-行为不同"><a href="#3-nil-slice-和-nil-map-行为不同" class="headerlink" title="3. nil slice 和 nil map 行为不同"></a>3. nil slice 和 nil map 行为不同</h3><ul>
+<li>nil slice 可以 <code>append</code></li>
+<li>nil map 读可以，写会 panic</li>
+</ul>
+<h3 id="4-删除-map-元素后，空间不代表会立刻回到初始水平"><a href="#4-删除-map-元素后，空间不代表会立刻回到初始水平" class="headerlink" title="4. 删除 map 元素后，空间不代表会立刻回到初始水平"></a>4. 删除 map 元素后，空间不代表会立刻回到初始水平</h3><p>如果业务规模经历过峰值，后面长期规模已经明显下降，重建 map 往往比指望“自动缩回去”更可控。</p>
+<h3 id="5-返回小结构体值，未必比返回指针差"><a href="#5-返回小结构体值，未必比返回指针差" class="headerlink" title="5. 返回小结构体值，未必比返回指针差"></a>5. 返回小结构体值，未必比返回指针差</h3><p>如果结构体不大，按值返回可能更简单，也更有机会留在栈上。<br>这里要结合大小、复制成本、调用频率一起判断。</p>
+<h2 id="二十三、练习题"><a href="#二十三、练习题" class="headerlink" title="二十三、练习题"></a>二十三、练习题</h2><p>可以拿下面几题自测一下是否真正串起来了：</p>
+<ol>
+<li>为什么下面这段代码里，<code>append</code> 之后 <code>base</code> 也可能被改？</li>
+</ol>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">base := []<span class="type">int</span>&#123;<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>&#125;</span><br><span class="line">a := base[:<span class="number">2</span>]</span><br><span class="line">b := <span class="built_in">append</span>(a, <span class="number">99</span>)</span><br><span class="line">_ = b</span><br></pre></td></tr></table></figure>
+
+<ol start="2">
+<li><p><code>map[string]Stat</code> 和 <code>map[string]*Stat</code> 该怎么选？<br>从修改便利性、对象数量、GC 扫描成本三个维度各说一遍。</p>
+</li>
+<li><p>批处理代码把 64MB 日志块读入 <code>buf</code>，再把每一行的前缀保存进 <code>[][]byte</code>。<br>如果内存迟迟下不来，优先怀疑哪类问题，怎么修。</p>
+</li>
+<li><p>一个局部变量写成 <code>new(T)</code>、<code>&amp;T&#123;&#125;</code>、普通值变量三种形态后，是否上堆，应该用什么办法验证。</p>
+</li>
+<li><p>线上 <code>allocs/op</code> 很高，但 CPU 还没明显拉满。<br>这时先看哪个指标，为什么不能只盯住耗时。</p>
+</li>
+</ol>
+<h2 id="二十四、结语"><a href="#二十四、结语" class="headerlink" title="二十四、结语"></a>二十四、结语</h2><p>把这组高频题真正串起来，主线其实并不复杂：</p>
+<ol>
+<li>编译器先决定对象更适合放栈还是堆</li>
+<li>slice 决定一段连续内存如何被共享和扩容</li>
+<li>map 决定按 key 索引的数据如何组织和迁移</li>
+<li>GC 负责回收不再可达的堆对象，并为仍然存活的对象付出扫描成本</li>
+</ol>
+<p>工程里真正重要的，不是把每个术语背成孤立定义，而是能顺着一段代码回答下面这几个问题：</p>
+<ul>
+<li>这个对象为什么会活这么久</li>
+<li>这次 <code>append</code> 会不会复用原数组</li>
+<li>这个 map value 设计成值还是指针更合适</li>
+<li>哪些对象进入了堆，哪些对象只是被误持有</li>
+<li>这次内存上涨到底是分配变多了，还是释放变慢了</li>
+</ul>
+<p>把这条链讲清，回答会更完整。<br>项目里把这条链用测试、基准和 profile 验证清楚，代码会更稳。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Go/" rel="tag"># Go</a>
+              <a href="/tags/Go%E4%B8%93%E9%A2%98/" rel="tag"># Go专题</a>
+              <a href="/tags/map/" rel="tag"># map</a>
+              <a href="/tags/%E5%86%85%E5%AD%98%E6%A8%A1%E5%9E%8B/" rel="tag"># 内存模型</a>
+              <a href="/tags/%E5%86%85%E5%AD%98/" rel="tag"># 内存</a>
+              <a href="/tags/slice/" rel="tag"># slice</a>
+              <a href="/tags/GC/" rel="tag"># GC</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2018/09/19/Go-23-Go%E7%9A%84GMP%E8%B0%83%E5%BA%A6%E6%8A%A2%E5%8D%A0channel%E9%98%BB%E5%A1%9E%E5%92%8Cgoroutine%E6%B3%84%E6%BC%8F%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E8%AE%B2%E6%B8%85%E6%A5%9A/" rel="prev" title="Go：GMP 调度、抢占、channel 阻塞和 goroutine 泄漏应该怎么讲清楚">
+                  <i class="fa fa-angle-left"></i> Go：GMP 调度、抢占、channel 阻塞和 goroutine 泄漏应该怎么讲清楚
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2019/03/22/%E6%8E%A5%E5%8F%A3%E8%87%AA%E5%8A%A8%E5%8C%96-11-Python+UnitTest%E6%8E%A5%E5%8F%A3%E8%87%AA%E5%8A%A8%E5%8C%96%E6%B5%8B%E8%AF%95%EF%BC%88%E4%BB%8E%E6%A1%86%E6%9E%B6%E5%88%B0%E6%8A%A5%E5%91%8A%EF%BC%89/" rel="next" title="Python + UnitTest：接口自动化测试框架实践">
+                  Python + UnitTest：接口自动化测试框架实践 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

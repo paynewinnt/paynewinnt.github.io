@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="生产环境 UI 巡检和测试环境回归，表面上都在点页面，实际上是两套完全不同的系统设计题。 回归更关注：  覆盖率 变更验证 多路径组合  而生产巡检更关注：  是否低侵入 是否高信号 是否低噪声 是否能在失败后快速给出方向  如果把测试环境一整套 UI 回归直接搬去线上，通常只会得到两个结果：  巡检对线上形成扰动 大量告警没有决策价值  所以 UI 巡检的思路一直需要保持克制。不是不能测更多，而">
+<meta property="og:type" content="article">
+<meta property="og:title" content="UI 自动化：生产环境 UI 巡检系统怎么设计">
+<meta property="og:url" content="https://paynewinnt.github.io/2022/09/14/UI%E8%87%AA%E5%8A%A8%E5%8C%96-09-%E7%94%9F%E4%BA%A7%E7%8E%AF%E5%A2%83UI%E5%B7%A1%E6%A3%80%E7%B3%BB%E7%BB%9F%E6%80%8E%E4%B9%88%E8%AE%BE%E8%AE%A1/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="生产环境 UI 巡检和测试环境回归，表面上都在点页面，实际上是两套完全不同的系统设计题。 回归更关注：  覆盖率 变更验证 多路径组合  而生产巡检更关注：  是否低侵入 是否高信号 是否低噪声 是否能在失败后快速给出方向  如果把测试环境一整套 UI 回归直接搬去线上，通常只会得到两个结果：  巡检对线上形成扰动 大量告警没有决策价值  所以 UI 巡检的思路一直需要保持克制。不是不能测更多，而">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2022-09-14T12:50:00.000Z">
+<meta property="article:modified_time" content="2022-09-14T12:50:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="UI自动化">
+<meta property="article:tag" content="自动化测试">
+<meta property="article:tag" content="UI自动化专题">
+<meta property="article:tag" content="UI 自动化测试">
+<meta property="article:tag" content="生产巡检">
+<meta property="article:tag" content="监控">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2022/09/14/UI%E8%87%AA%E5%8A%A8%E5%8C%96-09-%E7%94%9F%E4%BA%A7%E7%8E%AF%E5%A2%83UI%E5%B7%A1%E6%A3%80%E7%B3%BB%E7%BB%9F%E6%80%8E%E4%B9%88%E8%AE%BE%E8%AE%A1/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2022/09/14/UI%E8%87%AA%E5%8A%A8%E5%8C%96-09-%E7%94%9F%E4%BA%A7%E7%8E%AF%E5%A2%83UI%E5%B7%A1%E6%A3%80%E7%B3%BB%E7%BB%9F%E6%80%8E%E4%B9%88%E8%AE%BE%E8%AE%A1/","path":"2022/09/14/UI自动化-09-生产环境UI巡检系统怎么设计/","title":"UI 自动化：生产环境 UI 巡检系统怎么设计"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>UI 自动化：生产环境 UI 巡检系统怎么设计 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E6%80%8E%E4%B9%88%E9%80%89%E6%8B%A9%E7%94%9F%E4%BA%A7%E5%B7%A1%E6%A3%80%E8%B7%AF%E5%BE%84"><span class="nav-number">1.</span> <span class="nav-text">一、怎么选择生产巡检路径</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%99%BB%E5%BD%95%E9%93%BE%E8%B7%AF"><span class="nav-number">1.1.</span> <span class="nav-text">1. 登录链路</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%A0%B8%E5%BF%83%E9%A1%B5%E9%9D%A2%E5%8F%AF%E8%BE%BE%E6%80%A7"><span class="nav-number">1.2.</span> <span class="nav-text">2. 核心页面可达性</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%9E%81%E5%B0%91%E9%87%8F%E8%BD%BB%E9%87%8F%E6%93%8D%E4%BD%9C"><span class="nav-number">1.3.</span> <span class="nav-text">3. 极少量轻量操作</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E5%93%AA%E4%BA%9B%E5%9C%BA%E6%99%AF%E7%BB%9D%E5%AF%B9%E4%B8%8D%E5%BA%94%E8%AF%A5%E8%BF%9B%E9%AB%98%E9%A2%91%E7%94%9F%E4%BA%A7%E5%B7%A1%E6%A3%80"><span class="nav-number">2.</span> <span class="nav-text">二、哪些场景绝对不应该进高频生产巡检</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E5%9C%A8%E7%9C%9F%E5%AE%9E%E7%B3%BB%E7%BB%9F%E9%87%8C%E6%80%8E%E4%B9%88%E9%80%89%E5%B7%A5%E5%85%B7"><span class="nav-number">3.</span> <span class="nav-text">三、在真实系统里怎么选工具</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E4%B8%80%E4%B8%AA%E7%9C%9F%E5%AE%9E%E5%B7%A1%E6%A3%80%E4%BB%BB%E5%8A%A1%E9%93%BE%E8%B7%AF%E4%BC%9A%E6%80%8E%E4%B9%88%E8%B5%B0"><span class="nav-number">4.</span> <span class="nav-text">四、一个真实巡检任务链路会怎么走</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E6%88%91%E4%B8%BA%E4%BB%80%E4%B9%88%E7%89%B9%E5%88%AB%E5%BC%BA%E8%B0%83%E2%80%9C%E4%BD%8E%E4%BE%B5%E5%85%A5%E2%80%9D"><span class="nav-number">5.</span> <span class="nav-text">五、我为什么特别强调“低侵入”</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E9%99%8D%E5%99%AA%E4%B8%BA%E4%BB%80%E4%B9%88%E6%98%AF%E7%94%9F%E4%BA%A7%E5%B7%A1%E6%A3%80%E7%9A%84%E6%A0%B8%E5%BF%83%E8%83%BD%E5%8A%9B"><span class="nav-number">6.</span> <span class="nav-text">六、降噪为什么是生产巡检的核心能力</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%8D%95%E6%AC%A1%E5%A4%B1%E8%B4%A5%E8%87%AA%E5%8A%A8%E9%87%8D%E8%AF%95"><span class="nav-number">6.1.</span> <span class="nav-text">1. 单次失败自动重试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%BF%9E%E7%BB%AD%E5%A4%B1%E8%B4%A5%E5%86%8D%E5%8D%87%E7%BA%A7"><span class="nav-number">6.2.</span> <span class="nav-text">2. 连续失败再升级</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%BF%9D%E7%95%99%E9%A6%96%E5%A4%B1%E8%B4%A5%E5%92%8C%E9%87%8D%E8%AF%95%E5%90%8E%E7%9A%84%E6%88%AA%E5%9B%BE"><span class="nav-number">6.3.</span> <span class="nav-text">3. 保留首失败和重试后的截图</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%92%8C%E6%8E%A5%E5%8F%A3%E5%B7%A1%E6%A3%80%E5%81%9A%E8%81%94%E5%90%88%E5%88%A4%E6%96%AD"><span class="nav-number">6.4.</span> <span class="nav-text">4. 和接口巡检做联合判断</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E6%80%8E%E4%B9%88%E8%A1%A8%E8%BE%BE%E5%B7%A1%E6%A3%80%E7%BB%93%E6%9E%9C%EF%BC%8C%E6%89%8D%E6%9C%89%E5%80%BC%E7%8F%AD%E4%BB%B7%E5%80%BC"><span class="nav-number">7.</span> <span class="nav-text">七、怎么表达巡检结果，才有值班价值</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E4%B8%80%E4%B8%AA%E6%9B%B4%E6%8E%A5%E8%BF%91%E7%8E%B0%E5%9C%BA%E7%9A%84%E5%A4%B1%E8%B4%A5%E5%9C%BA%E6%99%AF"><span class="nav-number">8.</span> <span class="nav-text">八、一个更接近现场的失败场景</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E4%B8%BA%E4%BB%80%E4%B9%88-UI-%E5%B7%A1%E6%A3%80%E6%9B%B4%E9%80%82%E5%90%88%E5%92%8C%E6%8E%A5%E5%8F%A3%E5%B7%A1%E6%A3%80%E9%85%8D%E5%90%88"><span class="nav-number">9.</span> <span class="nav-text">九、为什么 UI 巡检更适合和接口巡检配合</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E5%A6%82%E6%9E%9C%E6%8A%8A%E5%B7%A1%E6%A3%80%E5%81%9A%E6%88%90%E7%B3%BB%E7%BB%9F%EF%BC%8C%E6%80%8E%E4%B9%88%E5%88%86%E5%B1%82"><span class="nav-number">10.</span> <span class="nav-text">十、如果把巡检做成系统，怎么分层</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E6%80%8E%E4%B9%88%E5%88%A4%E6%96%AD%E8%BF%99%E5%A5%97-UI-%E5%B7%A1%E6%A3%80%E8%AE%BE%E8%AE%A1%E5%AF%B9%E4%BA%86"><span class="nav-number">11.</span> <span class="nav-text">十一、怎么判断这套 UI 巡检设计对了</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E7%BB%93%E8%AF%AD"><span class="nav-number">12.</span> <span class="nav-text">十二、结语</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%9C%AC%E7%AB%A0%E5%BB%B6%E4%BC%B8%E9%98%85%E8%AF%BB"><span class="nav-number">13.</span> <span class="nav-text">本章延伸阅读</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2022/09/14/UI%E8%87%AA%E5%8A%A8%E5%8C%96-09-%E7%94%9F%E4%BA%A7%E7%8E%AF%E5%A2%83UI%E5%B7%A1%E6%A3%80%E7%B3%BB%E7%BB%9F%E6%80%8E%E4%B9%88%E8%AE%BE%E8%AE%A1/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="UI 自动化：生产环境 UI 巡检系统怎么设计 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          UI 自动化：生产环境 UI 巡检系统怎么设计
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2022-09-14 20:50:00" itemprop="dateCreated datePublished" datetime="2022-09-14T20:50:00+08:00">2022-09-14</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/UI%E8%87%AA%E5%8A%A8%E5%8C%96/" itemprop="url" rel="index"><span itemprop="name">UI自动化</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>2.2k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>8 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>生产环境 UI 巡检和测试环境回归，表面上都在点页面，实际上是两套完全不同的系统设计题。</p>
+<p>回归更关注：</p>
+<ul>
+<li>覆盖率</li>
+<li>变更验证</li>
+<li>多路径组合</li>
+</ul>
+<p>而生产巡检更关注：</p>
+<ul>
+<li>是否低侵入</li>
+<li>是否高信号</li>
+<li>是否低噪声</li>
+<li>是否能在失败后快速给出方向</li>
+</ul>
+<p>如果把测试环境一整套 UI 回归直接搬去线上，通常只会得到两个结果：</p>
+<ul>
+<li>巡检对线上形成扰动</li>
+<li>大量告警没有决策价值</li>
+</ul>
+<p>所以 UI 巡检的思路一直需要保持克制。不是不能测更多，而是必须先想清楚：<strong>哪些路径值得在生产环境里长期、自动、无人值守地验证</strong>。</p>
+<h2 id="一、怎么选择生产巡检路径"><a href="#一、怎么选择生产巡检路径" class="headerlink" title="一、怎么选择生产巡检路径"></a>一、怎么选择生产巡检路径</h2><p>通常只保留三类路径。</p>
+<h3 id="1-登录链路"><a href="#1-登录链路" class="headerlink" title="1. 登录链路"></a>1. 登录链路</h3><p>这是最典型、最有信号的入口。很多线上故障，用户第一感知就是“系统进不去了”。</p>
+<h3 id="2-核心页面可达性"><a href="#2-核心页面可达性" class="headerlink" title="2. 核心页面可达性"></a>2. 核心页面可达性</h3><p>例如：</p>
+<ul>
+<li>首页</li>
+<li>核心列表页</li>
+<li>任务详情页</li>
+</ul>
+<p>这些页面代表用户最核心的入口是否还正常。</p>
+<h3 id="3-极少量轻量操作"><a href="#3-极少量轻量操作" class="headerlink" title="3. 极少量轻量操作"></a>3. 极少量轻量操作</h3><p>如果业务要求必须验证写路径，我只会保留：</p>
+<ul>
+<li>可回收</li>
+<li>可标记</li>
+<li>不污染真实业务</li>
+</ul>
+<p>的轻量动作，例如创建巡检专用测试对象然后立刻回收。</p>
+<h2 id="二、哪些场景绝对不应该进高频生产巡检"><a href="#二、哪些场景绝对不应该进高频生产巡检" class="headerlink" title="二、哪些场景绝对不应该进高频生产巡检"></a>二、哪些场景绝对不应该进高频生产巡检</h2><p>通常会避免把这些放进高频 UI 巡检：</p>
+<ul>
+<li>超长提交流程</li>
+<li>会占用稀缺资源的操作</li>
+<li>会触发真实下游任务的动作</li>
+<li>强依赖第三方页面稳定性的复杂路径</li>
+<li>会引发真实通知、消息、审批的流程</li>
+</ul>
+<p>这类路径不是不能验证，而是不适合高频、自动、无人值守地在生产环境执行。</p>
+<h2 id="三、在真实系统里怎么选工具"><a href="#三、在真实系统里怎么选工具" class="headerlink" title="三、在真实系统里怎么选工具"></a>三、在真实系统里怎么选工具</h2><p>如果是浏览器化巡检，通常会在两个方向里选：</p>
+<ul>
+<li><code>Playwright</code>: 已有成熟 UI 自动化资产时优先复用</li>
+<li><code>chromedp</code>: 巡检服务本身是 Go 系统，更偏浏览器探针时更合适</li>
+</ul>
+<p>外围一般再配：</p>
+<ul>
+<li>Jenkins 或平台定时任务</li>
+<li>截图存储</li>
+<li>企业微信 &#x2F; 邮件通知</li>
+<li>结果入库</li>
+</ul>
+<p>这里的一个核心原则是：<strong>巡检系统应该更像探针服务，而不是把整套测试框架扔到生产上</strong>。</p>
+<h2 id="四、一个真实巡检任务链路会怎么走"><a href="#四、一个真实巡检任务链路会怎么走" class="headerlink" title="四、一个真实巡检任务链路会怎么走"></a>四、一个真实巡检任务链路会怎么走</h2><p>以“后台登录 + 首页打开 + 核心列表页加载成功”为例，通常会这样设计：</p>
+<ol>
+<li>打开登录页</li>
+<li>等待用户名、密码输入框可见</li>
+<li>输入巡检专用账号</li>
+<li>点击登录</li>
+<li>等待首页关键元素加载</li>
+<li>跳转核心列表页</li>
+<li>等待关键表格或主按钮出现</li>
+<li>保存截图、URL、加载耗时</li>
+<li>回写结果到巡检服务</li>
+</ol>
+<p>为什么到这里就收手，不再继续点更多：</p>
+<ul>
+<li>这条路径已经足够验证“用户能不能进入并使用核心界面”</li>
+<li>再往后每增加一步，扰动和噪声都会明显上升</li>
+</ul>
+<h2 id="五、我为什么特别强调“低侵入”"><a href="#五、我为什么特别强调“低侵入”" class="headerlink" title="五、我为什么特别强调“低侵入”"></a>五、我为什么特别强调“低侵入”</h2><p>UI 巡检最大的风险，不是跑不稳，而是它自己成为线上噪声源。</p>
+<p>典型问题包括：</p>
+<ul>
+<li>用真实账号触发异常提醒</li>
+<li>创建测试对象污染运营数据</li>
+<li>大量打开页面导致后台日志和监控被污染</li>
+<li>高频巡检给核心系统增加额外浏览器流量</li>
+</ul>
+<p>所以通常会做这些约束：</p>
+<ul>
+<li>使用专用巡检账号</li>
+<li>使用专用测试对象或带明显 <code>probe</code> 标识的数据</li>
+<li>写操作必须可回收</li>
+<li>高频任务只走登录和只读链路</li>
+<li>对探针频率做上限控制</li>
+</ul>
+<p>如果做不到这些，我宁可少测一点，也不会为了“覆盖看起来更全”去碰高风险链路。</p>
+<h2 id="六、降噪为什么是生产巡检的核心能力"><a href="#六、降噪为什么是生产巡检的核心能力" class="headerlink" title="六、降噪为什么是生产巡检的核心能力"></a>六、降噪为什么是生产巡检的核心能力</h2><p>线上巡检最怕的不是漏掉一次单点失败，而是所有人都被一堆没有价值的消息吵麻木。</p>
+<p>常见噪声来源包括：</p>
+<ul>
+<li>CDN 短时抖动</li>
+<li>静态资源偶发加载慢</li>
+<li>登录验证偶发波动</li>
+<li>浏览器启动偶发慢</li>
+<li>某个第三方前端资源偶发超时</li>
+<li>某次发布后的短时缓存不一致</li>
+</ul>
+<p>所以通常会做：</p>
+<h3 id="1-单次失败自动重试"><a href="#1-单次失败自动重试" class="headerlink" title="1. 单次失败自动重试"></a>1. 单次失败自动重试</h3><p>尤其是登录页和首页加载失败，先做一次短间隔重试。</p>
+<h3 id="2-连续失败再升级"><a href="#2-连续失败再升级" class="headerlink" title="2. 连续失败再升级"></a>2. 连续失败再升级</h3><p>不是第一下红了就高优先级打人，而是连续两次或三次失败后再升级。</p>
+<h3 id="3-保留首失败和重试后的截图"><a href="#3-保留首失败和重试后的截图" class="headerlink" title="3. 保留首失败和重试后的截图"></a>3. 保留首失败和重试后的截图</h3><p>这样可以快速判断：</p>
+<ul>
+<li>是短时白屏</li>
+<li>是跳登录页失败</li>
+<li>还是页面结构已经异常</li>
+</ul>
+<h3 id="4-和接口巡检做联合判断"><a href="#4-和接口巡检做联合判断" class="headerlink" title="4. 和接口巡检做联合判断"></a>4. 和接口巡检做联合判断</h3><p>如果 UI 和接口都失败，优先级会更高；如果 UI 失败但接口健康，通常更像前端或静态资源问题。</p>
+<h2 id="七、怎么表达巡检结果，才有值班价值"><a href="#七、怎么表达巡检结果，才有值班价值" class="headerlink" title="七、怎么表达巡检结果，才有值班价值"></a>七、怎么表达巡检结果，才有值班价值</h2><p>我不希望巡检结果只剩一句“任务失败”。至少应该带上：</p>
+<ul>
+<li>探针名称</li>
+<li>环境</li>
+<li>当前页面 URL</li>
+<li>失败步骤</li>
+<li>页面截图</li>
+<li>最近一次成功时间</li>
+<li>本次耗时</li>
+<li>重试结果</li>
+</ul>
+<p>如果还有余力，会再保留：</p>
+<ul>
+<li>浏览器 console error 摘要</li>
+<li>页面主请求失败摘要</li>
+<li>trace 或简化版操作链路</li>
+</ul>
+<p>这样值班的人收到消息后，能在几十秒内判断问题方向，而不是先去平台里盲找。</p>
+<h2 id="八、一个更接近现场的失败场景"><a href="#八、一个更接近现场的失败场景" class="headerlink" title="八、一个更接近现场的失败场景"></a>八、一个更接近现场的失败场景</h2><p>比如某次巡检在“登录成功后进入首页”这一步失败。没有留痕的系统只会告诉你“case failed”。但更成熟的系统应该能告诉你：</p>
+<ul>
+<li>登录页已经提交成功</li>
+<li>当前 URL 仍然停留在 <code>/login</code></li>
+<li>页面截图显示顶部有“系统繁忙，请稍后再试”</li>
+<li>控制台出现一个认证请求 502</li>
+<li>重试一次后成功</li>
+</ul>
+<p>这几条信息一出来，你几乎就能判断：</p>
+<ul>
+<li>不是账号密码错误</li>
+<li>更像后端认证或网关短时波动</li>
+<li>不是页面结构性失效</li>
+<li>当前更适合作为观察告警，而不是立刻升级成业务故障</li>
+</ul>
+<p>这才是巡检真正有价值的地方。</p>
+<h2 id="九、为什么-UI-巡检更适合和接口巡检配合"><a href="#九、为什么-UI-巡检更适合和接口巡检配合" class="headerlink" title="九、为什么 UI 巡检更适合和接口巡检配合"></a>九、为什么 UI 巡检更适合和接口巡检配合</h2><p>UI 巡检不适合被单独当成万能方案。更合理的组合是：</p>
+<ul>
+<li>接口巡检负责业务可用性信号</li>
+<li>UI 巡检负责用户入口和核心页面信号</li>
+</ul>
+<p>例如：</p>
+<ul>
+<li>接口健康，但 UI 白屏，说明前端或静态资源有问题</li>
+<li>UI 能开，但接口探针失败，说明页面可能只是壳子还活着</li>
+<li>UI 和接口都失败，说明更可能是核心业务或基础设施故障</li>
+</ul>
+<p>两者结合，线上判断才更准确。</p>
+<h2 id="十、如果把巡检做成系统，怎么分层"><a href="#十、如果把巡检做成系统，怎么分层" class="headerlink" title="十、如果把巡检做成系统，怎么分层"></a>十、如果把巡检做成系统，怎么分层</h2><p>更倾向把它做成：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">probe/</span><br><span class="line">├── scheduler/          # 定时任务与频率控制</span><br><span class="line">├── browser-worker/     # Playwright / chromedp执行器</span><br><span class="line">├── artifact/           # 截图与trace</span><br><span class="line">├── classifier/         # 失败分类</span><br><span class="line">└── notifier/           # 告警与升级</span><br></pre></td></tr></table></figure>
+
+<p>这里最关键的是：</p>
+<ul>
+<li><code>browser-worker</code> 不做业务判断，只做探针执行</li>
+<li><code>classifier</code> 做失败归因</li>
+<li><code>notifier</code> 决定怎么告警</li>
+</ul>
+<p>这样后续想增加更多探针、更多降噪规则和更多通知渠道时，系统不会迅速失控。</p>
+<h2 id="十一、怎么判断这套-UI-巡检设计对了"><a href="#十一、怎么判断这套-UI-巡检设计对了" class="headerlink" title="十一、怎么判断这套 UI 巡检设计对了"></a>十一、怎么判断这套 UI 巡检设计对了</h2><p>我主要看这些结果：</p>
+<ul>
+<li>是否能更早发现“用户进不去”的问题</li>
+<li>是否不会频繁污染线上业务</li>
+<li>是否把消息控制在可持续消费的范围内</li>
+<li>是否失败后能快速定位是登录、跳转、资源加载还是页面本身异常</li>
+<li>是否和接口巡检形成互补，而不是互相打架</li>
+</ul>
+<p>如果这些都没有实现，那这套巡检大概率只是把测试脚本搬上了生产，并没有真正形成线上探针系统。</p>
+<h2 id="十二、结语"><a href="#十二、结语" class="headerlink" title="十二、结语"></a>十二、结语</h2><p>生产环境 UI 巡检系统的重点，从来不是跑更多页面，而是把最关键的用户路径压缩成低侵入、高信号、能快速指向故障方向的浏览器探针系统。真正成熟的 UI 巡检不是“脚本更长”，而是“动作更克制、信号更可靠、分类更清晰、定位更直接”。</p>
+<h2 id="本章延伸阅读"><a href="#本章延伸阅读" class="headerlink" title="本章延伸阅读"></a>本章延伸阅读</h2><ul>
+<li><a href="/2021/12/12/UI%E8%87%AA%E5%8A%A8%E5%8C%96-04-chromedp%E5%9C%A8Go%E7%94%9F%E6%80%81%E9%87%8C%E7%9A%84%E6%B5%8B%E8%AF%95%E4%BB%B7%E5%80%BC/">UI 自动化：chromedp 在 Go 生态里的测试价值</a></li>
+<li><a href="/2024/11/17/UI%E8%87%AA%E5%8A%A8%E5%8C%96-08-UI%E8%87%AA%E5%8A%A8%E5%8C%96%E5%B9%B3%E5%8F%B0%E5%BB%BA%E8%AE%BE%E5%A4%8D%E7%9B%98/">UI 自动化：UI 自动化平台建设复盘</a></li>
+<li><a href="/2026/03/11/UI%E8%87%AA%E5%8A%A8%E5%8C%96-10-UI%E8%87%AA%E5%8A%A8%E5%8C%96%E6%B5%8B%E8%AF%95%E7%BB%93%E6%9E%9C%E5%A6%82%E4%BD%95%E5%81%9A%E5%8F%AF%E8%A7%86%E5%8C%96%E5%B1%95%E7%A4%BA/">UI 自动化：UI 自动化测试结果如何做可视化展示</a></li>
+</ul>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/UI%E8%87%AA%E5%8A%A8%E5%8C%96/" rel="tag"># UI自动化</a>
+              <a href="/tags/%E8%87%AA%E5%8A%A8%E5%8C%96%E6%B5%8B%E8%AF%95/" rel="tag"># 自动化测试</a>
+              <a href="/tags/UI%E8%87%AA%E5%8A%A8%E5%8C%96%E4%B8%93%E9%A2%98/" rel="tag"># UI自动化专题</a>
+              <a href="/tags/UI-%E8%87%AA%E5%8A%A8%E5%8C%96%E6%B5%8B%E8%AF%95/" rel="tag"># UI 自动化测试</a>
+              <a href="/tags/%E7%94%9F%E4%BA%A7%E5%B7%A1%E6%A3%80/" rel="tag"># 生产巡检</a>
+              <a href="/tags/%E7%9B%91%E6%8E%A7/" rel="tag"># 监控</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2022/08/17/UI%E8%87%AA%E5%8A%A8%E5%8C%96-08-UI%E8%87%AA%E5%8A%A8%E5%8C%96%E5%B9%B3%E5%8F%B0%E5%BB%BA%E8%AE%BE%E5%A4%8D%E7%9B%98/" rel="prev" title="UI 自动化：UI 自动化平台建设复盘">
+                  <i class="fa fa-angle-left"></i> UI 自动化：UI 自动化平台建设复盘
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2022/10/11/UI%E8%87%AA%E5%8A%A8%E5%8C%96-10-UI%E8%87%AA%E5%8A%A8%E5%8C%96%E6%B5%8B%E8%AF%95%E7%BB%93%E6%9E%9C%E5%A6%82%E4%BD%95%E5%81%9A%E5%8F%AF%E8%A7%86%E5%8C%96%E5%B1%95%E7%A4%BA/" rel="next" title="UI 自动化：UI 自动化测试结果如何做可视化展示">
+                  UI 自动化：UI 自动化测试结果如何做可视化展示 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

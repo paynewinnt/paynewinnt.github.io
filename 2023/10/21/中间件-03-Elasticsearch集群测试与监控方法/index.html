@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="Elasticsearch 集群测试真正难的通常不是把节点拉起来，而是怎么把写入、查询、分片、副本、磁盘水位和恢复过程放到同一套验证与监控口径里，避免只看节点在线却看不出集群已经开始退化。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="中间件-03-Elasticsearch集群测试与监控方法">
+<meta property="og:url" content="https://paynewinnt.github.io/2023/10/21/%E4%B8%AD%E9%97%B4%E4%BB%B6-03-Elasticsearch%E9%9B%86%E7%BE%A4%E6%B5%8B%E8%AF%95%E4%B8%8E%E7%9B%91%E6%8E%A7%E6%96%B9%E6%B3%95/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="Elasticsearch 集群测试真正难的通常不是把节点拉起来，而是怎么把写入、查询、分片、副本、磁盘水位和恢复过程放到同一套验证与监控口径里，避免只看节点在线却看不出集群已经开始退化。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2023-10-21T12:30:00.000Z">
+<meta property="article:modified_time" content="2023-10-21T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="工程实践">
+<meta property="article:tag" content="中间件">
+<meta property="article:tag" content="集群测试">
+<meta property="article:tag" content="Elasticsearch">
+<meta property="article:tag" content="监控治理">
+<meta property="article:tag" content="性能排查">
+<meta property="article:tag" content="索引设计">
+<meta property="article:tag" content="分片治理">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2023/10/21/%E4%B8%AD%E9%97%B4%E4%BB%B6-03-Elasticsearch%E9%9B%86%E7%BE%A4%E6%B5%8B%E8%AF%95%E4%B8%8E%E7%9B%91%E6%8E%A7%E6%96%B9%E6%B3%95/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2023/10/21/%E4%B8%AD%E9%97%B4%E4%BB%B6-03-Elasticsearch%E9%9B%86%E7%BE%A4%E6%B5%8B%E8%AF%95%E4%B8%8E%E7%9B%91%E6%8E%A7%E6%96%B9%E6%B3%95/","path":"2023/10/21/中间件-03-Elasticsearch集群测试与监控方法/","title":"中间件-03-Elasticsearch集群测试与监控方法"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>中间件-03-Elasticsearch集群测试与监控方法 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E5%85%88%E6%8A%8A%E9%AA%8C%E8%AF%81%E5%AF%B9%E8%B1%A1%E5%88%86%E5%B1%82%EF%BC%8C%E4%B8%8D%E8%A6%81%E6%8A%8A%E2%80%9C%E9%9B%86%E7%BE%A4%E5%8F%AF%E7%94%A8%E2%80%9D%E7%90%86%E8%A7%A3%E6%88%90%E4%B8%80%E4%B8%AA%E7%BB%93%E6%9E%9C"><span class="nav-number">1.</span> <span class="nav-text">一、先把验证对象分层，不要把“集群可用”理解成一个结果</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E9%AA%8C%E8%AF%81%E5%88%86%E5%B1%82%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E5%81%9A%EF%BC%8C%E6%89%8D%E4%B8%8D%E4%BC%9A%E5%8F%AA%E5%89%A9%E5%8A%9F%E8%83%BD%E6%A3%80%E6%9F%A5"><span class="nav-number">2.</span> <span class="nav-text">二、验证分层应该怎么做，才不会只剩功能检查</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E9%9B%86%E7%BE%A4%E5%B1%82%EF%BC%9A%E5%85%88%E7%9C%8B%E9%9B%86%E7%BE%A4%E6%98%AF%E4%B8%8D%E6%98%AF%E8%BF%9B%E5%85%A5%E4%BA%86%E7%A8%B3%E5%AE%9A%E7%8A%B6%E6%80%81"><span class="nav-number">2.1.</span> <span class="nav-text">1. 集群层：先看集群是不是进入了稳定状态</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E7%B4%A2%E5%BC%95%E5%B1%82%EF%BC%9A%E9%87%8D%E7%82%B9%E7%9C%8B%E6%A8%A1%E6%9D%BF%E5%92%8C%E6%98%A0%E5%B0%84%E6%98%AF%E5%90%A6%E5%B7%B2%E7%BB%8F%E5%9F%8B%E9%9B%B7"><span class="nav-number">2.2.</span> <span class="nav-text">2. 索引层：重点看模板和映射是否已经埋雷</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%86%99%E5%85%A5%E5%B1%82%EF%BC%9A%E5%88%AB%E5%8F%AA%E6%B5%8B%E2%80%9C%E8%83%BD%E5%86%99%E5%85%A5%E2%80%9D%EF%BC%8C%E8%A6%81%E6%B5%8B%E2%80%9C%E6%8C%81%E7%BB%AD%E5%86%99%E6%97%B6%E4%BC%9A%E4%B8%8D%E4%BC%9A%E9%80%80%E5%8C%96%E2%80%9D"><span class="nav-number">2.3.</span> <span class="nav-text">3. 写入层：别只测“能写入”，要测“持续写时会不会退化”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%9F%A5%E8%AF%A2%E5%B1%82%EF%BC%9A%E4%B8%8D%E8%A6%81%E5%8F%AA%E5%81%9A%E4%B8%80%E6%9D%A1-DSL%EF%BC%8C%E5%BA%94%E8%AF%A5%E6%8C%89%E6%9F%A5%E8%AF%A2%E6%A8%A1%E5%9E%8B%E5%88%86%E7%BB%84%E9%AA%8C%E8%AF%81"><span class="nav-number">2.4.</span> <span class="nav-text">4. 查询层：不要只做一条 DSL，应该按查询模型分组验证</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E8%BF%90%E7%BB%B4%E5%B1%82%EF%BC%9A%E6%89%A9%E5%AE%B9%E3%80%81%E6%81%A2%E5%A4%8D%E3%80%81%E8%8A%82%E7%82%B9%E5%BC%82%E5%B8%B8%E5%BF%85%E9%A1%BB%E8%BF%9B%E6%B5%8B%E8%AF%95%E8%8C%83%E5%9B%B4"><span class="nav-number">2.5.</span> <span class="nav-text">5. 运维层：扩容、恢复、节点异常必须进测试范围</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E7%9B%91%E6%8E%A7%E5%8F%A3%E5%BE%84%E6%80%8E%E4%B9%88%E5%AE%9A%EF%BC%8C%E6%89%8D%E8%83%BD%E7%9C%9F%E6%AD%A3%E8%A7%A3%E9%87%8A%E9%9B%86%E7%BE%A4%E7%8A%B6%E6%80%81"><span class="nav-number">3.</span> <span class="nav-text">三、监控口径怎么定，才能真正解释集群状态</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%8F%AF%E7%94%A8%E6%80%A7%E5%8F%A3%E5%BE%84%EF%BC%9A%E5%9B%9E%E7%AD%94%E2%80%9C%E9%9B%86%E7%BE%A4%E6%98%AF%E4%B8%8D%E6%98%AF%E8%BF%98%E8%83%BD%E6%8F%90%E4%BE%9B%E6%9C%8D%E5%8A%A1%E2%80%9D"><span class="nav-number">3.1.</span> <span class="nav-text">1. 可用性口径：回答“集群是不是还能提供服务”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%80%A7%E8%83%BD%E5%8F%A3%E5%BE%84%EF%BC%9A%E5%9B%9E%E7%AD%94%E2%80%9C%E4%B8%BA%E4%BB%80%E4%B9%88%E5%BC%80%E5%A7%8B%E5%8F%98%E6%85%A2%E2%80%9D"><span class="nav-number">3.2.</span> <span class="nav-text">2. 性能口径：回答“为什么开始变慢”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%AE%B9%E9%87%8F%E5%8F%A3%E5%BE%84%EF%BC%9A%E5%9B%9E%E7%AD%94%E2%80%9C%E8%BF%98%E8%83%BD%E4%B8%8D%E8%83%BD%E7%BB%A7%E7%BB%AD%E6%89%BF%E8%BD%BD%E2%80%9D"><span class="nav-number">3.3.</span> <span class="nav-text">3. 容量口径：回答“还能不能继续承载”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%81%A2%E5%A4%8D%E5%8F%A3%E5%BE%84%EF%BC%9A%E5%9B%9E%E7%AD%94%E2%80%9C%E5%BC%82%E5%B8%B8%E5%90%8E%E5%A4%9A%E4%B9%85%E8%83%BD%E5%9B%9E%E7%A8%B3%E2%80%9D"><span class="nav-number">3.4.</span> <span class="nav-text">4. 恢复口径：回答“异常后多久能回稳”</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E6%9C%80%E5%B0%8F%E6%89%A7%E8%A1%8C%E9%AA%A8%E6%9E%B6%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E6%90%AD%EF%BC%8C%E9%81%BF%E5%85%8D%E4%B8%80%E4%B8%8A%E6%9D%A5%E5%B0%B1%E5%85%A8%E9%87%8F%E5%8E%8B"><span class="nav-number">4.</span> <span class="nav-text">四、最小执行骨架应该怎么搭，避免一上来就全量压</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%87%86%E5%A4%87%E9%98%B6%E6%AE%B5"><span class="nav-number">4.1.</span> <span class="nav-text">1. 准备阶段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%86%92%E7%83%9F%E9%98%B6%E6%AE%B5"><span class="nav-number">4.2.</span> <span class="nav-text">2. 冒烟阶段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%9F%BA%E7%BA%BF%E9%98%B6%E6%AE%B5"><span class="nav-number">4.3.</span> <span class="nav-text">3. 基线阶段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%8D%87%E5%8E%8B%E4%B8%8E%E9%95%BF%E7%A8%B3%E9%98%B6%E6%AE%B5"><span class="nav-number">4.4.</span> <span class="nav-text">4. 升压与长稳阶段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%95%85%E9%9A%9C%E4%B8%8E%E6%81%A2%E5%A4%8D%E9%98%B6%E6%AE%B5"><span class="nav-number">4.5.</span> <span class="nav-text">5. 故障与恢复阶段</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E7%9B%91%E6%8E%A7%E9%9D%A2%E6%9D%BF%E5%92%8C%E5%91%BD%E4%BB%A4%E5%8F%A3%E5%BE%84%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E6%90%AD"><span class="nav-number">5.</span> <span class="nav-text">五、监控面板和命令口径应该怎么搭</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%9F%BA%E7%A1%80%E5%91%BD%E4%BB%A4%E5%8F%A3%E5%BE%84"><span class="nav-number">5.1.</span> <span class="nav-text">1. 基础命令口径</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%9C%80%E5%B0%8F%E7%9B%91%E6%8E%A7%E9%9D%A2%E6%9D%BF%E5%BB%BA%E8%AE%AE"><span class="nav-number">5.2.</span> <span class="nav-text">2. 最小监控面板建议</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%A7%82%E5%AF%9F%E4%B8%8E%E5%88%A4%E6%96%AD%E9%A1%BA%E5%BA%8F"><span class="nav-number">5.3.</span> <span class="nav-text">3. 观察与判断顺序</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E5%B8%B8%E8%A7%81%E5%9D%91"><span class="nav-number">6.</span> <span class="nav-text">六、常见坑</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%8F%AA%E7%9C%8B%E9%9B%86%E7%BE%A4%E9%A2%9C%E8%89%B2%EF%BC%8C%E4%B8%8D%E7%9C%8B%E5%88%86%E7%89%87%E4%B8%8E%E7%83%AD%E7%82%B9"><span class="nav-number">6.1.</span> <span class="nav-text">1. 只看集群颜色，不看分片与热点</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%88%86%E7%89%87%E6%95%B0%E9%9D%A0%E7%BB%8F%E9%AA%8C%E6%8B%8D%EF%BC%8C%E5%90%8E%E9%9D%A2%E5%86%8D%E8%A1%A5%E6%95%91"><span class="nav-number">6.2.</span> <span class="nav-text">2. 分片数靠经验拍，后面再补救</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%8F%AA%E5%8E%8B%E5%86%99%E5%85%A5%E6%88%96%E5%8F%AA%E5%8E%8B%E6%9F%A5%E8%AF%A2%EF%BC%8C%E4%B8%8D%E5%8E%8B%E6%B7%B7%E5%90%88%E6%B5%81%E9%87%8F"><span class="nav-number">6.3.</span> <span class="nav-text">3. 只压写入或只压查询，不压混合流量</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%BF%BD%E7%95%A5-refresh%E3%80%81merge-%E5%92%8C%E6%81%A2%E5%A4%8D%E5%B8%A6%E6%9D%A5%E7%9A%84%E6%8A%96%E5%8A%A8"><span class="nav-number">6.4.</span> <span class="nav-text">4. 忽略 refresh、merge 和恢复带来的抖动</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%8F%AA%E7%9B%AF-JVM%EF%BC%8C%E4%B8%8D%E7%9C%8B%E7%A3%81%E7%9B%98%E6%B0%B4%E4%BD%8D%E5%92%8C-segment"><span class="nav-number">6.5.</span> <span class="nav-text">5. 只盯 JVM，不看磁盘水位和 segment</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E8%8A%82%E7%82%B9%E6%81%A2%E5%A4%8D%E5%AE%8C%E5%B0%B1%E5%BD%93%E9%97%AE%E9%A2%98%E7%BB%93%E6%9D%9F"><span class="nav-number">6.6.</span> <span class="nav-text">6. 节点恢复完就当问题结束</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E7%9C%9F%E5%AE%9E%E6%A1%88%E4%BE%8B%EF%BC%9A%E5%86%99%E5%85%A5%E5%92%8C%E6%9F%A5%E8%AF%A2%E9%83%BD%E5%8F%98%E6%85%A2%EF%BC%8C%E5%88%B0%E5%BA%95%E6%98%AF%E8%8A%82%E7%82%B9%E4%B8%8D%E7%A8%B3%E8%BF%98%E6%98%AF%E7%B4%A2%E5%BC%95%E7%AD%96%E7%95%A5%E5%85%88%E5%87%BA%E9%97%AE%E9%A2%98"><span class="nav-number">7.</span> <span class="nav-text">七、真实案例：写入和查询都变慢，到底是节点不稳还是索引策略先出问题</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9C%BA%E6%99%AF"><span class="nav-number">7.1.</span> <span class="nav-text">场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%89%A7%E8%A1%8C"><span class="nav-number">7.2.</span> <span class="nav-text">执行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8E%B0%E8%B1%A1"><span class="nav-number">7.3.</span> <span class="nav-text">现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%92%E6%9F%A5"><span class="nav-number">7.4.</span> <span class="nav-text">排查</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BF%AE%E5%A4%8D"><span class="nav-number">7.5.</span> <span class="nav-text">修复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E7%BB%93%E8%AE%BA"><span class="nav-number">8.</span> <span class="nav-text">八、结论</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2023/10/21/%E4%B8%AD%E9%97%B4%E4%BB%B6-03-Elasticsearch%E9%9B%86%E7%BE%A4%E6%B5%8B%E8%AF%95%E4%B8%8E%E7%9B%91%E6%8E%A7%E6%96%B9%E6%B3%95/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="中间件-03-Elasticsearch集群测试与监控方法 | 大道至简">
+      <meta itemprop="description" content="Elasticsearch 集群测试真正难的通常不是把节点拉起来，而是怎么把写入、查询、分片、副本、磁盘水位和恢复过程放到同一套验证与监控口径里，避免只看节点在线却看不出集群已经开始退化。">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          中间件-03-Elasticsearch集群测试与监控方法
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2023-10-21 20:30:00" itemprop="dateCreated datePublished" datetime="2023-10-21T20:30:00+08:00">2023-10-21</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/%E4%B8%AD%E9%97%B4%E4%BB%B6/" itemprop="url" rel="index"><span itemprop="name">中间件</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>4.7k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>17 分钟</span>
+    </span>
+</div>
+
+            <div class="post-description">Elasticsearch 集群测试真正难的通常不是把节点拉起来，而是怎么把写入、查询、分片、副本、磁盘水位和恢复过程放到同一套验证与监控口径里，避免只看节点在线却看不出集群已经开始退化。</div>
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>在接手 <code>Elasticsearch</code> 集群时，最先完成的动作通常是下面这些：</p>
+<ul>
+<li>集群节点都拉起来，<code>green</code> 状态能看到</li>
+<li>索引能创建，文档能写进去</li>
+<li>Kibana 或管理页面能查到数据</li>
+<li>监控里已经接入 CPU、内存、磁盘和 JVM</li>
+</ul>
+<p>这些动作只能说明集群“已经启动”，远远不等于“已经可用”。<br><code>Elasticsearch</code> 在测试和平台场景里最容易出现的误判，是把下面几件事混为一谈：</p>
+<ul>
+<li>节点在线，等于查询和写入都稳定</li>
+<li>集群是 <code>green</code>，等于性能没有风险</li>
+<li>写入成功，等于副本和刷新链路都正常</li>
+<li>查询能返回结果，等于分片、缓存和磁盘没有问题</li>
+</ul>
+<p>真实现场里，<code>Elasticsearch</code> 更像一个会把写入模型、查询模型、分片策略、磁盘策略和恢复过程全部放大的系统。一旦验证方法和监控口径不成体系，就很容易出现下面这些情况：</p>
+<ul>
+<li>压测时写入吞吐明显下降，但业务只看到“ES 变慢了”</li>
+<li>查询耗时抖动很大，却分不清是 DSL 设计问题、分片问题还是节点热点</li>
+<li>集群仍然是 <code>yellow</code> 或 <code>green</code>，但磁盘水位已经逼近阈值，后续扩容和恢复都变得被动</li>
+<li>节点重启后数据能恢复，但恢复期间写入和查询都开始退化，现场却没有被提前识别</li>
+</ul>
+<p>所以这篇文章只讨论一个核心问题：</p>
+<p><strong>Elasticsearch 集群在测试与平台场景里，应该怎么做验证、监控、执行和排障，才能真正回答“这个集群能不能稳定承载业务”。</strong></p>
+<h2 id="一、先把验证对象分层，不要把“集群可用”理解成一个结果"><a href="#一、先把验证对象分层，不要把“集群可用”理解成一个结果" class="headerlink" title="一、先把验证对象分层，不要把“集群可用”理解成一个结果"></a>一、先把验证对象分层，不要把“集群可用”理解成一个结果</h2><p><code>Elasticsearch</code> 集群测试最容易失控的原因，不是测试项太少，而是没有先分层。<br>更适合现场落地的方式，是先把验证对象拆成五层：</p>
+<ul>
+<li>集群层：节点角色、选主、健康状态、分片分布、恢复状态</li>
+<li>索引层：模板、映射、分片数、副本数、生命周期、刷新策略</li>
+<li>写入层：批量写入、单条写入、刷新延迟、拒绝写入、堆积情况</li>
+<li>查询层：典型 DSL、聚合、分页、排序、过滤、热点查询</li>
+<li>运维层：磁盘水位、JVM、线程池、合并、迁移、扩容、节点故障恢复</li>
+</ul>
+<p>只有把这五层拆开，后面才能回答清楚：</p>
+<ul>
+<li>是集群层就不稳，还是索引策略先埋了坑</li>
+<li>是写入链路扛不住，还是查询模型把热点打出来了</li>
+<li>是正常压力下的性能瓶颈，还是恢复过程带来的阶段性退化</li>
+</ul>
+<p>如果一开始就只做“建索引、写数据、查结果”这种功能式验证，后面几乎一定会漏掉分片倾斜、刷新放大、磁盘水位、线程池堆积这些真正影响稳定性的点。</p>
+<h2 id="二、验证分层应该怎么做，才不会只剩功能检查"><a href="#二、验证分层应该怎么做，才不会只剩功能检查" class="headerlink" title="二、验证分层应该怎么做，才不会只剩功能检查"></a>二、验证分层应该怎么做，才不会只剩功能检查</h2><h3 id="1-集群层：先看集群是不是进入了稳定状态"><a href="#1-集群层：先看集群是不是进入了稳定状态" class="headerlink" title="1. 集群层：先看集群是不是进入了稳定状态"></a>1. 集群层：先看集群是不是进入了稳定状态</h3><p>集群层验证的目标，不是看 <code>/_cluster/health</code> 返回 <code>green</code> 就结束，而是确认下面几件事：</p>
+<ul>
+<li>所有预期节点是否都已加入集群</li>
+<li>master 是否稳定，没有频繁切换</li>
+<li>分片是否均衡落到预期节点</li>
+<li>节点重启后分片恢复是否过慢</li>
+<li>数据节点、协调节点、master 节点职责是否清晰</li>
+</ul>
+<p>更适合的检查顺序通常是：</p>
+<ol>
+<li>看 <code>/_cat/nodes?v</code></li>
+<li>看 <code>/_cluster/health</code></li>
+<li>看 <code>/_cat/shards?v</code></li>
+<li>看 <code>/_cat/allocation?v</code></li>
+<li>看 <code>/_cluster/pending_tasks</code></li>
+</ol>
+<p>这里最常见的误判有两个：</p>
+<ul>
+<li><code>green</code> 就认为没有问题，实际分片分布已经严重不均</li>
+<li>节点数看起来正常，实际 master 切换频繁，集群一直在恢复边缘</li>
+</ul>
+<h3 id="2-索引层：重点看模板和映射是否已经埋雷"><a href="#2-索引层：重点看模板和映射是否已经埋雷" class="headerlink" title="2. 索引层：重点看模板和映射是否已经埋雷"></a>2. 索引层：重点看模板和映射是否已经埋雷</h3><p>很多 <code>ES</code> 集群不是死在节点，而是死在索引策略。<br>索引层至少要确认：</p>
+<ul>
+<li>索引模板是否按业务分层，而不是所有索引共用一套粗放配置</li>
+<li>分片数和副本数是否匹配真实数据量与节点数</li>
+<li>映射是否明确，避免动态字段无限膨胀</li>
+<li>是否存在高基数字段被错误设成可聚合字段</li>
+<li>生命周期策略是否清晰，冷热分层、删除、归档是否能落地</li>
+</ul>
+<p>这一层如果不先收稳，后面做再多压测都容易失真。因为很多性能问题并不是集群能力不足，而是索引先设计错了：</p>
+<ul>
+<li>小索引分片过多，导致集群元数据和调度开销被放大</li>
+<li>大索引只有少量分片，单分片成为热点</li>
+<li>动态字段过多，导致 mapping 膨胀和内存占用异常</li>
+<li>副本数量过高，写入成本被无意义放大</li>
+</ul>
+<h3 id="3-写入层：别只测“能写入”，要测“持续写时会不会退化”"><a href="#3-写入层：别只测“能写入”，要测“持续写时会不会退化”" class="headerlink" title="3. 写入层：别只测“能写入”，要测“持续写时会不会退化”"></a>3. 写入层：别只测“能写入”，要测“持续写时会不会退化”</h3><p>写入层最小验证不应该只是一条 <code>bulk</code> 成功，而应该包含下面几组动作：</p>
+<ul>
+<li>单条写入延迟</li>
+<li>批量写入吞吐</li>
+<li>长稳写入下的刷新与合并开销</li>
+<li>高峰写入下的拒绝和队列堆积</li>
+<li>写入期间副本同步和恢复影响</li>
+</ul>
+<p>测试写入时更需要盯的不是单次吞吐，而是下面几组关系：</p>
+<ul>
+<li>写入量提升时，吞吐是否线性增长</li>
+<li>吞吐不再增长时，线程池、磁盘、JVM 哪一层先出现拐点</li>
+<li>写入持续 30 分钟、1 小时、2 小时后，延迟是否开始恶化</li>
+<li>批量大小变化后，写入效率和资源消耗如何变化</li>
+</ul>
+<h3 id="4-查询层：不要只做一条-DSL，应该按查询模型分组验证"><a href="#4-查询层：不要只做一条-DSL，应该按查询模型分组验证" class="headerlink" title="4. 查询层：不要只做一条 DSL，应该按查询模型分组验证"></a>4. 查询层：不要只做一条 DSL，应该按查询模型分组验证</h3><p><code>Elasticsearch</code> 查询测试最怕只挑一条“代表性查询”。<br>更能反映真实现场的做法，是按查询模型分组：</p>
+<ul>
+<li>精确查询</li>
+<li>范围查询</li>
+<li>排序分页</li>
+<li>聚合统计</li>
+<li>多字段组合过滤</li>
+<li>模糊查询和高亮</li>
+</ul>
+<p>每一类查询都至少要回答：</p>
+<ul>
+<li>平均耗时和尾延迟是多少</li>
+<li>并发升高后是 CPU、缓存还是磁盘先抬头</li>
+<li>是否有某些 DSL 在数据量扩大后明显失控</li>
+<li>是否存在命中率低、缓存无效、扫描范围过大的查询</li>
+</ul>
+<h3 id="5-运维层：扩容、恢复、节点异常必须进测试范围"><a href="#5-运维层：扩容、恢复、节点异常必须进测试范围" class="headerlink" title="5. 运维层：扩容、恢复、节点异常必须进测试范围"></a>5. 运维层：扩容、恢复、节点异常必须进测试范围</h3><p>把 <code>Elasticsearch</code> 测试理解成性能压测，这不够。<br><code>ES</code> 这类中间件真正的风险，经常出现在运维动作里：</p>
+<ul>
+<li>节点重启</li>
+<li>节点扩容</li>
+<li>节点故障摘除</li>
+<li>分片迁移</li>
+<li>磁盘逼近高水位</li>
+<li>快照与恢复</li>
+</ul>
+<p>如果这些动作从来没测过，线上第一次遇到时，最容易出现下面的问题：</p>
+<ul>
+<li>集群能恢复，但恢复时间过长，业务窗口顶不住</li>
+<li>分片迁移期间查询明显抖动</li>
+<li>扩容后热点仍然没消失，因为索引和路由策略没调整</li>
+<li>水位触发后索引进入只读，业务侧才第一次发现</li>
+</ul>
+<h2 id="三、监控口径怎么定，才能真正解释集群状态"><a href="#三、监控口径怎么定，才能真正解释集群状态" class="headerlink" title="三、监控口径怎么定，才能真正解释集群状态"></a>三、监控口径怎么定，才能真正解释集群状态</h2><p><code>Elasticsearch</code> 监控最怕的不是没有图，而是图很多但解释不了问题。<br>更实用的方式，是把监控口径拆成四类：</p>
+<ul>
+<li>可用性口径</li>
+<li>性能口径</li>
+<li>容量口径</li>
+<li>恢复口径</li>
+</ul>
+<h3 id="1-可用性口径：回答“集群是不是还能提供服务”"><a href="#1-可用性口径：回答“集群是不是还能提供服务”" class="headerlink" title="1. 可用性口径：回答“集群是不是还能提供服务”"></a>1. 可用性口径：回答“集群是不是还能提供服务”</h3><p>至少要看：</p>
+<ul>
+<li>集群健康状态</li>
+<li>节点在线数量</li>
+<li>主分片和副本分片状态</li>
+<li>未分配分片数</li>
+<li>pending tasks 数量</li>
+<li>线程池拒绝次数</li>
+</ul>
+<p>这组指标的价值在于快速回答：</p>
+<ul>
+<li>集群是否已进入异常状态</li>
+<li>当前是否在恢复、迁移或堆积</li>
+<li>问题是局部节点，还是已经影响整个集群</li>
+</ul>
+<h3 id="2-性能口径：回答“为什么开始变慢”"><a href="#2-性能口径：回答“为什么开始变慢”" class="headerlink" title="2. 性能口径：回答“为什么开始变慢”"></a>2. 性能口径：回答“为什么开始变慢”</h3><p>性能侧至少应该盯：</p>
+<ul>
+<li>写入吞吐、写入延迟、bulk 耗时</li>
+<li>查询 QPS、查询耗时、P95、P99</li>
+<li>refresh 耗时</li>
+<li>merge 耗时</li>
+<li>search 线程池和 write 线程池队列长度</li>
+<li>JVM heap 使用率、GC 次数和停顿</li>
+</ul>
+<p>这里最重要的不是看单点峰值，而是看时间关系：</p>
+<ul>
+<li>查询慢之前，是不是先发生了 merge 抖动</li>
+<li>写入降速之前，线程池是不是已经堆积</li>
+<li>heap 抬高之前，字段或聚合模型是否刚变化</li>
+</ul>
+<h3 id="3-容量口径：回答“还能不能继续承载”"><a href="#3-容量口径：回答“还能不能继续承载”" class="headerlink" title="3. 容量口径：回答“还能不能继续承载”"></a>3. 容量口径：回答“还能不能继续承载”</h3><p>容量口径至少包括：</p>
+<ul>
+<li>磁盘使用率和水位阈值</li>
+<li>分片总数、单节点分片数</li>
+<li>索引体量增长趋势</li>
+<li>文档数增长趋势</li>
+<li>segment 数量</li>
+<li>fielddata、query cache、request cache 占用</li>
+</ul>
+<p>这组指标的目标不是做展示，而是支撑决策：</p>
+<ul>
+<li>什么时候该扩容</li>
+<li>什么时候该缩减分片</li>
+<li>什么时候该做冷热分层</li>
+<li>什么时候该回收旧索引</li>
+</ul>
+<h3 id="4-恢复口径：回答“异常后多久能回稳”"><a href="#4-恢复口径：回答“异常后多久能回稳”" class="headerlink" title="4. 恢复口径：回答“异常后多久能回稳”"></a>4. 恢复口径：回答“异常后多久能回稳”</h3><p>这是 容易漏掉的一组。<br>恢复相关至少应该长期观察：</p>
+<ul>
+<li>shard relocation 数量</li>
+<li>recovery 耗时</li>
+<li>节点重启后恢复窗口</li>
+<li>snapshot 成功率和耗时</li>
+<li>故障后写入与查询恢复到正常口径的时间</li>
+</ul>
+<p>如果没有这组监控，现场通常只能看到“集群已经恢复”，但看不到下面这些更关键的问题：</p>
+<ul>
+<li>恢复用了多久</li>
+<li>恢复期间是不是已经拖慢业务</li>
+<li>恢复完成后是否还有尾部问题没收敛</li>
+</ul>
+<h2 id="四、最小执行骨架应该怎么搭，避免一上来就全量压"><a href="#四、最小执行骨架应该怎么搭，避免一上来就全量压" class="headerlink" title="四、最小执行骨架应该怎么搭，避免一上来就全量压"></a>四、最小执行骨架应该怎么搭，避免一上来就全量压</h2><p>更适合 <code>Elasticsearch</code> 集群的最小执行骨架，通常是下面五步。</p>
+<h3 id="1-准备阶段"><a href="#1-准备阶段" class="headerlink" title="1. 准备阶段"></a>1. 准备阶段</h3><p>准备阶段至少要固定：</p>
+<ul>
+<li>节点角色和数量</li>
+<li>索引模板和映射版本</li>
+<li>测试数据规模</li>
+<li>典型写入模型</li>
+<li>典型查询模型</li>
+<li>监控面板和记录表</li>
+</ul>
+<p>建议提前准备一张最小记录表：</p>
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>写入模型</th>
+<th>查询模型</th>
+<th>数据量</th>
+<th>分片&#x2F;副本</th>
+<th>目标指标</th>
+<th>观察点</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>冒烟</td>
+<td>单条写入</td>
+<td>精确查询</td>
+<td>10 万</td>
+<td>3&#x2F;1</td>
+<td>功能正确</td>
+<td>健康、分片、拒绝数</td>
+</tr>
+<tr>
+<td>基线</td>
+<td>bulk 写入</td>
+<td>常用 DSL</td>
+<td>100 万</td>
+<td>3&#x2F;1</td>
+<td>平均耗时</td>
+<td>heap、线程池、磁盘</td>
+</tr>
+<tr>
+<td>升压</td>
+<td>bulk 写入</td>
+<td>聚合 + 排序</td>
+<td>500 万</td>
+<td>3&#x2F;1</td>
+<td>P95、拒绝率</td>
+<td>merge、refresh、GC</td>
+</tr>
+<tr>
+<td>长稳</td>
+<td>混合流量</td>
+<td>混合流量</td>
+<td>持续增长</td>
+<td>3&#x2F;1</td>
+<td>稳定性</td>
+<td>水位、segment、pending tasks</td>
+</tr>
+<tr>
+<td>故障</td>
+<td>节点摘除&#x2F;恢复</td>
+<td>混合流量</td>
+<td>持续增长</td>
+<td>3&#x2F;1</td>
+<td>恢复时间</td>
+<td>relocation、恢复耗时</td>
+</tr>
+</tbody></table>
+<h3 id="2-冒烟阶段"><a href="#2-冒烟阶段" class="headerlink" title="2. 冒烟阶段"></a>2. 冒烟阶段</h3><p>冒烟阶段不追求吞吐，重点确认：</p>
+<ul>
+<li>索引创建和模板生效是否正确</li>
+<li>写入和查询是否能打通</li>
+<li>节点与分片状态是否符合预期</li>
+<li>基础监控是否有数据</li>
+</ul>
+<h3 id="3-基线阶段"><a href="#3-基线阶段" class="headerlink" title="3. 基线阶段"></a>3. 基线阶段</h3><p>基线阶段主要回答：</p>
+<ul>
+<li>当前数据模型下，集群正常吞吐是多少</li>
+<li>常用查询的平均耗时和尾延迟是多少</li>
+<li>哪些资源先开始被消耗</li>
+</ul>
+<h3 id="4-升压与长稳阶段"><a href="#4-升压与长稳阶段" class="headerlink" title="4. 升压与长稳阶段"></a>4. 升压与长稳阶段</h3><p>这里重点不是“打到挂”，而是找拐点：</p>
+<ul>
+<li>从哪个并发或吞吐开始，延迟明显恶化</li>
+<li>写入和查询混合时，哪个线程池先堆积</li>
+<li>长稳运行时，segment、merge、GC 是否持续恶化</li>
+</ul>
+<h3 id="5-故障与恢复阶段"><a href="#5-故障与恢复阶段" class="headerlink" title="5. 故障与恢复阶段"></a>5. 故障与恢复阶段</h3><p>这一阶段最好保留，不然测试结论通常不完整。<br>至少建议做：</p>
+<ul>
+<li>单节点重启</li>
+<li>单节点摘除</li>
+<li>磁盘逼近阈值时观察写入与查询</li>
+<li>恢复期间继续保持低量业务流量</li>
+</ul>
+<h2 id="五、监控面板和命令口径应该怎么搭"><a href="#五、监控面板和命令口径应该怎么搭" class="headerlink" title="五、监控面板和命令口径应该怎么搭"></a>五、监控面板和命令口径应该怎么搭</h2><h3 id="1-基础命令口径"><a href="#1-基础命令口径" class="headerlink" title="1. 基础命令口径"></a>1. 基础命令口径</h3><p>现场排查时，下面这组命令通常最常用：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">curl -s http://127.0.0.1:9200/_cluster/health?pretty</span><br><span class="line">curl -s http://127.0.0.1:9200/_cat/nodes?v</span><br><span class="line">curl -s http://127.0.0.1:9200/_cat/shards?v</span><br><span class="line">curl -s http://127.0.0.1:9200/_cat/allocation?v</span><br><span class="line">curl -s http://127.0.0.1:9200/_cluster/pending_tasks?pretty</span><br><span class="line">curl -s http://127.0.0.1:9200/_nodes/stats?pretty</span><br><span class="line">curl -s http://127.0.0.1:9200/_cat/thread_pool?v</span><br><span class="line">curl -s http://127.0.0.1:9200/_cat/indices?v</span><br></pre></td></tr></table></figure>
+
+<p>这组命令的价值，不是替代监控系统，而是在图表之外快速回答：</p>
+<ul>
+<li>当前是不是已经有未分配分片</li>
+<li>哪个节点磁盘或分片明显更重</li>
+<li>哪个线程池已经开始排队或拒绝</li>
+<li>是否存在 pending task 积压</li>
+</ul>
+<h3 id="2-最小监控面板建议"><a href="#2-最小监控面板建议" class="headerlink" title="2. 最小监控面板建议"></a>2. 最小监控面板建议</h3><p>更适合现场排查的面板通常至少有四张：</p>
+<ul>
+<li>集群总览盘：健康状态、节点数、未分配分片、pending tasks、磁盘水位</li>
+<li>写入盘：bulk 吞吐、写入耗时、write 队列、拒绝数、refresh 与 merge</li>
+<li>查询盘：查询 QPS、查询耗时、search 队列、cache 命中、热点索引</li>
+<li>恢复盘：recovery、relocation、节点重启窗口、快照与恢复耗时</li>
+</ul>
+<h3 id="3-观察与判断顺序"><a href="#3-观察与判断顺序" class="headerlink" title="3. 观察与判断顺序"></a>3. 观察与判断顺序</h3><p>更高效的判断顺序通常是：</p>
+<ol>
+<li>先看集群有没有进入恢复或异常状态</li>
+<li>再看写入还是查询先变差</li>
+<li>再看线程池、磁盘、JVM、merge 谁先抬头</li>
+<li>最后再下钻到索引模板、映射和 DSL</li>
+</ol>
+<p>如果一开始就扎进某条查询或某个节点，往往容易把全局问题误判成局部问题。</p>
+<h2 id="六、常见坑"><a href="#六、常见坑" class="headerlink" title="六、常见坑"></a>六、常见坑</h2><h3 id="1-只看集群颜色，不看分片与热点"><a href="#1-只看集群颜色，不看分片与热点" class="headerlink" title="1. 只看集群颜色，不看分片与热点"></a>1. 只看集群颜色，不看分片与热点</h3><p><code>green</code> 只能说明主分片和副本分片都已分配，不代表分布合理。<br>真实问题里经常出现：</p>
+<ul>
+<li>一个节点承担了大部分热点分片</li>
+<li>分片数量太多，管理开销先把集群拖慢</li>
+<li>查询热点集中在少数索引或少数节点</li>
+</ul>
+<h3 id="2-分片数靠经验拍，后面再补救"><a href="#2-分片数靠经验拍，后面再补救" class="headerlink" title="2. 分片数靠经验拍，后面再补救"></a>2. 分片数靠经验拍，后面再补救</h3><p>很多索引上线时直接按“感觉”设分片数，后面数据量增长后只能被动迁移和重建。<br>分片数一旦不合理，后续所有测试都会被扭曲。</p>
+<h3 id="3-只压写入或只压查询，不压混合流量"><a href="#3-只压写入或只压查询，不压混合流量" class="headerlink" title="3. 只压写入或只压查询，不压混合流量"></a>3. 只压写入或只压查询，不压混合流量</h3><p>很多真实业务不是纯写或纯查，而是：</p>
+<ul>
+<li>写入持续发生</li>
+<li>查询也持续发生</li>
+<li>后台聚合、分页、统计同时在跑</li>
+</ul>
+<p>只做单一流量模型，很容易得到过于乐观的结论。</p>
+<h3 id="4-忽略-refresh、merge-和恢复带来的抖动"><a href="#4-忽略-refresh、merge-和恢复带来的抖动" class="headerlink" title="4. 忽略 refresh、merge 和恢复带来的抖动"></a>4. 忽略 refresh、merge 和恢复带来的抖动</h3><p>写入延迟出现抖动时，最先被怀疑的通常是网络或节点不稳。<br>但很多时候真正的触发点是：</p>
+<ul>
+<li>refresh 过于频繁</li>
+<li>merge 放大</li>
+<li>recovery 与 relocation 挤占资源</li>
+</ul>
+<h3 id="5-只盯-JVM，不看磁盘水位和-segment"><a href="#5-只盯-JVM，不看磁盘水位和-segment" class="headerlink" title="5. 只盯 JVM，不看磁盘水位和 segment"></a>5. 只盯 JVM，不看磁盘水位和 segment</h3><p><code>Elasticsearch</code> 的问题不止发生在 heap。<br>磁盘水位、segment 数量、merge 压力和分片恢复，同样能在没有明显 OOM 的情况下先把集群拖慢。</p>
+<h3 id="6-节点恢复完就当问题结束"><a href="#6-节点恢复完就当问题结束" class="headerlink" title="6. 节点恢复完就当问题结束"></a>6. 节点恢复完就当问题结束</h3><p>节点恢复完成不代表业务已经恢复到原口径。<br>更应该继续观察：</p>
+<ul>
+<li>写入吞吐是否回到基线</li>
+<li>查询 P95 是否回到基线</li>
+<li>pending tasks 是否清空</li>
+<li>是否还有热点节点和热点分片残留</li>
+</ul>
+<h2 id="七、真实案例：写入和查询都变慢，到底是节点不稳还是索引策略先出问题"><a href="#七、真实案例：写入和查询都变慢，到底是节点不稳还是索引策略先出问题" class="headerlink" title="七、真实案例：写入和查询都变慢，到底是节点不稳还是索引策略先出问题"></a>七、真实案例：写入和查询都变慢，到底是节点不稳还是索引策略先出问题</h2><h3 id="场景"><a href="#场景" class="headerlink" title="场景"></a>场景</h3><p>一个测试平台把执行结果、日志摘要和告警事件都写入 <code>Elasticsearch</code>。<br>平时集群一直能用，但在某次回归峰值期间出现了明显问题：</p>
+<ul>
+<li>bulk 写入开始变慢</li>
+<li>日志检索延迟明显升高</li>
+<li>聚合统计接口超时增加</li>
+<li>集群状态仍然是 <code>green</code></li>
+</ul>
+<p>排查起点通常会先落在节点资源上，怀疑是磁盘或 JVM 顶住了。</p>
+<h3 id="执行"><a href="#执行" class="headerlink" title="执行"></a>执行</h3><p>现场按下面顺序收证：</p>
+<ol>
+<li>看集群健康、节点列表、分片分布</li>
+<li>看写入线程池、查询线程池、拒绝数和 pending tasks</li>
+<li>对齐写入吞吐、查询耗时、refresh、merge、GC、磁盘水位时间窗</li>
+<li>下钻到热点索引，检查模板、分片数和字段映射</li>
+<li>对照最近一次索引模板变更和业务查询变更</li>
+</ol>
+<h3 id="现象"><a href="#现象" class="headerlink" title="现象"></a>现象</h3><p>现场看到的关键现象是：</p>
+<ul>
+<li>集群整体仍然 <code>green</code></li>
+<li>没有节点离线，也没有明显 master 抖动</li>
+<li>write 线程池开始排队，search 线程池偶尔抬高</li>
+<li>merge 时间在峰值窗口明显上升</li>
+<li>磁盘水位虽然没过阈值，但某两个节点增长明显更快</li>
+<li>热点索引的分片数偏少，且一个高基数字段被用于聚合和排序</li>
+</ul>
+<h3 id="排查"><a href="#排查" class="headerlink" title="排查"></a>排查</h3><p>继续下钻后，问题逐步收敛：</p>
+<ul>
+<li>这批回归新增了大量日志事件字段，mapping 膨胀速度超出预期</li>
+<li>热点索引分片数偏少，导致写入和查询都集中打到少量分片</li>
+<li>聚合和排序都围绕同一高基数字段展开，search 压力进一步集中</li>
+<li>merge 在高写入窗口持续放大，磁盘和线程池被进一步拖慢</li>
+</ul>
+<p>这说明真正的问题不是“集群忽然扛不住”，而是：</p>
+<ul>
+<li>索引模板和字段设计先把热点做出来了</li>
+<li>回归流量只是把这个问题提前放大</li>
+</ul>
+<h3 id="修复"><a href="#修复" class="headerlink" title="修复"></a>修复</h3><p>最终修复动作分成四步：</p>
+<ol>
+<li>调整索引模板，限制动态字段扩张，收紧不必要的聚合字段</li>
+<li>重建热点索引，重新规划分片数和副本数</li>
+<li>拆分高成本聚合查询，避免与高峰写入窗口完全重叠</li>
+<li>在监控里新增热点索引分片负载、merge 耗时、search&#x2F;write 队列和字段增长趋势</li>
+</ol>
+<p>修复后再次复测，结果出现了明显变化：</p>
+<ul>
+<li>bulk 写入吞吐恢复稳定</li>
+<li>聚合查询 P95 明显下降</li>
+<li>merge 抖动窗口缩短</li>
+<li>同样的回归峰值下，线程池不再持续堆积</li>
+</ul>
+<p>这个案例最关键的教训不是“ES 需要扩容”，而是：</p>
+<p><strong>如果索引策略、字段策略和查询模型没有先收稳，单纯扩容只能延后问题，不会真正消除问题。</strong></p>
+<h2 id="八、结论"><a href="#八、结论" class="headerlink" title="八、结论"></a>八、结论</h2><p><code>Elasticsearch</code> 集群测试真正要解决的，不是证明“它能工作”，而是回答下面几个更具体的问题：</p>
+<ul>
+<li>这个集群在当前索引和查询模型下是否稳定</li>
+<li>写入、查询、恢复、扩容时哪个环节最先成为限制</li>
+<li>当前监控口径能不能在问题发生前给出趋势信号</li>
+<li>故障发生后，能不能快速分清是集群问题、索引问题还是查询问题</li>
+</ul>
+<p>更实用的做法通常不是一上来就追求复杂压测，而是先把下面几件事收稳：</p>
+<ul>
+<li>验证分层：集群、索引、写入、查询、运维</li>
+<li>监控口径：可用性、性能、容量、恢复</li>
+<li>执行骨架：冒烟、基线、升压、长稳、故障恢复</li>
+<li>证据顺序：健康状态、分片分布、线程池、磁盘&#x2F;JVM、模板与 DSL</li>
+</ul>
+<p>只有这几条链路一起收起来，<code>Elasticsearch</code> 测试结论才不会停留在“能用”或“变慢了”，而是能真正支撑发布验证、容量判断和故障定位。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E5%B7%A5%E7%A8%8B%E5%AE%9E%E8%B7%B5/" rel="tag"># 工程实践</a>
+              <a href="/tags/%E4%B8%AD%E9%97%B4%E4%BB%B6/" rel="tag"># 中间件</a>
+              <a href="/tags/%E9%9B%86%E7%BE%A4%E6%B5%8B%E8%AF%95/" rel="tag"># 集群测试</a>
+              <a href="/tags/Elasticsearch/" rel="tag"># Elasticsearch</a>
+              <a href="/tags/%E7%9B%91%E6%8E%A7%E6%B2%BB%E7%90%86/" rel="tag"># 监控治理</a>
+              <a href="/tags/%E6%80%A7%E8%83%BD%E6%8E%92%E6%9F%A5/" rel="tag"># 性能排查</a>
+              <a href="/tags/%E7%B4%A2%E5%BC%95%E8%AE%BE%E8%AE%A1/" rel="tag"># 索引设计</a>
+              <a href="/tags/%E5%88%86%E7%89%87%E6%B2%BB%E7%90%86/" rel="tag"># 分片治理</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2023/10/14/%E4%B8%AD%E9%97%B4%E4%BB%B6-02-Kafka%E9%9B%86%E7%BE%A4%E6%B5%8B%E8%AF%95%E4%B8%8E%E7%A8%B3%E5%AE%9A%E6%80%A7%E9%AA%8C%E8%AF%81%E6%80%9D%E8%B7%AF/" rel="prev" title="中间件-02-Kafka集群测试与稳定性验证思路">
+                  <i class="fa fa-angle-left"></i> 中间件-02-Kafka集群测试与稳定性验证思路
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2023/10/28/%E4%B8%AD%E9%97%B4%E4%BB%B6-04-MySQL%E8%AF%BB%E5%86%99%E5%88%86%E7%A6%BB%E5%90%8E%E7%9A%84%E9%AA%8C%E8%AF%81%E6%96%B9%E6%B3%95/" rel="next" title="中间件-04-MySQL读写分离后的验证方法">
+                  中间件-04-MySQL读写分离后的验证方法 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

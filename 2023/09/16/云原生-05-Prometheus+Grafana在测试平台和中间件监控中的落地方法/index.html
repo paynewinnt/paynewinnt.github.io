@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="第一次上 Prometheus + Grafana，最先完成的通常是这些动作：  把 node-exporter、kube-state-metrics、redis-exporter 装起来 导入几套现成 dashboard 让 Grafana 能看到 CPU、内存、网络和磁盘  这些动作能让“看板”跑起来，但离“监控真正可用”还差很远。测试平台和中间件场景里的高频问题，往往不是没有指标，而是指标很">
+<meta property="og:type" content="article">
+<meta property="og:title" content="云原生-05-Prometheus+Grafana在测试平台和中间件监控中的落地方法">
+<meta property="og:url" content="https://paynewinnt.github.io/2023/09/16/%E4%BA%91%E5%8E%9F%E7%94%9F-05-Prometheus+Grafana%E5%9C%A8%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E5%92%8C%E4%B8%AD%E9%97%B4%E4%BB%B6%E7%9B%91%E6%8E%A7%E4%B8%AD%E7%9A%84%E8%90%BD%E5%9C%B0%E6%96%B9%E6%B3%95/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="第一次上 Prometheus + Grafana，最先完成的通常是这些动作：  把 node-exporter、kube-state-metrics、redis-exporter 装起来 导入几套现成 dashboard 让 Grafana 能看到 CPU、内存、网络和磁盘  这些动作能让“看板”跑起来，但离“监控真正可用”还差很远。测试平台和中间件场景里的高频问题，往往不是没有指标，而是指标很">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2023-09-16T12:30:00.000Z">
+<meta property="article:modified_time" content="2023-09-16T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="测试平台">
+<meta property="article:tag" content="工程实践">
+<meta property="article:tag" content="Kubernetes">
+<meta property="article:tag" content="Prometheus">
+<meta property="article:tag" content="Grafana">
+<meta property="article:tag" content="中间件监控">
+<meta property="article:tag" content="指标治理">
+<meta property="article:tag" content="告警治理">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2023/09/16/%E4%BA%91%E5%8E%9F%E7%94%9F-05-Prometheus+Grafana%E5%9C%A8%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E5%92%8C%E4%B8%AD%E9%97%B4%E4%BB%B6%E7%9B%91%E6%8E%A7%E4%B8%AD%E7%9A%84%E8%90%BD%E5%9C%B0%E6%96%B9%E6%B3%95/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2023/09/16/%E4%BA%91%E5%8E%9F%E7%94%9F-05-Prometheus+Grafana%E5%9C%A8%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E5%92%8C%E4%B8%AD%E9%97%B4%E4%BB%B6%E7%9B%91%E6%8E%A7%E4%B8%AD%E7%9A%84%E8%90%BD%E5%9C%B0%E6%96%B9%E6%B3%95/","path":"2023/09/16/云原生-05-Prometheus+Grafana在测试平台和中间件监控中的落地方法/","title":"云原生-05-Prometheus+Grafana在测试平台和中间件监控中的落地方法"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>云原生-05-Prometheus+Grafana在测试平台和中间件监控中的落地方法 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E5%85%88%E6%8A%8A%E7%9B%91%E6%8E%A7%E5%AF%B9%E8%B1%A1%E5%88%86%E5%B1%82%EF%BC%8C%E5%88%AB%E6%8A%8A%E6%89%80%E6%9C%89%E6%8C%87%E6%A0%87%E9%83%BD%E5%A0%86%E8%BF%9B%E4%B8%80%E5%BC%A0%E5%A4%A7%E7%9B%98"><span class="nav-number">1.</span> <span class="nav-text">一、先把监控对象分层，别把所有指标都堆进一张大盘</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%B9%B3%E5%8F%B0%E6%8E%A7%E5%88%B6%E5%B1%82%EF%BC%9A%E5%85%88%E7%A1%AE%E8%AE%A4%E4%BB%BB%E5%8A%A1%E7%B3%BB%E7%BB%9F%E6%98%AF%E4%B8%8D%E6%98%AF%E5%B7%B2%E7%BB%8F%E5%A4%B1%E7%9C%9F"><span class="nav-number">1.1.</span> <span class="nav-text">1. 平台控制层：先确认任务系统是不是已经失真</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%89%A7%E8%A1%8C%E8%B5%84%E6%BA%90%E5%B1%82%EF%BC%9A%E5%8C%BA%E5%88%86%E8%B5%84%E6%BA%90%E7%93%B6%E9%A2%88%E5%92%8C%E4%B8%9A%E5%8A%A1%E5%A4%B1%E8%B4%A5"><span class="nav-number">1.2.</span> <span class="nav-text">2. 执行资源层：区分资源瓶颈和业务失败</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%B8%AD%E9%97%B4%E4%BB%B6%E4%BE%9D%E8%B5%96%E5%B1%82%EF%BC%9A%E5%88%AB%E5%8F%AA%E7%9C%8B%E2%80%9C%E6%B4%BB%E7%9D%80%E2%80%9D%EF%BC%8C%E8%A6%81%E7%9C%8B%E6%98%AF%E5%90%A6%E8%BF%98%E8%83%BD%E6%89%BF%E5%8F%97%E4%BB%BB%E5%8A%A1%E5%8E%8B%E5%8A%9B"><span class="nav-number">1.3.</span> <span class="nav-text">3. 中间件依赖层：别只看“活着”，要看是否还能承受任务压力</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E7%94%A8%E6%88%B7%E4%BD%93%E9%AA%8C%E5%B1%82%EF%BC%9A%E6%8A%8A%E6%8A%80%E6%9C%AF%E6%8C%87%E6%A0%87%E7%BF%BB%E8%AF%91%E6%88%90%E5%8F%91%E5%B8%83%E5%86%B3%E7%AD%96%E6%8C%87%E6%A0%87"><span class="nav-number">1.4.</span> <span class="nav-text">4. 用户体验层：把技术指标翻译成发布决策指标</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81Prometheus-%E6%8C%87%E6%A0%87%E9%87%87%E9%9B%86%E6%80%8E%E4%B9%88%E8%90%BD%E5%9C%B0%EF%BC%8C%E6%89%8D%E4%B8%8D%E4%BC%9A%E5%8F%AA%E5%89%A9-exporter"><span class="nav-number">2.</span> <span class="nav-text">二、Prometheus 指标采集怎么落地，才不会只剩 exporter</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%9F%BA%E7%A1%80%E8%B5%84%E6%BA%90%E6%8C%87%E6%A0%87"><span class="nav-number">2.1.</span> <span class="nav-text">1. 基础资源指标</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%B8%AD%E9%97%B4%E4%BB%B6%E6%8C%87%E6%A0%87"><span class="nav-number">2.2.</span> <span class="nav-text">2. 中间件指标</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%B9%B3%E5%8F%B0%E8%87%AA%E5%AE%9A%E4%B9%89%E6%8C%87%E6%A0%87"><span class="nav-number">2.3.</span> <span class="nav-text">3. 平台自定义指标</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81Grafana-%E7%9C%8B%E6%9D%BF%E6%80%8E%E4%B9%88%E8%AE%BE%E8%AE%A1%EF%BC%8C%E6%89%8D%E8%83%BD%E6%94%AF%E6%8C%81%E5%8F%91%E5%B8%83%E5%92%8C%E6%8E%92%E9%9A%9C"><span class="nav-number">3.</span> <span class="nav-text">三、Grafana 看板怎么设计，才能支持发布和排障</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%80%BB%E8%A7%88%E7%9C%8B%E6%9D%BF"><span class="nav-number">3.1.</span> <span class="nav-text">1. 总览看板</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%B9%B3%E5%8F%B0%E6%89%A7%E8%A1%8C%E7%9C%8B%E6%9D%BF"><span class="nav-number">3.2.</span> <span class="nav-text">2. 平台执行看板</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%B8%AD%E9%97%B4%E4%BB%B6%E4%B8%93%E9%A2%98%E7%9C%8B%E6%9D%BF"><span class="nav-number">3.3.</span> <span class="nav-text">3. 中间件专题看板</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%8F%91%E5%B8%83%E7%AA%97%E5%8F%A3%E7%9C%8B%E6%9D%BF"><span class="nav-number">3.4.</span> <span class="nav-text">4. 发布窗口看板</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E5%91%8A%E8%AD%A6%E4%B8%8D%E8%A6%81%E5%8F%AA%E6%8C%89%E9%98%88%E5%80%BC%E5%8F%91%EF%BC%8C%E8%A6%81%E6%8C%89%E5%8A%A8%E4%BD%9C%E5%8F%91"><span class="nav-number">4.</span> <span class="nav-text">四、告警不要只按阈值发，要按动作发</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%8F%AF%E8%A7%82%E5%AF%9F%E5%91%8A%E8%AD%A6"><span class="nav-number">4.1.</span> <span class="nav-text">1. 可观察告警</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E9%9C%80%E8%A6%81%E4%BB%8B%E5%85%A5%E5%91%8A%E8%AD%A6"><span class="nav-number">4.2.</span> <span class="nav-text">2. 需要介入告警</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E9%98%BB%E5%A1%9E%E7%B1%BB%E5%91%8A%E8%AD%A6"><span class="nav-number">4.3.</span> <span class="nav-text">3. 阻塞类告警</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E6%9C%80%E5%B0%8F%E5%8F%AF%E6%89%A7%E8%A1%8C%E8%90%BD%E5%9C%B0%E9%AA%A8%E6%9E%B6"><span class="nav-number">5.</span> <span class="nav-text">五、最小可执行落地骨架</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E9%87%87%E9%9B%86%E4%BE%A7"><span class="nav-number">5.1.</span> <span class="nav-text">1. 采集侧</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E7%9C%8B%E6%9D%BF%E4%BE%A7"><span class="nav-number">5.2.</span> <span class="nav-text">2. 看板侧</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%91%8A%E8%AD%A6%E4%BE%A7"><span class="nav-number">5.3.</span> <span class="nav-text">3. 告警侧</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E8%AE%B0%E5%BD%95%E4%BE%A7"><span class="nav-number">5.4.</span> <span class="nav-text">4. 记录侧</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E5%B8%B8%E8%A7%81%E5%9D%91"><span class="nav-number">6.</span> <span class="nav-text">六、常见坑</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%9C%8B%E6%9D%BF%E5%BE%88%E5%A4%9A%EF%BC%8C%E4%BD%86%E6%B2%A1%E6%9C%89%E4%BB%BB%E5%8A%A1%E8%A7%86%E8%A7%92"><span class="nav-number">6.1.</span> <span class="nav-text">1. 看板很多，但没有任务视角</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%8C%87%E6%A0%87%E9%87%87%E5%88%B0%E4%BA%86%EF%BC%8C%E4%BD%86-labels-%E6%B7%B7%E4%B9%B1"><span class="nav-number">6.2.</span> <span class="nav-text">2. 指标采到了，但 labels 混乱</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%B9%B3%E5%8F%B0%E4%B8%8D%E6%9A%B4%E9%9C%B2%E4%B8%9A%E5%8A%A1%E6%8C%87%E6%A0%87"><span class="nav-number">6.3.</span> <span class="nav-text">3. 平台不暴露业务指标</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%91%8A%E8%AD%A6%E5%8F%AA%E6%8C%89%E9%98%88%E5%80%BC%EF%BC%8C%E4%B8%8D%E6%8C%89%E5%8A%A8%E4%BD%9C"><span class="nav-number">6.4.</span> <span class="nav-text">4. 告警只按阈值，不按动作</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%8F%91%E5%B8%83%E6%97%B6%E6%B2%A1%E6%9C%89%E6%97%B6%E9%97%B4%E7%AA%97%E6%A0%87%E8%AE%B0"><span class="nav-number">6.5.</span> <span class="nav-text">5. 发布时没有时间窗标记</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E7%9C%9F%E5%AE%9E%E6%A1%88%E4%BE%8B%EF%BC%9A%E5%9B%9E%E5%BD%92%E7%AA%81%E7%84%B6%E5%A4%A7%E9%87%8F%E8%B6%85%E6%97%B6%EF%BC%8C%E6%A0%B9%E5%9B%A0%E5%B9%B6%E4%B8%8D%E5%9C%A8%E6%8E%A5%E5%8F%A3%E6%9C%8D%E5%8A%A1"><span class="nav-number">7.</span> <span class="nav-text">七、真实案例：回归突然大量超时，根因并不在接口服务</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%9C%BA%E6%99%AF"><span class="nav-number">7.1.</span> <span class="nav-text">1. 场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%89%A7%E8%A1%8C"><span class="nav-number">7.2.</span> <span class="nav-text">2. 执行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%8E%B0%E8%B1%A1"><span class="nav-number">7.3.</span> <span class="nav-text">3. 现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%8E%92%E6%9F%A5"><span class="nav-number">7.4.</span> <span class="nav-text">4. 排查</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E4%BF%AE%E5%A4%8D"><span class="nav-number">7.5.</span> <span class="nav-text">5. 修复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E7%BB%93%E8%AE%BA"><span class="nav-number">8.</span> <span class="nav-text">八、结论</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2023/09/16/%E4%BA%91%E5%8E%9F%E7%94%9F-05-Prometheus+Grafana%E5%9C%A8%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E5%92%8C%E4%B8%AD%E9%97%B4%E4%BB%B6%E7%9B%91%E6%8E%A7%E4%B8%AD%E7%9A%84%E8%90%BD%E5%9C%B0%E6%96%B9%E6%B3%95/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="云原生-05-Prometheus+Grafana在测试平台和中间件监控中的落地方法 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          云原生-05-Prometheus+Grafana在测试平台和中间件监控中的落地方法
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2023-09-16 20:30:00" itemprop="dateCreated datePublished" datetime="2023-09-16T20:30:00+08:00">2023-09-16</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/%E4%BA%91%E5%8E%9F%E7%94%9F/" itemprop="url" rel="index"><span itemprop="name">云原生</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>3.1k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>11 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>第一次上 <code>Prometheus + Grafana</code>，最先完成的通常是这些动作：</p>
+<ul>
+<li>把 <code>node-exporter</code>、<code>kube-state-metrics</code>、<code>redis-exporter</code> 装起来</li>
+<li>导入几套现成 dashboard</li>
+<li>让 Grafana 能看到 CPU、内存、网络和磁盘</li>
+</ul>
+<p>这些动作能让“看板”跑起来，但离“监控真正可用”还差很远。测试平台和中间件场景里的高频问题，往往不是没有指标，而是指标很多、结论很少：</p>
+<ul>
+<li>平台任务失败率升高，却说不清是调度层、执行层还是环境层出问题</li>
+<li>Redis、Kafka、MySQL 都在监控，但故障发生时没人知道应该先看哪一组指标</li>
+<li>某次回归超时很多，Grafana 也能看到波动，但证据对不上执行任务和发布时间窗</li>
+<li>告警很多，真正有价值的很少，最后群里只剩静音规则</li>
+</ul>
+<p>这说明 <code>Prometheus + Grafana</code> 在测试平台里的角色，不是做一个“基础资源大盘”，而是把下面几条链路收起来：</p>
+<ul>
+<li>平台链路：任务调度、任务执行、结果回写、报告生成</li>
+<li>中间件链路：Redis、Kafka、MySQL、Elasticsearch 等依赖状态</li>
+<li>发布链路：版本上线、配置变更、扩缩容、回滚</li>
+<li>排障链路：问题出现时，能不能快速回答“从哪一层开始坏的”</li>
+</ul>
+<p>这篇文章只讨论一个核心问题：</p>
+<p><strong>Prometheus 和 Grafana 在测试平台与中间件场景里，应该怎么落地指标、看板、告警和排障链路，才能真正支持发布验证和故障定位。</strong></p>
+<h2 id="一、先把监控对象分层，别把所有指标都堆进一张大盘"><a href="#一、先把监控对象分层，别把所有指标都堆进一张大盘" class="headerlink" title="一、先把监控对象分层，别把所有指标都堆进一张大盘"></a>一、先把监控对象分层，别把所有指标都堆进一张大盘</h2><p>监控体系最容易失控的地方，不是采集不到数据，而是没有先按对象分层。</p>
+<p>更适合测试平台现场的做法，是把监控对象拆成下面四层：</p>
+<ul>
+<li>平台控制层：任务创建、调度、分发、回写、报告</li>
+<li>执行资源层：执行机、Worker、设备、容器、副本、队列</li>
+<li>中间件依赖层：Redis、Kafka、MySQL、Elasticsearch、Nginx</li>
+<li>用户体验层：任务成功率、耗时分布、回归通过率、发布后错误率</li>
+</ul>
+<p>如果不分层，后面通常会出现两类失真：</p>
+<ul>
+<li>指标很多，但没有一组指标能直接回答“平台为什么慢”</li>
+<li>看板很多，但故障发生时还是只能靠人工翻日志</li>
+</ul>
+<h3 id="1-平台控制层：先确认任务系统是不是已经失真"><a href="#1-平台控制层：先确认任务系统是不是已经失真" class="headerlink" title="1. 平台控制层：先确认任务系统是不是已经失真"></a>1. 平台控制层：先确认任务系统是不是已经失真</h3><p>测试平台自身至少要有下面几类指标：</p>
+<ul>
+<li>任务创建数、调度成功数、调度失败数</li>
+<li>执行队列长度、等待时长、超时数、重试数</li>
+<li>执行实例成功率、失败率、取消率、卡死数</li>
+<li>报告生成耗时、结果回写耗时、通知发送耗时</li>
+</ul>
+<p>这一层的目标不是“画得好看”，而是回答几个具体问题：</p>
+<ul>
+<li>是没人消费任务，还是任务发不出去</li>
+<li>是执行资源不够，还是调度策略有问题</li>
+<li>是任务本身失败，还是结果回写卡住了</li>
+</ul>
+<h3 id="2-执行资源层：区分资源瓶颈和业务失败"><a href="#2-执行资源层：区分资源瓶颈和业务失败" class="headerlink" title="2. 执行资源层：区分资源瓶颈和业务失败"></a>2. 执行资源层：区分资源瓶颈和业务失败</h3><p>平台执行失败，很多时候不是测试逻辑错，而是资源已经不稳。</p>
+<p>这一层更应该盯这些指标：</p>
+<ul>
+<li>Worker 副本数、活跃任务数、空闲槽位数</li>
+<li>CPU、内存、磁盘、网络、文件句柄</li>
+<li>Pod 重启次数、OOMKilled 次数、探针失败次数</li>
+<li>执行机负载、容器重建、节点压力</li>
+</ul>
+<p>只盯 CPU 和内存通常不够，因为平台型系统更容易被这些问题拖垮：</p>
+<ul>
+<li>队列长度积压</li>
+<li>连接池耗尽</li>
+<li>磁盘写放大</li>
+<li>日志量暴涨</li>
+<li>节点驱逐</li>
+</ul>
+<h3 id="3-中间件依赖层：别只看“活着”，要看是否还能承受任务压力"><a href="#3-中间件依赖层：别只看“活着”，要看是否还能承受任务压力" class="headerlink" title="3. 中间件依赖层：别只看“活着”，要看是否还能承受任务压力"></a>3. 中间件依赖层：别只看“活着”，要看是否还能承受任务压力</h3><p>测试平台对中间件的依赖通常比普通业务系统更重，因为它会同时放大：</p>
+<ul>
+<li>任务并发</li>
+<li>结果回写</li>
+<li>证据存储</li>
+<li>日志收集</li>
+<li>状态变更</li>
+</ul>
+<p>这一层至少要分对象看：</p>
+<ul>
+<li>Redis：连接数、命中率、阻塞客户端、慢查询、主从状态</li>
+<li>Kafka：消费延迟、分区堆积、Broker 状态、生产失败率</li>
+<li>MySQL：连接使用率、慢 SQL、锁等待、主从延迟</li>
+<li>Elasticsearch：写入延迟、分片状态、磁盘水位、查询耗时</li>
+</ul>
+<p>如果只是统一看“中间件都在线”，发布现场通常仍然回答不了：</p>
+<ul>
+<li>为什么任务能创建但不能执行</li>
+<li>为什么结果能跑出来但回写越来越慢</li>
+<li>为什么回归流量一大，中间件先退化</li>
+</ul>
+<h3 id="4-用户体验层：把技术指标翻译成发布决策指标"><a href="#4-用户体验层：把技术指标翻译成发布决策指标" class="headerlink" title="4. 用户体验层：把技术指标翻译成发布决策指标"></a>4. 用户体验层：把技术指标翻译成发布决策指标</h3><p>纯资源图很难直接支撑测试和发布决策，最终还要翻译成业务可理解的口径：</p>
+<ul>
+<li>任务平均耗时、P95 耗时、超时率</li>
+<li>回归通过率、异常终止率</li>
+<li>发布后 30 分钟失败率</li>
+<li>巡检成功率、补跑成功率</li>
+</ul>
+<p>这一层是平台监控真正有价值的地方，因为它能直接回答：</p>
+<ul>
+<li>这次发布有没有把平台压坏</li>
+<li>这次回归失败，值得不值得阻塞</li>
+<li>当前集群还能不能继续加压</li>
+</ul>
+<h2 id="二、Prometheus-指标采集怎么落地，才不会只剩-exporter"><a href="#二、Prometheus-指标采集怎么落地，才不会只剩-exporter" class="headerlink" title="二、Prometheus 指标采集怎么落地，才不会只剩 exporter"></a>二、Prometheus 指标采集怎么落地，才不会只剩 exporter</h2><p><code>Prometheus</code> 落地最常见的误区，是觉得装好 exporter 就算完成监控接入。</p>
+<p>更能落地的方式，是把采集对象拆成三类：</p>
+<h3 id="1-基础资源指标"><a href="#1-基础资源指标" class="headerlink" title="1. 基础资源指标"></a>1. 基础资源指标</h3><p>主要来自：</p>
+<ul>
+<li><code>node-exporter</code></li>
+<li><code>kube-state-metrics</code></li>
+<li><code>cadvisor</code></li>
+</ul>
+<p>这部分负责回答：</p>
+<ul>
+<li>节点和 Pod 的资源是否稳定</li>
+<li>副本是不是在反复重建</li>
+<li>部署是否完成收敛</li>
+</ul>
+<h3 id="2-中间件指标"><a href="#2-中间件指标" class="headerlink" title="2. 中间件指标"></a>2. 中间件指标</h3><p>主要来自：</p>
+<ul>
+<li><code>redis-exporter</code></li>
+<li><code>mysqld-exporter</code></li>
+<li><code>kafka-exporter</code></li>
+<li><code>elasticsearch-exporter</code></li>
+</ul>
+<p>这部分不能只采默认模板，最好结合测试平台场景补上关键聚合：</p>
+<ul>
+<li>按环境、按命名空间、按业务队列聚合</li>
+<li>把“单机健康”转成“任务是否受影响”</li>
+</ul>
+<h3 id="3-平台自定义指标"><a href="#3-平台自定义指标" class="headerlink" title="3. 平台自定义指标"></a>3. 平台自定义指标</h3><p>这是最容易缺失、但最有价值的一层。平台至少应该主动暴露：</p>
+<ul>
+<li><code>task_dispatch_total</code></li>
+<li><code>task_running_count</code></li>
+<li><code>task_timeout_total</code></li>
+<li><code>task_result_write_duration_seconds</code></li>
+<li><code>worker_busy_slots</code></li>
+<li><code>callback_fail_total</code></li>
+</ul>
+<p>如果平台只依赖外部基础指标，后面做故障定位时几乎一定会出现断层：</p>
+<ul>
+<li>知道 Pod 很忙，但不知道哪个任务拖的</li>
+<li>知道 Redis 抖了，但不知道哪类任务先受影响</li>
+</ul>
+<h2 id="三、Grafana-看板怎么设计，才能支持发布和排障"><a href="#三、Grafana-看板怎么设计，才能支持发布和排障" class="headerlink" title="三、Grafana 看板怎么设计，才能支持发布和排障"></a>三、Grafana 看板怎么设计，才能支持发布和排障</h2><p>更合适的看板结构通常不是按组件分，而是按现场问题分。</p>
+<h3 id="1-总览看板"><a href="#1-总览看板" class="headerlink" title="1. 总览看板"></a>1. 总览看板</h3><p>用于快速判断是否需要继续深挖：</p>
+<ul>
+<li>平台任务总量</li>
+<li>任务成功率</li>
+<li>执行耗时 P95</li>
+<li>Worker 忙闲</li>
+<li>关键中间件状态</li>
+<li>当前版本和发布时间窗</li>
+</ul>
+<h3 id="2-平台执行看板"><a href="#2-平台执行看板" class="headerlink" title="2. 平台执行看板"></a>2. 平台执行看板</h3><p>重点看：</p>
+<ul>
+<li>任务创建、排队、执行、完成的分布</li>
+<li>调度耗时与执行耗时拆分</li>
+<li>失败类型分布</li>
+<li>重试和补跑趋势</li>
+</ul>
+<h3 id="3-中间件专题看板"><a href="#3-中间件专题看板" class="headerlink" title="3. 中间件专题看板"></a>3. 中间件专题看板</h3><p>每个依赖都应该有自己的专题图，不建议完全依赖通用 dashboard。</p>
+<p>例如 Redis 更适合重点看：</p>
+<ul>
+<li>ops&#x2F;s</li>
+<li>blocked_clients</li>
+<li>rejected_connections</li>
+<li>keyspace hit ratio</li>
+<li>master link 状态</li>
+</ul>
+<h3 id="4-发布窗口看板"><a href="#4-发布窗口看板" class="headerlink" title="4. 发布窗口看板"></a>4. 发布窗口看板</h3><p>这是 缺的一张图。更实用的方式是把发布版本、灰度窗口、变更时间点打在看板里，对照看：</p>
+<ul>
+<li>发布前后任务失败率</li>
+<li>发布前后执行耗时</li>
+<li>发布前后中间件波动</li>
+<li>发布前后 Pod 重建</li>
+</ul>
+<p>没有这张图，后面很多“是否和发布有关”的讨论都会停留在猜测。</p>
+<h2 id="四、告警不要只按阈值发，要按动作发"><a href="#四、告警不要只按阈值发，要按动作发" class="headerlink" title="四、告警不要只按阈值发，要按动作发"></a>四、告警不要只按阈值发，要按动作发</h2><p>测试平台和中间件场景里的告警，最怕两种极端：</p>
+<ul>
+<li>一类是阈值过低，任何波动都告警</li>
+<li>一类是阈值过高，等真正出问题时已经来不及</li>
+</ul>
+<p>更合适的设计方式，是把告警分成三类：</p>
+<h3 id="1-可观察告警"><a href="#1-可观察告警" class="headerlink" title="1. 可观察告警"></a>1. 可观察告警</h3><p>用于提醒异常趋势，但不直接阻塞动作，例如：</p>
+<ul>
+<li>Redis 命中率持续下降</li>
+<li>某个 Worker CPU 长时间偏高</li>
+<li>Kafka 某个主题延迟升高</li>
+</ul>
+<h3 id="2-需要介入告警"><a href="#2-需要介入告警" class="headerlink" title="2. 需要介入告警"></a>2. 需要介入告警</h3><p>需要工程动作，例如：</p>
+<ul>
+<li>执行队列持续堆积</li>
+<li>平台结果回写失败率升高</li>
+<li>MySQL 慢查询持续拉长</li>
+<li>Elasticsearch 磁盘水位逼近阈值</li>
+</ul>
+<h3 id="3-阻塞类告警"><a href="#3-阻塞类告警" class="headerlink" title="3. 阻塞类告警"></a>3. 阻塞类告警</h3><p>这类才适合影响发布或回归结论，例如：</p>
+<ul>
+<li>平台任务成功率跌破基线</li>
+<li>多副本同时不健康</li>
+<li>Redis 主从切换异常</li>
+<li>核心队列已无法消费</li>
+</ul>
+<p>如果所有告警都直接进群，平台团队最后通常会选择静音，而不是治理。</p>
+<h2 id="五、最小可执行落地骨架"><a href="#五、最小可执行落地骨架" class="headerlink" title="五、最小可执行落地骨架"></a>五、最小可执行落地骨架</h2><p>下面这套骨架更适合先把第一版监控跑稳：</p>
+<h3 id="1-采集侧"><a href="#1-采集侧" class="headerlink" title="1. 采集侧"></a>1. 采集侧</h3><ul>
+<li>集群资源指标统一接入 Prometheus</li>
+<li>核心中间件统一接 exporter</li>
+<li>平台服务补自定义指标接口</li>
+<li>统一 labels：环境、命名空间、服务、任务类型、版本</li>
+</ul>
+<h3 id="2-看板侧"><a href="#2-看板侧" class="headerlink" title="2. 看板侧"></a>2. 看板侧</h3><ul>
+<li>一张总览</li>
+<li>一张平台执行</li>
+<li>一张发布窗口</li>
+<li>各中间件一张专题图</li>
+</ul>
+<h3 id="3-告警侧"><a href="#3-告警侧" class="headerlink" title="3. 告警侧"></a>3. 告警侧</h3><ul>
+<li>先只上 5 到 8 条关键告警</li>
+<li>每条告警必须明确接收人、动作和恢复标准</li>
+<li>告警消息里直接带 dashboard 链接和任务入口</li>
+</ul>
+<h3 id="4-记录侧"><a href="#4-记录侧" class="headerlink" title="4. 记录侧"></a>4. 记录侧</h3><p>至少保留一张值班记录表：</p>
+<table>
+<thead>
+<tr>
+<th>时间</th>
+<th>事件</th>
+<th>影响范围</th>
+<th>先异常的指标</th>
+<th>对应任务&#x2F;版本</th>
+<th>已做动作</th>
+<th>当前状态</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>10:05</td>
+<td>回归超时上升</td>
+<td>全量接口回归</td>
+<td>任务等待时长、Redis blocked_clients</td>
+<td>release-20230916</td>
+<td>扩副本、限流</td>
+<td>恢复中</td>
+</tr>
+</tbody></table>
+<h2 id="六、常见坑"><a href="#六、常见坑" class="headerlink" title="六、常见坑"></a>六、常见坑</h2><h3 id="1-看板很多，但没有任务视角"><a href="#1-看板很多，但没有任务视角" class="headerlink" title="1. 看板很多，但没有任务视角"></a>1. 看板很多，但没有任务视角</h3><p>只看基础资源图，最后永远回答不了“到底是哪类任务先坏”。</p>
+<h3 id="2-指标采到了，但-labels-混乱"><a href="#2-指标采到了，但-labels-混乱" class="headerlink" title="2. 指标采到了，但 labels 混乱"></a>2. 指标采到了，但 labels 混乱</h3><p>没有统一环境、服务、任务类型、版本标签，后面根本做不了聚合。</p>
+<h3 id="3-平台不暴露业务指标"><a href="#3-平台不暴露业务指标" class="headerlink" title="3. 平台不暴露业务指标"></a>3. 平台不暴露业务指标</h3><p>只依赖 exporter，结果所有结论都只能停在“资源层有波动”。</p>
+<h3 id="4-告警只按阈值，不按动作"><a href="#4-告警只按阈值，不按动作" class="headerlink" title="4. 告警只按阈值，不按动作"></a>4. 告警只按阈值，不按动作</h3><p>群消息很多，但没人知道下一步该看哪张图、做什么动作。</p>
+<h3 id="5-发布时没有时间窗标记"><a href="#5-发布时没有时间窗标记" class="headerlink" title="5. 发布时没有时间窗标记"></a>5. 发布时没有时间窗标记</h3><p>明明发布引起的波动，看板里却没有版本和变更点，最后只能靠回忆猜。</p>
+<h2 id="七、真实案例：回归突然大量超时，根因并不在接口服务"><a href="#七、真实案例：回归突然大量超时，根因并不在接口服务" class="headerlink" title="七、真实案例：回归突然大量超时，根因并不在接口服务"></a>七、真实案例：回归突然大量超时，根因并不在接口服务</h2><h3 id="1-场景"><a href="#1-场景" class="headerlink" title="1. 场景"></a>1. 场景</h3><p>某次测试平台在晚间执行大批量接口回归，任务创建量明显升高。发布后 15 分钟内，大量任务开始超时，现场最先怀疑的是新版本接口服务退化。</p>
+<h3 id="2-执行"><a href="#2-执行" class="headerlink" title="2. 执行"></a>2. 执行</h3><p>值班同学先看接口服务的 Pod CPU、内存和错误日志，没有发现明显异常；随后对照平台总览和发布窗口看板，发现：</p>
+<ul>
+<li>平台任务等待时长突然升高</li>
+<li>Worker 空闲槽位快速下降</li>
+<li>Redis <code>blocked_clients</code> 和 <code>instantaneous_ops_per_sec</code> 同时波动</li>
+<li>MySQL 指标基本平稳</li>
+</ul>
+<h3 id="3-现象"><a href="#3-现象" class="headerlink" title="3. 现象"></a>3. 现象</h3><p>表面上看是“接口超时变多”，但真正先异常的不是接口服务，而是平台执行队列和 Redis。</p>
+<h3 id="4-排查"><a href="#4-排查" class="headerlink" title="4. 排查"></a>4. 排查</h3><p>继续往下看平台执行看板，发现某类结果回写任务集中堆积，导致 Worker 长时间被占用；再看 Redis 专题图，发现某批写回 key 使用了大 value，单次回写耗时明显拉长，进而拖慢执行链路。</p>
+<h3 id="5-修复"><a href="#5-修复" class="headerlink" title="5. 修复"></a>5. 修复</h3><p>现场先做了两步：</p>
+<ul>
+<li>限流结果回写并临时扩容 Worker</li>
+<li>把大对象拆分写入，降低单次阻塞时间</li>
+</ul>
+<p>调整后，任务等待时长和超时率逐步回落。复盘时补了三个动作：</p>
+<ul>
+<li>平台补充结果回写耗时直方图</li>
+<li>Redis 看板新增 blocked_clients 与大 key 写入趋势</li>
+<li>发布窗口图固定标注大批量回归起始时间</li>
+</ul>
+<h2 id="八、结论"><a href="#八、结论" class="headerlink" title="八、结论"></a>八、结论</h2><p><code>Prometheus + Grafana</code> 在测试平台和中间件场景里最重要的价值，不是“把图画出来”，而是把平台任务、中间件依赖、发布动作和排障顺序收成同一条监控链路。</p>
+<p>真正更有用的落地方式通常是：</p>
+<ul>
+<li>先分层：平台、资源、中间件、用户体验</li>
+<li>再补平台自定义指标</li>
+<li>再做支撑动作的看板和告警</li>
+<li>最后把发布窗口、任务对象和时间线打通</li>
+</ul>
+<p>这样监控体系才不只是“能看”，而是“能指导下一步该怎么查、该不该放行、该先扩容还是先回滚”。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0/" rel="tag"># 测试平台</a>
+              <a href="/tags/%E5%B7%A5%E7%A8%8B%E5%AE%9E%E8%B7%B5/" rel="tag"># 工程实践</a>
+              <a href="/tags/Kubernetes/" rel="tag"># Kubernetes</a>
+              <a href="/tags/Prometheus/" rel="tag"># Prometheus</a>
+              <a href="/tags/Grafana/" rel="tag"># Grafana</a>
+              <a href="/tags/%E4%B8%AD%E9%97%B4%E4%BB%B6%E7%9B%91%E6%8E%A7/" rel="tag"># 中间件监控</a>
+              <a href="/tags/%E6%8C%87%E6%A0%87%E6%B2%BB%E7%90%86/" rel="tag"># 指标治理</a>
+              <a href="/tags/%E5%91%8A%E8%AD%A6%E6%B2%BB%E7%90%86/" rel="tag"># 告警治理</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2023/09/16/%E6%80%A7%E8%83%BD%E6%B5%8B%E8%AF%95-12-grafana%E7%9B%91%E6%8E%A7/" rel="prev" title="Grafana：监控面板配置">
+                  <i class="fa fa-angle-left"></i> Grafana：监控面板配置
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2023/09/23/%E4%BA%91%E5%8E%9F%E7%94%9F-08-DNS-Ingress-Consul%E5%9C%A8%E5%86%85%E9%83%A8%E5%B9%B3%E5%8F%B0%E9%87%8C%E6%80%8E%E4%B9%88%E5%8D%8F%E5%90%8C%E5%B7%A5%E4%BD%9C/" rel="next" title="云原生-08-DNS-Ingress-Consul在内部平台里怎么协同工作">
+                  云原生-08-DNS-Ingress-Consul在内部平台里怎么协同工作 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

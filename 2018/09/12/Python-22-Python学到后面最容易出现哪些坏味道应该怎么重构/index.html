@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="Python 写得快，坏味道也长得快。单文件膨胀、字典乱飞、隐藏全局状态、布尔开关爆炸、import 就执行副作用，这些问题都很常见。这篇文章围绕一个巡检脚本集，讲清最常见的坏味道和更稳的重构路径。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Python：学到后面最容易出现哪些坏味道，应该怎么重构">
+<meta property="og:url" content="https://paynewinnt.github.io/2018/09/12/Python-22-Python%E5%AD%A6%E5%88%B0%E5%90%8E%E9%9D%A2%E6%9C%80%E5%AE%B9%E6%98%93%E5%87%BA%E7%8E%B0%E5%93%AA%E4%BA%9B%E5%9D%8F%E5%91%B3%E9%81%93%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E9%87%8D%E6%9E%84/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="Python 写得快，坏味道也长得快。单文件膨胀、字典乱飞、隐藏全局状态、布尔开关爆炸、import 就执行副作用，这些问题都很常见。这篇文章围绕一个巡检脚本集，讲清最常见的坏味道和更稳的重构路径。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2018-09-12T12:30:00.000Z">
+<meta property="article:modified_time" content="2018-09-12T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="工程化">
+<meta property="article:tag" content="编程语言">
+<meta property="article:tag" content="Python">
+<meta property="article:tag" content="Python专题">
+<meta property="article:tag" content="重构">
+<meta property="article:tag" content="代码坏味道">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2018/09/12/Python-22-Python%E5%AD%A6%E5%88%B0%E5%90%8E%E9%9D%A2%E6%9C%80%E5%AE%B9%E6%98%93%E5%87%BA%E7%8E%B0%E5%93%AA%E4%BA%9B%E5%9D%8F%E5%91%B3%E9%81%93%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E9%87%8D%E6%9E%84/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2018/09/12/Python-22-Python%E5%AD%A6%E5%88%B0%E5%90%8E%E9%9D%A2%E6%9C%80%E5%AE%B9%E6%98%93%E5%87%BA%E7%8E%B0%E5%93%AA%E4%BA%9B%E5%9D%8F%E5%91%B3%E9%81%93%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E9%87%8D%E6%9E%84/","path":"2018/09/12/Python-22-Python学到后面最容易出现哪些坏味道应该怎么重构/","title":"Python：学到后面最容易出现哪些坏味道，应该怎么重构"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>Python：学到后面最容易出现哪些坏味道，应该怎么重构 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E5%85%88%E7%9C%8B%E8%BF%99%E7%BB%84%E8%84%9A%E6%9C%AC%E6%98%AF%E6%80%8E%E4%B9%88%E6%85%A2%E6%85%A2%E5%8F%98%E5%9D%8F%E7%9A%84"><span class="nav-number">1.</span> <span class="nav-text">一、先看这组脚本是怎么慢慢变坏的</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E5%9D%8F%E5%91%B3%E9%81%93%E4%B8%80%EF%BC%9A%E4%B8%80%E4%B8%AA%E6%96%87%E4%BB%B6%E6%88%96%E4%B8%80%E4%B8%AA%E5%87%BD%E6%95%B0%E6%89%BF%E6%8B%85%E5%A4%AA%E5%A4%9A%E8%B4%A3%E4%BB%BB"><span class="nav-number">2.</span> <span class="nav-text">二、坏味道一：一个文件或一个函数承担太多责任</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E5%9D%8F%E5%91%B3%E9%81%93%E4%BA%8C%EF%BC%9A%E5%AD%97%E5%85%B8%E5%88%B0%E5%A4%84%E9%A3%9E%EF%BC%8C%E5%AD%97%E6%AE%B5%E5%85%A8%E9%9D%A0%E8%AE%B0%E5%BF%86"><span class="nav-number">3.</span> <span class="nav-text">三、坏味道二：字典到处飞，字段全靠记忆</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E5%9D%8F%E5%91%B3%E9%81%93%E4%B8%89%EF%BC%9A%E9%9A%90%E8%97%8F%E5%85%A8%E5%B1%80%E7%8A%B6%E6%80%81%E8%B6%8A%E6%9D%A5%E8%B6%8A%E5%A4%9A"><span class="nav-number">4.</span> <span class="nav-text">四、坏味道三：隐藏全局状态越来越多</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E5%9D%8F%E5%91%B3%E9%81%93%E5%9B%9B%EF%BC%9A%E5%B8%83%E5%B0%94%E5%8F%82%E6%95%B0%E5%92%8C%E5%88%86%E6%94%AF%E8%B6%8A%E6%9D%A5%E8%B6%8A%E5%A4%9A"><span class="nav-number">5.</span> <span class="nav-text">五、坏味道四：布尔参数和分支越来越多</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E5%9D%8F%E5%91%B3%E9%81%93%E4%BA%94%EF%BC%9A%E5%A4%8D%E5%88%B6%E7%B2%98%E8%B4%B4%E9%80%BB%E8%BE%91%E8%B6%8A%E6%9D%A5%E8%B6%8A%E5%A4%9A"><span class="nav-number">6.</span> <span class="nav-text">六、坏味道五：复制粘贴逻辑越来越多</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E5%9D%8F%E5%91%B3%E9%81%93%E5%85%AD%EF%BC%9A%E5%AF%BC%E5%85%A5%E6%A8%A1%E5%9D%97%E5%B0%B1%E5%BC%80%E5%A7%8B%E6%89%A7%E8%A1%8C%E5%89%AF%E4%BD%9C%E7%94%A8"><span class="nav-number">7.</span> <span class="nav-text">七、坏味道六：导入模块就开始执行副作用</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E5%9D%8F%E5%91%B3%E9%81%93%E4%B8%83%EF%BC%9A%E5%BC%82%E5%B8%B8%E5%A4%84%E7%90%86%E4%B8%8D%E6%98%AF%E6%B2%A1%E5%86%99%EF%BC%8C%E8%80%8C%E6%98%AF%E5%86%99%E5%BE%97%E5%83%8F%E5%90%9E%E5%99%AC%E5%99%A8"><span class="nav-number">8.</span> <span class="nav-text">八、坏味道七：异常处理不是没写，而是写得像吞噬器</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E5%9D%8F%E5%91%B3%E9%81%93%E5%85%AB%EF%BC%9A%E6%B5%8B%E8%AF%95%E5%8F%AA%E8%83%BD%E6%B5%8B%E6%95%B4%E6%9D%A1%E6%B5%81%E7%A8%8B%EF%BC%8C%E6%B5%8B%E4%B8%8D%E4%BA%86%E6%A0%B8%E5%BF%83%E9%80%BB%E8%BE%91"><span class="nav-number">9.</span> <span class="nav-text">九、坏味道八：测试只能测整条流程，测不了核心逻辑</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E9%87%8D%E6%9E%84%E4%B8%8D%E8%A6%81%E4%B8%80%E6%AC%A1%E6%80%A7%E6%8E%A8%E5%80%92%EF%BC%8C%E5%85%88%E6%8C%89%E9%A3%8E%E9%99%A9%E6%8E%92%E5%BA%8F"><span class="nav-number">10.</span> <span class="nav-text">十、重构不要一次性推倒，先按风险排序</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E4%B8%80%E4%B8%AA%E5%AE%8C%E6%95%B4%E7%A4%BA%E4%BE%8B%EF%BC%9A%E6%8A%8A%E5%8F%91%E8%87%AD%E7%9A%84%E5%B7%A1%E6%A3%80%E8%84%9A%E6%9C%AC%E6%95%B4%E7%90%86%E6%88%90%E5%8F%AF%E7%BB%B4%E6%8A%A4%E7%89%88%E6%9C%AC"><span class="nav-number">11.</span> <span class="nav-text">十一、一个完整示例：把发臭的巡检脚本整理成可维护版本</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E6%80%8E%E4%B9%88%E6%B5%8B%E8%AF%95%E9%87%8D%E6%9E%84%E6%B2%A1%E6%9C%89%E6%8A%8A%E4%B8%9A%E5%8A%A1%E6%94%B9%E5%9D%8F"><span class="nav-number">12.</span> <span class="nav-text">十二、怎么测试重构没有把业务改坏</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%85%88%E7%BB%99%E6%A0%B8%E5%BF%83%E8%A1%8C%E4%B8%BA%E8%A1%A5%E6%9C%80%E5%B0%8F%E6%B5%8B%E8%AF%95"><span class="nav-number">12.1.</span> <span class="nav-text">1. 先给核心行为补最小测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%86%8D%E7%BB%99%E9%87%8D%E6%9E%84%E5%89%8D%E5%90%8E%E6%9C%80%E5%85%B3%E9%94%AE%E7%9A%84%E8%BE%93%E5%87%BA%E5%81%9A%E5%AF%B9%E7%85%A7"><span class="nav-number">12.2.</span> <span class="nav-text">2. 再给重构前后最关键的输出做对照</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%9C%80%E5%90%8E%E5%86%8D%E6%9B%BF%E6%8D%A2%E5%AE%9E%E7%8E%B0"><span class="nav-number">12.3.</span> <span class="nav-text">3. 最后再替换实现</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81%E4%B8%80%E4%B8%AA%E6%9B%B4%E7%A8%B3%E7%9A%84%E9%87%8D%E6%9E%84%E9%AA%A8%E6%9E%B6"><span class="nav-number">13.</span> <span class="nav-text">十三、一个更稳的重构骨架</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%9B%BA%E5%AE%9A%E8%BE%93%E5%85%A5%E8%BE%93%E5%87%BA"><span class="nav-number">13.1.</span> <span class="nav-text">1. 固定输入输出</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%8B%86%E9%98%B6%E6%AE%B5"><span class="nav-number">13.2.</span> <span class="nav-text">2. 拆阶段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%8A%BD%E5%8F%98%E5%8C%96%E7%82%B9"><span class="nav-number">13.3.</span> <span class="nav-text">3. 抽变化点</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%8E%BB%E5%85%A8%E5%B1%80%E7%8A%B6%E6%80%81"><span class="nav-number">13.4.</span> <span class="nav-text">4. 去全局状态</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E8%A1%A5%E6%9C%80%E5%B0%8F%E6%B5%8B%E8%AF%95"><span class="nav-number">13.5.</span> <span class="nav-text">5. 补最小测试</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81%E4%B8%80%E4%B8%AA%E5%AE%9E%E9%99%85%E6%8E%92%E9%94%99%E6%A1%88%E4%BE%8B"><span class="nav-number">14.</span> <span class="nav-text">十四、一个实际排错案例</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%94%E3%80%81%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E8%AF%A5%E5%81%9C%E4%B8%8B%EF%BC%8C%E4%B8%8D%E8%A6%81%E6%8A%8A%E9%87%8D%E6%9E%84%E5%81%9A%E6%88%90%E9%87%8D%E5%86%99"><span class="nav-number">15.</span> <span class="nav-text">十五、什么时候该停下，不要把重构做成重写</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%85%88%E5%81%9C%E5%9C%A8%E2%80%9C%E7%BB%93%E6%9E%84%E5%B7%B2%E6%B8%85%E6%A5%9A%E3%80%81%E6%B5%8B%E8%AF%95%E5%B7%B2%E8%83%BD%E8%A6%86%E7%9B%96%E2%80%9D%E7%9A%84%E4%BD%8D%E7%BD%AE"><span class="nav-number">15.1.</span> <span class="nav-text">1. 先停在“结构已清楚、测试已能覆盖”的位置</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%B2%A1%E8%AF%81%E6%8D%AE%E8%AF%81%E6%98%8E%E6%9C%89%E6%94%B6%E7%9B%8A%E7%9A%84%E9%87%8D%E6%9E%84%EF%BC%8C%E5%85%88%E5%88%AB%E5%81%9A"><span class="nav-number">15.2.</span> <span class="nav-text">2. 没证据证明有收益的重构，先别做</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%8A%8A%E9%87%8D%E6%9E%84%E5%81%9A%E6%88%90%E4%B8%80%E7%B3%BB%E5%88%97%E5%B0%8F%E6%AD%A5%EF%BC%8C%E8%80%8C%E4%B8%8D%E6%98%AF%E4%B8%80%E6%AC%A1%E6%80%A7%E9%87%8D%E5%86%99"><span class="nav-number">15.3.</span> <span class="nav-text">3. 把重构做成一系列小步，而不是一次性重写</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AD%E3%80%81%E4%B8%80%E4%B8%AA%E5%AE%9E%E9%99%85%E7%BB%83%E4%B9%A0"><span class="nav-number">16.</span> <span class="nav-text">十六、一个实际练习</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%83%E3%80%81%E8%BF%99%E4%B8%80%E7%AF%87%E5%AD%A6%E5%AE%8C%E4%BB%A5%E5%90%8E%EF%BC%8C%E4%B8%8B%E4%B8%80%E6%AD%A5%E5%BA%94%E8%AF%A5%E8%A1%A5%E4%BB%80%E4%B9%88"><span class="nav-number">17.</span> <span class="nav-text">十七、这一篇学完以后，下一步应该补什么</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AB%E3%80%81%E7%BB%93%E8%AF%AD"><span class="nav-number">18.</span> <span class="nav-text">十八、结语</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2018/09/12/Python-22-Python%E5%AD%A6%E5%88%B0%E5%90%8E%E9%9D%A2%E6%9C%80%E5%AE%B9%E6%98%93%E5%87%BA%E7%8E%B0%E5%93%AA%E4%BA%9B%E5%9D%8F%E5%91%B3%E9%81%93%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E9%87%8D%E6%9E%84/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="Python：学到后面最容易出现哪些坏味道，应该怎么重构 | 大道至简">
+      <meta itemprop="description" content="Python 写得快，坏味道也长得快。单文件膨胀、字典乱飞、隐藏全局状态、布尔开关爆炸、import 就执行副作用，这些问题都很常见。这篇文章围绕一个巡检脚本集，讲清最常见的坏味道和更稳的重构路径。">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Python：学到后面最容易出现哪些坏味道，应该怎么重构
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2018-09-12 20:30:00" itemprop="dateCreated datePublished" datetime="2018-09-12T20:30:00+08:00">2018-09-12</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/Python/" itemprop="url" rel="index"><span itemprop="name">Python</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>3k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>11 分钟</span>
+    </span>
+</div>
+
+            <div class="post-description">Python 写得快，坏味道也长得快。单文件膨胀、字典乱飞、隐藏全局状态、布尔开关爆炸、import 就执行副作用，这些问题都很常见。这篇文章围绕一个巡检脚本集，讲清最常见的坏味道和更稳的重构路径。</div>
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>Python 的优势之一是写得快。<br>但也正因为写得快，坏味道往往也长得很快。</p>
+<p>最典型的过程通常是：</p>
+<ul>
+<li>一开始只是一个脚本</li>
+<li>后来补几个参数</li>
+<li>再加几个分支</li>
+<li>再加几个输出格式</li>
+<li>最后功能越来越多，代码却越来越难动</li>
+</ul>
+<p>真正麻烦的地方不是“丑”，而是这些坏味道会直接带来工程问题：</p>
+<ul>
+<li>改一处坏三处</li>
+<li>测试难写</li>
+<li>日志难查</li>
+<li>状态难控</li>
+<li>新人难接手</li>
+</ul>
+<p>这一篇不只列清单，而是围绕一个实际场景展开：<strong>把一组巡检脚本做一次有边界的重构</strong>。</p>
+<h2 id="一、先看这组脚本是怎么慢慢变坏的"><a href="#一、先看这组脚本是怎么慢慢变坏的" class="headerlink" title="一、先看这组脚本是怎么慢慢变坏的"></a>一、先看这组脚本是怎么慢慢变坏的</h2><p>假设现在有一个巡检脚本 <code>inspect.py</code>，最初只做一件事：</p>
+<ul>
+<li>读接口状态</li>
+<li>打印失败项</li>
+</ul>
+<p>后来需求不断加：</p>
+<ul>
+<li>增加环境切换</li>
+<li>增加告警通知</li>
+<li>增加输出文件</li>
+<li>增加重试</li>
+<li>增加跳过某些服务</li>
+<li>增加汇总报告</li>
+</ul>
+<p>最后一个文件里堆了：</p>
+<ul>
+<li>配置</li>
+<li>请求</li>
+<li>解析</li>
+<li>统计</li>
+<li>通知</li>
+<li>文件输出</li>
+</ul>
+<p>坏味道通常就是这样长出来的，不是一天突然出现的。</p>
+<h2 id="二、坏味道一：一个文件或一个函数承担太多责任"><a href="#二、坏味道一：一个文件或一个函数承担太多责任" class="headerlink" title="二、坏味道一：一个文件或一个函数承担太多责任"></a>二、坏味道一：一个文件或一个函数承担太多责任</h2><p>最常见的第一类坏味道就是：</p>
+<ul>
+<li>单文件越来越长</li>
+<li>一个函数从头跑到尾，什么都做</li>
+</ul>
+<p>比如：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">run_inspection</span>():</span><br><span class="line">    <span class="comment"># 读配置</span></span><br><span class="line">    <span class="comment"># 拉接口</span></span><br><span class="line">    <span class="comment"># 解析结果</span></span><br><span class="line">    <span class="comment"># 写报告</span></span><br><span class="line">    <span class="comment"># 发通知</span></span><br><span class="line">    <span class="comment"># 打日志</span></span><br><span class="line">    ...</span><br></pre></td></tr></table></figure>
+
+<p>这种写法最大的问题不是长度，而是责任混在一起：</p>
+<ul>
+<li>任何一点改动都可能影响整条链</li>
+<li>很难单独测试某一个阶段</li>
+<li>排障时不知道问题落在哪一层</li>
+</ul>
+<p>更稳的重构方向通常是先按阶段拆：</p>
+<ul>
+<li><code>load_targets()</code></li>
+<li><code>fetch_status()</code></li>
+<li><code>analyze_results()</code></li>
+<li><code>build_report()</code></li>
+<li><code>send_alert()</code></li>
+</ul>
+<h2 id="三、坏味道二：字典到处飞，字段全靠记忆"><a href="#三、坏味道二：字典到处飞，字段全靠记忆" class="headerlink" title="三、坏味道二：字典到处飞，字段全靠记忆"></a>三、坏味道二：字典到处飞，字段全靠记忆</h2><p>Python 很容易把所有东西都先塞进字典里。</p>
+<p>短期看起来很快，长期最容易出现这些问题：</p>
+<ul>
+<li>字段名改一处漏三处</li>
+<li>某些字段有时是 <code>status</code>，有时是 <code>state</code></li>
+<li>调用方不知道哪些键是必有，哪些键是可选</li>
+</ul>
+<p>例如：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">item = &#123;<span class="string">&quot;svc&quot;</span>: <span class="string">&quot;order&quot;</span>, <span class="string">&quot;code&quot;</span>: <span class="number">500</span>, <span class="string">&quot;cost&quot;</span>: <span class="number">132</span>&#125;</span><br></pre></td></tr></table></figure>
+
+<p>写到后面经常很难清楚回答：</p>
+<ul>
+<li><code>svc</code> 和 <code>service_name</code> 是不是一回事</li>
+<li><code>cost</code> 单位是毫秒还是秒</li>
+<li>缺字段时应该怎么处理</li>
+</ul>
+<p>更稳的重构方式通常是：</p>
+<ul>
+<li>先统一字段命名</li>
+<li>再抽成明确结构</li>
+<li>让输入输出契约稳定下来</li>
+</ul>
+<h2 id="四、坏味道三：隐藏全局状态越来越多"><a href="#四、坏味道三：隐藏全局状态越来越多" class="headerlink" title="四、坏味道三：隐藏全局状态越来越多"></a>四、坏味道三：隐藏全局状态越来越多</h2><p>下面这种写法在 Python 脚本里非常常见：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">ENV = <span class="string">&quot;test&quot;</span></span><br><span class="line">REPORT_DIR = <span class="string">&quot;/tmp/reports&quot;</span></span><br><span class="line">FAILED_ITEMS = []</span><br></pre></td></tr></table></figure>
+
+<p>一开始看起来很方便，后面很容易变成：</p>
+<ul>
+<li>函数不接参数也能跑</li>
+<li>但调用顺序一变就出问题</li>
+<li>测试之间互相污染</li>
+</ul>
+<p>隐藏全局状态最容易制造的现象是：</p>
+<ul>
+<li>单独跑某个函数没问题</li>
+<li>整批跑时结果互相串</li>
+</ul>
+<p>这类坏味道的重构重点通常是：</p>
+<ul>
+<li>把状态从全局挪到参数和返回值里</li>
+<li>必须共享的状态，显式放进对象或上下文结构</li>
+</ul>
+<h2 id="五、坏味道四：布尔参数和分支越来越多"><a href="#五、坏味道四：布尔参数和分支越来越多" class="headerlink" title="五、坏味道四：布尔参数和分支越来越多"></a>五、坏味道四：布尔参数和分支越来越多</h2><p>另一类高频坏味道是：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">run_job</span>(<span class="params">use_cache=<span class="literal">False</span>, send_alert=<span class="literal">False</span>, save_report=<span class="literal">True</span>, with_retry=<span class="literal">True</span></span>):</span><br><span class="line">    ...</span><br></pre></td></tr></table></figure>
+
+<p>表面上只是参数多一点，实际问题是：</p>
+<ul>
+<li>行为组合越来越不可控</li>
+<li>分支路径爆炸</li>
+<li>调用方很难知道不同组合的语义</li>
+</ul>
+<p>如果一个函数开始长成这样，通常说明：</p>
+<ul>
+<li>它承担了过多模式</li>
+<li>这些模式可能应该拆成不同策略或不同流程</li>
+</ul>
+<p>更稳的处理方式往往是：</p>
+<ul>
+<li>拆职责</li>
+<li>收敛模式</li>
+<li>用更明确的配置结构替代布尔开关乱飞</li>
+</ul>
+<h2 id="六、坏味道五：复制粘贴逻辑越来越多"><a href="#六、坏味道五：复制粘贴逻辑越来越多" class="headerlink" title="六、坏味道五：复制粘贴逻辑越来越多"></a>六、坏味道五：复制粘贴逻辑越来越多</h2><p>Python 写得快，复制也快。<br>所以很容易出现：</p>
+<ul>
+<li><code>check_order_service()</code></li>
+<li><code>check_user_service()</code></li>
+<li><code>check_payment_service()</code></li>
+</ul>
+<p>三段代码长得几乎一样，只差 URL 和阈值。</p>
+<p>这类代码真正的问题不是重复本身，而是：</p>
+<ul>
+<li>规则一改，要改很多处</li>
+<li>某一处漏改就会出现行为不一致</li>
+</ul>
+<p>但这里也不要一看到重复就过度抽象。<br>更稳的顺序通常是：</p>
+<ol>
+<li>先确认重复逻辑真的稳定</li>
+<li>再抽公共流程</li>
+<li>把变化点留成参数</li>
+</ol>
+<h2 id="七、坏味道六：导入模块就开始执行副作用"><a href="#七、坏味道六：导入模块就开始执行副作用" class="headerlink" title="七、坏味道六：导入模块就开始执行副作用"></a>七、坏味道六：导入模块就开始执行副作用</h2><p>这类问题在脚本型 Python 项目里特别高频：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">print</span>(<span class="string">&quot;start init&quot;</span>)</span><br><span class="line">load_config()</span><br><span class="line">run_job()</span><br></pre></td></tr></table></figure>
+
+<p>这些代码如果直接写在模块顶层，就会导致：</p>
+<ul>
+<li>一 <code>import</code> 就执行</li>
+<li>测试导入时也触发真实动作</li>
+<li>调试时副作用很难控制</li>
+</ul>
+<p>更稳的方式通常是：</p>
+<ul>
+<li>把执行入口收进 <code>main()</code></li>
+<li>模块顶层只放定义</li>
+<li>真正执行放进 <code>if __name__ == &quot;__main__&quot;:</code></li>
+</ul>
+<p>这不是风格问题，而是可测试性和可控性问题。</p>
+<h2 id="八、坏味道七：异常处理不是没写，而是写得像吞噬器"><a href="#八、坏味道七：异常处理不是没写，而是写得像吞噬器" class="headerlink" title="八、坏味道七：异常处理不是没写，而是写得像吞噬器"></a>八、坏味道七：异常处理不是没写，而是写得像吞噬器</h2><p>看起来很“稳”的写法其实常常是：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">try</span>:</span><br><span class="line">    do_work()</span><br><span class="line"><span class="keyword">except</span> Exception:</span><br><span class="line">    <span class="keyword">pass</span></span><br></pre></td></tr></table></figure>
+
+<p>这种代码最大的问题不是不优雅，而是：</p>
+<ul>
+<li>真实错误被吞掉</li>
+<li>排障线索断掉</li>
+<li>上层还以为执行成功了</li>
+</ul>
+<p>更稳的重构方向通常是：</p>
+<ul>
+<li>只捕获明确异常</li>
+<li>打出关键上下文</li>
+<li>决定是继续抛出、转换还是局部降级</li>
+</ul>
+<h2 id="九、坏味道八：测试只能测整条流程，测不了核心逻辑"><a href="#九、坏味道八：测试只能测整条流程，测不了核心逻辑" class="headerlink" title="九、坏味道八：测试只能测整条流程，测不了核心逻辑"></a>九、坏味道八：测试只能测整条流程，测不了核心逻辑</h2><p>有些 Python 项目看起来有测试，但其实只有一类测试：</p>
+<ul>
+<li>跑整个脚本</li>
+<li>看最后有没有文件产出</li>
+</ul>
+<p>这种测试方式一旦项目变大，很快会出现问题：</p>
+<ul>
+<li>失败时不知道坏在哪层</li>
+<li>某个小逻辑改动也要跑整条链</li>
+<li>本地调试成本越来越高</li>
+</ul>
+<p>这通常说明代码结构本身已经不利于测试。</p>
+<p>真正需要重构的，不只是测试文件，而是业务函数的边界和依赖注入方式。</p>
+<h2 id="十、重构不要一次性推倒，先按风险排序"><a href="#十、重构不要一次性推倒，先按风险排序" class="headerlink" title="十、重构不要一次性推倒，先按风险排序"></a>十、重构不要一次性推倒，先按风险排序</h2><p>一看到坏味道就想一次性重写，这通常不是最稳的方式。</p>
+<p>更实用的顺序通常是：</p>
+<ol>
+<li>先找最影响测试和排障的部分</li>
+<li>再找重复最多、改动最频繁的部分</li>
+<li>最后再处理更深层的结构优化</li>
+</ol>
+<p>对大多数脚本项目来说，最先值得重构的通常是：</p>
+<ul>
+<li>输入输出边界</li>
+<li>大函数拆分</li>
+<li>隐藏全局状态</li>
+<li>结果结构统一</li>
+</ul>
+<h2 id="十一、一个完整示例：把发臭的巡检脚本整理成可维护版本"><a href="#十一、一个完整示例：把发臭的巡检脚本整理成可维护版本" class="headerlink" title="十一、一个完整示例：把发臭的巡检脚本整理成可维护版本"></a>十一、一个完整示例：把发臭的巡检脚本整理成可维护版本</h2><p>先看一段非常典型的坏味道版本：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">FAILED_ITEMS = []</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">run_inspection</span>(<span class="params">targets, send_alert=<span class="literal">False</span>, save_report=<span class="literal">True</span></span>):</span><br><span class="line">    <span class="keyword">for</span> item <span class="keyword">in</span> targets:</span><br><span class="line">        result = request_target(item)</span><br><span class="line">        <span class="keyword">if</span> result[<span class="string">&quot;code&quot;</span>] != <span class="number">0</span>:</span><br><span class="line">            FAILED_ITEMS.append(item[<span class="string">&quot;name&quot;</span>])</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> save_report:</span><br><span class="line">        <span class="keyword">with</span> <span class="built_in">open</span>(<span class="string">&quot;report.txt&quot;</span>, <span class="string">&quot;w&quot;</span>) <span class="keyword">as</span> f:</span><br><span class="line">            f.write(<span class="built_in">str</span>(FAILED_ITEMS))</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> send_alert <span class="keyword">and</span> FAILED_ITEMS:</span><br><span class="line">        notify(FAILED_ITEMS)</span><br></pre></td></tr></table></figure>
+
+<p>这段代码的问题几乎一眼就能看到：</p>
+<ul>
+<li>全局状态污染</li>
+<li>流程职责全堆在一起</li>
+<li>输出结构不清</li>
+<li>测试很难只测某一层</li>
+</ul>
+<p>更稳的整理方式通常是先拆成三层：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">collect_failures</span>(<span class="params">targets</span>):</span><br><span class="line">    failed = []</span><br><span class="line">    <span class="keyword">for</span> item <span class="keyword">in</span> targets:</span><br><span class="line">        result = request_target(item)</span><br><span class="line">        <span class="keyword">if</span> result[<span class="string">&quot;code&quot;</span>] != <span class="number">0</span>:</span><br><span class="line">            failed.append(item[<span class="string">&quot;name&quot;</span>])</span><br><span class="line">    <span class="keyword">return</span> failed</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">build_report</span>(<span class="params">failed</span>):</span><br><span class="line">    <span class="keyword">return</span> &#123;<span class="string">&quot;failed_count&quot;</span>: <span class="built_in">len</span>(failed), <span class="string">&quot;failed_items&quot;</span>: failed&#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">run_inspection</span>(<span class="params">targets, send_alert=<span class="literal">False</span>, save_report=<span class="literal">True</span></span>):</span><br><span class="line">    failed = collect_failures(targets)</span><br><span class="line">    report = build_report(failed)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> save_report:</span><br><span class="line">        write_report(report)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> send_alert <span class="keyword">and</span> failed:</span><br><span class="line">        notify(failed)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> report</span><br></pre></td></tr></table></figure>
+
+<p>这种重构不炫，但能立刻带来三件事：</p>
+<ul>
+<li>全局状态消失</li>
+<li>核心逻辑开始可测</li>
+<li>输出结构开始稳定</li>
+</ul>
+<h2 id="十二、怎么测试重构没有把业务改坏"><a href="#十二、怎么测试重构没有把业务改坏" class="headerlink" title="十二、怎么测试重构没有把业务改坏"></a>十二、怎么测试重构没有把业务改坏</h2><p>重构最怕的不是改慢，而是把原来能工作的行为悄悄改坏。</p>
+<p>所以更稳的顺序通常是：</p>
+<h3 id="1-先给核心行为补最小测试"><a href="#1-先给核心行为补最小测试" class="headerlink" title="1. 先给核心行为补最小测试"></a>1. 先给核心行为补最小测试</h3><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">test_build_report_should_keep_failed_count_and_items</span>():</span><br><span class="line">    report = build_report([<span class="string">&quot;order&quot;</span>, <span class="string">&quot;payment&quot;</span>])</span><br><span class="line">    <span class="keyword">assert</span> report[<span class="string">&quot;failed_count&quot;</span>] == <span class="number">2</span></span><br><span class="line">    <span class="keyword">assert</span> report[<span class="string">&quot;failed_items&quot;</span>] == [<span class="string">&quot;order&quot;</span>, <span class="string">&quot;payment&quot;</span>]</span><br></pre></td></tr></table></figure>
+
+<h3 id="2-再给重构前后最关键的输出做对照"><a href="#2-再给重构前后最关键的输出做对照" class="headerlink" title="2. 再给重构前后最关键的输出做对照"></a>2. 再给重构前后最关键的输出做对照</h3><p>例如：</p>
+<ul>
+<li>失败数量有没有变</li>
+<li>报告字段有没有变</li>
+<li>通知触发条件有没有变</li>
+</ul>
+<h3 id="3-最后再替换实现"><a href="#3-最后再替换实现" class="headerlink" title="3. 最后再替换实现"></a>3. 最后再替换实现</h3><p>真正有价值的不是“把代码改得更漂亮”，而是让行为保持稳定的同时，结构开始变清晰。</p>
+<h2 id="十三、一个更稳的重构骨架"><a href="#十三、一个更稳的重构骨架" class="headerlink" title="十三、一个更稳的重构骨架"></a>十三、一个更稳的重构骨架</h2><p>如果当前项目已经出现上面这些坏味道，可以按下面这条线走：</p>
+<h3 id="1-固定输入输出"><a href="#1-固定输入输出" class="headerlink" title="1. 固定输入输出"></a>1. 固定输入输出</h3><p>先把入口参数和结果结构收住。</p>
+<h3 id="2-拆阶段"><a href="#2-拆阶段" class="headerlink" title="2. 拆阶段"></a>2. 拆阶段</h3><p>把“读、算、写、发通知”拆成独立阶段。</p>
+<h3 id="3-抽变化点"><a href="#3-抽变化点" class="headerlink" title="3. 抽变化点"></a>3. 抽变化点</h3><p>把 URL、阈值、环境参数从流程里剥出来。</p>
+<h3 id="4-去全局状态"><a href="#4-去全局状态" class="headerlink" title="4. 去全局状态"></a>4. 去全局状态</h3><p>把隐藏在模块顶层的状态挪到上下文里。</p>
+<h3 id="5-补最小测试"><a href="#5-补最小测试" class="headerlink" title="5. 补最小测试"></a>5. 补最小测试</h3><p>优先给最核心、最常改的函数补测试。</p>
+<p>这样重构不会显得很猛，但更容易落地。</p>
+<h2 id="十四、一个实际排错案例"><a href="#十四、一个实际排错案例" class="headerlink" title="十四、一个实际排错案例"></a>十四、一个实际排错案例</h2><p>来看一个很典型的现象：</p>
+<ul>
+<li>巡检脚本在测试环境正常</li>
+<li>到生产环境后，有时会重复发告警，有时又完全不发</li>
+</ul>
+<p>排查下来，根因常常不是通知接口不稳定，而是：</p>
+<ul>
+<li><code>FAILED_ITEMS</code> 放在全局列表里</li>
+<li>前一轮执行没清干净</li>
+<li>下一轮又继续复用</li>
+</ul>
+<p>排查顺序通常可以这样走：</p>
+<ol>
+<li>先看状态存在哪</li>
+<li>再看状态是函数内局部，还是模块级共享</li>
+<li>最后发现问题不是逻辑分支，而是状态泄漏</li>
+</ol>
+<p>修复方式往往不复杂：</p>
+<ul>
+<li>去掉全局列表</li>
+<li>每次执行创建新的上下文对象</li>
+<li>把失败项作为返回值往下传</li>
+</ul>
+<p>这类案例很有代表性，因为它说明：</p>
+<ul>
+<li>很多坏味道最后暴露出来的不是“不好看”</li>
+<li>而是线上行为不稳定</li>
+</ul>
+<h2 id="十五、什么时候该停下，不要把重构做成重写"><a href="#十五、什么时候该停下，不要把重构做成重写" class="headerlink" title="十五、什么时候该停下，不要把重构做成重写"></a>十五、什么时候该停下，不要把重构做成重写</h2><p>重构里另一个常见陷阱是：</p>
+<ul>
+<li>发现坏味道很多</li>
+<li>一下子想把整个项目全部推倒</li>
+</ul>
+<p>这通常不是最稳的做法。</p>
+<p>更实用的判断通常是：</p>
+<h3 id="1-先停在“结构已清楚、测试已能覆盖”的位置"><a href="#1-先停在“结构已清楚、测试已能覆盖”的位置" class="headerlink" title="1. 先停在“结构已清楚、测试已能覆盖”的位置"></a>1. 先停在“结构已清楚、测试已能覆盖”的位置</h3><p>如果职责边界已经收住、核心函数已经可测，未必还需要继续做更大的结构动作。</p>
+<h3 id="2-没证据证明有收益的重构，先别做"><a href="#2-没证据证明有收益的重构，先别做" class="headerlink" title="2. 没证据证明有收益的重构，先别做"></a>2. 没证据证明有收益的重构，先别做</h3><p>例如只是因为“看起来还能更优雅”，但对测试、排障、交付没有直接收益，这种重构优先级通常没那么高。</p>
+<h3 id="3-把重构做成一系列小步，而不是一次性重写"><a href="#3-把重构做成一系列小步，而不是一次性重写" class="headerlink" title="3. 把重构做成一系列小步，而不是一次性重写"></a>3. 把重构做成一系列小步，而不是一次性重写</h3><p>小步重构更容易：</p>
+<ul>
+<li>观察行为变化</li>
+<li>回滚</li>
+<li>控制风险</li>
+</ul>
+<p>真正稳的重构不是“改得最多”，而是“每一步都能解释为什么值得改”。</p>
+<h2 id="十六、一个实际练习"><a href="#十六、一个实际练习" class="headerlink" title="十六、一个实际练习"></a>十六、一个实际练习</h2><p>练习目标：给一个已有 Python 脚本做最小重构。</p>
+<p>要求：</p>
+<ol>
+<li>找出 3 个最明显的坏味道</li>
+<li>不改业务结果，只改结构</li>
+<li>至少拆出 3 个职责函数</li>
+<li>去掉 1 个隐藏全局状态</li>
+<li>补 2 条最小测试</li>
+<li>写下“这次没继续重构的部分为什么先不动”</li>
+</ol>
+<p>如果这个练习能独立做完，说明已经开始有重构判断力，而不是只会“感觉乱”。</p>
+<h2 id="十七、这一篇学完以后，下一步应该补什么"><a href="#十七、这一篇学完以后，下一步应该补什么" class="headerlink" title="十七、这一篇学完以后，下一步应该补什么"></a>十七、这一篇学完以后，下一步应该补什么</h2><p>如果这一篇已经真正吸收，后面最适合继续补的是：</p>
+<ol>
+<li>项目结构设计</li>
+<li>pytest 夹具与测试分层</li>
+<li>Python 在不同工程场景里的角色边界</li>
+</ol>
+<p>因为重构的本质，最终还是为了把结构、测试和职责边界重新收清楚。</p>
+<h2 id="十八、结语"><a href="#十八、结语" class="headerlink" title="十八、结语"></a>十八、结语</h2><p>Python 的坏味道之所以常见，不是因为这门语言差，而是因为：</p>
+<ul>
+<li>写得快</li>
+<li>试错成本低</li>
+<li>很容易从一个小脚本长成一组长期工具</li>
+</ul>
+<p>真正要建立的不是“代码必须写得很优雅”，而是：</p>
+<ul>
+<li>什么时候已经开始失控</li>
+<li>先该重构哪一层</li>
+<li>怎么重构才不会越改越乱</li>
+</ul>
+<p>能把这些判断建立起来，Python 项目才会从“越来越难碰”走向“还能继续演进”。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E5%B7%A5%E7%A8%8B%E5%8C%96/" rel="tag"># 工程化</a>
+              <a href="/tags/%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80/" rel="tag"># 编程语言</a>
+              <a href="/tags/Python/" rel="tag"># Python</a>
+              <a href="/tags/Python%E4%B8%93%E9%A2%98/" rel="tag"># Python专题</a>
+              <a href="/tags/%E9%87%8D%E6%9E%84/" rel="tag"># 重构</a>
+              <a href="/tags/%E4%BB%A3%E7%A0%81%E5%9D%8F%E5%91%B3%E9%81%93/" rel="tag"># 代码坏味道</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2018/09/05/Go-21-Go%E5%9C%A8%E6%8E%A5%E5%8F%A3%E6%B5%8B%E8%AF%95%E5%B7%A5%E5%85%B7%E4%BB%BB%E5%8A%A1%E8%B0%83%E5%BA%A6%E5%92%8C%E5%B9%B3%E5%8F%B0%E5%90%8E%E7%AB%AF%E5%9C%BA%E6%99%AF%E9%87%8C%E5%88%86%E5%88%AB%E9%80%82%E5%90%88%E6%89%BF%E6%8B%85%E4%BB%80%E4%B9%88%E8%A7%92%E8%89%B2/" rel="prev" title="Go：在接口测试工具、任务调度和平台后端场景里分别适合承担什么角色">
+                  <i class="fa fa-angle-left"></i> Go：在接口测试工具、任务调度和平台后端场景里分别适合承担什么角色
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2018/09/12/Go-22-Go%E6%96%B0%E6%89%8B%E4%BB%8E%E8%83%BD%E5%86%99%E4%BB%A3%E7%A0%81%E5%88%B0%E8%83%BD%E7%8B%AC%E7%AB%8B%E5%81%9A%E9%A1%B9%E7%9B%AE%E4%B8%AD%E9%97%B4%E6%9C%80%E5%AE%B9%E6%98%93%E7%BC%BA%E5%93%AA%E5%87%A0%E5%B1%82%E8%83%BD%E5%8A%9B/" rel="next" title="Go：新手从能写代码到能独立做项目，中间最容易缺哪几层能力">
+                  Go：新手从能写代码到能独立做项目，中间最容易缺哪几层能力 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

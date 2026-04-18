@@ -1,0 +1,941 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="Go 里的 interface 真正难点不在语法，而在工程判断：它到底在抽象什么边界，为什么是调用方定义接口，typed nil 为什么会坑人，什么时候该用它隔离外部依赖，什么时候又该坚持用具体类型。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Go：interface 不难，难的是在项目里什么时候该用，什么时候不该用">
+<meta property="og:url" content="https://paynewinnt.github.io/2018/05/23/Go-06-Go%E9%87%8C%E7%9A%84interface%E4%B8%8D%E9%9A%BE%E9%9A%BE%E7%9A%84%E6%98%AF%E5%9C%A8%E9%A1%B9%E7%9B%AE%E9%87%8C%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E8%AF%A5%E7%94%A8%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E4%B8%8D%E8%AF%A5%E7%94%A8/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="Go 里的 interface 真正难点不在语法，而在工程判断：它到底在抽象什么边界，为什么是调用方定义接口，typed nil 为什么会坑人，什么时候该用它隔离外部依赖，什么时候又该坚持用具体类型。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2018-05-23T12:30:00.000Z">
+<meta property="article:modified_time" content="2018-05-23T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="工程化">
+<meta property="article:tag" content="Go">
+<meta property="article:tag" content="Go专题">
+<meta property="article:tag" content="编程语言">
+<meta property="article:tag" content="interface">
+<meta property="article:tag" content="抽象">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2018/05/23/Go-06-Go%E9%87%8C%E7%9A%84interface%E4%B8%8D%E9%9A%BE%E9%9A%BE%E7%9A%84%E6%98%AF%E5%9C%A8%E9%A1%B9%E7%9B%AE%E9%87%8C%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E8%AF%A5%E7%94%A8%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E4%B8%8D%E8%AF%A5%E7%94%A8/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2018/05/23/Go-06-Go%E9%87%8C%E7%9A%84interface%E4%B8%8D%E9%9A%BE%E9%9A%BE%E7%9A%84%E6%98%AF%E5%9C%A8%E9%A1%B9%E7%9B%AE%E9%87%8C%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E8%AF%A5%E7%94%A8%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E4%B8%8D%E8%AF%A5%E7%94%A8/","path":"2018/05/23/Go-06-Go里的interface不难难的是在项目里什么时候该用什么时候不该用/","title":"Go：interface 不难，难的是在项目里什么时候该用，什么时候不该用"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>Go：interface 不难，难的是在项目里什么时候该用，什么时候不该用 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E8%BF%99%E7%AF%87%E6%96%87%E7%AB%A0%E8%A6%81%E8%A7%A3%E5%86%B3%E4%BB%80%E4%B9%88%E9%97%AE%E9%A2%98"><span class="nav-number">1.</span> <span class="nav-text">一、这篇文章要解决什么问题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E5%85%88%E6%8A%8A%E8%BF%99%E7%AF%87%E6%96%87%E7%AB%A0%E9%87%8C%E7%9A%84%E5%9C%BA%E6%99%AF%E8%AF%B4%E6%B8%85%E6%A5%9A"><span class="nav-number">2.</span> <span class="nav-text">二、先把这篇文章里的场景说清楚</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E5%85%88%E7%9C%8B%E4%B8%80%E4%B8%AA%E6%9C%80%E5%B0%8F%E4%BE%8B%E5%AD%90%EF%BC%9Ainterface-%E5%88%B0%E5%BA%95%E5%9C%A8%E8%A1%A8%E8%BE%BE%E4%BB%80%E4%B9%88"><span class="nav-number">3.</span> <span class="nav-text">三、先看一个最小例子：interface 到底在表达什么</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81Go-%E9%87%8C%E7%9A%84-interface-%E6%9C%AC%E8%B4%A8%E4%B8%8A%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%8C%E4%B8%8D%E6%98%AF%E4%BB%80%E4%B9%88"><span class="nav-number">4.</span> <span class="nav-text">四、Go 里的 interface 本质上是什么，不是什么</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E9%9A%90%E5%BC%8F%E5%AE%9E%E7%8E%B0%E4%B8%BA%E4%BB%80%E4%B9%88%E7%AE%80%E5%8D%95%EF%BC%8C%E4%BD%86%E4%B9%9F%E5%AE%B9%E6%98%93%E8%A2%AB%E8%AF%AF%E7%94%A8"><span class="nav-number">5.</span> <span class="nav-text">五、隐式实现为什么简单，但也容易被误用</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E5%85%88%E7%9C%8B%E4%B8%80%E4%B8%AA%E7%BC%96%E8%AF%91%E9%94%99%E8%AF%AF%EF%BC%9A%E9%9A%90%E5%BC%8F%E5%AE%9E%E7%8E%B0%E4%B8%8D%E6%98%AF%E2%80%9C%E5%B7%AE%E4%B8%8D%E5%A4%9A%E5%B0%B1%E8%A1%8C%E2%80%9D"><span class="nav-number">6.</span> <span class="nav-text">六、先看一个编译错误：隐式实现不是“差不多就行”</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E8%B0%83%E7%94%A8%E6%96%B9%E5%AE%9A%E4%B9%89%E6%8E%A5%E5%8F%A3%EF%BC%8C%E9%80%9A%E5%B8%B8%E6%AF%94%E5%AE%9E%E7%8E%B0%E6%96%B9%E5%AE%9A%E4%B9%89%E6%8E%A5%E5%8F%A3%E6%9B%B4%E7%A8%B3"><span class="nav-number">7.</span> <span class="nav-text">七、调用方定义接口，通常比实现方定义接口更稳</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E6%A0%B9%E6%9C%AC%E4%B8%8D%E9%9C%80%E8%A6%81-interface"><span class="nav-number">8.</span> <span class="nav-text">八、什么时候根本不需要 interface</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E8%BF%87%E5%BA%A6%E6%8A%BD%E8%B1%A1%E6%9C%80%E5%B8%B8%E8%A7%81%E7%9A%84%E6%A0%B7%E5%AD%90%EF%BC%9A%E4%B8%BA%E4%BA%86%E2%80%9C%E4%BB%A5%E5%90%8E%E5%8F%AF%E8%83%BD%E6%89%A9%E5%B1%95%E2%80%9D%E5%85%88%E8%AE%BE%E8%AE%A1%E5%A4%A7%E6%8E%A5%E5%8F%A3"><span class="nav-number">9.</span> <span class="nav-text">九、过度抽象最常见的样子：为了“以后可能扩展”先设计大接口</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81nil-%E4%B8%BA%E4%BB%80%E4%B9%88%E5%9C%A8-interface-%E8%BF%99%E9%87%8C%E6%9C%80%E5%AE%B9%E6%98%93%E5%9D%91%E4%BA%BA"><span class="nav-number">10.</span> <span class="nav-text">十、nil 为什么在 interface 这里最容易坑人</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E4%B8%80%E4%B8%AA%E7%9C%9F%E5%AE%9E%E9%A3%8E%E9%99%A9%EF%BC%9A%E4%BD%A0%E4%BB%A5%E4%B8%BA%E5%88%A4%E6%96%AD%E8%BF%87-nil-%E4%BA%86%EF%BC%8C%E5%85%B6%E5%AE%9E%E8%BF%98%E6%98%AF%E4%BC%9A-panic"><span class="nav-number">11.</span> <span class="nav-text">十一、一个真实风险：你以为判断过 nil 了，其实还是会 panic</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E5%86%8D%E7%9C%8B%E4%B8%80%E4%B8%AA%E9%AB%98%E9%A2%91%E5%9D%91%EF%BC%9A%E6%8C%87%E9%92%88%E6%8E%A5%E6%94%B6%E8%80%85%E3%80%81%E5%80%BC%E6%8E%A5%E6%94%B6%E8%80%85%E5%92%8C%E6%96%B9%E6%B3%95%E9%9B%86"><span class="nav-number">12.</span> <span class="nav-text">十二、再看一个高频坑：指针接收者、值接收者和方法集</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81%E4%B8%80%E4%B8%AA%E6%9B%B4%E6%8E%A5%E8%BF%91%E9%A1%B9%E7%9B%AE%E7%8E%B0%E5%9C%BA%E7%9A%84%E5%B0%8F%E6%A1%88%E4%BE%8B"><span class="nav-number">13.</span> <span class="nav-text">十三、一个更接近项目现场的小案例</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81%E5%86%8D%E7%9C%8B%E4%B8%80%E4%B8%AA%E5%86%99%E5%81%8F%E7%9A%84%E7%89%88%E6%9C%AC%EF%BC%8C%E9%97%AE%E9%A2%98%E4%BC%9A%E6%9B%B4%E6%98%8E%E6%98%BE"><span class="nav-number">14.</span> <span class="nav-text">十四、再看一个写偏的版本，问题会更明显</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%94%E3%80%81%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99-interface-%E7%9C%9F%E6%AD%A3%E6%9C%89%E4%BB%B7%E5%80%BC"><span class="nav-number">15.</span> <span class="nav-text">十五、什么时候 interface 真正有价值</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%BD%A0%E5%9C%A8%E9%9A%94%E7%A6%BB%E5%A4%96%E9%83%A8%E4%BE%9D%E8%B5%96"><span class="nav-number">15.1.</span> <span class="nav-text">1. 你在隔离外部依赖</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%B0%83%E7%94%A8%E6%96%B9%E5%8F%AA%E9%9C%80%E8%A6%81%E4%B8%80%E5%B0%8F%E9%83%A8%E5%88%86%E8%83%BD%E5%8A%9B"><span class="nav-number">15.2.</span> <span class="nav-text">2. 调用方只需要一小部分能力</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%BD%A0%E7%A1%AE%E5%AE%9E%E4%BC%9A%E6%9C%89%E5%A4%9A%E7%A7%8D%E5%AE%9E%E7%8E%B0%EF%BC%8C%E8%80%8C%E4%B8%94%E8%BF%99%E7%A7%8D%E5%A4%9A%E5%AE%9E%E7%8E%B0%E6%98%AF%E7%8E%B0%E5%9C%A8%E5%B0%B1%E5%AD%98%E5%9C%A8%E7%9A%84"><span class="nav-number">15.3.</span> <span class="nav-text">3. 你确实会有多种实现，而且这种多实现是现在就存在的</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%BD%A0%E8%A6%81%E7%BB%99%E6%B5%8B%E8%AF%95%E6%B3%A8%E5%85%A5%E6%9B%BF%E8%BA%AB"><span class="nav-number">15.4.</span> <span class="nav-text">4. 你要给测试注入替身</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AD%E3%80%81%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E6%9B%B4%E5%BA%94%E8%AF%A5%E5%9D%9A%E6%8C%81%E7%94%A8%E5%85%B7%E4%BD%93%E7%B1%BB%E5%9E%8B"><span class="nav-number">16.</span> <span class="nav-text">十六、什么时候更应该坚持用具体类型</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%8F%AA%E6%98%AF%E6%99%AE%E9%80%9A%E5%86%85%E9%83%A8%E9%80%BB%E8%BE%91"><span class="nav-number">16.1.</span> <span class="nav-text">1. 只是普通内部逻辑</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%BD%93%E5%89%8D%E5%8F%AA%E6%9C%89%E4%B8%80%E4%B8%AA%E5%AE%9E%E7%8E%B0%EF%BC%8C%E8%80%8C%E4%B8%94%E4%BD%A0%E7%9C%8B%E4%B8%8D%E5%88%B0%E7%A8%B3%E5%AE%9A%E7%9A%84%E5%8F%98%E5%8C%96%E6%96%B9%E5%90%91"><span class="nav-number">16.2.</span> <span class="nav-text">2. 当前只有一个实现，而且你看不到稳定的变化方向</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%BF%99%E4%B8%AA%E6%8E%A5%E5%8F%A3%E5%8F%AA%E6%98%AF%E6%8A%8A%E5%85%B7%E4%BD%93%E7%B1%BB%E5%9E%8B%E5%8E%9F%E6%A0%B7%E5%8C%85%E4%BA%86%E4%B8%80%E5%B1%82"><span class="nav-number">16.3.</span> <span class="nav-text">3. 这个接口只是把具体类型原样包了一层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%BD%A0%E5%BC%80%E5%A7%8B%E4%B8%BA%E4%BA%86%E6%8E%A5%E5%8F%A3%E8%80%8C%E6%8E%A5%E5%8F%A3"><span class="nav-number">16.4.</span> <span class="nav-text">4. 你开始为了接口而接口</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%83%E3%80%81%E7%BB%99%E8%BF%99%E4%B8%AA%E5%B0%8F%E6%A1%88%E4%BE%8B%E8%A1%A5%E6%9C%80%E5%B0%8F%E6%B5%8B%E8%AF%95%EF%BC%8C%E7%9C%8B%E7%9C%8B%E6%8E%A5%E5%8F%A3%E7%9C%9F%E6%AD%A3%E5%B8%AE%E4%BA%86%E4%BB%80%E4%B9%88"><span class="nav-number">17.</span> <span class="nav-text">十七、给这个小案例补最小测试，看看接口真正帮了什么</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AB%E3%80%81%E6%80%8E%E4%B9%88%E9%AA%8C%E8%AF%81%E8%BF%99%E7%AF%87%E9%87%8C%E7%9A%84%E4%BB%A3%E7%A0%81%E7%90%86%E8%A7%A3%E6%98%AF%E4%B8%8D%E6%98%AF%E5%88%B0%E4%BD%8D"><span class="nav-number">18.</span> <span class="nav-text">十八、怎么验证这篇里的代码理解是不是到位</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B9%9D%E3%80%81%E6%8E%92%E9%9A%9C%E6%97%B6%E6%9C%80%E5%80%BC%E5%BE%97%E5%85%88%E6%9F%A5%E7%9A%84%E5%9B%9B%E7%B1%BB%E9%97%AE%E9%A2%98"><span class="nav-number">19.</span> <span class="nav-text">十九、排障时最值得先查的四类问题</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%96%B9%E6%B3%95%E7%AD%BE%E5%90%8D%E4%B8%8D%E5%8C%B9%E9%85%8D"><span class="nav-number">19.1.</span> <span class="nav-text">1. 方法签名不匹配</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%8C%87%E9%92%88%E6%8E%A5%E6%94%B6%E8%80%85%E5%92%8C%E5%80%BC%E6%8E%A5%E6%94%B6%E8%80%85%E4%B8%8D%E5%8C%B9%E9%85%8D"><span class="nav-number">19.2.</span> <span class="nav-text">2. 指针接收者和值接收者不匹配</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-typed-nil"><span class="nav-number">19.3.</span> <span class="nav-text">3. typed nil</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%8E%A5%E5%8F%A3%E8%BF%87%E5%A4%A7%EF%BC%8C%E5%AF%BC%E8%87%B4%E5%AE%9E%E7%8E%B0%E5%92%8C%E6%B5%8B%E8%AF%95%E9%83%BD%E5%BE%88%E9%87%8D"><span class="nav-number">19.4.</span> <span class="nav-text">4. 接口过大，导致实现和测试都很重</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E3%80%81%E8%BF%99%E7%AF%87%E6%96%87%E7%AB%A0%E9%87%8C%E6%9C%80%E9%87%8D%E8%A6%81%E7%9A%84%E5%B7%A5%E7%A8%8B%E5%88%A4%E6%96%AD"><span class="nav-number">20.</span> <span class="nav-text">二十、这篇文章里最重要的工程判断</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%80%E3%80%81%E8%BE%B9%E7%95%8C%EF%BC%9A%E8%BF%99%E7%AF%87%E5%85%88%E4%B8%8D%E5%B1%95%E5%BC%80%E5%93%AA%E4%BA%9B%E5%86%85%E5%AE%B9"><span class="nav-number">21.</span> <span class="nav-text">二十一、边界：这篇先不展开哪些内容</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%8C%E3%80%81%E4%B8%80%E4%B8%AA%E5%AE%9E%E9%99%85%E7%BB%83%E4%B9%A0"><span class="nav-number">22.</span> <span class="nav-text">二十二、一个实际练习</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%89%E3%80%81%E7%BB%93%E8%AF%AD"><span class="nav-number">23.</span> <span class="nav-text">二十三、结语</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2018/05/23/Go-06-Go%E9%87%8C%E7%9A%84interface%E4%B8%8D%E9%9A%BE%E9%9A%BE%E7%9A%84%E6%98%AF%E5%9C%A8%E9%A1%B9%E7%9B%AE%E9%87%8C%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E8%AF%A5%E7%94%A8%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E4%B8%8D%E8%AF%A5%E7%94%A8/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="Go：interface 不难，难的是在项目里什么时候该用，什么时候不该用 | 大道至简">
+      <meta itemprop="description" content="Go 里的 interface 真正难点不在语法，而在工程判断：它到底在抽象什么边界，为什么是调用方定义接口，typed nil 为什么会坑人，什么时候该用它隔离外部依赖，什么时候又该坚持用具体类型。">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Go：interface 不难，难的是在项目里什么时候该用，什么时候不该用
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2018-05-23 20:30:00" itemprop="dateCreated datePublished" datetime="2018-05-23T20:30:00+08:00">2018-05-23</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>5.3k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>19 分钟</span>
+    </span>
+</div>
+
+            <div class="post-description">Go 里的 interface 真正难点不在语法，而在工程判断：它到底在抽象什么边界，为什么是调用方定义接口，typed nil 为什么会坑人，什么时候该用它隔离外部依赖，什么时候又该坚持用具体类型。</div>
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>第一次学 Go 的 <code>interface</code> 时，经常会同时听到几句互相冲突的话：</p>
+<ul>
+<li><code>interface</code> 是 Go 最强大的抽象工具</li>
+<li><code>interface</code> 要尽量小</li>
+<li>没必要为了扩展到处写接口</li>
+<li>但写测试时又经常要靠接口替身</li>
+</ul>
+<p>如果只是看语法，这几句话很容易被理解成“看心情”。</p>
+<p>真正难的地方其实不是 <code>interface</code> 长什么样，而是下面这些判断：</p>
+<ul>
+<li>这段代码抽象的到底是能力，还是只是把类型名字藏起来</li>
+<li>接口应该由谁来定义，是实现方定义，还是使用方定义</li>
+<li>当前只有一个实现，到底该不该提前抽象</li>
+<li><code>nil</code> 明明看起来是空，为什么放进接口后又不等于 <code>nil</code></li>
+<li>为什么有些项目越写接口越多，最后反而更难维护</li>
+</ul>
+<p>这一篇就围绕一个实际场景来讲：<strong>做一个回归测试结果通知服务</strong>。<br>这个场景很适合讲 <code>interface</code>，因为它天然会碰到：</p>
+<ul>
+<li>不同通知渠道的切换</li>
+<li>外部依赖的隔离</li>
+<li>测试替身的注入</li>
+<li>过度抽象的风险</li>
+<li><code>nil</code> 和方法集的高频坑</li>
+</ul>
+<h2 id="一、这篇文章要解决什么问题"><a href="#一、这篇文章要解决什么问题" class="headerlink" title="一、这篇文章要解决什么问题"></a>一、这篇文章要解决什么问题</h2><p>读完这一篇，应该能独立说清楚这些事：</p>
+<ul>
+<li><code>interface</code> 本质上在表达什么</li>
+<li>Go 的“隐式实现”到底是什么意思</li>
+<li>为什么很多场景应该由调用方定义接口</li>
+<li>什么时候该用 <code>interface</code> 隔离边界</li>
+<li>什么时候根本不该上接口</li>
+<li><code>typed nil</code>、指针接收者、方法集这些坑为什么会出现</li>
+<li>怎么用一个小接口把测试写稳，而不是把项目抽象空掉</li>
+</ul>
+<p>如果这些动作能独立做出来，后面再看 <code>io.Reader</code>、<code>error</code>、<code>http.Handler</code>、Repository、Client 封装，理解会扎实很多。</p>
+<h2 id="二、先把这篇文章里的场景说清楚"><a href="#二、先把这篇文章里的场景说清楚" class="headerlink" title="二、先把这篇文章里的场景说清楚"></a>二、先把这篇文章里的场景说清楚</h2><p>假设现在有一个很小的测试平台服务。<br>每天回归任务跑完后，它要把结果发到不同渠道：</p>
+<ul>
+<li>发到飞书群</li>
+<li>发到邮件</li>
+<li>后面可能还会发到企业微信</li>
+</ul>
+<p>通知内容也很简单，大概像这样：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">计划: nightly-regression</span><br><span class="line">总数: 120</span><br><span class="line">通过: 118</span><br><span class="line">失败: 2</span><br></pre></td></tr></table></figure>
+
+<p>这类需求看起来非常适合上 <code>interface</code>，但真正写起来时会马上碰到几个选择：</p>
+<ol>
+<li>是否现在就抽象一个大而全的 <code>Notifier</code> 接口</li>
+<li>是不是所有 service、repository、formatter 都要先定义接口</li>
+<li>当前只有飞书实现时，直接依赖具体类型是否更简单</li>
+<li>写测试时，怎样抽象才足够，怎样又算抽象过度</li>
+</ol>
+<p>后面的内容就围绕这几个问题展开。</p>
+<h2 id="三、先看一个最小例子：interface-到底在表达什么"><a href="#三、先看一个最小例子：interface-到底在表达什么" class="headerlink" title="三、先看一个最小例子：interface 到底在表达什么"></a>三、先看一个最小例子：interface 到底在表达什么</h2><p>先看最小代码：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> <span class="string">&quot;fmt&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Message <span class="keyword">struct</span> &#123;</span><br><span class="line">	Title <span class="type">string</span></span><br><span class="line">	Body  <span class="type">string</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Notifier <span class="keyword">interface</span> &#123;</span><br><span class="line">	Send(Message) <span class="type">error</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> FeishuBot <span class="keyword">struct</span> &#123;</span><br><span class="line">	Webhook <span class="type">string</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(b FeishuBot)</span></span> Send(msg Message) <span class="type">error</span> &#123;</span><br><span class="line">	fmt.Printf(<span class="string">&quot;send to feishu: %s\n&quot;</span>, msg.Title)</span><br><span class="line">	<span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Deliver</span><span class="params">(n Notifier, msg Message)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">	<span class="keyword">return</span> n.Send(msg)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	bot := FeishuBot&#123;Webhook: <span class="string">&quot;https://example.com/hook&quot;</span>&#125;</span><br><span class="line">	_ = Deliver(bot, Message&#123;</span><br><span class="line">		Title: <span class="string">&quot;nightly report&quot;</span>,</span><br><span class="line">		Body:  <span class="string">&quot;passed: 118, failed: 2&quot;</span>,</span><br><span class="line">	&#125;)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这里最关键的不是“定义了一个接口”，而是：</p>
+<ul>
+<li><code>Notifier</code> 只描述一种能力：<code>Send</code></li>
+<li><code>Deliver</code> 不关心你到底是飞书、邮件还是别的渠道</li>
+<li>只要某个类型能提供 <code>Send(Message) error</code>，它就能被当成 <code>Notifier</code></li>
+</ul>
+<p>所以 <code>interface</code> 的核心不是“给类型分类”，而是：<strong>把调用方真正依赖的行为单独拿出来。</strong></p>
+<h2 id="四、Go-里的-interface-本质上是什么，不是什么"><a href="#四、Go-里的-interface-本质上是什么，不是什么" class="headerlink" title="四、Go 里的 interface 本质上是什么，不是什么"></a>四、Go 里的 interface 本质上是什么，不是什么</h2><p>如果只记一句话，可以记这个：</p>
+<p><strong><code>interface</code> 是一份行为契约，不是类继承，不是万能抽象层，也不是“以后可能扩展”的心理安慰剂。</strong></p>
+<p>它至少包含两层意思：</p>
+<ol>
+<li>调用方现在只需要这些方法</li>
+<li>实现方只要满足这些方法，就能接进来</li>
+</ol>
+<p>但它不意味着：</p>
+<ul>
+<li>实现方和调用方一定存在稳定层次关系</li>
+<li>一旦写了接口，架构就更高级</li>
+<li>当前只有一个实现时，也必须先做抽象</li>
+</ul>
+<p>在运行时，一个接口值可以粗略理解成一对东西：</p>
+<ul>
+<li>动态类型</li>
+<li>动态值</li>
+</ul>
+<p>这个理解后面讲 <code>nil</code> 时很重要，因为接口变量是否等于 <code>nil</code>，看的是这两部分是不是都为空。</p>
+<h2 id="五、隐式实现为什么简单，但也容易被误用"><a href="#五、隐式实现为什么简单，但也容易被误用" class="headerlink" title="五、隐式实现为什么简单，但也容易被误用"></a>五、隐式实现为什么简单，但也容易被误用</h2><p>Go 和很多语言不一样的地方在于：<strong>实现接口不需要显式声明。</strong></p>
+<p>还是上面的例子，<code>FeishuBot</code> 并没有写这种代码：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> FeishuBot <span class="keyword">struct</span>&#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 不需要类似 implements Notifier 这样的声明</span></span><br></pre></td></tr></table></figure>
+
+<p>只要方法集满足接口，它就自动实现了。</p>
+<p>这个设计的直接好处很明显：</p>
+<ul>
+<li>低耦合</li>
+<li>不需要改实现方代码就能接入新接口</li>
+<li>很适合在使用端按需抽象</li>
+</ul>
+<p>但它也带来一个很高频的误区：<br>“反正实现接口很容易”这个判断一旦先站住，代码就很容易提前设计出一堆接口，把项目写成：</p>
+<ul>
+<li><code>UserService</code></li>
+<li><code>UserServiceImpl</code></li>
+<li><code>UserRepository</code></li>
+<li><code>UserRepositoryImpl</code></li>
+<li><code>UserFormatter</code></li>
+<li><code>UserFormatterImpl</code></li>
+</ul>
+<p>如果这些接口没有承载稳定边界，那它们本质上只是在重复类型名。</p>
+<h2 id="六、先看一个编译错误：隐式实现不是“差不多就行”"><a href="#六、先看一个编译错误：隐式实现不是“差不多就行”" class="headerlink" title="六、先看一个编译错误：隐式实现不是“差不多就行”"></a>六、先看一个编译错误：隐式实现不是“差不多就行”</h2><p>Go 的隐式实现很灵活，但方法签名只要不完全匹配，就不算实现。</p>
+<p>例如：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Notifier <span class="keyword">interface</span> &#123;</span><br><span class="line">	Send(Message) <span class="type">error</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> EmailSender <span class="keyword">struct</span>&#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s EmailSender)</span></span> Send(title <span class="type">string</span>) <span class="type">error</span> &#123;</span><br><span class="line">	<span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这时 <code>EmailSender</code> 并没有实现 <code>Notifier</code>，因为：</p>
+<ul>
+<li>参数不是 <code>Message</code></li>
+<li>方法签名不一致</li>
+</ul>
+<p>再看另一个高频错误：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Notifier <span class="keyword">interface</span> &#123;</span><br><span class="line">	Send(Message) <span class="type">error</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> WebhookSender <span class="keyword">struct</span>&#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *WebhookSender)</span></span> Send(msg Message) <span class="type">error</span> &#123;</span><br><span class="line">	<span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	<span class="keyword">var</span> n Notifier</span><br><span class="line">	sender := WebhookSender&#123;&#125;</span><br><span class="line">	n = sender</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这段代码也会报错，原因不是方法内容，而是<strong>方法集</strong>：</p>
+<ul>
+<li><code>Send</code> 定义在 <code>*WebhookSender</code> 上</li>
+<li><code>WebhookSender</code> 这个值本身的方法集里没有这个方法</li>
+<li>所以 <code>WebhookSender</code> 不能赋给 <code>Notifier</code></li>
+<li>只有 <code>*WebhookSender</code> 才可以</li>
+</ul>
+<p>这也是为什么你经常会看到这类报错：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">WebhookSender does not implement Notifier (method Send has pointer receiver)</span><br></pre></td></tr></table></figure>
+
+<p>这个坑不是边角问题，项目里非常常见。</p>
+<h2 id="七、调用方定义接口，通常比实现方定义接口更稳"><a href="#七、调用方定义接口，通常比实现方定义接口更稳" class="headerlink" title="七、调用方定义接口，通常比实现方定义接口更稳"></a>七、调用方定义接口，通常比实现方定义接口更稳</h2><p>这是 Go 里很重要的一条工程习惯：</p>
+<p><strong>接口更适合由使用它的一方定义，而不是由实现它的一方预先定义。</strong></p>
+<p>为什么？</p>
+<p>因为真正知道“我只需要哪些行为”的，通常是调用方。</p>
+<p>先看一个容易写偏的版本。</p>
+<p>实现方包里先定义一个很大的接口：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> notify</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Notifier <span class="keyword">interface</span> &#123;</span><br><span class="line">	Send(Message) <span class="type">error</span></span><br><span class="line">	HealthCheck() <span class="type">error</span></span><br><span class="line">	Close() <span class="type">error</span></span><br><span class="line">	Name() <span class="type">string</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>然后业务代码说“我要依赖这个接口”。</p>
+<p>问题在于，业务代码可能其实只需要：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Send(Message) <span class="type">error</span></span><br></pre></td></tr></table></figure>
+
+<p>结果因为实现方提前定义了大接口，所有实现和调用都被迫背上：</p>
+<ul>
+<li><code>HealthCheck</code></li>
+<li><code>Close</code></li>
+<li><code>Name</code></li>
+</ul>
+<p>这会直接导致两个问题：</p>
+<ol>
+<li>接口越来越胖</li>
+<li>业务代码的真实依赖被掩盖</li>
+</ol>
+<p>更稳的写法通常是由调用方按需定义：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> report</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> sender <span class="keyword">interface</span> &#123;</span><br><span class="line">	Send(Message) <span class="type">error</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Service <span class="keyword">struct</span> &#123;</span><br><span class="line">	sender sender</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这时 <code>Service</code> 很明确地告诉你：<br><strong>我只依赖发送能力，不依赖名字、关闭动作、健康检查。</strong></p>
+<p>这就是“consumer-defined interface”的实际价值。</p>
+<h2 id="八、什么时候根本不需要-interface"><a href="#八、什么时候根本不需要-interface" class="headerlink" title="八、什么时候根本不需要 interface"></a>八、什么时候根本不需要 interface</h2><p>一学 <code>interface</code>，代码就很容易条件反射式地开始抽象。<br>但在 Go 里，有不少场景直接用具体类型反而更对。</p>
+<p>例如：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> MarkdownFormatter <span class="keyword">struct</span>&#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(f MarkdownFormatter)</span></span> Build(summary Summary) Message &#123;</span><br><span class="line">	<span class="keyword">return</span> Message&#123;</span><br><span class="line">		Title: summary.PlanID,</span><br><span class="line">		Body:  <span class="string">&quot;passed and failed numbers here&quot;</span>,</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>如果整个项目里只有这一种格式化规则，而且没有单独替换的需求，这时直接依赖 <code>MarkdownFormatter</code> 往往是最简单的。</p>
+<p>没必要一上来就写：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Formatter <span class="keyword">interface</span> &#123;</span><br><span class="line">	Build(Summary) Message</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>因为这层接口并没有隔离任何真实边界。<br>它既不是外部依赖，也不是稳定扩展点，也没有明显测试价值。</p>
+<p>一个很实用的判断标准是：</p>
+<ul>
+<li>如果去掉这个接口，代码会不会更直接</li>
+<li>如果答案是“会”，那这个接口大概率就不该先存在</li>
+</ul>
+<h2 id="九、过度抽象最常见的样子：为了“以后可能扩展”先设计大接口"><a href="#九、过度抽象最常见的样子：为了“以后可能扩展”先设计大接口" class="headerlink" title="九、过度抽象最常见的样子：为了“以后可能扩展”先设计大接口"></a>九、过度抽象最常见的样子：为了“以后可能扩展”先设计大接口</h2><p>看一个典型的错误版本：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> NotificationPlatform <span class="keyword">interface</span> &#123;</span><br><span class="line">	BuildTitle(Summary) <span class="type">string</span></span><br><span class="line">	BuildBody(Summary) <span class="type">string</span></span><br><span class="line">	Send(Message) <span class="type">error</span></span><br><span class="line">	Retry(Message) <span class="type">error</span></span><br><span class="line">	HealthCheck() <span class="type">error</span></span><br><span class="line">	Close() <span class="type">error</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这个接口表面上很“完整”，实际却同时混了三类事情：</p>
+<ul>
+<li>文案构建</li>
+<li>通知发送</li>
+<li>运行时管理</li>
+</ul>
+<p>结果通常会变成：</p>
+<ul>
+<li>某些实现根本不需要 <code>Retry</code></li>
+<li>某些实现的 <code>Close</code> 什么也不做</li>
+<li>测试替身也被迫补齐一堆空方法</li>
+</ul>
+<p>最后代码会充满这种味道：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(n MockPlatform)</span></span> Close() <span class="type">error</span> &#123; <span class="keyword">return</span> <span class="literal">nil</span> &#125;</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(n MockPlatform)</span></span> Retry(Message) <span class="type">error</span> &#123; <span class="keyword">return</span> <span class="literal">nil</span> &#125;</span><br></pre></td></tr></table></figure>
+
+<p>这不是抽象得好，而是职责没有拆开。</p>
+<p>更稳的做法通常是：</p>
+<ul>
+<li>文案拼装先用具体类型</li>
+<li>发送边界抽成小接口</li>
+<li>连接管理如果真的需要，再单独定义更窄的接口</li>
+</ul>
+<p>不是“不要抽象”，而是<strong>只抽象真实变化的那一层。</strong></p>
+<h2 id="十、nil-为什么在-interface-这里最容易坑人"><a href="#十、nil-为什么在-interface-这里最容易坑人" class="headerlink" title="十、nil 为什么在 interface 这里最容易坑人"></a>十、<code>nil</code> 为什么在 interface 这里最容易坑人</h2><p>这类坑第一次出现时，通常都在这里。</p>
+<p>先看最简单的空接口值：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> n Notifier</span><br><span class="line">fmt.Println(n == <span class="literal">nil</span>)</span><br></pre></td></tr></table></figure>
+
+<p>输出是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">true</span><br></pre></td></tr></table></figure>
+
+<p>因为这时接口变量里：</p>
+<ul>
+<li>没有动态类型</li>
+<li>也没有动态值</li>
+</ul>
+<p>但再看这个例子：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> FeishuBot <span class="keyword">struct</span> &#123;</span><br><span class="line">	Webhook <span class="type">string</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(b *FeishuBot)</span></span> Send(msg Message) <span class="type">error</span> &#123;</span><br><span class="line">	<span class="keyword">return</span> fmt.Errorf(<span class="string">&quot;webhook=%s&quot;</span>, b.Webhook)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	<span class="keyword">var</span> bot *FeishuBot = <span class="literal">nil</span></span><br><span class="line">	<span class="keyword">var</span> n Notifier = bot</span><br><span class="line"></span><br><span class="line">	fmt.Println(bot == <span class="literal">nil</span>)</span><br><span class="line">	fmt.Println(n == <span class="literal">nil</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>输出会是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">true</span><br><span class="line">false</span><br></pre></td></tr></table></figure>
+
+<p>为什么？</p>
+<p>因为这时接口变量 <code>n</code> 里：</p>
+<ul>
+<li>动态类型是 <code>*FeishuBot</code></li>
+<li>动态值是 <code>nil</code></li>
+</ul>
+<p>也就是说，接口本身不是空的。<br>它装着“一个类型明确但值为空的东西”。</p>
+<p>这就是 Go 项目里非常典型的 <code>typed nil</code> 坑。</p>
+<h2 id="十一、一个真实风险：你以为判断过-nil-了，其实还是会-panic"><a href="#十一、一个真实风险：你以为判断过-nil-了，其实还是会-panic" class="headerlink" title="十一、一个真实风险：你以为判断过 nil 了，其实还是会 panic"></a>十一、一个真实风险：你以为判断过 nil 了，其实还是会 panic</h2><p>继续看这个例子：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> FeishuBot <span class="keyword">struct</span> &#123;</span><br><span class="line">	Webhook <span class="type">string</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(b *FeishuBot)</span></span> Send(msg Message) <span class="type">error</span> &#123;</span><br><span class="line">	<span class="keyword">if</span> b.Webhook == <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> fmt.Errorf(<span class="string">&quot;empty webhook&quot;</span>)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Deliver</span><span class="params">(n Notifier, msg Message)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">	<span class="keyword">if</span> n == <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> fmt.Errorf(<span class="string">&quot;notifier is nil&quot;</span>)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> n.Send(msg)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	<span class="keyword">var</span> bot *FeishuBot = <span class="literal">nil</span></span><br><span class="line">	<span class="keyword">var</span> n Notifier = bot</span><br><span class="line">	_ = Deliver(n, Message&#123;Title: <span class="string">&quot;nightly&quot;</span>&#125;)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这段代码里，<code>Deliver</code> 虽然做了 <code>n == nil</code> 判断，但仍然可能 panic。<br>因为：</p>
+<ul>
+<li><code>n</code> 不是空接口值</li>
+<li>调用 <code>n.Send</code> 时，底层接收者其实是一个空指针</li>
+<li>方法里一旦访问 <code>b.Webhook</code>，就会触发空指针解引用</li>
+</ul>
+<p>应对这个坑，通常有三种思路：</p>
+<ol>
+<li>构造时就保证依赖非空，不让空实现流进来</li>
+<li>尽量避免把 <code>nil</code> 指针塞进接口</li>
+<li>在确实需要的地方，对具体类型做更明确的空判断</li>
+</ol>
+<p>最稳的一条通常还是第一条：<strong>用构造约束把坏状态挡在入口。</strong></p>
+<h2 id="十二、再看一个高频坑：指针接收者、值接收者和方法集"><a href="#十二、再看一个高频坑：指针接收者、值接收者和方法集" class="headerlink" title="十二、再看一个高频坑：指针接收者、值接收者和方法集"></a>十二、再看一个高频坑：指针接收者、值接收者和方法集</h2><p><code>interface</code> 的很多报错，根上都和方法集有关。</p>
+<p>先看这段代码：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Notifier <span class="keyword">interface</span> &#123;</span><br><span class="line">	Send(Message) <span class="type">error</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> EmailSender <span class="keyword">struct</span>&#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s EmailSender)</span></span> Send(msg Message) <span class="type">error</span> &#123;</span><br><span class="line">	<span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这时：</p>
+<ul>
+<li><code>EmailSender</code> 可以赋给 <code>Notifier</code></li>
+<li><code>*EmailSender</code> 也可以赋给 <code>Notifier</code></li>
+</ul>
+<p>因为值接收者方法会同时出现在值类型和指针类型的方法集中。</p>
+<p>但如果改成：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *EmailSender)</span></span> Send(msg Message) <span class="type">error</span> &#123;</span><br><span class="line">	<span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这时只有 <code>*EmailSender</code> 才能赋给 <code>Notifier</code>。</p>
+<p>什么时候该用值接收者，什么时候该用指针接收者，要回到对象语义本身：</p>
+<ul>
+<li>小对象、不可变式使用、无共享状态修改，值接收者通常更直接</li>
+<li>包含连接、缓存、锁、计数器、配置句柄等状态时，指针接收者通常更合理</li>
+</ul>
+<p>不要为了“统一写法”一律上指针，也不要因为图省事忽略方法集差异。</p>
+<h2 id="十三、一个更接近项目现场的小案例"><a href="#十三、一个更接近项目现场的小案例" class="headerlink" title="十三、一个更接近项目现场的小案例"></a>十三、一个更接近项目现场的小案例</h2><p>现在把上面的零散概念收进一个小服务里。<br>假设现在要做一个“回归测试通知器”，职责是：</p>
+<ul>
+<li>接收测试汇总结果</li>
+<li>组装一条通知消息</li>
+<li>调用外部发送器发出去</li>
+</ul>
+<p>先看一个比较稳的版本：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> report</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> <span class="string">&quot;fmt&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Summary <span class="keyword">struct</span> &#123;</span><br><span class="line">	PlanID <span class="type">string</span></span><br><span class="line">	Total  <span class="type">int</span></span><br><span class="line">	Passed <span class="type">int</span></span><br><span class="line">	Failed <span class="type">int</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Message <span class="keyword">struct</span> &#123;</span><br><span class="line">	Title <span class="type">string</span></span><br><span class="line">	Body  <span class="type">string</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> sender <span class="keyword">interface</span> &#123;</span><br><span class="line">	Send(Message) <span class="type">error</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Formatter <span class="keyword">struct</span>&#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(Formatter)</span></span> Build(summary Summary) Message &#123;</span><br><span class="line">	<span class="keyword">return</span> Message&#123;</span><br><span class="line">		Title: fmt.Sprintf(<span class="string">&quot;回归结果: %s&quot;</span>, summary.PlanID),</span><br><span class="line">		Body: fmt.Sprintf(</span><br><span class="line">			<span class="string">&quot;总数: %d\n通过: %d\n失败: %d&quot;</span>,</span><br><span class="line">			summary.Total,</span><br><span class="line">			summary.Passed,</span><br><span class="line">			summary.Failed,</span><br><span class="line">		),</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Service <span class="keyword">struct</span> &#123;</span><br><span class="line">	sender    sender</span><br><span class="line">	formatter Formatter</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewService</span><span class="params">(sender sender)</span></span> (*Service, <span class="type">error</span>) &#123;</span><br><span class="line">	<span class="keyword">if</span> sender == <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> <span class="literal">nil</span>, fmt.Errorf(<span class="string">&quot;sender can not be nil&quot;</span>)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> &amp;Service&#123;</span><br><span class="line">		sender:    sender,</span><br><span class="line">		formatter: Formatter&#123;&#125;,</span><br><span class="line">	&#125;, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *Service)</span></span> Notify(summary Summary) <span class="type">error</span> &#123;</span><br><span class="line">	<span class="keyword">if</span> summary.PlanID == <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> fmt.Errorf(<span class="string">&quot;plan id can not be empty&quot;</span>)</span><br><span class="line">	&#125;</span><br><span class="line">	msg := s.formatter.Build(summary)</span><br><span class="line">	<span class="keyword">return</span> s.sender.Send(msg)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这个版本里有几件事值得注意：</p>
+<ul>
+<li><code>sender</code> 接口由 <code>Service</code> 所在包定义</li>
+<li>接口只有一个方法，刚好覆盖真实依赖</li>
+<li><code>Formatter</code> 直接用具体类型，没有无意义抽象</li>
+<li><code>NewService</code> 在入口处拦住空依赖，避免后面 <code>typed nil</code> 混进来</li>
+</ul>
+<p>这就是比较典型的 Go 风格：<br><strong>边界上用小接口，内部逻辑优先具体类型。</strong></p>
+<h2 id="十四、再看一个写偏的版本，问题会更明显"><a href="#十四、再看一个写偏的版本，问题会更明显" class="headerlink" title="十四、再看一个写偏的版本，问题会更明显"></a>十四、再看一个写偏的版本，问题会更明显</h2><p>下面这个版本看起来“更面向对象”，但实际更重：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Formatter <span class="keyword">interface</span> &#123;</span><br><span class="line">	Build(Summary) Message</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Sender <span class="keyword">interface</span> &#123;</span><br><span class="line">	Send(Message) <span class="type">error</span></span><br><span class="line">	Name() <span class="type">string</span></span><br><span class="line">	Close() <span class="type">error</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Service <span class="keyword">interface</span> &#123;</span><br><span class="line">	Notify(Summary) <span class="type">error</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> ReportService <span class="keyword">struct</span> &#123;</span><br><span class="line">	formatter Formatter</span><br><span class="line">	sender    Sender</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>问题主要有三个：</p>
+<ol>
+<li><code>Service</code> 自己也被抽成了接口，但目前并没有第二个实现</li>
+<li><code>Sender</code> 被塞进了 <code>Name</code>、<code>Close</code>，而通知流程可能根本不需要</li>
+<li><code>Formatter</code> 也被提前接口化，但项目里只有一种实现</li>
+</ol>
+<p>这种代码的典型后果是：</p>
+<ul>
+<li>看起来每层都很抽象</li>
+<li>实际每层都只有一个实现</li>
+<li>测试替身越来越多</li>
+<li>阅读成本高于真实收益</li>
+</ul>
+<p>这也是为什么 Go 社区里一直强调：<strong>不要为了“设计感”制造接口。</strong></p>
+<h2 id="十五、什么时候-interface-真正有价值"><a href="#十五、什么时候-interface-真正有价值" class="headerlink" title="十五、什么时候 interface 真正有价值"></a>十五、什么时候 interface 真正有价值</h2><p>讲到这里，可以开始给出比较具体的工程判断了。</p>
+<p>下面这些场景，<code>interface</code> 通常是有明显价值的：</p>
+<h3 id="1-你在隔离外部依赖"><a href="#1-你在隔离外部依赖" class="headerlink" title="1. 你在隔离外部依赖"></a>1. 你在隔离外部依赖</h3><p>例如：</p>
+<ul>
+<li>HTTP client</li>
+<li>消息队列 producer</li>
+<li>第三方 SDK</li>
+<li>文件系统</li>
+<li>时钟、随机数、ID 生成器</li>
+</ul>
+<p>这些东西通常有两个特点：</p>
+<ul>
+<li>副作用明显</li>
+<li>测试里不适合直接跑真依赖</li>
+</ul>
+<p>这时用一个小接口把边界切开，收益很高。</p>
+<h3 id="2-调用方只需要一小部分能力"><a href="#2-调用方只需要一小部分能力" class="headerlink" title="2. 调用方只需要一小部分能力"></a>2. 调用方只需要一小部分能力</h3><p>例如通知服务只需要 <code>Send</code>，那就不要依赖一个带 <code>Close</code>、<code>HealthCheck</code> 的大接口。</p>
+<h3 id="3-你确实会有多种实现，而且这种多实现是现在就存在的"><a href="#3-你确实会有多种实现，而且这种多实现是现在就存在的" class="headerlink" title="3. 你确实会有多种实现，而且这种多实现是现在就存在的"></a>3. 你确实会有多种实现，而且这种多实现是现在就存在的</h3><p>例如：</p>
+<ul>
+<li>飞书发送器</li>
+<li>邮件发送器</li>
+<li>本地日志发送器</li>
+</ul>
+<p>注意是“现在就存在”或者“这个边界天然稳定”，不是“以后也许会有”。</p>
+<h3 id="4-你要给测试注入替身"><a href="#4-你要给测试注入替身" class="headerlink" title="4. 你要给测试注入替身"></a>4. 你要给测试注入替身</h3><p>这也是 Go 里接口最常见、最务实的价值之一。</p>
+<h2 id="十六、什么时候更应该坚持用具体类型"><a href="#十六、什么时候更应该坚持用具体类型" class="headerlink" title="十六、什么时候更应该坚持用具体类型"></a>十六、什么时候更应该坚持用具体类型</h2><p>反过来，下面这些情况通常不要急着写接口：</p>
+<h3 id="1-只是普通内部逻辑"><a href="#1-只是普通内部逻辑" class="headerlink" title="1. 只是普通内部逻辑"></a>1. 只是普通内部逻辑</h3><p>例如：</p>
+<ul>
+<li>统计函数</li>
+<li>格式化函数</li>
+<li>校验函数</li>
+<li>纯内存数据转换</li>
+</ul>
+<p>这些逻辑没有外部依赖，也没有明确替换边界，直接写具体类型通常更清楚。</p>
+<h3 id="2-当前只有一个实现，而且你看不到稳定的变化方向"><a href="#2-当前只有一个实现，而且你看不到稳定的变化方向" class="headerlink" title="2. 当前只有一个实现，而且你看不到稳定的变化方向"></a>2. 当前只有一个实现，而且你看不到稳定的变化方向</h3><p>不要把“以后可能扩展”当成默认前提。<br>大多数“以后可能”最后都不会发生。</p>
+<h3 id="3-这个接口只是把具体类型原样包了一层"><a href="#3-这个接口只是把具体类型原样包了一层" class="headerlink" title="3. 这个接口只是把具体类型原样包了一层"></a>3. 这个接口只是把具体类型原样包了一层</h3><p>如果一个接口的方法几乎和具体类型一模一样，而且整个项目只有这一种实现，那通常只是在增加跳转层。</p>
+<h3 id="4-你开始为了接口而接口"><a href="#4-你开始为了接口而接口" class="headerlink" title="4. 你开始为了接口而接口"></a>4. 你开始为了接口而接口</h3><p>出现这些信号时就要警惕：</p>
+<ul>
+<li>每个 struct 都有一个同名 interface</li>
+<li>每个 interface 只有一个实现</li>
+<li>mock 数量开始超过真实类型数量</li>
+<li>看代码时要不停来回跳定义</li>
+</ul>
+<p>这类项目往往不是“抽象做得好”，而是“抽象成本已经超过价值”。</p>
+<h2 id="十七、给这个小案例补最小测试，看看接口真正帮了什么"><a href="#十七、给这个小案例补最小测试，看看接口真正帮了什么" class="headerlink" title="十七、给这个小案例补最小测试，看看接口真正帮了什么"></a>十七、给这个小案例补最小测试，看看接口真正帮了什么</h2><p>接口最容易体现价值的地方，不是 PPT 式架构图，而是测试。</p>
+<p>例如给 <code>Service</code> 写一个最小替身：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> report</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> <span class="string">&quot;testing&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> stubSender <span class="keyword">struct</span> &#123;</span><br><span class="line">	messages []Message</span><br><span class="line">	err      <span class="type">error</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *stubSender)</span></span> Send(msg Message) <span class="type">error</span> &#123;</span><br><span class="line">	<span class="keyword">if</span> s.err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> s.err</span><br><span class="line">	&#125;</span><br><span class="line">	s.messages = <span class="built_in">append</span>(s.messages, msg)</span><br><span class="line">	<span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestServiceNotify</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">	sender := &amp;stubSender&#123;&#125;</span><br><span class="line">	service, err := NewService(sender)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;create service failed: %v&quot;</span>, err)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	summary := Summary&#123;</span><br><span class="line">		PlanID: <span class="string">&quot;nightly-regression&quot;</span>,</span><br><span class="line">		Total:  <span class="number">120</span>,</span><br><span class="line">		Passed: <span class="number">118</span>,</span><br><span class="line">		Failed: <span class="number">2</span>,</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	err = service.Notify(summary)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;notify failed: %v&quot;</span>, err)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(sender.messages) != <span class="number">1</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;want 1 message, got %d&quot;</span>, <span class="built_in">len</span>(sender.messages))</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> sender.messages[<span class="number">0</span>].Title == <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;message title should not be empty&quot;</span>)</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这个测试里，接口带来的收益非常直接：</p>
+<ul>
+<li>不需要真的发飞书或邮件</li>
+<li>不需要网络</li>
+<li>不需要第三方配置</li>
+<li>只验证业务流程和消息内容</li>
+</ul>
+<p>这就是“抽象边界服务于测试”的典型好例子。</p>
+<h2 id="十八、怎么验证这篇里的代码理解是不是到位"><a href="#十八、怎么验证这篇里的代码理解是不是到位" class="headerlink" title="十八、怎么验证这篇里的代码理解是不是到位"></a>十八、怎么验证这篇里的代码理解是不是到位</h2><p>可以按这个顺序自己做一遍验证：</p>
+<ol>
+<li>先写一个 <code>FeishuBot</code>，让它实现 <code>Send(Message) error</code></li>
+<li>再写一个 <code>EmailSender</code>，复用同一个 <code>Service</code></li>
+<li>把 <code>Send</code> 从值接收者改成指针接收者，观察赋值给接口时的编译错误</li>
+<li>故意把 <code>var bot *FeishuBot = nil</code> 塞进接口，观察 <code>n == nil</code> 的结果</li>
+<li>给 <code>Service</code> 写一个 <code>stubSender</code>，跑一组最小测试</li>
+</ol>
+<p>如果这五步都能自己做通，<code>interface</code> 的大部分核心理解就已经建立起来了。</p>
+<p>理论上可以执行：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">go <span class="built_in">test</span> ./...</span><br></pre></td></tr></table></figure>
+
+<p>但这台环境当前没有 <code>go</code> 命令，所以这里我只能给出验证路径，没法实际跑文中的测试代码。</p>
+<h2 id="十九、排障时最值得先查的四类问题"><a href="#十九、排障时最值得先查的四类问题" class="headerlink" title="十九、排障时最值得先查的四类问题"></a>十九、排障时最值得先查的四类问题</h2><p>项目里如果一碰接口就报错，通常先看这四类：</p>
+<h3 id="1-方法签名不匹配"><a href="#1-方法签名不匹配" class="headerlink" title="1. 方法签名不匹配"></a>1. 方法签名不匹配</h3><p>例如参数、返回值、接收者方法名只要有一个不一致，都不算实现。</p>
+<h3 id="2-指针接收者和值接收者不匹配"><a href="#2-指针接收者和值接收者不匹配" class="headerlink" title="2. 指针接收者和值接收者不匹配"></a>2. 指针接收者和值接收者不匹配</h3><p>看到这类报错时，先别急着改接口，先确认你到底传进去的是值还是指针。</p>
+<h3 id="3-typed-nil"><a href="#3-typed-nil" class="headerlink" title="3. typed nil"></a>3. <code>typed nil</code></h3><p>如果你明明判断了 <code>iface != nil</code>，结果调用时还是 panic，就要高度怀疑是不是把空指针装进了接口。</p>
+<h3 id="4-接口过大，导致实现和测试都很重"><a href="#4-接口过大，导致实现和测试都很重" class="headerlink" title="4. 接口过大，导致实现和测试都很重"></a>4. 接口过大，导致实现和测试都很重</h3><p>如果一个 mock 需要补五六个空方法，往往说明接口已经太胖了。</p>
+<h2 id="二十、这篇文章里最重要的工程判断"><a href="#二十、这篇文章里最重要的工程判断" class="headerlink" title="二十、这篇文章里最重要的工程判断"></a>二十、这篇文章里最重要的工程判断</h2><p>如果只保留几条最关键的判断，可以先记这几条：</p>
+<ol>
+<li><code>interface</code> 先服务边界，不先服务“设计感”</li>
+<li>接口尽量小，只暴露调用方真的需要的行为</li>
+<li>通常优先让调用方定义接口</li>
+<li>内部纯逻辑优先用具体类型，别为了整齐把所有东西接口化</li>
+<li>先写出具体代码，等边界稳定、替换需求明确后再抽象，往往比一开始就设计一层更稳</li>
+</ol>
+<p>这几条看起来不花哨，但在真实项目里非常耐用。</p>
+<h2 id="二十一、边界：这篇先不展开哪些内容"><a href="#二十一、边界：这篇先不展开哪些内容" class="headerlink" title="二十一、边界：这篇先不展开哪些内容"></a>二十一、边界：这篇先不展开哪些内容</h2><p>这一篇先把 <code>interface</code> 最核心、最容易踩坑的部分讲清楚，但还没展开这些内容：</p>
+<ul>
+<li>空接口 <code>any</code> 和 JSON&#x2F;反序列化场景</li>
+<li>类型断言和 type switch 的系统用法</li>
+<li><code>error</code> 为什么本身就是一个接口</li>
+<li><code>io.Reader</code>、<code>io.Writer</code> 这种标准库接口为什么设计得这么小</li>
+<li>泛型出现之后，哪些原本依赖 <code>interface&#123;&#125;</code> 的写法会变化</li>
+</ul>
+<p>这些内容后面会分别讲，不适合这一篇一次塞完。</p>
+<h2 id="二十二、一个实际练习"><a href="#二十二、一个实际练习" class="headerlink" title="二十二、一个实际练习"></a>二十二、一个实际练习</h2><p>可以自己做下面这个练习，把这篇的理解再固化一遍：</p>
+<p>题目：做一个最小通知中心，支持飞书和邮件两种发送器。</p>
+<p>要求：</p>
+<ul>
+<li>定义 <code>Summary</code>、<code>Message</code>、<code>Service</code></li>
+<li>由 <code>Service</code> 所在包定义一个只包含 <code>Send(Message) error</code> 的小接口</li>
+<li><code>Formatter</code> 直接使用具体类型，不要先抽象接口</li>
+<li><code>NewService</code> 里拦住空依赖</li>
+<li>写两个实现：<code>FeishuBot</code>、<code>EmailSender</code></li>
+<li>写一个 <code>stubSender</code> 测试 <code>Notify</code></li>
+<li>再故意制造一个 <code>typed nil</code> 场景，解释为什么 <code>iface != nil</code></li>
+</ul>
+<p>如果这套练习能独立写下来，你对 <code>interface</code> 的理解就已经不只是“知道语法”了。</p>
+<h2 id="二十三、结语"><a href="#二十三、结语" class="headerlink" title="二十三、结语"></a>二十三、结语</h2><p>Go 里的 <code>interface</code> 确实不难学会写，但很容易学会滥用。</p>
+<p>真正稳定的理解不是“看到抽象就上接口”，而是先问三个问题：</p>
+<ul>
+<li>这里有没有真实边界</li>
+<li>调用方到底只需要什么能力</li>
+<li>去掉这层接口，代码会不会更直接</li>
+</ul>
+<p>如果答案是：</p>
+<ul>
+<li>有真实边界</li>
+<li>依赖能力很明确</li>
+<li>小接口能明显降低耦合和测试成本</li>
+</ul>
+<p>那就用。</p>
+<p>如果答案是：</p>
+<ul>
+<li>只是内部逻辑</li>
+<li>只有一个实现</li>
+<li>接口只是把具体类型再包一层</li>
+</ul>
+<p>那就先别用。</p>
+<p><code>interface</code> 的价值，从来不在“项目里接口多不多”，而在<strong>每一个接口是不是都真的代表了一条清楚的行为边界。</strong></p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E5%B7%A5%E7%A8%8B%E5%8C%96/" rel="tag"># 工程化</a>
+              <a href="/tags/Go/" rel="tag"># Go</a>
+              <a href="/tags/Go%E4%B8%93%E9%A2%98/" rel="tag"># Go专题</a>
+              <a href="/tags/%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80/" rel="tag"># 编程语言</a>
+              <a href="/tags/interface/" rel="tag"># interface</a>
+              <a href="/tags/%E6%8A%BD%E8%B1%A1/" rel="tag"># 抽象</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2018/05/23/Python-06-Python%E8%A3%85%E9%A5%B0%E5%99%A8%E8%BF%AD%E4%BB%A3%E5%99%A8%E7%94%9F%E6%88%90%E5%99%A8%E5%9C%A8%E7%9C%9F%E5%AE%9E%E9%A1%B9%E7%9B%AE%E9%87%8C%E5%88%B0%E5%BA%95%E6%80%8E%E4%B9%88%E7%94%A8/" rel="prev" title="Python：装饰器、迭代器、生成器在真实项目里到底怎么用">
+                  <i class="fa fa-angle-left"></i> Python：装饰器、迭代器、生成器在真实项目里到底怎么用
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2018/05/30/Python-07-Python%E5%BC%82%E5%B8%B8%E5%A4%84%E7%90%86%E4%B8%8A%E4%B8%8B%E6%96%87%E7%AE%A1%E7%90%86%E5%92%8C%E8%B5%84%E6%BA%90%E6%B8%85%E7%90%86%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E5%86%99%E6%89%8D%E7%A8%B3/" rel="next" title="Python：异常处理、上下文管理和资源清理应该怎么写才稳">
+                  Python：异常处理、上下文管理和资源清理应该怎么写才稳 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

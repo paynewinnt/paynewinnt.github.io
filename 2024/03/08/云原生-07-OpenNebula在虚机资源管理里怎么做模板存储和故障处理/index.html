@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="第一次用 OpenNebula 管理测试虚机时，最先完成的是：  从面板里建模板 直接按模板发虚机 挂载一个数据盘 需要时手动删掉实例  这套方式在规模小的时候还能勉强维持，但环境一旦多起来，很快会出现这些问题：  模板版本越来越多，没人知道哪份才是当前可用基线 同一种模板，在不同存储池和宿主机上表现不一致 数据盘越挂越多，实例删了，卷和残留目录还在 宿主机抖动后，实例状态和实际运行状态对不上 测">
+<meta property="og:type" content="article">
+<meta property="og:title" content="云原生-07-OpenNebula在虚机资源管理里怎么做模板存储和故障处理">
+<meta property="og:url" content="https://paynewinnt.github.io/2024/03/08/%E4%BA%91%E5%8E%9F%E7%94%9F-07-OpenNebula%E5%9C%A8%E8%99%9A%E6%9C%BA%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86%E9%87%8C%E6%80%8E%E4%B9%88%E5%81%9A%E6%A8%A1%E6%9D%BF%E5%AD%98%E5%82%A8%E5%92%8C%E6%95%85%E9%9A%9C%E5%A4%84%E7%90%86/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="第一次用 OpenNebula 管理测试虚机时，最先完成的是：  从面板里建模板 直接按模板发虚机 挂载一个数据盘 需要时手动删掉实例  这套方式在规模小的时候还能勉强维持，但环境一旦多起来，很快会出现这些问题：  模板版本越来越多，没人知道哪份才是当前可用基线 同一种模板，在不同存储池和宿主机上表现不一致 数据盘越挂越多，实例删了，卷和残留目录还在 宿主机抖动后，实例状态和实际运行状态对不上 测">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2024-03-08T12:30:00.000Z">
+<meta property="article:modified_time" content="2024-03-08T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="工程实践">
+<meta property="article:tag" content="测试环境">
+<meta property="article:tag" content="虚拟化与云平台">
+<meta property="article:tag" content="OpenNebula">
+<meta property="article:tag" content="虚机模板">
+<meta property="article:tag" content="存储管理">
+<meta property="article:tag" content="资源治理">
+<meta property="article:tag" content="故障处理">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2024/03/08/%E4%BA%91%E5%8E%9F%E7%94%9F-07-OpenNebula%E5%9C%A8%E8%99%9A%E6%9C%BA%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86%E9%87%8C%E6%80%8E%E4%B9%88%E5%81%9A%E6%A8%A1%E6%9D%BF%E5%AD%98%E5%82%A8%E5%92%8C%E6%95%85%E9%9A%9C%E5%A4%84%E7%90%86/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2024/03/08/%E4%BA%91%E5%8E%9F%E7%94%9F-07-OpenNebula%E5%9C%A8%E8%99%9A%E6%9C%BA%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86%E9%87%8C%E6%80%8E%E4%B9%88%E5%81%9A%E6%A8%A1%E6%9D%BF%E5%AD%98%E5%82%A8%E5%92%8C%E6%95%85%E9%9A%9C%E5%A4%84%E7%90%86/","path":"2024/03/08/云原生-07-OpenNebula在虚机资源管理里怎么做模板存储和故障处理/","title":"云原生-07-OpenNebula在虚机资源管理里怎么做模板存储和故障处理"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>云原生-07-OpenNebula在虚机资源管理里怎么做模板存储和故障处理 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E5%85%88%E6%8A%8A%E8%B5%84%E6%BA%90%E6%B2%BB%E7%90%86%E5%AF%B9%E8%B1%A1%E6%8B%86%E6%B8%85"><span class="nav-number">1.</span> <span class="nav-text">一、先把资源治理对象拆清</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E6%A8%A1%E6%9D%BF%E6%B2%BB%E7%90%86%E8%A6%81%E5%85%88%E8%A7%A3%E5%86%B3%E2%80%9C%E8%B0%81%E6%98%AF%E5%9F%BA%E7%BA%BF%E2%80%9D"><span class="nav-number">2.</span> <span class="nav-text">二、模板治理要先解决“谁是基线”</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%9B%B4%E9%80%82%E5%90%88%E9%95%BF%E6%9C%9F%E7%BB%B4%E6%8A%A4%E7%9A%84%E6%A8%A1%E6%9D%BF%E5%88%86%E5%B1%82"><span class="nav-number">2.1.</span> <span class="nav-text">1. 更适合长期维护的模板分层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%A8%A1%E6%9D%BF%E9%87%8C%E5%93%AA%E4%BA%9B%E4%B8%9C%E8%A5%BF%E5%BA%94%E8%AF%A5%E5%9B%BA%E5%AE%9A%EF%BC%8C%E5%93%AA%E4%BA%9B%E4%B8%8D%E8%AF%A5%E5%9B%BA%E5%AE%9A"><span class="nav-number">2.2.</span> <span class="nav-text">2. 模板里哪些东西应该固定，哪些不该固定</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E5%AD%98%E5%82%A8%E6%B2%BB%E7%90%86%E4%B8%8D%E5%8F%AA%E6%98%AF%E5%A4%9F%E4%B8%8D%E5%A4%9F%E7%94%A8%EF%BC%8C%E6%9B%B4%E9%87%8D%E8%A6%81%E7%9A%84%E6%98%AF%E5%B9%B2%E4%B8%8D%E5%B9%B2%E5%87%80"><span class="nav-number">3.</span> <span class="nav-text">三、存储治理不只是够不够用，更重要的是干不干净</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%87%B3%E5%B0%91%E5%8C%BA%E5%88%86%E4%B8%89%E7%B1%BB%E5%AD%98%E5%82%A8%E5%AF%B9%E8%B1%A1"><span class="nav-number">3.1.</span> <span class="nav-text">1. 至少区分三类存储对象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%AD%98%E5%82%A8%E8%A7%84%E5%88%92%E8%87%B3%E5%B0%91%E5%9B%9E%E7%AD%94%E4%B8%89%E4%B8%AA%E9%97%AE%E9%A2%98"><span class="nav-number">3.2.</span> <span class="nav-text">2. 存储规划至少回答三个问题</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%9B%9E%E6%94%B6%E9%93%BE%E8%B7%AF%E5%BF%85%E9%A1%BB%E8%90%BD%E5%88%B0%E5%8D%B7%E5%92%8C%E7%9B%AE%E5%BD%95"><span class="nav-number">3.3.</span> <span class="nav-text">3. 回收链路必须落到卷和目录</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E6%95%85%E9%9A%9C%E5%A4%84%E7%90%86%E8%A6%81%E6%8C%89%E5%AF%B9%E8%B1%A1%E5%88%86%EF%BC%8C%E4%B8%8D%E8%A6%81%E5%8F%AA%E7%9B%AF%E8%99%9A%E6%9C%BA%E7%8A%B6%E6%80%81"><span class="nav-number">4.</span> <span class="nav-text">四、故障处理要按对象分，不要只盯虚机状态</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%A8%A1%E6%9D%BF%E6%95%85%E9%9A%9C"><span class="nav-number">4.1.</span> <span class="nav-text">1. 模板故障</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%AD%98%E5%82%A8%E6%95%85%E9%9A%9C"><span class="nav-number">4.2.</span> <span class="nav-text">2. 存储故障</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%AE%BF%E4%B8%BB%E6%9C%BA%E6%95%85%E9%9A%9C"><span class="nav-number">4.3.</span> <span class="nav-text">3. 宿主机故障</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E6%9C%80%E5%B0%8F%E5%8F%AF%E6%89%A7%E8%A1%8C%E9%AA%A8%E6%9E%B6"><span class="nav-number">5.</span> <span class="nav-text">五、最小可执行骨架</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%A8%A1%E6%9D%BF%E4%BE%A7"><span class="nav-number">5.1.</span> <span class="nav-text">1. 模板侧</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%AD%98%E5%82%A8%E4%BE%A7"><span class="nav-number">5.2.</span> <span class="nav-text">2. 存储侧</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%95%85%E9%9A%9C%E4%BE%A7"><span class="nav-number">5.3.</span> <span class="nav-text">3. 故障侧</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E6%9C%80%E5%B0%8F%E8%AE%B0%E5%BD%95%E8%A1%A8"><span class="nav-number">6.</span> <span class="nav-text">六、最小记录表</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E5%B8%B8%E8%A7%81%E5%9D%91"><span class="nav-number">7.</span> <span class="nav-text">七、常见坑</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%A8%A1%E6%9D%BF%E5%8F%AA%E5%A2%9E%E4%B8%8D%E5%87%8F"><span class="nav-number">7.1.</span> <span class="nav-text">1. 模板只增不减</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%AD%98%E5%82%A8%E5%8F%AA%E7%9C%8B%E6%80%BB%E5%AE%B9%E9%87%8F%EF%BC%8C%E4%B8%8D%E7%9C%8B%E6%AE%8B%E7%95%99%E5%AF%B9%E8%B1%A1"><span class="nav-number">7.2.</span> <span class="nav-text">2. 存储只看总容量，不看残留对象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%8A%8A%E5%AE%9E%E4%BE%8B%E5%88%A0%E9%99%A4%E5%BD%93%E6%88%90%E8%B5%84%E6%BA%90%E5%9B%9E%E6%94%B6%E5%AE%8C%E6%88%90"><span class="nav-number">7.3.</span> <span class="nav-text">3. 把实例删除当成资源回收完成</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%8F%AA%E7%9C%8B%E9%9D%A2%E6%9D%BF%E7%8A%B6%E6%80%81%EF%BC%8C%E4%B8%8D%E7%9C%8B%E5%AE%BF%E4%B8%BB%E6%9C%BA%E5%92%8C%E5%AD%98%E5%82%A8%E8%AF%81%E6%8D%AE"><span class="nav-number">7.4.</span> <span class="nav-text">4. 只看面板状态，不看宿主机和存储证据</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E7%94%A8%E4%B8%B4%E6%97%B6%E6%A8%A1%E6%9D%BF%E6%9B%BF%E4%BB%A3%E9%95%BF%E6%9C%9F%E6%A8%A1%E6%9D%BF"><span class="nav-number">7.5.</span> <span class="nav-text">5. 用临时模板替代长期模板</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E7%9C%9F%E5%AE%9E%E6%A1%88%E4%BE%8B%EF%BC%9A%E8%99%9A%E6%9C%BA%E5%88%A0%E6%8E%89%E4%BA%86%EF%BC%8C%E4%BD%86%E5%AD%98%E5%82%A8%E8%BF%98%E6%98%AF%E6%8C%81%E7%BB%AD%E5%91%8A%E8%AD%A6"><span class="nav-number">8.</span> <span class="nav-text">八、真实案例：虚机删掉了，但存储还是持续告警</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%9C%BA%E6%99%AF"><span class="nav-number">8.1.</span> <span class="nav-text">1. 场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%89%A7%E8%A1%8C"><span class="nav-number">8.2.</span> <span class="nav-text">2. 执行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%8E%B0%E8%B1%A1"><span class="nav-number">8.3.</span> <span class="nav-text">3. 现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%8E%92%E6%9F%A5"><span class="nav-number">8.4.</span> <span class="nav-text">4. 排查</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E4%BF%AE%E5%A4%8D"><span class="nav-number">8.5.</span> <span class="nav-text">5. 修复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E7%BB%93%E8%AE%BA"><span class="nav-number">9.</span> <span class="nav-text">九、结论</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2024/03/08/%E4%BA%91%E5%8E%9F%E7%94%9F-07-OpenNebula%E5%9C%A8%E8%99%9A%E6%9C%BA%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86%E9%87%8C%E6%80%8E%E4%B9%88%E5%81%9A%E6%A8%A1%E6%9D%BF%E5%AD%98%E5%82%A8%E5%92%8C%E6%95%85%E9%9A%9C%E5%A4%84%E7%90%86/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="云原生-07-OpenNebula在虚机资源管理里怎么做模板存储和故障处理 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          云原生-07-OpenNebula在虚机资源管理里怎么做模板存储和故障处理
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2024-03-08 20:30:00" itemprop="dateCreated datePublished" datetime="2024-03-08T20:30:00+08:00">2024-03-08</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/%E4%BA%91%E5%8E%9F%E7%94%9F/" itemprop="url" rel="index"><span itemprop="name">云原生</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>2.2k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>8 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>第一次用 <code>OpenNebula</code> 管理测试虚机时，最先完成的是：</p>
+<ul>
+<li>从面板里建模板</li>
+<li>直接按模板发虚机</li>
+<li>挂载一个数据盘</li>
+<li>需要时手动删掉实例</li>
+</ul>
+<p>这套方式在规模小的时候还能勉强维持，但环境一旦多起来，很快会出现这些问题：</p>
+<ul>
+<li>模板版本越来越多，没人知道哪份才是当前可用基线</li>
+<li>同一种模板，在不同存储池和宿主机上表现不一致</li>
+<li>数据盘越挂越多，实例删了，卷和残留目录还在</li>
+<li>宿主机抖动后，实例状态和实际运行状态对不上</li>
+<li>测试团队以为资源够用，实际已经被孤儿卷和历史模板吃掉</li>
+</ul>
+<p>这说明 <code>OpenNebula</code> 在测试环境里的难点，并不是会不会点页面，而是：</p>
+<p><strong>怎么把模板、存储、配额、生命周期和故障处理收成一套长期稳定的资源治理方式。</strong></p>
+<p>这篇文章只讨论一个核心问题：</p>
+<p><strong>OpenNebula 在虚机资源管理里，模板怎么做、存储怎么规划、故障怎么处理，才能让测试环境长期可用。</strong></p>
+<h2 id="一、先把资源治理对象拆清"><a href="#一、先把资源治理对象拆清" class="headerlink" title="一、先把资源治理对象拆清"></a>一、先把资源治理对象拆清</h2><p>OpenNebula 场景里最容易混在一起的对象有四类：</p>
+<ul>
+<li>模板：决定实例创建时的镜像、CPU、内存、网卡、磁盘和上下文</li>
+<li>存储：系统盘、数据盘、镜像仓库、备份卷</li>
+<li>运行对象：虚机实例、宿主机、数据存储、网络</li>
+<li>生命周期动作：创建、扩容、冻结、回收、迁移、故障恢复</li>
+</ul>
+<p>如果这些对象不先拆清，后面最容易出现两种失真：</p>
+<ul>
+<li>以为在治理模板，实际上只是复制出更多模板</li>
+<li>以为在治理存储，实际上只是把残留资源越堆越多</li>
+</ul>
+<h2 id="二、模板治理要先解决“谁是基线”"><a href="#二、模板治理要先解决“谁是基线”" class="headerlink" title="二、模板治理要先解决“谁是基线”"></a>二、模板治理要先解决“谁是基线”</h2><p>模板越多越不是能力，真正有价值的是能不能沉淀出稳定基线。</p>
+<h3 id="1-更适合长期维护的模板分层"><a href="#1-更适合长期维护的模板分层" class="headerlink" title="1. 更适合长期维护的模板分层"></a>1. 更适合长期维护的模板分层</h3><p>一套更稳的分层通常包括：</p>
+<ul>
+<li>基础模板：操作系统、初始化方式、基础工具</li>
+<li>场景模板：数据库节点、测试执行机、跳板机、服务节点</li>
+<li>临时发布模板：只承载单次实验差异，不作为长期基线</li>
+</ul>
+<p>如果把每一次改动都另存为新模板，几个月之后往往会出现：</p>
+<ul>
+<li>名称相近的模板堆满面板</li>
+<li>同一场景存在多个“看上去都能用”的版本</li>
+<li>故障出现时无法确认实例到底源自哪份模板</li>
+</ul>
+<h3 id="2-模板里哪些东西应该固定，哪些不该固定"><a href="#2-模板里哪些东西应该固定，哪些不该固定" class="headerlink" title="2. 模板里哪些东西应该固定，哪些不该固定"></a>2. 模板里哪些东西应该固定，哪些不该固定</h3><p>更适合固定在模板里的通常是：</p>
+<ul>
+<li>基础镜像</li>
+<li>CPU &#x2F; 内存基线</li>
+<li>系统盘大小</li>
+<li>基础网络接口结构</li>
+</ul>
+<p>更适合放在实例化时注入的通常是：</p>
+<ul>
+<li>主机名</li>
+<li>环境标识</li>
+<li>项目组标签</li>
+<li>一次性脚本和密钥</li>
+</ul>
+<p>如果把环境差异直接写死进模板，后面模板就会变成“环境快照”，而不是“可复用基线”。</p>
+<h2 id="三、存储治理不只是够不够用，更重要的是干不干净"><a href="#三、存储治理不只是够不够用，更重要的是干不干净" class="headerlink" title="三、存储治理不只是够不够用，更重要的是干不干净"></a>三、存储治理不只是够不够用，更重要的是干不干净</h2><p>OpenNebula 测试环境最容易被低估的，通常不是 CPU 和内存，而是存储。</p>
+<h3 id="1-至少区分三类存储对象"><a href="#1-至少区分三类存储对象" class="headerlink" title="1. 至少区分三类存储对象"></a>1. 至少区分三类存储对象</h3><ul>
+<li>镜像仓库：承载基础镜像和模板源</li>
+<li>系统盘存储：承载实例运行时系统盘</li>
+<li>数据盘存储：承载业务数据、日志、临时文件、挂载卷</li>
+</ul>
+<p>如果这三类不分开，后面最容易发生：</p>
+<ul>
+<li>镜像仓库被历史实验卷挤满</li>
+<li>系统盘和数据盘混在一起，无法评估真正容量</li>
+<li>回收动作只删虚机，不删卷，存储长期被残留资源吃掉</li>
+</ul>
+<h3 id="2-存储规划至少回答三个问题"><a href="#2-存储规划至少回答三个问题" class="headerlink" title="2. 存储规划至少回答三个问题"></a>2. 存储规划至少回答三个问题</h3><ul>
+<li>哪类盘允许长期保留</li>
+<li>哪类盘必须随实例回收</li>
+<li>哪类目录必须做容量告警</li>
+</ul>
+<h3 id="3-回收链路必须落到卷和目录"><a href="#3-回收链路必须落到卷和目录" class="headerlink" title="3. 回收链路必须落到卷和目录"></a>3. 回收链路必须落到卷和目录</h3><p>的“回收”只做到删实例，真正的问题却留在：</p>
+<ul>
+<li>孤儿卷</li>
+<li>失联模板</li>
+<li>历史快照</li>
+<li>宿主机本地残留目录</li>
+</ul>
+<p>所以回收完成的标准不该只是“实例没了”，而要进一步确认：</p>
+<ul>
+<li>卷是否同步清理</li>
+<li>快照是否清理</li>
+<li>存储目录是否归还空间</li>
+<li>模板引用链是否仍然正确</li>
+</ul>
+<h2 id="四、故障处理要按对象分，不要只盯虚机状态"><a href="#四、故障处理要按对象分，不要只盯虚机状态" class="headerlink" title="四、故障处理要按对象分，不要只盯虚机状态"></a>四、故障处理要按对象分，不要只盯虚机状态</h2><p>OpenNebula 里的故障，如果只盯实例状态，通常很容易误判。</p>
+<p>更合适的拆法是：</p>
+<ul>
+<li>模板故障：模板本身参数错、上下文注入错、引用镜像失效</li>
+<li>存储故障：卷挂载失败、空间不足、I&#x2F;O 退化、残留目录</li>
+<li>宿主机故障：节点失联、资源不足、迁移失败</li>
+<li>实例故障：系统起不来、网络不通、服务异常</li>
+</ul>
+<h3 id="1-模板故障"><a href="#1-模板故障" class="headerlink" title="1. 模板故障"></a>1. 模板故障</h3><p>典型现象：</p>
+<ul>
+<li>同类型实例集体启动失败</li>
+<li>上下文脚本不生效</li>
+<li>实例启动后环境标识错乱</li>
+</ul>
+<h3 id="2-存储故障"><a href="#2-存储故障" class="headerlink" title="2. 存储故障"></a>2. 存储故障</h3><p>典型现象：</p>
+<ul>
+<li>虚机能创建但磁盘挂载失败</li>
+<li>创建耗时越来越长</li>
+<li>实例删除了，空间没有回来</li>
+</ul>
+<h3 id="3-宿主机故障"><a href="#3-宿主机故障" class="headerlink" title="3. 宿主机故障"></a>3. 宿主机故障</h3><p>典型现象：</p>
+<ul>
+<li>部分实例状态正常，但控制台无响应</li>
+<li>迁移后实例不可用</li>
+<li>宿主机负载高，批量实例变慢</li>
+</ul>
+<h2 id="五、最小可执行骨架"><a href="#五、最小可执行骨架" class="headerlink" title="五、最小可执行骨架"></a>五、最小可执行骨架</h2><h3 id="1-模板侧"><a href="#1-模板侧" class="headerlink" title="1. 模板侧"></a>1. 模板侧</h3><ul>
+<li>建立基础模板、场景模板、临时模板三级目录</li>
+<li>每个模板都标记版本、用途、适用环境、责任人</li>
+<li>模板变更前先做最小启动校验</li>
+</ul>
+<h3 id="2-存储侧"><a href="#2-存储侧" class="headerlink" title="2. 存储侧"></a>2. 存储侧</h3><ul>
+<li>明确系统盘、数据盘、镜像仓库三类容量口径</li>
+<li>给数据盘和镜像仓库分别做告警阈值</li>
+<li>实例回收时同步校验卷和快照</li>
+</ul>
+<h3 id="3-故障侧"><a href="#3-故障侧" class="headerlink" title="3. 故障侧"></a>3. 故障侧</h3><ul>
+<li>按模板、存储、宿主机、实例四类分流</li>
+<li>每次故障保留实例信息、宿主机信息、卷信息和控制台截图</li>
+<li>不把“状态正常”当成“资源可用”</li>
+</ul>
+<h2 id="六、最小记录表"><a href="#六、最小记录表" class="headerlink" title="六、最小记录表"></a>六、最小记录表</h2><table>
+<thead>
+<tr>
+<th>对象</th>
+<th>当前状态</th>
+<th>关键证据</th>
+<th>影响范围</th>
+<th>已做动作</th>
+<th>是否恢复</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>模板</td>
+<td>版本变更</td>
+<td>模板 diff、上下文配置</td>
+<td>新建实例</td>
+<td>回退模板</td>
+<td>否</td>
+</tr>
+<tr>
+<td>数据盘</td>
+<td>空间高水位</td>
+<td>卷列表、宿主机目录</td>
+<td>多个项目组</td>
+<td>清理孤儿卷</td>
+<td>部分</td>
+</tr>
+<tr>
+<td>宿主机</td>
+<td>负载异常</td>
+<td>CPU、I&#x2F;O、迁移记录</td>
+<td>某批实例</td>
+<td>迁移实例</td>
+<td>是</td>
+</tr>
+</tbody></table>
+<h2 id="七、常见坑"><a href="#七、常见坑" class="headerlink" title="七、常见坑"></a>七、常见坑</h2><h3 id="1-模板只增不减"><a href="#1-模板只增不减" class="headerlink" title="1. 模板只增不减"></a>1. 模板只增不减</h3><p>最后没人知道哪个模板是真正可用基线。</p>
+<h3 id="2-存储只看总容量，不看残留对象"><a href="#2-存储只看总容量，不看残留对象" class="headerlink" title="2. 存储只看总容量，不看残留对象"></a>2. 存储只看总容量，不看残留对象</h3><p>空间不够时才发现大量孤儿卷和历史快照一直没清。</p>
+<h3 id="3-把实例删除当成资源回收完成"><a href="#3-把实例删除当成资源回收完成" class="headerlink" title="3. 把实例删除当成资源回收完成"></a>3. 把实例删除当成资源回收完成</h3><p>卷、快照、宿主机残留目录如果不查，资源会长期被吃掉。</p>
+<h3 id="4-只看面板状态，不看宿主机和存储证据"><a href="#4-只看面板状态，不看宿主机和存储证据" class="headerlink" title="4. 只看面板状态，不看宿主机和存储证据"></a>4. 只看面板状态，不看宿主机和存储证据</h3><p>很多状态同步问题会让面板看起来正常，实际已经不一致。</p>
+<h3 id="5-用临时模板替代长期模板"><a href="#5-用临时模板替代长期模板" class="headerlink" title="5. 用临时模板替代长期模板"></a>5. 用临时模板替代长期模板</h3><p>一次实验有效，不代表适合沉淀成全局基线。</p>
+<h2 id="八、真实案例：虚机删掉了，但存储还是持续告警"><a href="#八、真实案例：虚机删掉了，但存储还是持续告警" class="headerlink" title="八、真实案例：虚机删掉了，但存储还是持续告警"></a>八、真实案例：虚机删掉了，但存储还是持续告警</h2><h3 id="1-场景"><a href="#1-场景" class="headerlink" title="1. 场景"></a>1. 场景</h3><p>某套 OpenNebula 测试环境在一次批量回归结束后，实例都已经清理，面板里也看不到明显残留对象，但存储池空间仍持续告警，后续新实例创建越来越慢。</p>
+<h3 id="2-执行"><a href="#2-执行" class="headerlink" title="2. 执行"></a>2. 执行</h3><p>现场先查实例列表，确认没有大批量运行中的虚机；随后检查模板列表，也没有异常暴涨。表面上看，资源应该已经释放。</p>
+<h3 id="3-现象"><a href="#3-现象" class="headerlink" title="3. 现象"></a>3. 现象</h3><p>实例层面很“干净”，但存储层仍在快速逼近高水位，说明问题不在前台实例，而在后端卷和目录。</p>
+<h3 id="4-排查"><a href="#4-排查" class="headerlink" title="4. 排查"></a>4. 排查</h3><p>继续往下查卷和快照，发现一批历史数据盘没有随着实例回收，部分宿主机上还残留旧目录；同时某个临时模板被多次复制，引用链混乱，导致清理脚本没有正确匹配到对应卷。</p>
+<h3 id="5-修复"><a href="#5-修复" class="headerlink" title="5. 修复"></a>5. 修复</h3><p>现场先暂停新建大批量实例，随后集中清理孤儿卷和宿主机残留目录，并把临时模板合并回基础模板链。复盘时补了三项动作：</p>
+<ul>
+<li>回收流程增加卷和快照核对</li>
+<li>模板版本统一纳入命名规范</li>
+<li>存储告警改成按对象拆分，而不是只报总容量</li>
+</ul>
+<h2 id="九、结论"><a href="#九、结论" class="headerlink" title="九、结论"></a>九、结论</h2><p>OpenNebula 在测试环境里的稳定性，很多时候不取决于会不会建虚机，而取决于模板基线、存储治理和故障分流是不是清楚。</p>
+<p>更适合长期使用的方式通常是：</p>
+<ul>
+<li>先沉淀模板基线</li>
+<li>再拆清存储对象和回收边界</li>
+<li>最后把模板、存储、宿主机、实例四类故障分流处理</li>
+</ul>
+<p>这样资源管理才不会越用越乱。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E5%B7%A5%E7%A8%8B%E5%AE%9E%E8%B7%B5/" rel="tag"># 工程实践</a>
+              <a href="/tags/%E6%B5%8B%E8%AF%95%E7%8E%AF%E5%A2%83/" rel="tag"># 测试环境</a>
+              <a href="/tags/%E8%99%9A%E6%8B%9F%E5%8C%96%E4%B8%8E%E4%BA%91%E5%B9%B3%E5%8F%B0/" rel="tag"># 虚拟化与云平台</a>
+              <a href="/tags/OpenNebula/" rel="tag"># OpenNebula</a>
+              <a href="/tags/%E8%99%9A%E6%9C%BA%E6%A8%A1%E6%9D%BF/" rel="tag"># 虚机模板</a>
+              <a href="/tags/%E5%AD%98%E5%82%A8%E7%AE%A1%E7%90%86/" rel="tag"># 存储管理</a>
+              <a href="/tags/%E8%B5%84%E6%BA%90%E6%B2%BB%E7%90%86/" rel="tag"># 资源治理</a>
+              <a href="/tags/%E6%95%85%E9%9A%9C%E5%A4%84%E7%90%86/" rel="tag"># 故障处理</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2024/03/08/%E8%99%9A%E6%8B%9F%E5%8C%96%E4%B8%8E%E4%BA%91%E5%B9%B3%E5%8F%B0-11-Opennebula%E4%BF%AE%E6%94%B9%E9%BB%98%E8%AE%A4%E5%AD%98%E5%82%A8%E5%9C%B0%E5%9D%80/" rel="prev" title="OpenNebula：修改默认存储路径">
+                  <i class="fa fa-angle-left"></i> OpenNebula：修改默认存储路径
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2024/03/15/%E8%99%9A%E6%8B%9F%E5%8C%96%E4%B8%8E%E4%BA%91%E5%B9%B3%E5%8F%B0-12-opennebula%E9%97%AE%E9%A2%98%E8%AE%B0%E5%BD%95%E5%8F%8A%E4%BF%AE%E5%A4%8D/" rel="next" title="OpenNebula：问题排查与修复">
+                  OpenNebula：问题排查与修复 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

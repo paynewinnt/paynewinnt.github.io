@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="Go 服务测试最难的不是会不会写 &#96;go test&#96;，而是怎么把表驱动测试、test double、mock、集成测试和分层策略接成一套稳定方案。这篇文章围绕一个巡检任务服务，讲清哪里该写纯单元测试，哪里该用 fake 或 mock，哪里必须做集成测试，以及 flaky test 该怎么排查。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Go：服务怎么做表驱动测试、mock 和集成测试分层">
+<meta property="og:url" content="https://paynewinnt.github.io/2018/08/01/Go-16-Go%E6%9C%8D%E5%8A%A1%E6%80%8E%E4%B9%88%E5%81%9A%E8%A1%A8%E9%A9%B1%E5%8A%A8%E6%B5%8B%E8%AF%95mock%E5%92%8C%E9%9B%86%E6%88%90%E6%B5%8B%E8%AF%95%E5%88%86%E5%B1%82/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="Go 服务测试最难的不是会不会写 &#96;go test&#96;，而是怎么把表驱动测试、test double、mock、集成测试和分层策略接成一套稳定方案。这篇文章围绕一个巡检任务服务，讲清哪里该写纯单元测试，哪里该用 fake 或 mock，哪里必须做集成测试，以及 flaky test 该怎么排查。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2018-08-01T12:30:00.000Z">
+<meta property="article:modified_time" content="2018-08-01T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="工程化">
+<meta property="article:tag" content="Go">
+<meta property="article:tag" content="Go专题">
+<meta property="article:tag" content="编程语言">
+<meta property="article:tag" content="测试">
+<meta property="article:tag" content="表驱动测试">
+<meta property="article:tag" content="mock">
+<meta property="article:tag" content="集成测试">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2018/08/01/Go-16-Go%E6%9C%8D%E5%8A%A1%E6%80%8E%E4%B9%88%E5%81%9A%E8%A1%A8%E9%A9%B1%E5%8A%A8%E6%B5%8B%E8%AF%95mock%E5%92%8C%E9%9B%86%E6%88%90%E6%B5%8B%E8%AF%95%E5%88%86%E5%B1%82/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2018/08/01/Go-16-Go%E6%9C%8D%E5%8A%A1%E6%80%8E%E4%B9%88%E5%81%9A%E8%A1%A8%E9%A9%B1%E5%8A%A8%E6%B5%8B%E8%AF%95mock%E5%92%8C%E9%9B%86%E6%88%90%E6%B5%8B%E8%AF%95%E5%88%86%E5%B1%82/","path":"2018/08/01/Go-16-Go服务怎么做表驱动测试mock和集成测试分层/","title":"Go：服务怎么做表驱动测试、mock 和集成测试分层"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>Go：服务怎么做表驱动测试、mock 和集成测试分层 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E8%BF%99%E7%AF%87%E6%96%87%E7%AB%A0%E8%A6%81%E8%A7%A3%E5%86%B3%E4%BB%80%E4%B9%88%E9%97%AE%E9%A2%98"><span class="nav-number">1.</span> <span class="nav-text">一、这篇文章要解决什么问题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E5%85%88%E6%8A%8A%E4%B8%80%E5%8F%A5%E8%AF%9D%E5%8E%9F%E5%88%99%E8%AF%B4%E6%B8%85%E6%A5%9A"><span class="nav-number">2.</span> <span class="nav-text">二、先把一句话原则说清楚</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E5%85%88%E7%9C%8B%E8%BF%99%E7%AF%87%E6%96%87%E7%AB%A0%E9%87%8C%E7%9A%84%E5%B0%8F%E9%A1%B9%E7%9B%AE"><span class="nav-number">3.</span> <span class="nav-text">三、先看这篇文章里的小项目</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E5%85%88%E7%BB%99%E4%B8%80%E4%B8%AA%E6%9C%80%E5%B0%8F%E6%9C%8D%E5%8A%A1%E9%AA%A8%E6%9E%B6"><span class="nav-number">4.</span> <span class="nav-text">四、先给一个最小服务骨架</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E4%B8%BA%E4%BB%80%E4%B9%88%E8%A1%A8%E9%A9%B1%E5%8A%A8%E6%B5%8B%E8%AF%95%E5%BA%94%E8%AF%A5%E5%85%88%E4%BB%8E%E7%BA%AF%E8%A7%84%E5%88%99%E5%B1%82%E5%BC%80%E5%A7%8B"><span class="nav-number">5.</span> <span class="nav-text">五、为什么表驱动测试应该先从纯规则层开始</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E7%BB%99-ValidateRequest-%E5%86%99%E4%B8%80%E7%89%88%E6%9C%80%E5%B0%8F%E8%A1%A8%E9%A9%B1%E5%8A%A8%E6%B5%8B%E8%AF%95"><span class="nav-number">6.</span> <span class="nav-text">六、给 ValidateRequest 写一版最小表驱动测试</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E8%A1%A8%E9%A9%B1%E5%8A%A8%E6%B5%8B%E8%AF%95%E6%9C%80%E5%AE%B9%E6%98%93%E5%86%99%E5%9D%8F%E7%9A%84%E5%9C%B0%E6%96%B9"><span class="nav-number">7.</span> <span class="nav-text">七、表驱动测试最容易写坏的地方</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-case-%E5%8F%AA%E6%9C%89%E8%BE%93%E5%85%A5%EF%BC%8C%E6%B2%A1%E6%9C%89%E4%B8%BA%E4%BB%80%E4%B9%88"><span class="nav-number">7.1.</span> <span class="nav-text">1. case 只有输入，没有为什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%9C%A8%E5%BE%AA%E7%8E%AF%E9%87%8C%E5%BF%98%E4%BA%86%E9%87%8D%E6%96%B0%E7%BB%91%E5%AE%9A%E5%8F%98%E9%87%8F"><span class="nav-number">7.2.</span> <span class="nav-text">2. 在循环里忘了重新绑定变量</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%B8%80%E4%B8%AA-case-%E6%96%AD%E8%A8%80%E5%A4%AA%E5%A4%9A%E7%BB%B4%E5%BA%A6"><span class="nav-number">7.3.</span> <span class="nav-text">3. 一个 case 断言太多维度</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81mock-%E4%B9%8B%E5%89%8D%EF%BC%8C%E5%85%88%E6%8A%8A-test-double-%E7%9A%84%E5%85%B3%E7%B3%BB%E8%AF%B4%E6%B8%85%E6%A5%9A"><span class="nav-number">8.</span> <span class="nav-text">八、mock 之前，先把 test double 的关系说清楚</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E6%9C%8D%E5%8A%A1%E5%B1%82%E6%B5%8B%E8%AF%95%E4%B8%BA%E4%BB%80%E4%B9%88%E9%80%9A%E5%B8%B8%E7%94%A8-fake-%E6%AF%94%E7%BA%AF-mock-%E6%9B%B4%E7%A8%B3"><span class="nav-number">9.</span> <span class="nav-text">九、服务层测试为什么通常用 fake 比纯 mock 更稳</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E7%9C%9F%E7%9A%84%E9%9C%80%E8%A6%81-mock"><span class="nav-number">10.</span> <span class="nav-text">十、什么时候真的需要 mock</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E4%B8%80%E4%B8%AA%E5%B8%B8%E8%A7%81%E5%9D%8F%E5%91%B3%E9%81%93%EF%BC%9A%E6%8A%8A%E6%9C%8D%E5%8A%A1%E5%B1%82%E6%B5%8B%E8%AF%95%E5%86%99%E6%88%90%E2%80%9C%E6%8E%92%E7%BB%83%E5%89%A7%E6%9C%AC%E2%80%9D"><span class="nav-number">11.</span> <span class="nav-text">十一、一个常见坏味道：把服务层测试写成“排练剧本”</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81HTTP-handler-%E4%B8%BA%E4%BB%80%E4%B9%88%E8%A6%81%E5%8D%95%E7%8B%AC%E5%81%9A%E4%B8%80%E5%B1%82%E9%9B%86%E6%88%90%E6%B5%8B%E8%AF%95"><span class="nav-number">12.</span> <span class="nav-text">十二、HTTP handler 为什么要单独做一层集成测试</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81%E7%9C%9F%E6%AD%A3%E7%9A%84%E9%9B%86%E6%88%90%E6%B5%8B%E8%AF%95%E5%BA%94%E8%AF%A5%E6%8E%A5%E7%9C%9F%E5%AE%9E%E9%80%82%E9%85%8D%E5%99%A8"><span class="nav-number">13.</span> <span class="nav-text">十三、真正的集成测试应该接真实适配器</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81%E6%9C%8D%E5%8A%A1%E6%B5%8B%E8%AF%95%E5%88%B0%E5%BA%95%E8%AF%A5%E6%80%8E%E4%B9%88%E5%88%86%E5%B1%82"><span class="nav-number">14.</span> <span class="nav-text">十四、服务测试到底该怎么分层</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%94%E3%80%81%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E4%B8%8D%E8%AF%A5%E5%86%99%E6%9B%B4%E5%A4%9A-mock%EF%BC%8C%E8%80%8C%E5%BA%94%E8%AF%A5%E8%A1%A5%E4%B8%80%E6%9D%A1%E9%9B%86%E6%88%90%E6%B5%8B%E8%AF%95"><span class="nav-number">15.</span> <span class="nav-text">十五、什么时候不该写更多 mock，而应该补一条集成测试</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AD%E3%80%81flaky-test-%E6%9C%80%E5%B8%B8%E8%A7%81%E7%9A%84%E4%BA%94%E7%B1%BB%E6%9D%A5%E6%BA%90"><span class="nav-number">16.</span> <span class="nav-text">十六、flaky test 最常见的五类来源</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%97%B6%E9%97%B4%E9%97%AE%E9%A2%98"><span class="nav-number">16.1.</span> <span class="nav-text">1. 时间问题</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%B9%B6%E5%8F%91%E9%97%AE%E9%A2%98"><span class="nav-number">16.2.</span> <span class="nav-text">2. 并发问题</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%8E%AF%E5%A2%83%E6%B1%A1%E6%9F%93"><span class="nav-number">16.3.</span> <span class="nav-text">3. 环境污染</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E9%9A%90%E5%BC%8F%E5%85%A8%E5%B1%80%E4%BE%9D%E8%B5%96"><span class="nav-number">16.4.</span> <span class="nav-text">4. 隐式全局依赖</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%96%AD%E8%A8%80%E6%97%B6%E6%9C%BA%E9%94%99%E8%AF%AF"><span class="nav-number">16.5.</span> <span class="nav-text">5. 断言时机错误</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%83%E3%80%81%E6%8E%92%E6%9F%A5-flaky-test-%E7%9A%84%E4%B8%80%E4%B8%AA%E5%AE%9E%E7%94%A8%E9%A1%BA%E5%BA%8F"><span class="nav-number">17.</span> <span class="nav-text">十七、排查 flaky test 的一个实用顺序</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AB%E3%80%81%E4%B8%80%E4%B8%AA%E7%9C%9F%E5%AE%9E%E7%9A%84%E5%B0%8F%E9%A1%B9%E7%9B%AE%E6%B5%8B%E8%AF%95%E6%96%B9%E6%A1%88%E8%AF%A5%E9%95%BF%E4%BB%80%E4%B9%88%E6%A0%B7"><span class="nav-number">18.</span> <span class="nav-text">十八、一个真实的小项目测试方案该长什么样</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B9%9D%E3%80%81%E6%B5%8B%E8%AF%95%E5%92%8C%E9%AA%8C%E8%AF%81%E6%97%B6%E5%BA%94%E8%AF%A5%E9%87%8D%E7%82%B9%E7%9C%8B%E4%BB%80%E4%B9%88"><span class="nav-number">19.</span> <span class="nav-text">十九、测试和验证时应该重点看什么</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E3%80%81%E8%BF%99%E7%B1%BB%E6%B5%8B%E8%AF%95%E6%96%B9%E6%A1%88%E7%9A%84%E8%BE%B9%E7%95%8C%E5%9C%A8%E5%93%AA%E9%87%8C"><span class="nav-number">20.</span> <span class="nav-text">二十、这类测试方案的边界在哪里</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%B8%8D%E6%98%AF%E6%89%80%E6%9C%89%E4%BB%A3%E7%A0%81%E9%83%BD%E8%A6%81%E5%BC%BA%E8%A1%8C%E8%A1%A8%E9%A9%B1%E5%8A%A8"><span class="nav-number">20.1.</span> <span class="nav-text">1. 不是所有代码都要强行表驱动</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%B8%8D%E6%98%AF%E6%89%80%E6%9C%89%E4%BE%9D%E8%B5%96%E9%83%BD%E5%80%BC%E5%BE%97%E6%8A%BD%E6%8E%A5%E5%8F%A3"><span class="nav-number">20.2.</span> <span class="nav-text">2. 不是所有依赖都值得抽接口</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-mock-%E4%B8%8D%E6%98%AF%E8%B6%8A%E5%A4%9A%E8%B6%8A%E4%B8%93%E4%B8%9A"><span class="nav-number">20.3.</span> <span class="nav-text">3. mock 不是越多越专业</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E9%9B%86%E6%88%90%E6%B5%8B%E8%AF%95%E4%B9%9F%E4%B8%8D%E6%98%AF%E8%B6%8A%E5%A4%9A%E8%B6%8A%E5%A5%BD"><span class="nav-number">20.4.</span> <span class="nav-text">4. 集成测试也不是越多越好</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%80%E3%80%81%E7%BB%99%E8%87%AA%E5%B7%B1%E7%95%99%E5%87%A0%E9%81%93%E7%BB%83%E4%B9%A0%E9%A2%98"><span class="nav-number">21.</span> <span class="nav-text">二十一、给自己留几道练习题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%8C%E3%80%81%E6%9C%80%E5%90%8E%E6%80%BB%E7%BB%93"><span class="nav-number">22.</span> <span class="nav-text">二十二、最后总结</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2018/08/01/Go-16-Go%E6%9C%8D%E5%8A%A1%E6%80%8E%E4%B9%88%E5%81%9A%E8%A1%A8%E9%A9%B1%E5%8A%A8%E6%B5%8B%E8%AF%95mock%E5%92%8C%E9%9B%86%E6%88%90%E6%B5%8B%E8%AF%95%E5%88%86%E5%B1%82/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="Go：服务怎么做表驱动测试、mock 和集成测试分层 | 大道至简">
+      <meta itemprop="description" content="Go 服务测试最难的不是会不会写 &#96;go test&#96;，而是怎么把表驱动测试、test double、mock、集成测试和分层策略接成一套稳定方案。这篇文章围绕一个巡检任务服务，讲清哪里该写纯单元测试，哪里该用 fake 或 mock，哪里必须做集成测试，以及 flaky test 该怎么排查。">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Go：服务怎么做表驱动测试、mock 和集成测试分层
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2018-08-01 20:30:00" itemprop="dateCreated datePublished" datetime="2018-08-01T20:30:00+08:00">2018-08-01</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>6k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>22 分钟</span>
+    </span>
+</div>
+
+            <div class="post-description">Go 服务测试最难的不是会不会写 `go test`，而是怎么把表驱动测试、test double、mock、集成测试和分层策略接成一套稳定方案。这篇文章围绕一个巡检任务服务，讲清哪里该写纯单元测试，哪里该用 fake 或 mock，哪里必须做集成测试，以及 flaky test 该怎么排查。</div>
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>学 Go 学到服务开发阶段时，会很快遇到一类很典型的困惑：</p>
+<ul>
+<li>单元测试会写一点，但一到真实服务就不知道从哪下手</li>
+<li>听过表驱动测试，也照着写过 <code>cases := []struct&#123;...&#125;</code>，但总觉得只是形式</li>
+<li>看到别人说要 mock，又不知道 Go 里到底该不该大量 mock</li>
+<li>集成测试一跑就慢，一慢就不想跑</li>
+<li>偶尔还有一两条测试本地能过，CI 上却随机失败</li>
+</ul>
+<p>这类问题通常不是因为测试框架不会，而是因为<strong>测试分层和依赖边界没有建立起来</strong>。</p>
+<p>Go 服务测试真正要先看清的是：</p>
+<ul>
+<li>哪些逻辑可以纯函数化，用表驱动测试快速兜住</li>
+<li>哪些逻辑需要依赖替身，验证业务分支和错误路径</li>
+<li>哪些地方必须接真实适配器，才能证明工程链路真的成立</li>
+<li>哪些测试不稳定，其实不是“运气不好”，而是代码本身有竞争、时间、环境或资源边界问题</li>
+</ul>
+<p>这一篇就围绕一个实际小场景来讲：<strong>做一个最小的服务巡检任务服务</strong>。</p>
+<p>这个服务要做几件事：</p>
+<ol>
+<li>接收一批待巡检目标</li>
+<li>校验环境、目标数量和超时参数</li>
+<li>调用下游健康检查接口</li>
+<li>汇总巡检结果</li>
+<li>把结果落盘保存</li>
+<li>通过 HTTP 接口对外提供执行入口</li>
+</ol>
+<p>这个场景不大，但足够把 Go 服务测试里最常见的几层一次串起来。</p>
+<h2 id="一、这篇文章要解决什么问题"><a href="#一、这篇文章要解决什么问题" class="headerlink" title="一、这篇文章要解决什么问题"></a>一、这篇文章要解决什么问题</h2><p>读完这一篇，应该能独立回答这些问题：</p>
+<ol>
+<li>表驱动测试到底适合解决什么问题</li>
+<li>Go 里的 mock、fake、stub、spy 分别是什么关系</li>
+<li>服务层测试为什么不该全部依赖真实下游</li>
+<li>为什么也不能把所有测试都做成 mock 测试</li>
+<li>HTTP handler、service、repository、下游 client 应该分别怎么测</li>
+<li>集成测试到底在证明什么</li>
+<li>flaky test 通常从哪几类问题开始排查</li>
+</ol>
+<p>如果这些问题能答清，后面你写 Go HTTP 服务、任务执行器、调度器、测试平台组件时，测试结构会稳很多。</p>
+<h2 id="二、先把一句话原则说清楚"><a href="#二、先把一句话原则说清楚" class="headerlink" title="二、先把一句话原则说清楚"></a>二、先把一句话原则说清楚</h2><p>Go 服务测试最稳的做法，不是押注某一种测试方式，而是按<strong>变化速度、依赖成本和故障半径</strong>分层：</p>
+<ol>
+<li><p>纯规则层<br>优先写表驱动测试，跑得快、反馈准</p>
+</li>
+<li><p>服务编排层<br>优先用 fake 或最小 mock，验证业务决策、错误传播和调用边界</p>
+</li>
+<li><p>适配器层<br>用 <code>httptest</code>、临时目录、测试数据库、测试容器去做集成测试，验证协议、序列化、I&#x2F;O、配置和真实交互</p>
+</li>
+<li><p>端到端层<br>数量最少，只验证关键主链路，不负责覆盖所有分支</p>
+</li>
+</ol>
+<p>如果一上来就把所有逻辑都扔进集成测试，反馈会很慢。<br>如果反过来把所有东西都 mock 掉，又会得到一堆“假绿灯”。</p>
+<h2 id="三、先看这篇文章里的小项目"><a href="#三、先看这篇文章里的小项目" class="headerlink" title="三、先看这篇文章里的小项目"></a>三、先看这篇文章里的小项目</h2><p>假设现在要做一个最小巡检任务服务，暴露一个接口：</p>
+<p><code>POST /api/probe/run</code></p>
+<p>请求体：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;env&quot;</span><span class="punctuation">:</span> <span class="string">&quot;prod&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;targets&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;order-api&quot;</span><span class="punctuation">,</span> <span class="string">&quot;user-api&quot;</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;timeout_sec&quot;</span><span class="punctuation">:</span> <span class="number">2</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>服务要做的动作是：</p>
+<ol>
+<li>校验 <code>env</code></li>
+<li>校验目标列表不能为空，且不能超过上限</li>
+<li>用 <code>context.WithTimeout</code> 控制整批巡检超时</li>
+<li>调用下游健康检查器获取每个目标状态</li>
+<li>生成报告</li>
+<li>把报告通过 repository 落盘</li>
+<li>把结果 JSON 返回给调用方</li>
+</ol>
+<p>为了让测试结构清晰，先把代码边界拆成四层：</p>
+<ul>
+<li><code>ValidateRequest</code>：纯规则校验</li>
+<li><code>ProbeService</code>：业务编排</li>
+<li><code>HTTPChecker</code>：真正请求下游健康检查接口</li>
+<li><code>FileReportRepository</code>：真正把报告写入文件</li>
+</ul>
+<p>这个拆法不是为了“看起来像架构图”，而是为了让每一层都能被合适的测试方式覆盖。</p>
+<h2 id="四、先给一个最小服务骨架"><a href="#四、先给一个最小服务骨架" class="headerlink" title="四、先给一个最小服务骨架"></a>四、先给一个最小服务骨架</h2><p>先看最小骨架，不急着把全部细节讲满。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> probe</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">	<span class="string">&quot;context&quot;</span></span><br><span class="line">	<span class="string">&quot;encoding/json&quot;</span></span><br><span class="line">	<span class="string">&quot;errors&quot;</span></span><br><span class="line">	<span class="string">&quot;fmt&quot;</span></span><br><span class="line">	<span class="string">&quot;os&quot;</span></span><br><span class="line">	<span class="string">&quot;path/filepath&quot;</span></span><br><span class="line">	<span class="string">&quot;strings&quot;</span></span><br><span class="line">	<span class="string">&quot;time&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> RunRequest <span class="keyword">struct</span> &#123;</span><br><span class="line">	Env        <span class="type">string</span>   <span class="string">`json:&quot;env&quot;`</span></span><br><span class="line">	Targets    []<span class="type">string</span> <span class="string">`json:&quot;targets&quot;`</span></span><br><span class="line">	TimeoutSec <span class="type">int</span>      <span class="string">`json:&quot;timeout_sec&quot;`</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Result <span class="keyword">struct</span> &#123;</span><br><span class="line">	Target <span class="type">string</span> <span class="string">`json:&quot;target&quot;`</span></span><br><span class="line">	Status <span class="type">string</span> <span class="string">`json:&quot;status&quot;`</span></span><br><span class="line">	Error  <span class="type">string</span> <span class="string">`json:&quot;error,omitempty&quot;`</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Report <span class="keyword">struct</span> &#123;</span><br><span class="line">	Env        <span class="type">string</span>    <span class="string">`json:&quot;env&quot;`</span></span><br><span class="line">	FinishedAt time.Time <span class="string">`json:&quot;finished_at&quot;`</span></span><br><span class="line">	Results    []Result  <span class="string">`json:&quot;results&quot;`</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Checker <span class="keyword">interface</span> &#123;</span><br><span class="line">	Check(ctx context.Context, env <span class="type">string</span>, target <span class="type">string</span>) (Result, <span class="type">error</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> ReportRepository <span class="keyword">interface</span> &#123;</span><br><span class="line">	Save(ctx context.Context, report Report) <span class="type">error</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> ProbeService <span class="keyword">struct</span> &#123;</span><br><span class="line">	checker Checker</span><br><span class="line">	repo    ReportRepository</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewProbeService</span><span class="params">(checker Checker, repo ReportRepository)</span></span> *ProbeService &#123;</span><br><span class="line">	<span class="keyword">return</span> &amp;ProbeService&#123;checker: checker, repo: repo&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">ValidateRequest</span><span class="params">(req RunRequest)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">	<span class="keyword">if</span> strings.TrimSpace(req.Env) == <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> errors.New(<span class="string">&quot;env can not be empty&quot;</span>)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(req.Targets) == <span class="number">0</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> errors.New(<span class="string">&quot;targets can not be empty&quot;</span>)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(req.Targets) &gt; <span class="number">20</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> errors.New(<span class="string">&quot;targets can not be larger than 20&quot;</span>)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> req.TimeoutSec &lt;= <span class="number">0</span> || req.TimeoutSec &gt; <span class="number">30</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> errors.New(<span class="string">&quot;timeout_sec must be between 1 and 30&quot;</span>)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">for</span> _, target := <span class="keyword">range</span> req.Targets &#123;</span><br><span class="line">		<span class="keyword">if</span> strings.TrimSpace(target) == <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">			<span class="keyword">return</span> errors.New(<span class="string">&quot;target can not be empty&quot;</span>)</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *ProbeService)</span></span> Run(ctx context.Context, req RunRequest) (Report, <span class="type">error</span>) &#123;</span><br><span class="line">	<span class="keyword">if</span> err := ValidateRequest(req); err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> Report&#123;&#125;, err</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	timeoutCtx, cancel := context.WithTimeout(ctx, time.Duration(req.TimeoutSec)*time.Second)</span><br><span class="line">	<span class="keyword">defer</span> cancel()</span><br><span class="line"></span><br><span class="line">	report := Report&#123;</span><br><span class="line">		Env:        req.Env,</span><br><span class="line">		FinishedAt: time.Now(),</span><br><span class="line">		Results:    <span class="built_in">make</span>([]Result, <span class="number">0</span>, <span class="built_in">len</span>(req.Targets)),</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> _, target := <span class="keyword">range</span> req.Targets &#123;</span><br><span class="line">		result, err := s.checker.Check(timeoutCtx, req.Env, target)</span><br><span class="line">		<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">			report.Results = <span class="built_in">append</span>(report.Results, Result&#123;</span><br><span class="line">				Target: target,</span><br><span class="line">				Status: <span class="string">&quot;down&quot;</span>,</span><br><span class="line">				Error:  err.Error(),</span><br><span class="line">			&#125;)</span><br><span class="line">			<span class="keyword">continue</span></span><br><span class="line">		&#125;</span><br><span class="line">		report.Results = <span class="built_in">append</span>(report.Results, result)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> err := s.repo.Save(timeoutCtx, report); err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> Report&#123;&#125;, fmt.Errorf(<span class="string">&quot;save report: %w&quot;</span>, err)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> report, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> FileReportRepository <span class="keyword">struct</span> &#123;</span><br><span class="line">	Dir <span class="type">string</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(r FileReportRepository)</span></span> Save(ctx context.Context, report Report) <span class="type">error</span> &#123;</span><br><span class="line">	fileName := filepath.Join(r.Dir, report.Env+<span class="string">&quot;-latest.json&quot;</span>)</span><br><span class="line">	file, err := os.Create(fileName)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> err</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">defer</span> file.Close()</span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> json.NewEncoder(file).Encode(report)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这个版本先说明一件事：</p>
+<ul>
+<li><code>ValidateRequest</code> 是纯规则</li>
+<li><code>ProbeService.Run</code> 是业务编排</li>
+<li><code>Checker</code> 和 <code>ReportRepository</code> 是依赖边界</li>
+</ul>
+<p>一旦边界清楚，测试策略就自然清楚了。</p>
+<h2 id="五、为什么表驱动测试应该先从纯规则层开始"><a href="#五、为什么表驱动测试应该先从纯规则层开始" class="headerlink" title="五、为什么表驱动测试应该先从纯规则层开始"></a>五、为什么表驱动测试应该先从纯规则层开始</h2><p>一提表驱动测试，最常见的初始理解是：</p>
+<ul>
+<li>就是 Go 的固定写法</li>
+<li>无非是写个切片循环</li>
+<li>看起来整齐一点，但和普通测试没本质区别</li>
+</ul>
+<p>这理解太浅了。</p>
+<p>表驱动测试真正的价值是：<strong>把一组同类规则和边界条件压缩成一张可枚举的决策表</strong>。</p>
+<p>最典型的适用场景有：</p>
+<ul>
+<li>参数校验</li>
+<li>状态流转</li>
+<li>错误分类</li>
+<li>金额、时间、阈值规则</li>
+<li>输入输出映射</li>
+</ul>
+<p>这些逻辑如果散着写，很快就会变成：</p>
+<ul>
+<li>case 漏一半</li>
+<li>改了一个条件，不知道还有哪些分支受影响</li>
+<li>失败时日志里只有一个模糊断言</li>
+</ul>
+<p>而 <code>ValidateRequest</code> 正是最适合先做表驱动测试的地方。</p>
+<h2 id="六、给-ValidateRequest-写一版最小表驱动测试"><a href="#六、给-ValidateRequest-写一版最小表驱动测试" class="headerlink" title="六、给 ValidateRequest 写一版最小表驱动测试"></a>六、给 <code>ValidateRequest</code> 写一版最小表驱动测试</h2><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestValidateRequest</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">	t.Parallel()</span><br><span class="line"></span><br><span class="line">	cases := []<span class="keyword">struct</span> &#123;</span><br><span class="line">		name    <span class="type">string</span></span><br><span class="line">		req     RunRequest</span><br><span class="line">		wantErr <span class="type">string</span></span><br><span class="line">	&#125;&#123;</span><br><span class="line">		&#123;</span><br><span class="line">			name: <span class="string">&quot;ok&quot;</span>,</span><br><span class="line">			req: RunRequest&#123;</span><br><span class="line">				Env:        <span class="string">&quot;prod&quot;</span>,</span><br><span class="line">				Targets:    []<span class="type">string</span>&#123;<span class="string">&quot;order-api&quot;</span>, <span class="string">&quot;user-api&quot;</span>&#125;,</span><br><span class="line">				TimeoutSec: <span class="number">2</span>,</span><br><span class="line">			&#125;,</span><br><span class="line">		&#125;,</span><br><span class="line">		&#123;</span><br><span class="line">			name: <span class="string">&quot;empty env&quot;</span>,</span><br><span class="line">			req: RunRequest&#123;</span><br><span class="line">				Targets:    []<span class="type">string</span>&#123;<span class="string">&quot;order-api&quot;</span>&#125;,</span><br><span class="line">				TimeoutSec: <span class="number">2</span>,</span><br><span class="line">			&#125;,</span><br><span class="line">			wantErr: <span class="string">&quot;env can not be empty&quot;</span>,</span><br><span class="line">		&#125;,</span><br><span class="line">		&#123;</span><br><span class="line">			name: <span class="string">&quot;empty targets&quot;</span>,</span><br><span class="line">			req: RunRequest&#123;</span><br><span class="line">				Env:        <span class="string">&quot;prod&quot;</span>,</span><br><span class="line">				TimeoutSec: <span class="number">2</span>,</span><br><span class="line">			&#125;,</span><br><span class="line">			wantErr: <span class="string">&quot;targets can not be empty&quot;</span>,</span><br><span class="line">		&#125;,</span><br><span class="line">		&#123;</span><br><span class="line">			name: <span class="string">&quot;too many targets&quot;</span>,</span><br><span class="line">			req: RunRequest&#123;</span><br><span class="line">				Env:        <span class="string">&quot;prod&quot;</span>,</span><br><span class="line">				Targets:    <span class="built_in">make</span>([]<span class="type">string</span>, <span class="number">21</span>),</span><br><span class="line">				TimeoutSec: <span class="number">2</span>,</span><br><span class="line">			&#125;,</span><br><span class="line">			wantErr: <span class="string">&quot;targets can not be larger than 20&quot;</span>,</span><br><span class="line">		&#125;,</span><br><span class="line">		&#123;</span><br><span class="line">			name: <span class="string">&quot;invalid timeout&quot;</span>,</span><br><span class="line">			req: RunRequest&#123;</span><br><span class="line">				Env:        <span class="string">&quot;prod&quot;</span>,</span><br><span class="line">				Targets:    []<span class="type">string</span>&#123;<span class="string">&quot;order-api&quot;</span>&#125;,</span><br><span class="line">				TimeoutSec: <span class="number">0</span>,</span><br><span class="line">			&#125;,</span><br><span class="line">			wantErr: <span class="string">&quot;timeout_sec must be between 1 and 30&quot;</span>,</span><br><span class="line">		&#125;,</span><br><span class="line">		&#123;</span><br><span class="line">			name: <span class="string">&quot;blank target&quot;</span>,</span><br><span class="line">			req: RunRequest&#123;</span><br><span class="line">				Env:        <span class="string">&quot;prod&quot;</span>,</span><br><span class="line">				Targets:    []<span class="type">string</span>&#123;<span class="string">&quot;order-api&quot;</span>, <span class="string">&quot; &quot;</span>&#125;,</span><br><span class="line">				TimeoutSec: <span class="number">2</span>,</span><br><span class="line">			&#125;,</span><br><span class="line">			wantErr: <span class="string">&quot;target can not be empty&quot;</span>,</span><br><span class="line">		&#125;,</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> _, tc := <span class="keyword">range</span> cases &#123;</span><br><span class="line">		tc := tc</span><br><span class="line">		t.Run(tc.name, <span class="function"><span class="keyword">func</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">			t.Parallel()</span><br><span class="line"></span><br><span class="line">			err := ValidateRequest(tc.req)</span><br><span class="line">			<span class="keyword">if</span> tc.wantErr == <span class="string">&quot;&quot;</span> &amp;&amp; err != <span class="literal">nil</span> &#123;</span><br><span class="line">				t.Fatalf(<span class="string">&quot;want nil error, got %v&quot;</span>, err)</span><br><span class="line">			&#125;</span><br><span class="line">			<span class="keyword">if</span> tc.wantErr != <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">				<span class="keyword">if</span> err == <span class="literal">nil</span> &#123;</span><br><span class="line">					t.Fatalf(<span class="string">&quot;want error %q, got nil&quot;</span>, tc.wantErr)</span><br><span class="line">				&#125;</span><br><span class="line">				<span class="keyword">if</span> err.Error() != tc.wantErr &#123;</span><br><span class="line">					t.Fatalf(<span class="string">&quot;want error %q, got %q&quot;</span>, tc.wantErr, err.Error())</span><br><span class="line">				&#125;</span><br><span class="line">			&#125;</span><br><span class="line">		&#125;)</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这类测试的优点很直接：</p>
+<ul>
+<li>每条规则都能命名</li>
+<li>新增规则时只要补一行 case</li>
+<li>失败时能快速定位是哪个边界断了</li>
+<li>跑得快，适合高频执行</li>
+</ul>
+<p>如果你的服务里校验规则很多，这一层测试通常是性价比最高的。</p>
+<h2 id="七、表驱动测试最容易写坏的地方"><a href="#七、表驱动测试最容易写坏的地方" class="headerlink" title="七、表驱动测试最容易写坏的地方"></a>七、表驱动测试最容易写坏的地方</h2><p>表驱动测试并不是“写成切片循环就自动高级”，它也有常见误区。</p>
+<h3 id="1-case-只有输入，没有为什么"><a href="#1-case-只有输入，没有为什么" class="headerlink" title="1. case 只有输入，没有为什么"></a>1. case 只有输入，没有为什么</h3><p>坏例子：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">cases := []RunRequest&#123;</span><br><span class="line">	&#123;Env: <span class="string">&quot;&quot;</span>, Targets: []<span class="type">string</span>&#123;<span class="string">&quot;order&quot;</span>&#125;&#125;,</span><br><span class="line">	&#123;Env: <span class="string">&quot;prod&quot;</span>, Targets: <span class="literal">nil</span>&#125;,</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这个写法的问题是：</p>
+<ul>
+<li>看不出每条 case 在验证什么</li>
+<li>一旦失败，信息量很弱</li>
+</ul>
+<p>更稳的写法是显式写 <code>name</code> 和期望。</p>
+<h3 id="2-在循环里忘了重新绑定变量"><a href="#2-在循环里忘了重新绑定变量" class="headerlink" title="2. 在循环里忘了重新绑定变量"></a>2. 在循环里忘了重新绑定变量</h3><p>坏例子：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">for</span> _, tc := <span class="keyword">range</span> cases &#123;</span><br><span class="line">	t.Run(tc.name, <span class="function"><span class="keyword">func</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">		err := ValidateRequest(tc.req)</span><br><span class="line">		...</span><br><span class="line">	&#125;)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>在旧版 Go 里，这类写法会踩循环变量捕获坑。<br>即使新版语义已经改善，显式写 <code>tc := tc</code> 仍然更稳，也更利于团队统一风格。</p>
+<h3 id="3-一个-case-断言太多维度"><a href="#3-一个-case-断言太多维度" class="headerlink" title="3. 一个 case 断言太多维度"></a>3. 一个 case 断言太多维度</h3><p>如果一个 case 同时断言：</p>
+<ul>
+<li>错误消息</li>
+<li>返回结构</li>
+<li>调用次数</li>
+<li>日志内容</li>
+<li>持久化结果</li>
+</ul>
+<p>那这个 case 一失败，排查范围会很大。<br>好的表驱动测试应该让每一组 case 主要围绕一类规则。</p>
+<h2 id="八、mock-之前，先把-test-double-的关系说清楚"><a href="#八、mock-之前，先把-test-double-的关系说清楚" class="headerlink" title="八、mock 之前，先把 test double 的关系说清楚"></a>八、mock 之前，先把 test double 的关系说清楚</h2><p>一提测试替身，它很容易被直接等同于 mock。<br>其实 mock 只是 test double 的一种。</p>
+<p>更稳的区分方式是：</p>
+<ol>
+<li><p><code>stub</code><br>给固定返回值，让测试能走下去</p>
+</li>
+<li><p><code>fake</code><br>给一个简化但可工作的实现，比如内存仓库、假客户端</p>
+</li>
+<li><p><code>spy</code><br>记录调用参数、调用次数，方便断言</p>
+</li>
+<li><p><code>mock</code><br>预先声明“应该怎样被调用”，再在测试里校验这些交互是否发生</p>
+</li>
+</ol>
+<p>在 Go 里，很多场景优先用 <code>fake</code> 或 <code>spy</code> 就够了，不必一上来就生成大而复杂的 mock。</p>
+<p>原因很简单：</p>
+<ul>
+<li>Go 接口通常比较小</li>
+<li>手写 fake 往往比维护一套复杂 mock 配置更直接</li>
+<li>业务测试更应该关注结果和边界，而不是每一行调用顺序</li>
+</ul>
+<h2 id="九、服务层测试为什么通常用-fake-比纯-mock-更稳"><a href="#九、服务层测试为什么通常用-fake-比纯-mock-更稳" class="headerlink" title="九、服务层测试为什么通常用 fake 比纯 mock 更稳"></a>九、服务层测试为什么通常用 fake 比纯 mock 更稳</h2><p>先给 <code>ProbeService</code> 配两个最小 fake：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> fakeChecker <span class="keyword">struct</span> &#123;</span><br><span class="line">	results <span class="keyword">map</span>[<span class="type">string</span>]Result</span><br><span class="line">	errs    <span class="keyword">map</span>[<span class="type">string</span>]<span class="type">error</span></span><br><span class="line">	calls   []<span class="type">string</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(f *fakeChecker)</span></span> Check(ctx context.Context, env <span class="type">string</span>, target <span class="type">string</span>) (Result, <span class="type">error</span>) &#123;</span><br><span class="line">	f.calls = <span class="built_in">append</span>(f.calls, env+<span class="string">&quot;:&quot;</span>+target)</span><br><span class="line">	<span class="keyword">if</span> err, ok := f.errs[target]; ok &#123;</span><br><span class="line">		<span class="keyword">return</span> Result&#123;&#125;, err</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> f.results[target], <span class="literal">nil</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> fakeRepo <span class="keyword">struct</span> &#123;</span><br><span class="line">	saved   []Report</span><br><span class="line">	saveErr <span class="type">error</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(f *fakeRepo)</span></span> Save(ctx context.Context, report Report) <span class="type">error</span> &#123;</span><br><span class="line">	<span class="keyword">if</span> f.saveErr != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> f.saveErr</span><br><span class="line">	&#125;</span><br><span class="line">	f.saved = <span class="built_in">append</span>(f.saved, report)</span><br><span class="line">	<span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>有了这两个 fake，<code>ProbeService</code> 的大部分业务路径都能测清楚。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestProbeServiceRun</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">	t.Parallel()</span><br><span class="line"></span><br><span class="line">	cases := []<span class="keyword">struct</span> &#123;</span><br><span class="line">		name          <span class="type">string</span></span><br><span class="line">		req           RunRequest</span><br><span class="line">		checker       *fakeChecker</span><br><span class="line">		repo          *fakeRepo</span><br><span class="line">		wantErr       <span class="type">string</span></span><br><span class="line">		wantStatuses  []<span class="type">string</span></span><br><span class="line">		wantSaveCount <span class="type">int</span></span><br><span class="line">	&#125;&#123;</span><br><span class="line">		&#123;</span><br><span class="line">			name: <span class="string">&quot;all success&quot;</span>,</span><br><span class="line">			req: RunRequest&#123;</span><br><span class="line">				Env:        <span class="string">&quot;prod&quot;</span>,</span><br><span class="line">				Targets:    []<span class="type">string</span>&#123;<span class="string">&quot;order-api&quot;</span>, <span class="string">&quot;user-api&quot;</span>&#125;,</span><br><span class="line">				TimeoutSec: <span class="number">2</span>,</span><br><span class="line">			&#125;,</span><br><span class="line">			checker: &amp;fakeChecker&#123;</span><br><span class="line">				results: <span class="keyword">map</span>[<span class="type">string</span>]Result&#123;</span><br><span class="line">					<span class="string">&quot;order-api&quot;</span>: &#123;Target: <span class="string">&quot;order-api&quot;</span>, Status: <span class="string">&quot;ok&quot;</span>&#125;,</span><br><span class="line">					<span class="string">&quot;user-api&quot;</span>:  &#123;Target: <span class="string">&quot;user-api&quot;</span>, Status: <span class="string">&quot;ok&quot;</span>&#125;,</span><br><span class="line">				&#125;,</span><br><span class="line">			&#125;,</span><br><span class="line">			repo:          &amp;fakeRepo&#123;&#125;,</span><br><span class="line">			wantStatuses:  []<span class="type">string</span>&#123;<span class="string">&quot;ok&quot;</span>, <span class="string">&quot;ok&quot;</span>&#125;,</span><br><span class="line">			wantSaveCount: <span class="number">1</span>,</span><br><span class="line">		&#125;,</span><br><span class="line">		&#123;</span><br><span class="line">			name: <span class="string">&quot;partial failure still save report&quot;</span>,</span><br><span class="line">			req: RunRequest&#123;</span><br><span class="line">				Env:        <span class="string">&quot;prod&quot;</span>,</span><br><span class="line">				Targets:    []<span class="type">string</span>&#123;<span class="string">&quot;order-api&quot;</span>, <span class="string">&quot;user-api&quot;</span>&#125;,</span><br><span class="line">				TimeoutSec: <span class="number">2</span>,</span><br><span class="line">			&#125;,</span><br><span class="line">			checker: &amp;fakeChecker&#123;</span><br><span class="line">				results: <span class="keyword">map</span>[<span class="type">string</span>]Result&#123;</span><br><span class="line">					<span class="string">&quot;order-api&quot;</span>: &#123;Target: <span class="string">&quot;order-api&quot;</span>, Status: <span class="string">&quot;ok&quot;</span>&#125;,</span><br><span class="line">				&#125;,</span><br><span class="line">				errs: <span class="keyword">map</span>[<span class="type">string</span>]<span class="type">error</span>&#123;</span><br><span class="line">					<span class="string">&quot;user-api&quot;</span>: errors.New(<span class="string">&quot;downstream timeout&quot;</span>),</span><br><span class="line">				&#125;,</span><br><span class="line">			&#125;,</span><br><span class="line">			repo:          &amp;fakeRepo&#123;&#125;,</span><br><span class="line">			wantStatuses:  []<span class="type">string</span>&#123;<span class="string">&quot;ok&quot;</span>, <span class="string">&quot;down&quot;</span>&#125;,</span><br><span class="line">			wantSaveCount: <span class="number">1</span>,</span><br><span class="line">		&#125;,</span><br><span class="line">		&#123;</span><br><span class="line">			name: <span class="string">&quot;save report failed&quot;</span>,</span><br><span class="line">			req: RunRequest&#123;</span><br><span class="line">				Env:        <span class="string">&quot;prod&quot;</span>,</span><br><span class="line">				Targets:    []<span class="type">string</span>&#123;<span class="string">&quot;order-api&quot;</span>&#125;,</span><br><span class="line">				TimeoutSec: <span class="number">2</span>,</span><br><span class="line">			&#125;,</span><br><span class="line">			checker: &amp;fakeChecker&#123;</span><br><span class="line">				results: <span class="keyword">map</span>[<span class="type">string</span>]Result&#123;</span><br><span class="line">					<span class="string">&quot;order-api&quot;</span>: &#123;Target: <span class="string">&quot;order-api&quot;</span>, Status: <span class="string">&quot;ok&quot;</span>&#125;,</span><br><span class="line">				&#125;,</span><br><span class="line">			&#125;,</span><br><span class="line">			repo:          &amp;fakeRepo&#123;saveErr: errors.New(<span class="string">&quot;disk full&quot;</span>)&#125;,</span><br><span class="line">			wantErr:       <span class="string">&quot;save report: disk full&quot;</span>,</span><br><span class="line">			wantSaveCount: <span class="number">0</span>,</span><br><span class="line">		&#125;,</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> _, tc := <span class="keyword">range</span> cases &#123;</span><br><span class="line">		tc := tc</span><br><span class="line">		t.Run(tc.name, <span class="function"><span class="keyword">func</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">			t.Parallel()</span><br><span class="line"></span><br><span class="line">			svc := NewProbeService(tc.checker, tc.repo)</span><br><span class="line">			report, err := svc.Run(context.Background(), tc.req)</span><br><span class="line"></span><br><span class="line">			<span class="keyword">if</span> tc.wantErr != <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">				<span class="keyword">if</span> err == <span class="literal">nil</span> || err.Error() != tc.wantErr &#123;</span><br><span class="line">					t.Fatalf(<span class="string">&quot;want error %q, got %v&quot;</span>, tc.wantErr, err)</span><br><span class="line">				&#125;</span><br><span class="line">				<span class="keyword">return</span></span><br><span class="line">			&#125;</span><br><span class="line">			<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">				t.Fatalf(<span class="string">&quot;want nil error, got %v&quot;</span>, err)</span><br><span class="line">			&#125;</span><br><span class="line">			<span class="keyword">if</span> <span class="built_in">len</span>(report.Results) != <span class="built_in">len</span>(tc.wantStatuses) &#123;</span><br><span class="line">				t.Fatalf(<span class="string">&quot;want %d results, got %d&quot;</span>, <span class="built_in">len</span>(tc.wantStatuses), <span class="built_in">len</span>(report.Results))</span><br><span class="line">			&#125;</span><br><span class="line">			<span class="keyword">for</span> i, wantStatus := <span class="keyword">range</span> tc.wantStatuses &#123;</span><br><span class="line">				<span class="keyword">if</span> report.Results[i].Status != wantStatus &#123;</span><br><span class="line">					t.Fatalf(<span class="string">&quot;result[%d] want %s, got %s&quot;</span>, i, wantStatus, report.Results[i].Status)</span><br><span class="line">				&#125;</span><br><span class="line">			&#125;</span><br><span class="line">			<span class="keyword">if</span> <span class="built_in">len</span>(tc.repo.saved) != tc.wantSaveCount &#123;</span><br><span class="line">				t.Fatalf(<span class="string">&quot;want save count %d, got %d&quot;</span>, tc.wantSaveCount, <span class="built_in">len</span>(tc.repo.saved))</span><br><span class="line">			&#125;</span><br><span class="line">		&#125;)</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这类测试在验证什么？</p>
+<ul>
+<li>非法请求是否被及时拒绝</li>
+<li>下游部分失败时，服务是否按预期汇总结果</li>
+<li>持久化失败时，错误是否被正确包装</li>
+<li>报告是否只在该保存的时候保存</li>
+</ul>
+<p>这里更关心业务决策，而不是 <code>Check</code> 究竟第几行先被调、<code>Save</code> 第几毫秒被调。</p>
+<h2 id="十、什么时候真的需要-mock"><a href="#十、什么时候真的需要-mock" class="headerlink" title="十、什么时候真的需要 mock"></a>十、什么时候真的需要 mock</h2><p>虽然很多场景 fake 更稳，但 mock 不是完全没用。</p>
+<p>下面这些场景，mock 会更有价值：</p>
+<ol>
+<li><p>你必须验证交互约束<br>例如“失败时绝不能调用发送通知接口”</p>
+</li>
+<li><p>你必须验证调用次数<br>例如“重试最多只能发生两次”</p>
+</li>
+<li><p>你必须验证调用顺序<br>例如“必须先加分布式锁，再写状态，再发消息”</p>
+</li>
+<li><p>依赖太重，不适合写 fake<br>例如一个很复杂的第三方 SDK 客户端</p>
+</li>
+</ol>
+<p>比如要验证校验失败时根本不该触发下游检查：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> spyChecker <span class="keyword">struct</span> &#123;</span><br><span class="line">	called <span class="type">bool</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *spyChecker)</span></span> Check(ctx context.Context, env <span class="type">string</span>, target <span class="type">string</span>) (Result, <span class="type">error</span>) &#123;</span><br><span class="line">	s.called = <span class="literal">true</span></span><br><span class="line">	<span class="keyword">return</span> Result&#123;Target: target, Status: <span class="string">&quot;ok&quot;</span>&#125;, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestProbeServiceRun_InvalidRequest_ShouldNotCallChecker</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">	checker := &amp;spyChecker&#123;&#125;</span><br><span class="line">	repo := &amp;fakeRepo&#123;&#125;</span><br><span class="line">	svc := NewProbeService(checker, repo)</span><br><span class="line"></span><br><span class="line">	_, err := svc.Run(context.Background(), RunRequest&#123;</span><br><span class="line">		Env:        <span class="string">&quot;&quot;</span>,</span><br><span class="line">		Targets:    []<span class="type">string</span>&#123;<span class="string">&quot;order-api&quot;</span>&#125;,</span><br><span class="line">		TimeoutSec: <span class="number">2</span>,</span><br><span class="line">	&#125;)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> err == <span class="literal">nil</span> &#123;</span><br><span class="line">		t.Fatal(<span class="string">&quot;want error, got nil&quot;</span>)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> checker.called &#123;</span><br><span class="line">		t.Fatal(<span class="string">&quot;checker should not be called&quot;</span>)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(repo.saved) != <span class="number">0</span> &#123;</span><br><span class="line">		t.Fatal(<span class="string">&quot;repo should not save report&quot;</span>)</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这就是一个很典型的 spy&#x2F;mock 场景。<br>断言交互约束，比断言返回值更关键。</p>
+<h2 id="十一、一个常见坏味道：把服务层测试写成“排练剧本”"><a href="#十一、一个常见坏味道：把服务层测试写成“排练剧本”" class="headerlink" title="十一、一个常见坏味道：把服务层测试写成“排练剧本”"></a>十一、一个常见坏味道：把服务层测试写成“排练剧本”</h2><p>第一次写 mock 测试时，很容易不自觉写成下面这种风格：</p>
+<ul>
+<li>预设 <code>Check(&quot;order-api&quot;)</code> 一定先被调用</li>
+<li>再预设 <code>Check(&quot;user-api&quot;)</code> 一定第二个被调用</li>
+<li>再预设 <code>Save</code> 一定第三个被调用</li>
+<li>任何调用顺序变化都算失败</li>
+</ul>
+<p>这类测试的问题是：</p>
+<ul>
+<li>只要重构一下实现细节，测试就碎一片</li>
+<li>测试保护的是“当前写法”，不是“业务行为”</li>
+<li>一旦服务内部变并发，顺序断言会大量失真</li>
+</ul>
+<p>测试应该优先保护什么？</p>
+<ul>
+<li>是否返回了正确结果</li>
+<li>是否做了正确错误传播</li>
+<li>是否遵守了必要交互边界</li>
+</ul>
+<p>而不是把内部每一步都写成剧本。</p>
+<h2 id="十二、HTTP-handler-为什么要单独做一层集成测试"><a href="#十二、HTTP-handler-为什么要单独做一层集成测试" class="headerlink" title="十二、HTTP handler 为什么要单独做一层集成测试"></a>十二、HTTP handler 为什么要单独做一层集成测试</h2><p>很多 Go 服务只测 service，不测 handler。<br>最后最容易漏掉的恰好是这些：</p>
+<ul>
+<li>JSON tag 写错</li>
+<li>字段缺失时返回码不对</li>
+<li><code>Content-Type</code> 没设</li>
+<li>路由参数和请求体绑定出问题</li>
+<li>错误信息没被正确转成 HTTP 响应</li>
+</ul>
+<p>这就是为什么 handler 层要有自己的集成测试。<br>这里的“集成”不是说非得连真实数据库，而是指<strong>真实走一遍 HTTP 协议栈、序列化和响应写出逻辑</strong>。</p>
+<p>例如：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestRunHandler</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">	service := NewProbeService(</span><br><span class="line">		&amp;fakeChecker&#123;</span><br><span class="line">			results: <span class="keyword">map</span>[<span class="type">string</span>]Result&#123;</span><br><span class="line">				<span class="string">&quot;order-api&quot;</span>: &#123;Target: <span class="string">&quot;order-api&quot;</span>, Status: <span class="string">&quot;ok&quot;</span>&#125;,</span><br><span class="line">			&#125;,</span><br><span class="line">		&#125;,</span><br><span class="line">		&amp;fakeRepo&#123;&#125;,</span><br><span class="line">	)</span><br><span class="line"></span><br><span class="line">	handler := NewRunHandler(service)</span><br><span class="line"></span><br><span class="line">	reqBody := <span class="string">`&#123;&quot;env&quot;:&quot;prod&quot;,&quot;targets&quot;:[&quot;order-api&quot;],&quot;timeout_sec&quot;:2&#125;`</span></span><br><span class="line">	req := httptest.NewRequest(http.MethodPost, <span class="string">&quot;/api/probe/run&quot;</span>, strings.NewReader(reqBody))</span><br><span class="line">	req.Header.Set(<span class="string">&quot;Content-Type&quot;</span>, <span class="string">&quot;application/json&quot;</span>)</span><br><span class="line">	rec := httptest.NewRecorder()</span><br><span class="line"></span><br><span class="line">	handler.ServeHTTP(rec, req)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> rec.Code != http.StatusOK &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;want status 200, got %d&quot;</span>, rec.Code)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">var</span> report Report</span><br><span class="line">	<span class="keyword">if</span> err := json.NewDecoder(rec.Body).Decode(&amp;report); err != <span class="literal">nil</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;decode response failed: %v&quot;</span>, err)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(report.Results) != <span class="number">1</span> || report.Results[<span class="number">0</span>].Status != <span class="string">&quot;ok&quot;</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;unexpected response: %+v&quot;</span>, report)</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这一层测试重点不是业务分支覆盖率，而是：</p>
+<ul>
+<li>请求能不能被正确解析</li>
+<li>响应能不能被正确编码</li>
+<li>状态码和错误体是否符合预期</li>
+</ul>
+<h2 id="十三、真正的集成测试应该接真实适配器"><a href="#十三、真正的集成测试应该接真实适配器" class="headerlink" title="十三、真正的集成测试应该接真实适配器"></a>十三、真正的集成测试应该接真实适配器</h2><p>如果 handler 还是 fake service，service 还是 fake checker，那它还不算完整的集成测试。<br>真正的集成测试应该至少让一段真实适配器链路跑起来。</p>
+<p>比如这条链：</p>
+<ul>
+<li>真实 <code>ProbeService</code></li>
+<li>真实 <code>HTTPChecker</code></li>
+<li>真实 <code>FileReportRepository</code></li>
+<li>下游用 <code>httptest.NewServer</code> 模拟 HTTP 服务</li>
+<li>文件输出用 <code>t.TempDir()</code> 隔离</li>
+</ul>
+<p>这条链已经足够验证很多工程问题：</p>
+<ul>
+<li><code>context</code> 超时是否真正传到了 HTTP 请求</li>
+<li>JSON 解码是否和下游协议一致</li>
+<li>文件输出是否真的写成功</li>
+<li>报告内容和落盘内容是否一致</li>
+</ul>
+<p>示例：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestProbeServiceIntegration</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">	downstream := httptest.NewServer(http.HandlerFunc(<span class="function"><span class="keyword">func</span><span class="params">(w http.ResponseWriter, r *http.Request)</span></span> &#123;</span><br><span class="line">		target := r.URL.Query().Get(<span class="string">&quot;target&quot;</span>)</span><br><span class="line">		_ = json.NewEncoder(w).Encode(Result&#123;</span><br><span class="line">			Target: target,</span><br><span class="line">			Status: <span class="string">&quot;ok&quot;</span>,</span><br><span class="line">		&#125;)</span><br><span class="line">	&#125;))</span><br><span class="line">	<span class="keyword">defer</span> downstream.Close()</span><br><span class="line"></span><br><span class="line">	checker := NewHTTPChecker(downstream.URL, &amp;http.Client&#123;Timeout: time.Second&#125;)</span><br><span class="line">	repo := FileReportRepository&#123;Dir: t.TempDir()&#125;</span><br><span class="line">	svc := NewProbeService(checker, repo)</span><br><span class="line"></span><br><span class="line">	report, err := svc.Run(context.Background(), RunRequest&#123;</span><br><span class="line">		Env:        <span class="string">&quot;prod&quot;</span>,</span><br><span class="line">		Targets:    []<span class="type">string</span>&#123;<span class="string">&quot;order-api&quot;</span>, <span class="string">&quot;user-api&quot;</span>&#125;,</span><br><span class="line">		TimeoutSec: <span class="number">2</span>,</span><br><span class="line">	&#125;)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;run service failed: %v&quot;</span>, err)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(report.Results) != <span class="number">2</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;want 2 results, got %d&quot;</span>, <span class="built_in">len</span>(report.Results))</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	content, err := os.ReadFile(filepath.Join(repo.Dir, <span class="string">&quot;prod-latest.json&quot;</span>))</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;read report file failed: %v&quot;</span>, err)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> !bytes.Contains(content, []<span class="type">byte</span>(<span class="string">`&quot;order-api&quot;`</span>)) &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;unexpected file content: %s&quot;</span>, <span class="type">string</span>(content))</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这类测试通常数量不需要很多，但不能缺。<br>因为它验证的是“这几个真实组件接起来之后，系统有没有跑通”。</p>
+<h2 id="十四、服务测试到底该怎么分层"><a href="#十四、服务测试到底该怎么分层" class="headerlink" title="十四、服务测试到底该怎么分层"></a>十四、服务测试到底该怎么分层</h2><p>如果把刚才这些测试方式压成一张最小策略表，大致会是这样：</p>
+<ol>
+<li><p>规则层测试<br>对象：参数校验、状态判断、映射逻辑<br>方法：表驱动测试<br>目标：高频、快速、覆盖边界</p>
+</li>
+<li><p>服务层测试<br>对象：业务编排、错误传播、重试策略、降级策略<br>方法：fake、stub、spy、最小 mock<br>目标：验证决策是否正确</p>
+</li>
+<li><p>适配器集成测试<br>对象：HTTP handler、HTTP client、repository、配置读取<br>方法：<code>httptest</code>、临时目录、测试数据库、测试容器<br>目标：验证协议和 I&#x2F;O 是否真实成立</p>
+</li>
+<li><p>端到端测试<br>对象：关键主流程<br>方法：最少量真实环境验证<br>目标：证明系统在近真实环境下可用</p>
+</li>
+</ol>
+<p>一套服务测试如果只有第 1 层，不够。<br>如果只剩第 3、4 层，也不够。<br>真正稳的是让不同层各自承担不同风险。</p>
+<h2 id="十五、什么时候不该写更多-mock，而应该补一条集成测试"><a href="#十五、什么时候不该写更多-mock，而应该补一条集成测试" class="headerlink" title="十五、什么时候不该写更多 mock，而应该补一条集成测试"></a>十五、什么时候不该写更多 mock，而应该补一条集成测试</h2><p>下面这些信号一出现，通常说明你该补集成测试，而不是继续加 mock：</p>
+<ol>
+<li>你已经在测试里手动模拟 JSON 编解码细节</li>
+<li>你已经开始手动拼 HTTP status code、header、body</li>
+<li>你在 mock 里模拟文件系统、网络连接或数据库事务</li>
+<li>你发现测试通过，但一上线还是因为协议、配置或 SQL 失败</li>
+<li>你维护 mock 的成本开始高于维护真实测试依赖</li>
+</ol>
+<p>这时继续补 mock，收益会越来越低。<br>因为问题已经不在业务编排，而在真实适配器边界。</p>
+<h2 id="十六、flaky-test-最常见的五类来源"><a href="#十六、flaky-test-最常见的五类来源" class="headerlink" title="十六、flaky test 最常见的五类来源"></a>十六、flaky test 最常见的五类来源</h2><p>Go 服务里的 flaky test，大多数都可以先从下面五类原因查起。</p>
+<h3 id="1-时间问题"><a href="#1-时间问题" class="headerlink" title="1. 时间问题"></a>1. 时间问题</h3><p>典型表现：</p>
+<ul>
+<li>靠 <code>time.Sleep(10 * time.Millisecond)</code> 等待异步完成</li>
+<li>本地过，CI 偶发超时</li>
+<li>秒级时间戳比较在快慢机器上表现不一致</li>
+</ul>
+<p>更稳的做法：</p>
+<ul>
+<li>能用 channel 同步就不用盲等</li>
+<li>必须等待时，用 <code>select + time.After</code></li>
+<li>把 <code>time.Now</code> 抽成可注入时钟</li>
+</ul>
+<h3 id="2-并发问题"><a href="#2-并发问题" class="headerlink" title="2. 并发问题"></a>2. 并发问题</h3><p>典型表现：</p>
+<ul>
+<li><code>t.Parallel()</code> 一开就偶发失败</li>
+<li>map 并发写</li>
+<li>goroutine 没收口，影响后续测试</li>
+</ul>
+<p>更稳的做法：</p>
+<ul>
+<li>共享状态加锁或完全隔离</li>
+<li>每个测试独占自己的 fake、临时目录和 server</li>
+<li>用 <code>context</code> 和 <code>WaitGroup</code> 收干净 goroutine</li>
+</ul>
+<h3 id="3-环境污染"><a href="#3-环境污染" class="headerlink" title="3. 环境污染"></a>3. 环境污染</h3><p>典型表现：</p>
+<ul>
+<li>测试依赖全局环境变量</li>
+<li>测试共用固定端口</li>
+<li>测试共用一个 <code>/tmp/report.json</code></li>
+</ul>
+<p>更稳的做法：</p>
+<ul>
+<li>用 <code>t.Setenv</code></li>
+<li>用 <code>httptest.NewServer</code></li>
+<li>用 <code>t.TempDir</code></li>
+</ul>
+<h3 id="4-隐式全局依赖"><a href="#4-隐式全局依赖" class="headerlink" title="4. 隐式全局依赖"></a>4. 隐式全局依赖</h3><p>典型表现：</p>
+<ul>
+<li>直接改 <code>http.DefaultClient</code></li>
+<li>直接改全局 logger</li>
+<li>直接改包级变量配置</li>
+</ul>
+<p>更稳的做法：</p>
+<ul>
+<li>依赖显式注入</li>
+<li>每个测试自建 client、repo、logger</li>
+<li>避免测试间共享可变全局状态</li>
+</ul>
+<h3 id="5-断言时机错误"><a href="#5-断言时机错误" class="headerlink" title="5. 断言时机错误"></a>5. 断言时机错误</h3><p>典型表现：</p>
+<ul>
+<li>事件还没发生就断言</li>
+<li>事件发生了两次，却只偶尔捕到一次</li>
+<li>清理逻辑还没结束，测试已经退出</li>
+</ul>
+<p>更稳的做法：</p>
+<ul>
+<li>明确“何时算完成”</li>
+<li>用可观察信号代替猜测</li>
+<li>把清理动作放进 <code>t.Cleanup</code></li>
+</ul>
+<h2 id="十七、排查-flaky-test-的一个实用顺序"><a href="#十七、排查-flaky-test-的一个实用顺序" class="headerlink" title="十七、排查 flaky test 的一个实用顺序"></a>十七、排查 flaky test 的一个实用顺序</h2><p>排 flaky test 时，上来就看日志很容易越看越乱。<br>更稳的顺序通常是：</p>
+<ol>
+<li><p>先判断它是不是并发相关<br>先临时去掉 <code>t.Parallel()</code>，看失败是否消失</p>
+</li>
+<li><p>再判断它是不是时间相关<br>把 <code>time.Sleep</code> 替换成显式同步或更长的超时，看行为是否稳定</p>
+</li>
+<li><p>再判断它是不是环境污染<br>检查临时文件、环境变量、全局端口和全局客户端</p>
+</li>
+<li><p>再判断它是不是资源没清理<br>检查 server、goroutine、file descriptor、context cancel 是否收口</p>
+</li>
+<li><p>最后才看业务断言本身<br>确认是不是期望写错，或者断言粒度过细</p>
+</li>
+</ol>
+<p>如果要在本地放大问题，最常见的命令是：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">go <span class="built_in">test</span> ./... -run TestProbeServiceIntegration -count=100</span><br><span class="line">go <span class="built_in">test</span> ./... -run TestProbeServiceIntegration -race -count=50</span><br></pre></td></tr></table></figure>
+
+<p>第一条用于放大偶发失败。<br>第二条用于先排竞态。</p>
+<h2 id="十八、一个真实的小项目测试方案该长什么样"><a href="#十八、一个真实的小项目测试方案该长什么样" class="headerlink" title="十八、一个真实的小项目测试方案该长什么样"></a>十八、一个真实的小项目测试方案该长什么样</h2><p>如果你手里现在有一个实际 Go 服务，比如：</p>
+<ul>
+<li>巡检服务</li>
+<li>接口回调服务</li>
+<li>任务分发服务</li>
+<li>配置发布服务</li>
+</ul>
+<p>可以直接按下面这个最小方案落地：</p>
+<ol>
+<li><p>给所有纯规则补表驱动测试<br>例如校验、状态映射、错误分类、重试条件</p>
+</li>
+<li><p>给 service 层补 fake 测试<br>至少覆盖成功、部分失败、全部失败、依赖失败、超时取消</p>
+</li>
+<li><p>给 handler 层补 <code>httptest</code> 测试<br>至少覆盖正常请求、非法 JSON、参数缺失、服务错误映射</p>
+</li>
+<li><p>给关键 adapter 补集成测试<br>例如 HTTP client + <code>httptest.Server</code>，repository + <code>t.TempDir</code></p>
+</li>
+<li><p>只保留少量端到端测试<br>只测最关键的主链路，不拿它做全量分支覆盖</p>
+</li>
+</ol>
+<p>这一套下来，通常已经能覆盖绝大多数线上前会暴露的问题。</p>
+<h2 id="十九、测试和验证时应该重点看什么"><a href="#十九、测试和验证时应该重点看什么" class="headerlink" title="十九、测试和验证时应该重点看什么"></a>十九、测试和验证时应该重点看什么</h2><p>如果这篇文章里的小项目要在本地自验，建议至少做下面这些动作：</p>
+<ol>
+<li><p>跑纯单元测试<br>重点看规则边界是否都被 case 覆盖</p>
+</li>
+<li><p>跑服务层测试<br>重点看错误传播、部分失败和持久化失败是否可观测</p>
+</li>
+<li><p>跑 handler 集成测试<br>重点看请求和响应 JSON 是否与预期一致</p>
+</li>
+<li><p>跑适配器集成测试<br>重点看超时、协议兼容和文件输出是否真的成立</p>
+</li>
+<li><p>跑竞态检测<br>重点看 fake、共享状态和并发代码里有没有竞争</p>
+</li>
+</ol>
+<p>如果你的 CI 很慢，可以把测试按层拆开：</p>
+<ul>
+<li>默认提交跑规则层和服务层</li>
+<li>合并前跑适配器集成测试</li>
+<li>定时任务跑更慢的端到端测试</li>
+</ul>
+<h2 id="二十、这类测试方案的边界在哪里"><a href="#二十、这类测试方案的边界在哪里" class="headerlink" title="二十、这类测试方案的边界在哪里"></a>二十、这类测试方案的边界在哪里</h2><p>这套方案很实用，但也有边界。</p>
+<h3 id="1-不是所有代码都要强行表驱动"><a href="#1-不是所有代码都要强行表驱动" class="headerlink" title="1. 不是所有代码都要强行表驱动"></a>1. 不是所有代码都要强行表驱动</h3><p>如果测试只有一个很清晰的场景，用普通测试函数反而更直。<br>不要为了“统一风格”把一切都塞进表里。</p>
+<h3 id="2-不是所有依赖都值得抽接口"><a href="#2-不是所有依赖都值得抽接口" class="headerlink" title="2. 不是所有依赖都值得抽接口"></a>2. 不是所有依赖都值得抽接口</h3><p>如果某个依赖只在一个地方用，且没有替换需求，强行抽接口只会增加样板代码。<br>接口应该服务测试和边界，不是为了“看起来解耦”。</p>
+<h3 id="3-mock-不是越多越专业"><a href="#3-mock-不是越多越专业" class="headerlink" title="3. mock 不是越多越专业"></a>3. mock 不是越多越专业</h3><p>大量 mock 往往意味着：</p>
+<ul>
+<li>依赖边界设计过碎</li>
+<li>测试在保护实现细节</li>
+<li>重构成本被测试反向放大</li>
+</ul>
+<h3 id="4-集成测试也不是越多越好"><a href="#4-集成测试也不是越多越好" class="headerlink" title="4. 集成测试也不是越多越好"></a>4. 集成测试也不是越多越好</h3><p>它们天然更慢、更重、更容易受环境影响。<br>真正重要的是把高风险真实边界测到，而不是把所有 case 都搬进去。</p>
+<h2 id="二十一、给自己留几道练习题"><a href="#二十一、给自己留几道练习题" class="headerlink" title="二十一、给自己留几道练习题"></a>二十一、给自己留几道练习题</h2><p>如果你想把这篇内容真正消化掉，可以做下面几道练习：</p>
+<ol>
+<li><p>给 <code>ValidateRequest</code> 增加 <code>env</code> 白名单规则<br>要求：补完整表驱动测试</p>
+</li>
+<li><p>给 <code>ProbeService</code> 加一个“失败目标最多重试一次”的策略<br>要求：补 service 层 fake 测试，验证调用次数</p>
+</li>
+<li><p>给 handler 增加非法 <code>Content-Type</code> 的处理<br>要求：补 <code>httptest</code> 测试</p>
+</li>
+<li><p>把 <code>FileReportRepository</code> 改成同时输出摘要日志<br>要求：思考这一层该写单元测试还是集成测试</p>
+</li>
+<li><p>人为制造一个 flaky test<br>例如共享临时文件或用 <code>time.Sleep</code> 等待，再把它修掉</p>
+</li>
+</ol>
+<p>这几题做完，你对 Go 服务测试的理解会从“知道概念”变成“知道怎么落地”。</p>
+<h2 id="二十二、最后总结"><a href="#二十二、最后总结" class="headerlink" title="二十二、最后总结"></a>二十二、最后总结</h2><p>Go 服务测试真正难的，从来不是会不会写 <code>TestXxx</code>，而是能不能把不同层的问题放到合适的测试里解决。</p>
+<p>可以把这篇文章的核心结论收成四句话：</p>
+<ol>
+<li>纯规则优先表驱动测试</li>
+<li>服务编排优先 fake、stub、spy，必要时再上 mock</li>
+<li>协议、I&#x2F;O、序列化和真实交互必须用集成测试证明</li>
+<li>flaky test 不要靠运气，要按时间、并发、环境、全局状态和清理顺序系统排查</li>
+</ol>
+<p>如果你把这套思路建立起来，后面不管是写 Go HTTP 服务、任务执行器还是测试平台组件，测试都不会再是一堆零散补丁，而会逐渐变成一套真正能托住工程演进的保护网。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E5%B7%A5%E7%A8%8B%E5%8C%96/" rel="tag"># 工程化</a>
+              <a href="/tags/Go/" rel="tag"># Go</a>
+              <a href="/tags/Go%E4%B8%93%E9%A2%98/" rel="tag"># Go专题</a>
+              <a href="/tags/%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80/" rel="tag"># 编程语言</a>
+              <a href="/tags/%E6%B5%8B%E8%AF%95/" rel="tag"># 测试</a>
+              <a href="/tags/%E8%A1%A8%E9%A9%B1%E5%8A%A8%E6%B5%8B%E8%AF%95/" rel="tag"># 表驱动测试</a>
+              <a href="/tags/mock/" rel="tag"># mock</a>
+              <a href="/tags/%E9%9B%86%E6%88%90%E6%B5%8B%E8%AF%95/" rel="tag"># 集成测试</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2018/08/01/Python-16-Python%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84%E4%B8%8E%E7%AE%97%E6%B3%95%E5%85%A5%E9%97%A8%E5%88%97%E8%A1%A8%E9%93%BE%E8%A1%A8%E6%A0%88%E9%98%9F%E5%88%97%E5%93%88%E5%B8%8C%E5%88%B0%E5%BA%95%E6%80%8E%E4%B9%88%E7%90%86%E8%A7%A3/" rel="prev" title="Python：数据结构与算法入门，列表、链表、栈、队列、哈希到底怎么理解">
+                  <i class="fa fa-angle-left"></i> Python：数据结构与算法入门，列表、链表、栈、队列、哈希到底怎么理解
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2018/08/08/Python-17-Python%E5%B8%B8%E8%A7%81%E7%AE%97%E6%B3%95%E9%A2%98%E7%9A%84%E5%B7%A5%E7%A8%8B%E4%BB%B7%E5%80%BC%E5%8F%8C%E6%8C%87%E9%92%88%E6%BB%91%E5%8A%A8%E7%AA%97%E5%8F%A3%E9%80%92%E5%BD%92%E5%9B%9E%E6%BA%AF%E5%8A%A8%E6%80%81%E8%A7%84%E5%88%92%E6%80%8E%E4%B9%88%E5%85%A5%E9%97%A8/" rel="next" title="Python：常见算法题的工程价值，双指针、滑动窗口、递归、回溯、动态规划怎么入门">
+                  Python：常见算法题的工程价值，双指针、滑动窗口、递归、回溯、动态规划怎么入门 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

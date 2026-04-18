@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="Go 并发入门不能只背 goroutine、channel 和 context 的定义，而要看它们怎么在同一条执行链里配合。这篇文章围绕一个批量任务分发器，讲清并发启动、结果回收、超时控制、取消传播和工程边界。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Go：并发编程入门，goroutine、channel、context 应该怎么配合">
+<meta property="og:url" content="https://paynewinnt.github.io/2018/06/13/Go-09-Go%E5%B9%B6%E5%8F%91%E7%BC%96%E7%A8%8B%E5%85%A5%E9%97%A8goroutinechannelcontext%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E9%85%8D%E5%90%88/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="Go 并发入门不能只背 goroutine、channel 和 context 的定义，而要看它们怎么在同一条执行链里配合。这篇文章围绕一个批量任务分发器，讲清并发启动、结果回收、超时控制、取消传播和工程边界。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2018-06-13T12:30:00.000Z">
+<meta property="article:modified_time" content="2018-06-13T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="Go">
+<meta property="article:tag" content="Go专题">
+<meta property="article:tag" content="编程语言">
+<meta property="article:tag" content="并发">
+<meta property="article:tag" content="goroutine">
+<meta property="article:tag" content="channel">
+<meta property="article:tag" content="context">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2018/06/13/Go-09-Go%E5%B9%B6%E5%8F%91%E7%BC%96%E7%A8%8B%E5%85%A5%E9%97%A8goroutinechannelcontext%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E9%85%8D%E5%90%88/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2018/06/13/Go-09-Go%E5%B9%B6%E5%8F%91%E7%BC%96%E7%A8%8B%E5%85%A5%E9%97%A8goroutinechannelcontext%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E9%85%8D%E5%90%88/","path":"2018/06/13/Go-09-Go并发编程入门goroutinechannelcontext应该怎么配合/","title":"Go：并发编程入门，goroutine、channel、context 应该怎么配合"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>Go：并发编程入门，goroutine、channel、context 应该怎么配合 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E8%BF%99%E7%AF%87%E6%96%87%E7%AB%A0%E8%A6%81%E8%A7%A3%E5%86%B3%E4%BB%80%E4%B9%88%E9%97%AE%E9%A2%98"><span class="nav-number">1.</span> <span class="nav-text">一、这篇文章要解决什么问题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E5%85%88%E7%9C%8B%E8%BF%99%E7%AF%87%E6%96%87%E7%AB%A0%E9%87%8C%E7%9A%84%E5%AE%9E%E9%99%85%E5%9C%BA%E6%99%AF"><span class="nav-number">2.</span> <span class="nav-text">二、先看这篇文章里的实际场景</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E5%85%88%E7%BB%99%E4%B8%80%E4%B8%AA%E6%9C%80%E5%B0%8F%E5%8F%AF%E8%BF%90%E8%A1%8C%E7%A4%BA%E4%BE%8B"><span class="nav-number">3.</span> <span class="nav-text">三、先给一个最小可运行示例</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E5%85%88%E6%8A%8A%E4%B8%80%E5%8F%A5%E8%AF%9D%E7%BB%93%E8%AE%BA%E8%AF%B4%E6%B8%85%E6%A5%9A"><span class="nav-number">4.</span> <span class="nav-text">四、先把一句话结论说清楚</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81goroutine-%E5%88%B0%E5%BA%95%E5%9C%A8%E8%A7%A3%E5%86%B3%E4%BB%80%E4%B9%88%E9%97%AE%E9%A2%98"><span class="nav-number">5.</span> <span class="nav-text">五、goroutine 到底在解决什么问题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81channel-%E5%88%B0%E5%BA%95%E5%9C%A8%E8%A7%A3%E5%86%B3%E4%BB%80%E4%B9%88%E9%97%AE%E9%A2%98"><span class="nav-number">6.</span> <span class="nav-text">六、channel 到底在解决什么问题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81context-%E5%88%B0%E5%BA%95%E5%9C%A8%E8%A7%A3%E5%86%B3%E4%BB%80%E4%B9%88%E9%97%AE%E9%A2%98"><span class="nav-number">7.</span> <span class="nav-text">七、context 到底在解决什么问题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E5%85%88%E6%8A%8A%E4%B8%89%E8%80%85%E4%B8%B2%E6%88%90%E4%B8%80%E4%B8%AA%E6%9C%80%E5%B0%8F%E5%88%86%E5%8F%91%E5%99%A8"><span class="nav-number">8.</span> <span class="nav-text">八、先把三者串成一个最小分发器</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E4%B8%BA%E4%BB%80%E4%B9%88%E8%BF%99%E9%87%8C%E8%A6%81%E6%8A%8A%E5%BE%AA%E7%8E%AF%E5%8F%98%E9%87%8F%E6%98%BE%E5%BC%8F%E4%BC%A0%E8%BF%9B%E5%8E%BB"><span class="nav-number">9.</span> <span class="nav-text">九、为什么这里要把循环变量显式传进去</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E4%B8%BA%E4%BB%80%E4%B9%88%E5%8F%AA%E4%BC%9A%E8%B5%B7-goroutine-%E8%BF%98%E8%BF%9C%E8%BF%9C%E4%B8%8D%E5%A4%9F"><span class="nav-number">10.</span> <span class="nav-text">十、为什么只会起 goroutine 还远远不够</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E4%B8%BA%E4%BB%80%E4%B9%88%E5%8F%96%E6%B6%88%E4%BF%A1%E5%8F%B7%E6%9B%B4%E9%80%82%E5%90%88%E8%AE%A9-context-%E6%89%BF%E6%8B%85"><span class="nav-number">11.</span> <span class="nav-text">十一、为什么取消信号更适合让 context 承担</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E4%B8%80%E4%B8%AA%E6%9B%B4%E5%AE%8C%E6%95%B4%E7%9A%84%E7%89%88%E6%9C%AC%EF%BC%9A%E5%85%B3%E9%94%AE%E5%A4%B1%E8%B4%A5%E8%A7%A6%E5%8F%91%E5%85%A8%E5%B1%80%E5%8F%96%E6%B6%88"><span class="nav-number">12.</span> <span class="nav-text">十二、一个更完整的版本：关键失败触发全局取消</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81buffered-channel-%E5%92%8C-unbuffered-channel-%E8%BF%99%E9%87%8C%E8%AF%A5%E6%80%8E%E4%B9%88%E9%80%89"><span class="nav-number">13.</span> <span class="nav-text">十三、buffered channel 和 unbuffered channel 这里该怎么选</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81%E4%B8%BA%E4%BB%80%E4%B9%88%E4%B8%8D%E8%83%BD%E9%9D%A0%E5%85%B3%E9%97%AD-resultCh-%E6%9D%A5%E8%A1%A8%E7%A4%BA%E2%80%9C%E6%89%80%E6%9C%89%E4%BB%BB%E5%8A%A1%E7%BB%93%E6%9D%9F%E2%80%9D"><span class="nav-number">14.</span> <span class="nav-text">十四、为什么不能靠关闭 resultCh 来表示“所有任务结束”</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%94%E3%80%81%E4%B8%80%E4%B8%AA%E6%9B%B4%E6%8E%A5%E8%BF%91%E9%A1%B9%E7%9B%AE%E7%8E%B0%E5%9C%BA%E7%9A%84%E5%B0%8F%E6%A1%88%E4%BE%8B"><span class="nav-number">15.</span> <span class="nav-text">十五、一个更接近项目现场的小案例</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AD%E3%80%81%E6%80%8E%E4%B9%88%E7%BB%99%E8%BF%99%E7%B1%BB%E5%B9%B6%E5%8F%91%E9%80%BB%E8%BE%91%E8%A1%A5%E6%9C%80%E5%B0%8F%E9%AA%8C%E8%AF%81"><span class="nav-number">16.</span> <span class="nav-text">十六、怎么给这类并发逻辑补最小验证</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%83%E3%80%81%E6%80%8E%E4%B9%88%E9%AA%8C%E8%AF%81%E8%BF%99%E6%AE%B5%E4%BB%A3%E7%A0%81%E6%98%AF%E4%B8%8D%E6%98%AF%E7%9C%9F%E7%9A%84%E5%93%8D%E5%BA%94%E4%BA%86%E5%8F%96%E6%B6%88"><span class="nav-number">17.</span> <span class="nav-text">十七、怎么验证这段代码是不是真的响应了取消</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AB%E3%80%81%E4%B8%80%E4%B8%AA%E9%AB%98%E9%A2%91%E6%8E%92%E9%94%99%E5%9C%BA%E6%99%AF%EF%BC%9A%E4%B8%BA%E4%BB%80%E4%B9%88%E4%B8%BB%E6%B5%81%E7%A8%8B%E5%B7%B2%E7%BB%8F%E7%BB%93%E6%9D%9F%E4%BA%86%EF%BC%8C%E7%A8%8B%E5%BA%8F%E5%8D%B4%E4%B8%8D%E9%80%80%E5%87%BA"><span class="nav-number">18.</span> <span class="nav-text">十八、一个高频排错场景：为什么主流程已经结束了，程序却不退出</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B9%9D%E3%80%81%E4%B8%80%E4%B8%AA%E9%AB%98%E9%A2%91%E8%AF%AF%E5%8C%BA%EF%BC%9A%E6%8A%8A-channel-%E5%BD%93%E5%85%B1%E4%BA%AB%E7%8A%B6%E6%80%81%E8%A1%A8%E6%9D%A5%E7%94%A8"><span class="nav-number">19.</span> <span class="nav-text">十九、一个高频误区：把 channel 当共享状态表来用</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E3%80%81%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E4%B8%8D%E8%AF%A5%E5%B9%B6%E5%8F%91"><span class="nav-number">20.</span> <span class="nav-text">二十、什么时候不该并发</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%80%E3%80%81%E4%B8%80%E4%B8%AA%E5%AE%9E%E9%99%85%E7%BB%83%E4%B9%A0"><span class="nav-number">21.</span> <span class="nav-text">二十一、一个实际练习</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%8C%E3%80%81%E8%BF%99%E7%AF%87%E6%96%87%E7%AB%A0%E7%9A%84%E8%BE%B9%E7%95%8C%E5%9C%A8%E5%93%AA%E9%87%8C"><span class="nav-number">22.</span> <span class="nav-text">二十二、这篇文章的边界在哪里</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%89%E3%80%81%E8%BF%99%E7%AF%87%E6%96%87%E7%AB%A0%E5%AD%A6%E5%AE%8C%E4%BB%A5%E5%90%8E%EF%BC%8C%E4%B8%8B%E4%B8%80%E6%AD%A5%E5%BA%94%E8%AF%A5%E8%A1%A5%E4%BB%80%E4%B9%88"><span class="nav-number">23.</span> <span class="nav-text">二十三、这篇文章学完以后，下一步应该补什么</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%9B%9B%E3%80%81%E7%BB%93%E8%AF%AD"><span class="nav-number">24.</span> <span class="nav-text">二十四、结语</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2018/06/13/Go-09-Go%E5%B9%B6%E5%8F%91%E7%BC%96%E7%A8%8B%E5%85%A5%E9%97%A8goroutinechannelcontext%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E9%85%8D%E5%90%88/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="Go：并发编程入门，goroutine、channel、context 应该怎么配合 | 大道至简">
+      <meta itemprop="description" content="Go 并发入门不能只背 goroutine、channel 和 context 的定义，而要看它们怎么在同一条执行链里配合。这篇文章围绕一个批量任务分发器，讲清并发启动、结果回收、超时控制、取消传播和工程边界。">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Go：并发编程入门，goroutine、channel、context 应该怎么配合
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2018-06-13 20:30:00" itemprop="dateCreated datePublished" datetime="2018-06-13T20:30:00+08:00">2018-06-13</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>4.2k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>15 分钟</span>
+    </span>
+</div>
+
+            <div class="post-description">Go 并发入门不能只背 goroutine、channel 和 context 的定义，而要看它们怎么在同一条执行链里配合。这篇文章围绕一个批量任务分发器，讲清并发启动、结果回收、超时控制、取消传播和工程边界。</div>
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>第一次学 Go 并发时，很快会先记住三个词：</p>
+<ul>
+<li>goroutine</li>
+<li>channel</li>
+<li>context</li>
+</ul>
+<p>但真正开始写代码时，又经常会同时卡在几件事上：</p>
+<ul>
+<li>goroutine 什么时候该起，什么时候不该乱起</li>
+<li>channel 是拿来传数据，还是拿来做同步</li>
+<li>context 是不是“到处传一下就行”</li>
+<li>为什么代码看起来能跑，结果一超时就收不住</li>
+<li>为什么任务都执行完了，程序还挂着不退出</li>
+</ul>
+<p>这类问题通常不是因为语法不会，而是因为<strong>三种能力之间的分工没建立起来</strong>。</p>
+<p>Go 并发入门真正要先看清的是：</p>
+<ul>
+<li>goroutine 负责并发执行</li>
+<li>channel 负责通信和协同</li>
+<li>context 负责控制生命周期</li>
+</ul>
+<p>如果把这三件事混在一起，代码很快就会变成：</p>
+<ul>
+<li>goroutine 一路乱开</li>
+<li>channel 既传数据又强行承载取消语义</li>
+<li>context 传了，但没人真正响应取消</li>
+</ul>
+<p>这一篇就围绕一个实际小场景来讲：<strong>做一个批量任务分发器</strong>。</p>
+<p>这个分发器要做几件事：</p>
+<ol>
+<li>接收一批检查任务</li>
+<li>并发执行这些任务</li>
+<li>回收每个任务结果</li>
+<li>整体超时后立即停止收口</li>
+<li>某个关键失败时通知其它任务尽快退出</li>
+</ol>
+<p>这个场景不大，但足够把 goroutine、channel、context 的配合关系一次讲清楚。</p>
+<h2 id="一、这篇文章要解决什么问题"><a href="#一、这篇文章要解决什么问题" class="headerlink" title="一、这篇文章要解决什么问题"></a>一、这篇文章要解决什么问题</h2><p>读完这一篇，应该能独立回答这些问题：</p>
+<ol>
+<li>goroutine、channel、context 分别在解决什么问题</li>
+<li>一个最小并发任务模型应该怎么搭</li>
+<li>什么时候该用 channel 传结果，什么时候该用 context 取消</li>
+<li>超时、取消和正常完成三种结束方式怎么区分</li>
+<li>怎么给并发逻辑补最小验证</li>
+<li>什么时候不该把“能并发”理解成“必须并发”</li>
+</ol>
+<p>如果这些问题能答清，后面再学竞态、死锁、goroutine 泄漏和 HTTP 并发服务，理解会快很多。</p>
+<h2 id="二、先看这篇文章里的实际场景"><a href="#二、先看这篇文章里的实际场景" class="headerlink" title="二、先看这篇文章里的实际场景"></a>二、先看这篇文章里的实际场景</h2><p>假设现在要做一个最小任务分发器，输入一批探测任务：</p>
+<ul>
+<li><code>check-order-api</code></li>
+<li><code>check-user-api</code></li>
+<li><code>check-billing-api</code></li>
+</ul>
+<p>每个任务都要：</p>
+<ul>
+<li>执行一次检查</li>
+<li>返回成功或失败</li>
+<li>记录耗时</li>
+</ul>
+<p>同时还有两个约束：</p>
+<ol>
+<li>整批任务 2 秒内必须收口</li>
+<li>某个关键任务一旦失败，剩余任务要尽快停止</li>
+</ol>
+<p>这时如果完全串行执行，最直接的问题是总耗时可能太长。<br>但如果只是看见 Go 有 goroutine，就一路并发开出去，后面又会立刻遇到：</p>
+<ul>
+<li>结果怎么回收</li>
+<li>谁负责关闭通道</li>
+<li>超时后谁通知其它任务退出</li>
+<li>子任务没退出时主流程为什么会卡住</li>
+</ul>
+<p>所以这一篇不按“概念定义”展开，而是直接围绕这个分发器搭并发骨架。</p>
+<h2 id="三、先给一个最小可运行示例"><a href="#三、先给一个最小可运行示例" class="headerlink" title="三、先给一个最小可运行示例"></a>三、先给一个最小可运行示例</h2><p>先只做最小版本：三个任务并发执行，把结果从 channel 收回来。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">	<span class="string">&quot;fmt&quot;</span></span><br><span class="line">	<span class="string">&quot;time&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Result <span class="keyword">struct</span> &#123;</span><br><span class="line">	Name     <span class="type">string</span></span><br><span class="line">	Duration time.Duration</span><br><span class="line">	Err      <span class="type">error</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">runTask</span><span class="params">(name <span class="type">string</span>)</span></span> Result &#123;</span><br><span class="line">	start := time.Now()</span><br><span class="line">	time.Sleep(<span class="number">200</span> * time.Millisecond)</span><br><span class="line">	<span class="keyword">return</span> Result&#123;</span><br><span class="line">		Name:     name,</span><br><span class="line">		Duration: time.Since(start),</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	tasks := []<span class="type">string</span>&#123;<span class="string">&quot;order&quot;</span>, <span class="string">&quot;user&quot;</span>, <span class="string">&quot;billing&quot;</span>&#125;</span><br><span class="line">	resultCh := <span class="built_in">make</span>(<span class="keyword">chan</span> Result)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> _, name := <span class="keyword">range</span> tasks &#123;</span><br><span class="line">		<span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">(taskName <span class="type">string</span>)</span></span> &#123;</span><br><span class="line">			resultCh &lt;- runTask(taskName)</span><br><span class="line">		&#125;(name)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> <span class="keyword">range</span> tasks &#123;</span><br><span class="line">		result := &lt;-resultCh</span><br><span class="line">		fmt.Println(result.Name, result.Duration)</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>输出可能像这样：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">user 200.412ms</span><br><span class="line">billing 200.557ms</span><br><span class="line">order 200.671ms</span><br></pre></td></tr></table></figure>
+
+<p>这个例子先只说明一件事：</p>
+<ul>
+<li>goroutine 把任务并发跑起来</li>
+<li>channel 把结果带回来</li>
+</ul>
+<p>但它还没解决超时、取消、错误传播这些更关键的问题。</p>
+<h2 id="四、先把一句话结论说清楚"><a href="#四、先把一句话结论说清楚" class="headerlink" title="四、先把一句话结论说清楚"></a>四、先把一句话结论说清楚</h2><p>在 Go 并发里，最容易写乱的不是语法，而是职责边界。</p>
+<p>一个更稳的理解方式是：</p>
+<ol>
+<li>goroutine 负责“谁在并发执行”</li>
+<li>channel 负责“谁和谁之间交换结果或信号”</li>
+<li>context 负责“谁通知谁该结束了”</li>
+</ol>
+<p>如果一个地方把这三件事全塞给同一个工具，就会开始失控。</p>
+<p>例如：</p>
+<ul>
+<li>用 channel 既传结果又表示取消</li>
+<li>用 goroutine 随便包一层，却没人负责收尾</li>
+<li>用 context 传下去，但底层函数从头到尾不检查 <code>Done</code></li>
+</ul>
+<h2 id="五、goroutine-到底在解决什么问题"><a href="#五、goroutine-到底在解决什么问题" class="headerlink" title="五、goroutine 到底在解决什么问题"></a>五、goroutine 到底在解决什么问题</h2><p>goroutine 解决的是：<strong>把一段执行流独立跑起来。</strong></p>
+<p>最小写法很简单：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">go</span> runTask(<span class="string">&quot;order&quot;</span>)</span><br></pre></td></tr></table></figure>
+
+<p>但这里要先看清一个事实：</p>
+<ul>
+<li>开 goroutine 不等于任务一定会完成</li>
+<li>主 goroutine 退出时，其它 goroutine 也会直接结束</li>
+</ul>
+<p>所以只会写 <code>go xxx()</code> 远远不够。<br>后面至少要回答：</p>
+<ul>
+<li>结果怎么回来</li>
+<li>结束怎么通知</li>
+<li>异常怎么处理</li>
+</ul>
+<p>如果这些没有配套，goroutine 只会把原本串行的混乱改成并发的混乱。</p>
+<h2 id="六、channel-到底在解决什么问题"><a href="#六、channel-到底在解决什么问题" class="headerlink" title="六、channel 到底在解决什么问题"></a>六、channel 到底在解决什么问题</h2><p>channel 解决的是：<strong>goroutine 之间怎么交换数据或同步状态。</strong></p>
+<p>最常见的两种用途是：</p>
+<ol>
+<li>传递结果</li>
+<li>传递完成信号</li>
+</ol>
+<p>例如传结果：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">resultCh := <span class="built_in">make</span>(<span class="keyword">chan</span> Result)</span><br><span class="line">resultCh &lt;- result</span><br></pre></td></tr></table></figure>
+
+<p>例如传完成信号：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">done := <span class="built_in">make</span>(<span class="keyword">chan</span> <span class="keyword">struct</span>&#123;&#125;)</span><br><span class="line">done &lt;- <span class="keyword">struct</span>&#123;&#125;&#123;&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这里先要建立一个意识：</p>
+<ul>
+<li>channel 不是“并发万能容器”</li>
+<li>它解决的是协作，不是所有共享问题</li>
+</ul>
+<p>如果只是想保护共享内存，可能更该看 <code>sync.Mutex</code>。<br>如果是想表示整体任务结束，更可能应该搭配 <code>context</code>。</p>
+<h2 id="七、context-到底在解决什么问题"><a href="#七、context-到底在解决什么问题" class="headerlink" title="七、context 到底在解决什么问题"></a>七、context 到底在解决什么问题</h2><p>context 最核心的作用不是“顺手传一下”，而是：</p>
+<p><strong>把取消、超时和请求作用域沿调用链传下去。</strong></p>
+<p>最常见的入口：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">ctx, cancel := context.WithTimeout(context.Background(), <span class="number">2</span>*time.Second)</span><br><span class="line"><span class="keyword">defer</span> cancel()</span><br></pre></td></tr></table></figure>
+
+<p>这个 <code>ctx</code> 可以往下传给：</p>
+<ul>
+<li>任务执行器</li>
+<li>HTTP 请求</li>
+<li>数据读取逻辑</li>
+<li>下游 worker</li>
+</ul>
+<p>然后下游在合适的位置响应：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">select</span> &#123;</span><br><span class="line"><span class="keyword">case</span> &lt;-ctx.Done():</span><br><span class="line">	<span class="keyword">return</span> ctx.Err()</span><br><span class="line"><span class="keyword">default</span>:</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这才叫“用了 context”。<br>如果只是函数参数里带个 <code>ctx</code>，但内部根本不看 <code>Done</code>，那它只是一个摆设。</p>
+<h2 id="八、先把三者串成一个最小分发器"><a href="#八、先把三者串成一个最小分发器" class="headerlink" title="八、先把三者串成一个最小分发器"></a>八、先把三者串成一个最小分发器</h2><p>先做一个有超时控制的版本。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> dispatcher</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">	<span class="string">&quot;context&quot;</span></span><br><span class="line">	<span class="string">&quot;fmt&quot;</span></span><br><span class="line">	<span class="string">&quot;time&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Task <span class="keyword">struct</span> &#123;</span><br><span class="line">	Name     <span class="type">string</span></span><br><span class="line">	Delay    time.Duration</span><br><span class="line">	Critical <span class="type">bool</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Result <span class="keyword">struct</span> &#123;</span><br><span class="line">	Name     <span class="type">string</span></span><br><span class="line">	Duration time.Duration</span><br><span class="line">	Err      <span class="type">error</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">runTask</span><span class="params">(ctx context.Context, task Task)</span></span> Result &#123;</span><br><span class="line">	start := time.Now()</span><br><span class="line"></span><br><span class="line">	<span class="keyword">select</span> &#123;</span><br><span class="line">	<span class="keyword">case</span> &lt;-time.After(task.Delay):</span><br><span class="line">		<span class="keyword">if</span> task.Critical &#123;</span><br><span class="line">			<span class="keyword">return</span> Result&#123;</span><br><span class="line">				Name:     task.Name,</span><br><span class="line">				Duration: time.Since(start),</span><br><span class="line">				Err:      fmt.Errorf(<span class="string">&quot;critical task failed&quot;</span>),</span><br><span class="line">			&#125;</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">return</span> Result&#123;</span><br><span class="line">			Name:     task.Name,</span><br><span class="line">			Duration: time.Since(start),</span><br><span class="line">		&#125;</span><br><span class="line">	<span class="keyword">case</span> &lt;-ctx.Done():</span><br><span class="line">		<span class="keyword">return</span> Result&#123;</span><br><span class="line">			Name:     task.Name,</span><br><span class="line">			Duration: time.Since(start),</span><br><span class="line">			Err:      ctx.Err(),</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Dispatch</span><span class="params">(ctx context.Context, tasks []Task)</span></span> []Result &#123;</span><br><span class="line">	resultCh := <span class="built_in">make</span>(<span class="keyword">chan</span> Result)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> _, task := <span class="keyword">range</span> tasks &#123;</span><br><span class="line">		<span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">(current Task)</span></span> &#123;</span><br><span class="line">			resultCh &lt;- runTask(ctx, current)</span><br><span class="line">		&#125;(task)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	results := <span class="built_in">make</span>([]Result, <span class="number">0</span>, <span class="built_in">len</span>(tasks))</span><br><span class="line">	<span class="keyword">for</span> <span class="keyword">range</span> tasks &#123;</span><br><span class="line">		results = <span class="built_in">append</span>(results, &lt;-resultCh)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> results</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这时已经有了三层配合：</p>
+<ul>
+<li>goroutine 并发执行任务</li>
+<li>channel 回收结果</li>
+<li>context 控制任务是否继续</li>
+</ul>
+<h2 id="九、为什么这里要把循环变量显式传进去"><a href="#九、为什么这里要把循环变量显式传进去" class="headerlink" title="九、为什么这里要把循环变量显式传进去"></a>九、为什么这里要把循环变量显式传进去</h2><p>写 goroutine 时，最常见的坑之一是：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">for</span> _, task := <span class="keyword">range</span> tasks &#123;</span><br><span class="line">	<span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">		resultCh &lt;- runTask(ctx, task)</span><br><span class="line">	&#125;()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这类写法在不同 Go 版本和不同上下文里都容易制造误判。<br>更稳的写法是直接把当前值传进闭包参数：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">for</span> _, task := <span class="keyword">range</span> tasks &#123;</span><br><span class="line">	<span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">(current Task)</span></span> &#123;</span><br><span class="line">		resultCh &lt;- runTask(ctx, current)</span><br><span class="line">	&#125;(task)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这里不是为了“写法好看”，而是为了把当前 goroutine 使用的对象边界写清楚。</p>
+<h2 id="十、为什么只会起-goroutine-还远远不够"><a href="#十、为什么只会起-goroutine-还远远不够" class="headerlink" title="十、为什么只会起 goroutine 还远远不够"></a>十、为什么只会起 goroutine 还远远不够</h2><p>先看一个常见的坏版本：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Dispatch</span><span class="params">(tasks []Task)</span></span> &#123;</span><br><span class="line">	<span class="keyword">for</span> _, task := <span class="keyword">range</span> tasks &#123;</span><br><span class="line">		<span class="keyword">go</span> runTask(context.Background(), task)</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>问题是：</p>
+<ul>
+<li>没有结果回收</li>
+<li>没有错误处理</li>
+<li>没有结束条件</li>
+<li>没有超时边界</li>
+</ul>
+<p>这种代码最常见的后果是：</p>
+<ul>
+<li>主流程提早结束</li>
+<li>子 goroutine 状态不可见</li>
+<li>出问题时根本不知道哪一个任务卡住了</li>
+</ul>
+<p>所以一段并发代码至少要回答：</p>
+<ol>
+<li>任务何时开始</li>
+<li>结果往哪里回</li>
+<li>何时停止等待</li>
+<li>谁负责取消</li>
+</ol>
+<h2 id="十一、为什么取消信号更适合让-context-承担"><a href="#十一、为什么取消信号更适合让-context-承担" class="headerlink" title="十一、为什么取消信号更适合让 context 承担"></a>十一、为什么取消信号更适合让 context 承担</h2><p>有些人刚开始会想用一个 channel 表示取消：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">stopCh := <span class="built_in">make</span>(<span class="keyword">chan</span> <span class="keyword">struct</span>&#123;&#125;)</span><br></pre></td></tr></table></figure>
+
+<p>这当然不是完全不能做，但一旦调用链变长，就会开始暴露问题：</p>
+<ul>
+<li>函数签名多出很多额外通道参数</li>
+<li>超时和取消语义要自己封装</li>
+<li>下游库函数通常不认识你的 <code>stopCh</code></li>
+</ul>
+<p>而 <code>context</code> 的好处是：</p>
+<ul>
+<li>标准库普遍认识它</li>
+<li>超时、取消、层层传递都已经有现成模型</li>
+<li>调用链可以统一响应 <code>Done</code></li>
+</ul>
+<p>所以更常见的边界是：</p>
+<ul>
+<li>用 channel 传业务结果</li>
+<li>用 context 传生命周期控制</li>
+</ul>
+<h2 id="十二、一个更完整的版本：关键失败触发全局取消"><a href="#十二、一个更完整的版本：关键失败触发全局取消" class="headerlink" title="十二、一个更完整的版本：关键失败触发全局取消"></a>十二、一个更完整的版本：关键失败触发全局取消</h2><p>现在把“关键任务失败就停止整批执行”也补进去。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> dispatcher</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">	<span class="string">&quot;context&quot;</span></span><br><span class="line">	<span class="string">&quot;fmt&quot;</span></span><br><span class="line">	<span class="string">&quot;time&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Task <span class="keyword">struct</span> &#123;</span><br><span class="line">	Name     <span class="type">string</span></span><br><span class="line">	Delay    time.Duration</span><br><span class="line">	Critical <span class="type">bool</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Result <span class="keyword">struct</span> &#123;</span><br><span class="line">	Name     <span class="type">string</span></span><br><span class="line">	Duration time.Duration</span><br><span class="line">	Err      <span class="type">error</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">runTask</span><span class="params">(ctx context.Context, task Task)</span></span> Result &#123;</span><br><span class="line">	start := time.Now()</span><br><span class="line"></span><br><span class="line">	<span class="keyword">select</span> &#123;</span><br><span class="line">	<span class="keyword">case</span> &lt;-time.After(task.Delay):</span><br><span class="line">		<span class="keyword">if</span> task.Critical &#123;</span><br><span class="line">			<span class="keyword">return</span> Result&#123;</span><br><span class="line">				Name:     task.Name,</span><br><span class="line">				Duration: time.Since(start),</span><br><span class="line">				Err:      fmt.Errorf(<span class="string">&quot;critical task failed&quot;</span>),</span><br><span class="line">			&#125;</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">return</span> Result&#123;</span><br><span class="line">			Name:     task.Name,</span><br><span class="line">			Duration: time.Since(start),</span><br><span class="line">		&#125;</span><br><span class="line">	<span class="keyword">case</span> &lt;-ctx.Done():</span><br><span class="line">		<span class="keyword">return</span> Result&#123;</span><br><span class="line">			Name:     task.Name,</span><br><span class="line">			Duration: time.Since(start),</span><br><span class="line">			Err:      ctx.Err(),</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Dispatch</span><span class="params">(ctx context.Context, tasks []Task)</span></span> []Result &#123;</span><br><span class="line">	ctx, cancel := context.WithCancel(ctx)</span><br><span class="line">	<span class="keyword">defer</span> cancel()</span><br><span class="line"></span><br><span class="line">	resultCh := <span class="built_in">make</span>(<span class="keyword">chan</span> Result, <span class="built_in">len</span>(tasks))</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> _, task := <span class="keyword">range</span> tasks &#123;</span><br><span class="line">		<span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">(current Task)</span></span> &#123;</span><br><span class="line">			result := runTask(ctx, current)</span><br><span class="line">			<span class="keyword">if</span> current.Critical &amp;&amp; result.Err != <span class="literal">nil</span> &#123;</span><br><span class="line">				cancel()</span><br><span class="line">			&#125;</span><br><span class="line">			resultCh &lt;- result</span><br><span class="line">		&#125;(task)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	results := <span class="built_in">make</span>([]Result, <span class="number">0</span>, <span class="built_in">len</span>(tasks))</span><br><span class="line">	<span class="keyword">for</span> <span class="keyword">range</span> tasks &#123;</span><br><span class="line">		results = <span class="built_in">append</span>(results, &lt;-resultCh)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> results</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这里更接近实际工程的地方有两点：</p>
+<ol>
+<li>子任务会响应 <code>ctx.Done()</code></li>
+<li>某个关键失败能触发整体取消</li>
+</ol>
+<h2 id="十三、buffered-channel-和-unbuffered-channel-这里该怎么选"><a href="#十三、buffered-channel-和-unbuffered-channel-这里该怎么选" class="headerlink" title="十三、buffered channel 和 unbuffered channel 这里该怎么选"></a>十三、buffered channel 和 unbuffered channel 这里该怎么选</h2><p>这个话题在并发入门里很容易被神化。<br>先不用背很多口诀，只看当前场景。</p>
+<p>如果当前写法是：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">resultCh := <span class="built_in">make</span>(<span class="keyword">chan</span> Result, <span class="built_in">len</span>(tasks))</span><br></pre></td></tr></table></figure>
+
+<p>它的直接好处是：</p>
+<ul>
+<li>发送结果的 goroutine 不会因为主流程暂时没接收就立刻卡住</li>
+</ul>
+<p>但这不意味着“有 buffer 就更高级”。<br>当前选择它，只是因为：</p>
+<ul>
+<li>每个任务只发一次结果</li>
+<li>结果数上限已知</li>
+<li>发送端不需要和接收端强同步</li>
+</ul>
+<p>如果你的模型需要强同步，或者要靠阻塞表达背压，unbuffered channel 反而更合适。</p>
+<h2 id="十四、为什么不能靠关闭-resultCh-来表示“所有任务结束”"><a href="#十四、为什么不能靠关闭-resultCh-来表示“所有任务结束”" class="headerlink" title="十四、为什么不能靠关闭 resultCh 来表示“所有任务结束”"></a>十四、为什么不能靠关闭 resultCh 来表示“所有任务结束”</h2><p>这也是高频混乱点。</p>
+<p>如果每个 worker 都想自己决定：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">close</span>(resultCh)</span><br></pre></td></tr></table></figure>
+
+<p>很容易直接触发：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">panic: close of closed channel</span><br></pre></td></tr></table></figure>
+
+<p>更关键的是，在多 worker 场景下，谁拥有关闭通道的权力必须非常清楚。<br>一个常见原则是：</p>
+<ul>
+<li>谁创建通道</li>
+<li>谁明确知道“不会再有发送”</li>
+<li>谁来关闭通道</li>
+</ul>
+<p>在这篇文章的最小模型里，因为主流程按任务数固定接收，所以甚至不需要强行关闭 <code>resultCh</code>。</p>
+<h2 id="十五、一个更接近项目现场的小案例"><a href="#十五、一个更接近项目现场的小案例" class="headerlink" title="十五、一个更接近项目现场的小案例"></a>十五、一个更接近项目现场的小案例</h2><p>假设现在有一组环境巡检任务：</p>
+<ul>
+<li>数据库连通性</li>
+<li>缓存连通性</li>
+<li>用户接口健康检查</li>
+<li>支付接口健康检查</li>
+</ul>
+<p>要求是：</p>
+<ol>
+<li>总巡检时间不能超过 3 秒</li>
+<li>数据库检查是关键项，一旦失败立刻终止整批</li>
+<li>非关键项超时可以记失败，但不阻断结果汇总</li>
+</ol>
+<p>这时一套更合适的并发骨架通常是：</p>
+<ol>
+<li>顶层创建 <code>context.WithTimeout</code></li>
+<li>每个任务单独起 goroutine</li>
+<li>所有任务结果统一写入 <code>resultCh</code></li>
+<li>关键项失败时触发 <code>cancel()</code></li>
+<li>主流程继续收口结果，生成最终摘要</li>
+</ol>
+<p>最终摘要结构可能像这样：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Summary <span class="keyword">struct</span> &#123;</span><br><span class="line">	SuccessCount <span class="type">int</span></span><br><span class="line">	FailedCount  <span class="type">int</span></span><br><span class="line">	TimeoutCount <span class="type">int</span></span><br><span class="line">	CanceledCount <span class="type">int</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>主流程根据 <code>result.Err</code> 决定归类：</p>
+<ul>
+<li><code>nil</code> 记成功</li>
+<li><code>context.DeadlineExceeded</code> 记超时</li>
+<li><code>context.Canceled</code> 记取消</li>
+<li>其它错误记失败</li>
+</ul>
+<p>这样一来，并发就不是“快一点”这么简单，而是开始具备可控的工程边界。</p>
+<h2 id="十六、怎么给这类并发逻辑补最小验证"><a href="#十六、怎么给这类并发逻辑补最小验证" class="headerlink" title="十六、怎么给这类并发逻辑补最小验证"></a>十六、怎么给这类并发逻辑补最小验证</h2><p>并发代码如果只靠手跑，很容易留下两个误判：</p>
+<ul>
+<li>偶尔跑通就以为没问题</li>
+<li>一次没卡死就以为模型正确</li>
+</ul>
+<p>至少要验证这些点：</p>
+<ol>
+<li>所有任务结果都能收回来</li>
+<li>超时后任务能退出</li>
+<li>关键失败时整批能取消</li>
+</ol>
+<p>示例测试：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> dispatcher</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">	<span class="string">&quot;context&quot;</span></span><br><span class="line">	<span class="string">&quot;errors&quot;</span></span><br><span class="line">	<span class="string">&quot;testing&quot;</span></span><br><span class="line">	<span class="string">&quot;time&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestDispatchReturnsAllResults</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">	tasks := []Task&#123;</span><br><span class="line">		&#123;Name: <span class="string">&quot;order&quot;</span>, Delay: <span class="number">10</span> * time.Millisecond&#125;,</span><br><span class="line">		&#123;Name: <span class="string">&quot;user&quot;</span>, Delay: <span class="number">10</span> * time.Millisecond&#125;,</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	results := Dispatch(context.Background(), tasks)</span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(results) != <span class="number">2</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;want 2 results, got %d&quot;</span>, <span class="built_in">len</span>(results))</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestDispatchTimeout</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">	ctx, cancel := context.WithTimeout(context.Background(), <span class="number">20</span>*time.Millisecond)</span><br><span class="line">	<span class="keyword">defer</span> cancel()</span><br><span class="line"></span><br><span class="line">	tasks := []Task&#123;</span><br><span class="line">		&#123;Name: <span class="string">&quot;slow&quot;</span>, Delay: <span class="number">100</span> * time.Millisecond&#125;,</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	results := Dispatch(ctx, tasks)</span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(results) != <span class="number">1</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;want 1 result, got %d&quot;</span>, <span class="built_in">len</span>(results))</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> !errors.Is(results[<span class="number">0</span>].Err, context.DeadlineExceeded) &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;want deadline exceeded, got %v&quot;</span>, results[<span class="number">0</span>].Err)</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这组测试很小，但已经能把并发模型最容易失控的两条边守住。</p>
+<h2 id="十七、怎么验证这段代码是不是真的响应了取消"><a href="#十七、怎么验证这段代码是不是真的响应了取消" class="headerlink" title="十七、怎么验证这段代码是不是真的响应了取消"></a>十七、怎么验证这段代码是不是真的响应了取消</h2><p>很多代码表面上已经传了 <code>ctx</code>，但实际并没有响应取消。<br>一个最直接的检查方式是：</p>
+<ol>
+<li>人为把任务延迟拉长</li>
+<li>把 <code>WithTimeout</code> 时间压短</li>
+<li>看最终返回的是不是 <code>context.DeadlineExceeded</code></li>
+<li>看程序会不会继续悬挂不退出</li>
+</ol>
+<p>如果超时以后：</p>
+<ul>
+<li>结果迟迟不回来</li>
+<li>程序还挂着</li>
+<li>某些 goroutine 继续睡眠很久</li>
+</ul>
+<p>那就说明底层根本没有在合适位置检查 <code>ctx.Done()</code>。</p>
+<h2 id="十八、一个高频排错场景：为什么主流程已经结束了，程序却不退出"><a href="#十八、一个高频排错场景：为什么主流程已经结束了，程序却不退出" class="headerlink" title="十八、一个高频排错场景：为什么主流程已经结束了，程序却不退出"></a>十八、一个高频排错场景：为什么主流程已经结束了，程序却不退出</h2><p>这类问题通常有几种高频原因：</p>
+<ol>
+<li>某个 goroutine 还在阻塞发送</li>
+<li>某个 goroutine 永远等不到 channel 数据</li>
+<li>某个任务内部根本不响应 context 取消</li>
+</ol>
+<p>排查顺序通常是：</p>
+<ol>
+<li>先看哪个 channel 上有 send &#x2F; receive 卡住</li>
+<li>再看有没有 goroutine 没有退出条件</li>
+<li>再看 <code>ctx.Done()</code> 有没有真正被 select 到</li>
+</ol>
+<p>在这类问题里，最常见的根因不是 Go 并发“太玄学”，而是：</p>
+<ul>
+<li>通信边界没画清</li>
+<li>生命周期控制没收住</li>
+</ul>
+<h2 id="十九、一个高频误区：把-channel-当共享状态表来用"><a href="#十九、一个高频误区：把-channel-当共享状态表来用" class="headerlink" title="十九、一个高频误区：把 channel 当共享状态表来用"></a>十九、一个高频误区：把 channel 当共享状态表来用</h2><p>例如有人会想把所有状态都塞进一个 channel 流里，然后在多个地方读写，希望它顺便承担：</p>
+<ul>
+<li>任务队列</li>
+<li>取消信号</li>
+<li>结果汇总</li>
+<li>当前状态同步</li>
+</ul>
+<p>这通常会把模型越写越乱。</p>
+<p>更常见有效的思路是：</p>
+<ul>
+<li>channel 只承担明确的一种协作语义</li>
+<li>结果通道就是结果通道</li>
+<li>取消交给 context</li>
+<li>共享状态单独考虑是否需要锁或归并到单 goroutine 管理</li>
+</ul>
+<h2 id="二十、什么时候不该并发"><a href="#二十、什么时候不该并发" class="headerlink" title="二十、什么时候不该并发"></a>二十、什么时候不该并发</h2><p>这是并发入门里特别值得先建立的边界。</p>
+<p>如果当前任务具备这些特征：</p>
+<ul>
+<li>总量很小</li>
+<li>完全没有 I&#x2F;O 等待</li>
+<li>顺序必须严格一致</li>
+<li>并发后排障成本反而更高</li>
+</ul>
+<p>那它可能根本不值得并发。</p>
+<p>并发不是默认更高级，而是：</p>
+<ul>
+<li>有等待可以重叠</li>
+<li>有吞吐要提升</li>
+<li>有生命周期需要统一控制</li>
+</ul>
+<p>才值得引入。</p>
+<h2 id="二十一、一个实际练习"><a href="#二十一、一个实际练习" class="headerlink" title="二十一、一个实际练习"></a>二十一、一个实际练习</h2><p>可以直接把这一篇改成一个完整练习。</p>
+<p>练习目标：做一个最小环境巡检分发器。</p>
+<p>要求：</p>
+<ol>
+<li>同时执行 3 到 5 个任务</li>
+<li>用 <code>resultCh</code> 回收每个任务结果</li>
+<li>用 <code>context.WithTimeout</code> 控制整体时间</li>
+<li>至少定义一个关键任务，失败时触发 <code>cancel()</code></li>
+<li>补两组最小测试：正常返回和超时返回</li>
+<li>故意写一个不响应 <code>ctx.Done()</code> 的版本，再修回来</li>
+</ol>
+<p>如果这个练习能独立做完，说明并发基础已经不只是“会开 goroutine”，而是开始有收口意识了。</p>
+<h2 id="二十二、这篇文章的边界在哪里"><a href="#二十二、这篇文章的边界在哪里" class="headerlink" title="二十二、这篇文章的边界在哪里"></a>二十二、这篇文章的边界在哪里</h2><p>这一篇重点讲的是并发入门骨架：</p>
+<ul>
+<li>goroutine 怎么起</li>
+<li>channel 怎么收</li>
+<li>context 怎么控</li>
+</ul>
+<p>先不展开这些更复杂的话题：</p>
+<ul>
+<li><code>sync.WaitGroup</code>、<code>Mutex</code>、<code>Cond</code></li>
+<li>worker pool 的限流和背压</li>
+<li>竞态条件和死锁的系统排查</li>
+<li>更复杂的 fan-out &#x2F; fan-in 设计</li>
+</ul>
+<p>这些更适合放到后面的并发问题和工程实践文章里继续展开。</p>
+<h2 id="二十三、这篇文章学完以后，下一步应该补什么"><a href="#二十三、这篇文章学完以后，下一步应该补什么" class="headerlink" title="二十三、这篇文章学完以后，下一步应该补什么"></a>二十三、这篇文章学完以后，下一步应该补什么</h2><p>这一篇解决的是：</p>
+<ul>
+<li>goroutine、channel、context 的基本分工</li>
+<li>一个最小并发任务模型怎么搭起来</li>
+</ul>
+<p>接下来最适合继续补的是：</p>
+<ol>
+<li>竞态、死锁、goroutine 泄漏、超时和取消怎么排查</li>
+<li><code>io</code>、<code>os</code>、<code>net/http</code>、<code>json</code> 这些标准库能力怎么和并发配合</li>
+<li>项目继续长大后，目录、层次和入口怎么组织</li>
+</ol>
+<p>因为到这一步，并发代码已经能跑起来了。<br>后面真正会卡住的，是它能不能长期稳定、能不能排查、能不能被工程化接住。</p>
+<h2 id="二十四、结语"><a href="#二十四、结语" class="headerlink" title="二十四、结语"></a>二十四、结语</h2><p>Go 并发入门真正关键的，不是先记住多少术语，而是先把三件事分开：</p>
+<ul>
+<li>goroutine 负责执行</li>
+<li>channel 负责协作</li>
+<li>context 负责生命周期</li>
+</ul>
+<p>只要这个分工先立住，后面无论是写批量任务、环境巡检，还是 HTTP 请求并发处理，代码都不会那么容易一上来就缠在一起。</p>
+<p>并发从来不是“多写一个 <code>go</code>”这么简单。<br>真正让代码稳下来的，是启动、通信、取消和收口这四件事有没有同时被设计进去。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Go/" rel="tag"># Go</a>
+              <a href="/tags/Go%E4%B8%93%E9%A2%98/" rel="tag"># Go专题</a>
+              <a href="/tags/%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80/" rel="tag"># 编程语言</a>
+              <a href="/tags/%E5%B9%B6%E5%8F%91/" rel="tag"># 并发</a>
+              <a href="/tags/goroutine/" rel="tag"># goroutine</a>
+              <a href="/tags/channel/" rel="tag"># channel</a>
+              <a href="/tags/context/" rel="tag"># context</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2018/06/13/Python-09-Python%E9%A1%B9%E7%9B%AE%E4%BB%8E%E8%84%9A%E6%9C%AC%E5%88%B0%E5%B7%A5%E7%A8%8B%E8%99%9A%E6%8B%9F%E7%8E%AF%E5%A2%83%E4%BE%9D%E8%B5%96%E7%AE%A1%E7%90%86%E5%8C%85%E7%BB%93%E6%9E%84%E6%80%8E%E4%B9%88%E7%BB%84%E7%BB%87/" rel="prev" title="Python：项目从脚本到工程，虚拟环境、依赖管理、包结构怎么组织">
+                  <i class="fa fa-angle-left"></i> Python：项目从脚本到工程，虚拟环境、依赖管理、包结构怎么组织
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2018/06/20/Python-10-Python%E5%81%9A%E6%8E%A5%E5%8F%A3%E5%B7%A5%E5%85%B7%E5%92%8C%E6%95%B0%E6%8D%AE%E5%A4%84%E7%90%86%E8%84%9A%E6%9C%AC%E6%97%B6%E4%BB%A3%E7%A0%81%E6%80%8E%E6%A0%B7%E5%86%99%E6%89%8D%E4%B8%8D%E4%BC%9A%E8%B6%8A%E5%86%99%E8%B6%8A%E4%B9%B1/" rel="next" title="Python：做接口工具和数据处理脚本时，代码怎样写才不会越写越乱">
+                  Python：做接口工具和数据处理脚本时，代码怎样写才不会越写越乱 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

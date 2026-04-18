@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="第一次做测试平台后端时，目标很容易被理解成：  用 Gin 起个服务 写几个接口 前端能调通  这当然是开始，但如果目标只是这样，后面平台很快就会出现几个典型问题：  接口越来越多，但对象边界越来越乱 任务执行逻辑、配置逻辑、报告逻辑混在一起 控制器层越来越重 调度、执行、查询、权限开始互相耦合  所以需要强调的是，Go + Gin 搭测试平台后端的关键，不是“框架怎么用”，而是： 怎么把平台后端">
+<meta property="og:type" content="article">
+<meta property="og:title" content="测试平台-02-Go + Gin 如何搭一个测试平台后端">
+<meta property="og:url" content="https://paynewinnt.github.io/2021/07/15/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-02-Go+Gin%E5%A6%82%E4%BD%95%E6%90%AD%E4%B8%80%E4%B8%AA%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E5%90%8E%E7%AB%AF/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="第一次做测试平台后端时，目标很容易被理解成：  用 Gin 起个服务 写几个接口 前端能调通  这当然是开始，但如果目标只是这样，后面平台很快就会出现几个典型问题：  接口越来越多，但对象边界越来越乱 任务执行逻辑、配置逻辑、报告逻辑混在一起 控制器层越来越重 调度、执行、查询、权限开始互相耦合  所以需要强调的是，Go + Gin 搭测试平台后端的关键，不是“框架怎么用”，而是： 怎么把平台后端">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2021-07-15T12:30:00.000Z">
+<meta property="article:modified_time" content="2021-07-15T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="测试平台">
+<meta property="article:tag" content="工程化">
+<meta property="article:tag" content="Go">
+<meta property="article:tag" content="实战">
+<meta property="article:tag" content="架构设计">
+<meta property="article:tag" content="测试平台开发">
+<meta property="article:tag" content="Gin">
+<meta property="article:tag" content="后端开发">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2021/07/15/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-02-Go+Gin%E5%A6%82%E4%BD%95%E6%90%AD%E4%B8%80%E4%B8%AA%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E5%90%8E%E7%AB%AF/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2021/07/15/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-02-Go+Gin%E5%A6%82%E4%BD%95%E6%90%AD%E4%B8%80%E4%B8%AA%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E5%90%8E%E7%AB%AF/","path":"2021/07/15/测试平台-02-Go+Gin如何搭一个测试平台后端/","title":"测试平台-02-Go + Gin 如何搭一个测试平台后端"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>测试平台-02-Go + Gin 如何搭一个测试平台后端 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E5%90%8E%E7%AB%AF%E6%9C%80%E5%85%88%E8%A6%81%E6%83%B3%E6%B8%85%E6%A5%9A%E7%9A%84%EF%BC%8C%E4%B8%8D%E6%98%AF%E6%8E%A5%E5%8F%A3%EF%BC%8C%E8%80%8C%E6%98%AF%E5%AF%B9%E8%B1%A1"><span class="nav-number">1.</span> <span class="nav-text">一、测试平台后端最先要想清楚的，不是接口，而是对象</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E6%9B%B4%E5%B8%B8%E8%A7%81%E7%9A%84%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E5%90%8E%E7%AB%AF%E6%A0%B8%E5%BF%83%E5%AF%B9%E8%B1%A1"><span class="nav-number">2.</span> <span class="nav-text">二、更常见的测试平台后端核心对象</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E9%A1%B9%E7%9B%AE-%E5%BA%94%E7%94%A8"><span class="nav-number">2.1.</span> <span class="nav-text">1. 项目 &#x2F; 应用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%BB%BB%E5%8A%A1%E5%AE%9A%E4%B9%89"><span class="nav-number">2.2.</span> <span class="nav-text">2. 任务定义</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%89%A7%E8%A1%8C%E8%AE%B0%E5%BD%95"><span class="nav-number">2.3.</span> <span class="nav-text">3. 执行记录</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E7%8E%AF%E5%A2%83%E4%B8%8E%E9%85%8D%E7%BD%AE"><span class="nav-number">2.4.</span> <span class="nav-text">4. 环境与配置</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%8A%A5%E5%91%8A%E4%B8%8E%E8%AF%81%E6%8D%AE"><span class="nav-number">2.5.</span> <span class="nav-text">5. 报告与证据</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E7%94%A8%E6%88%B7%E3%80%81%E8%A7%92%E8%89%B2%E3%80%81%E6%9D%83%E9%99%90"><span class="nav-number">2.6.</span> <span class="nav-text">6. 用户、角色、权限</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E6%9B%B4%E6%8E%A8%E8%8D%90%E7%9A%84%E5%90%8E%E7%AB%AF%E5%88%86%E5%B1%82%EF%BC%8C%E4%B8%8D%E6%98%AF%E4%B8%BA%E4%BA%86%E5%A5%BD%E7%9C%8B%EF%BC%8C%E8%80%8C%E6%98%AF%E4%B8%BA%E4%BA%86%E9%98%B2%E6%AD%A2%E9%80%BB%E8%BE%91%E4%B9%B1%E9%95%BF"><span class="nav-number">3.</span> <span class="nav-text">三、更推荐的后端分层，不是为了好看，而是为了防止逻辑乱长</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Handler-%E5%B1%82"><span class="nav-number">3.1.</span> <span class="nav-text">1. Handler 层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Service-%E5%B1%82"><span class="nav-number">3.2.</span> <span class="nav-text">2. Service 层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Repository-Store-%E5%B1%82"><span class="nav-number">3.3.</span> <span class="nav-text">3. Repository &#x2F; Store 层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-Executor-Runner-%E5%B1%82"><span class="nav-number">3.4.</span> <span class="nav-text">4. Executor &#x2F; Runner 层</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E5%90%8E%E7%AB%AF%E6%9C%80%E5%AE%B9%E6%98%93%E5%86%99%E9%94%99%E7%9A%84%E5%9C%B0%E6%96%B9%EF%BC%9A%E6%8A%8A%E2%80%9C%E6%89%A7%E8%A1%8C%E2%80%9D%E5%BD%93%E6%88%90%E4%B8%80%E4%B8%AA%E6%99%AE%E9%80%9A%E5%90%8C%E6%AD%A5%E6%8E%A5%E5%8F%A3"><span class="nav-number">4.</span> <span class="nav-text">四、测试平台后端最容易写错的地方：把“执行”当成一个普通同步接口</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E4%B8%BA%E4%BB%80%E4%B9%88%E5%81%8F%E5%90%91%E7%94%A8-Go-Gin-%E5%81%9A%E8%BF%99%E7%B1%BB%E5%90%8E%E7%AB%AF"><span class="nav-number">5.</span> <span class="nav-text">五、为什么偏向用 Go + Gin 做这类后端</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Go-%E9%80%82%E5%90%88%E5%81%9A%E8%BF%99%E7%A7%8D%E4%B8%AD%E5%90%8E%E5%8F%B0%E6%8E%A7%E5%88%B6%E9%9D%A2"><span class="nav-number">5.1.</span> <span class="nav-text">1. Go 适合做这种中后台控制面</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Gin-%E8%B6%B3%E5%A4%9F%E8%BD%BB"><span class="nav-number">5.2.</span> <span class="nav-text">2. Gin 足够轻</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E4%B8%80%E5%A5%97%E6%9B%B4%E5%AE%9E%E7%94%A8%E7%9A%84%E6%9C%80%E5%B0%8F%E5%90%8E%E7%AB%AF%E9%AA%A8%E6%9E%B6"><span class="nav-number">6.</span> <span class="nav-text">六、一套更实用的最小后端骨架</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%AE%A4%E8%AF%81%E4%B8%8E%E6%9D%83%E9%99%90%E6%A8%A1%E5%9D%97"><span class="nav-number">6.1.</span> <span class="nav-text">1. 认证与权限模块</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%BB%BB%E5%8A%A1%E5%AE%9A%E4%B9%89%E6%A8%A1%E5%9D%97"><span class="nav-number">6.2.</span> <span class="nav-text">2. 任务定义模块</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%BB%BB%E5%8A%A1%E6%89%A7%E8%A1%8C%E6%A8%A1%E5%9D%97"><span class="nav-number">6.3.</span> <span class="nav-text">3. 任务执行模块</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%97%A5%E5%BF%97%E4%B8%8E%E6%8A%A5%E5%91%8A%E6%A8%A1%E5%9D%97"><span class="nav-number">6.4.</span> <span class="nav-text">4. 日志与报告模块</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E7%8E%AF%E5%A2%83%E4%B8%8E%E9%85%8D%E7%BD%AE%E6%A8%A1%E5%9D%97"><span class="nav-number">6.5.</span> <span class="nav-text">5. 环境与配置模块</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E6%9C%80%E5%B0%8F%E7%9B%AE%E5%BD%95%E7%BB%93%E6%9E%84%E6%80%8E%E4%B9%88%E7%BB%84%E7%BB%87"><span class="nav-number">7.</span> <span class="nav-text">七、最小目录结构怎么组织</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E4%BB%BB%E5%8A%A1%E6%89%A7%E8%A1%8C%E9%93%BE%E8%B7%AF%E6%9B%B4%E6%8E%A8%E8%8D%90%E8%BF%99%E6%A0%B7%E8%B5%B0"><span class="nav-number">8.</span> <span class="nav-text">八、任务执行链路更推荐这样走</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E5%87%A0%E4%B8%AA%E7%89%B9%E5%88%AB%E5%AE%B9%E6%98%93%E8%A2%AB%E4%BD%8E%E4%BC%B0%E7%9A%84%E5%B7%A5%E7%A8%8B%E9%97%AE%E9%A2%98"><span class="nav-number">9.</span> <span class="nav-text">九、几个特别容易被低估的工程问题</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%8A%B6%E6%80%81%E6%9C%BA"><span class="nav-number">9.1.</span> <span class="nav-text">1. 状态机</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%B9%82%E7%AD%89"><span class="nav-number">9.2.</span> <span class="nav-text">2. 幂等</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%97%A5%E5%BF%97%E5%BD%92%E5%B1%9E"><span class="nav-number">9.3.</span> <span class="nav-text">3. 日志归属</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E9%85%8D%E7%BD%AE%E9%9A%94%E7%A6%BB"><span class="nav-number">9.4.</span> <span class="nav-text">4. 配置隔离</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E6%9C%80%E5%AE%B9%E6%98%93%E8%B8%A9%E7%9A%84%E5%87%A0%E4%B8%AA%E5%9D%91"><span class="nav-number">10.</span> <span class="nav-text">十、最容易踩的几个坑</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Controller-%E9%87%8C%E5%86%99%E5%A4%AA%E5%A4%9A%E9%80%BB%E8%BE%91"><span class="nav-number">10.1.</span> <span class="nav-text">1. Controller 里写太多逻辑</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%8A%8A%E6%89%A7%E8%A1%8C%E9%80%BB%E8%BE%91%E7%9B%B4%E6%8E%A5%E5%A1%9E%E8%BF%9B-Web-%E8%BF%9B%E7%A8%8B"><span class="nav-number">10.2.</span> <span class="nav-text">2. 把执行逻辑直接塞进 Web 进程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%8A%A5%E5%91%8A%E7%B3%BB%E7%BB%9F%E5%90%8E%E8%A1%A5"><span class="nav-number">10.3.</span> <span class="nav-text">3. 报告系统后补</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%9D%83%E9%99%90%E7%AD%89%E5%90%8E%E9%9D%A2%E5%86%8D%E8%AF%B4"><span class="nav-number">10.4.</span> <span class="nav-text">4. 权限等后面再说</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E7%9C%9F%E5%AE%9E%E6%A1%88%E4%BE%8B%EF%BC%9A%E4%B8%BA%E4%BB%80%E4%B9%88%E5%90%8E%E7%AB%AF%E6%8E%A5%E5%8F%A3%E9%83%BD%E5%86%99%E5%87%BA%E6%9D%A5%E4%BA%86%EF%BC%8C%E5%B9%B3%E5%8F%B0%E8%BF%98%E6%98%AF%E8%B6%8A%E6%9D%A5%E8%B6%8A%E9%9A%BE%E7%94%A8"><span class="nav-number">11.</span> <span class="nav-text">十一、真实案例：为什么后端接口都写出来了，平台还是越来越难用</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9C%BA%E6%99%AF"><span class="nav-number">11.1.</span> <span class="nav-text">场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%89%A7%E8%A1%8C"><span class="nav-number">11.2.</span> <span class="nav-text">执行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8E%B0%E8%B1%A1"><span class="nav-number">11.3.</span> <span class="nav-text">现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%92%E6%9F%A5"><span class="nav-number">11.4.</span> <span class="nav-text">排查</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BF%AE%E5%A4%8D"><span class="nav-number">11.5.</span> <span class="nav-text">修复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E5%86%99%E5%9C%A8%E6%9C%80%E5%90%8E"><span class="nav-number">12.</span> <span class="nav-text">十二、写在最后</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2021/07/15/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-02-Go+Gin%E5%A6%82%E4%BD%95%E6%90%AD%E4%B8%80%E4%B8%AA%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E5%90%8E%E7%AB%AF/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="测试平台-02-Go + Gin 如何搭一个测试平台后端 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          测试平台-02-Go + Gin 如何搭一个测试平台后端
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2021-07-15 20:30:00" itemprop="dateCreated datePublished" datetime="2021-07-15T20:30:00+08:00">2021-07-15</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0/" itemprop="url" rel="index"><span itemprop="name">测试平台</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>2.3k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>9 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>第一次做测试平台后端时，目标很容易被理解成：</p>
+<ul>
+<li>用 <code>Gin</code> 起个服务</li>
+<li>写几个接口</li>
+<li>前端能调通</li>
+</ul>
+<p>这当然是开始，但如果目标只是这样，后面平台很快就会出现几个典型问题：</p>
+<ul>
+<li>接口越来越多，但对象边界越来越乱</li>
+<li>任务执行逻辑、配置逻辑、报告逻辑混在一起</li>
+<li>控制器层越来越重</li>
+<li>调度、执行、查询、权限开始互相耦合</li>
+</ul>
+<p>所以需要强调的是，<code>Go + Gin</code> 搭测试平台后端的关键，不是“框架怎么用”，而是：</p>
+<p><strong>怎么把平台后端先搭成一个能长的工程骨架。</strong></p>
+<p>这篇文章就只讲这个问题。</p>
+<h2 id="一、测试平台后端最先要想清楚的，不是接口，而是对象"><a href="#一、测试平台后端最先要想清楚的，不是接口，而是对象" class="headerlink" title="一、测试平台后端最先要想清楚的，不是接口，而是对象"></a>一、测试平台后端最先要想清楚的，不是接口，而是对象</h2><p>很多平台后端一开始写乱，根因不是技术栈，而是对象没先想清楚。</p>
+<p>通常会先问：</p>
+<ul>
+<li>平台里最核心的对象是什么</li>
+<li>这些对象之间是什么关系</li>
+<li>哪些是静态配置</li>
+<li>哪些是运行期状态</li>
+</ul>
+<p>如果这一步没先清楚，后面很容易把所有逻辑都堆进：</p>
+<ul>
+<li>一个大 <code>service</code></li>
+<li>一个大 <code>handler</code></li>
+<li>一个大 <code>task</code> 表</li>
+</ul>
+<p>然后越写越难拆。</p>
+<h2 id="二、更常见的测试平台后端核心对象"><a href="#二、更常见的测试平台后端核心对象" class="headerlink" title="二、更常见的测试平台后端核心对象"></a>二、更常见的测试平台后端核心对象</h2><p>如果是自动化测试平台，通常先把对象收在这几类里：</p>
+<h3 id="1-项目-应用"><a href="#1-项目-应用" class="headerlink" title="1. 项目 &#x2F; 应用"></a>1. 项目 &#x2F; 应用</h3><p>用来描述：</p>
+<ul>
+<li>这套任务属于谁</li>
+<li>面向哪个系统</li>
+<li>使用哪类环境</li>
+</ul>
+<h3 id="2-任务定义"><a href="#2-任务定义" class="headerlink" title="2. 任务定义"></a>2. 任务定义</h3><p>它描述的是：</p>
+<ul>
+<li>这是什么任务</li>
+<li>怎么执行</li>
+<li>需要哪些参数</li>
+<li>允许谁触发</li>
+</ul>
+<p>这里注意，任务定义和任务执行不是一回事。</p>
+<h3 id="3-执行记录"><a href="#3-执行记录" class="headerlink" title="3. 执行记录"></a>3. 执行记录</h3><p>它描述的是一次具体运行：</p>
+<ul>
+<li>谁触发</li>
+<li>何时触发</li>
+<li>用了什么参数</li>
+<li>最终结果如何</li>
+</ul>
+<h3 id="4-环境与配置"><a href="#4-环境与配置" class="headerlink" title="4. 环境与配置"></a>4. 环境与配置</h3><p>包括：</p>
+<ul>
+<li>环境地址</li>
+<li>账号数据</li>
+<li>依赖资源</li>
+<li>开关配置</li>
+</ul>
+<h3 id="5-报告与证据"><a href="#5-报告与证据" class="headerlink" title="5. 报告与证据"></a>5. 报告与证据</h3><p>包括：</p>
+<ul>
+<li>执行结果</li>
+<li>日志</li>
+<li>截图</li>
+<li>报表</li>
+<li>附件</li>
+</ul>
+<h3 id="6-用户、角色、权限"><a href="#6-用户、角色、权限" class="headerlink" title="6. 用户、角色、权限"></a>6. 用户、角色、权限</h3><p>用于控制：</p>
+<ul>
+<li>谁能看什么</li>
+<li>谁能跑什么</li>
+<li>谁能改什么</li>
+</ul>
+<p>这些对象如果一开始不拆开，后面平台就很容易把“定义”“执行”“结果”混成一团。</p>
+<h2 id="三、更推荐的后端分层，不是为了好看，而是为了防止逻辑乱长"><a href="#三、更推荐的后端分层，不是为了好看，而是为了防止逻辑乱长" class="headerlink" title="三、更推荐的后端分层，不是为了好看，而是为了防止逻辑乱长"></a>三、更推荐的后端分层，不是为了好看，而是为了防止逻辑乱长</h2><p>如果要用 <code>Go + Gin</code> 搭一个测试平台后端，一开始不适合追求复杂架构，但需要尽量把下面几层拉开。</p>
+<h3 id="1-Handler-层"><a href="#1-Handler-层" class="headerlink" title="1. Handler 层"></a>1. Handler 层</h3><p>职责尽量收窄到：</p>
+<ul>
+<li>接收请求</li>
+<li>参数校验</li>
+<li>调用 service</li>
+<li>返回响应</li>
+</ul>
+<p>不要把核心业务逻辑塞在这一层。</p>
+<h3 id="2-Service-层"><a href="#2-Service-层" class="headerlink" title="2. Service 层"></a>2. Service 层</h3><p>这一层负责：</p>
+<ul>
+<li>任务创建</li>
+<li>任务触发</li>
+<li>权限判断</li>
+<li>状态流转</li>
+</ul>
+<p>它是平台最核心的业务层。</p>
+<h3 id="3-Repository-Store-层"><a href="#3-Repository-Store-层" class="headerlink" title="3. Repository &#x2F; Store 层"></a>3. Repository &#x2F; Store 层</h3><p>这一层负责：</p>
+<ul>
+<li>数据查询</li>
+<li>数据写入</li>
+<li>状态更新</li>
+</ul>
+<p>尽量别让 service 里到处散 SQL 或存储细节。</p>
+<h3 id="4-Executor-Runner-层"><a href="#4-Executor-Runner-层" class="headerlink" title="4. Executor &#x2F; Runner 层"></a>4. Executor &#x2F; Runner 层</h3><p>这一层很关键，很多平台后端一开始会忽略它。</p>
+<p>它负责：</p>
+<ul>
+<li>真正执行任务</li>
+<li>收集日志</li>
+<li>产出结果</li>
+</ul>
+<p>如果把执行逻辑直接混进 Web 服务，后面会很难扩。</p>
+<h2 id="四、测试平台后端最容易写错的地方：把“执行”当成一个普通同步接口"><a href="#四、测试平台后端最容易写错的地方：把“执行”当成一个普通同步接口" class="headerlink" title="四、测试平台后端最容易写错的地方：把“执行”当成一个普通同步接口"></a>四、测试平台后端最容易写错的地方：把“执行”当成一个普通同步接口</h2><p>很多平台早期会写成这种接口：</p>
+<ul>
+<li>前端点执行</li>
+<li>接口直接开始跑</li>
+<li>跑完再返回</li>
+</ul>
+<p>这在最初 demo 阶段能用，但很快就会出问题：</p>
+<ul>
+<li>请求超时</li>
+<li>日志不好收</li>
+<li>多任务并发难管</li>
+<li>失败状态难追</li>
+</ul>
+<p>更推荐从一开始就把“触发执行”和“实际执行”分开。</p>
+<p>更合理的方式通常是：</p>
+<ol>
+<li>接口只负责创建执行记录</li>
+<li>把任务投递给执行器</li>
+<li>执行器异步更新状态和日志</li>
+<li>前端查询执行结果</li>
+</ol>
+<p>只要这一步分开，后面可扩展性会好很多。</p>
+<h2 id="五、为什么偏向用-Go-Gin-做这类后端"><a href="#五、为什么偏向用-Go-Gin-做这类后端" class="headerlink" title="五、为什么偏向用 Go + Gin 做这类后端"></a>五、为什么偏向用 Go + Gin 做这类后端</h2><p>不是因为它“最先进”，而是它在这类平台里很实用。</p>
+<h3 id="1-Go-适合做这种中后台控制面"><a href="#1-Go-适合做这种中后台控制面" class="headerlink" title="1. Go 适合做这种中后台控制面"></a>1. Go 适合做这种中后台控制面</h3><p>原因很现实：</p>
+<ul>
+<li>并发处理比较自然</li>
+<li>部署简单</li>
+<li>二进制交付方便</li>
+<li>做任务调度、状态查询、接口服务都比较顺</li>
+</ul>
+<h3 id="2-Gin-足够轻"><a href="#2-Gin-足够轻" class="headerlink" title="2. Gin 足够轻"></a>2. Gin 足够轻</h3><p>测试平台后端通常不需要一开始上很重的框架。</p>
+<p><code>Gin</code> 的优势是：</p>
+<ul>
+<li>路由清晰</li>
+<li>中间件机制简单</li>
+<li>上手快</li>
+</ul>
+<p>但前提是：你不能把它当架构本身。</p>
+<h2 id="六、一套更实用的最小后端骨架"><a href="#六、一套更实用的最小后端骨架" class="headerlink" title="六、一套更实用的最小后端骨架"></a>六、一套更实用的最小后端骨架</h2><p>如果现在从 0 开始，更倾向先有下面这些模块。</p>
+<h3 id="1-认证与权限模块"><a href="#1-认证与权限模块" class="headerlink" title="1. 认证与权限模块"></a>1. 认证与权限模块</h3><p>至少先解决：</p>
+<ul>
+<li>用户身份</li>
+<li>基础角色</li>
+<li>接口访问控制</li>
+</ul>
+<h3 id="2-任务定义模块"><a href="#2-任务定义模块" class="headerlink" title="2. 任务定义模块"></a>2. 任务定义模块</h3><p>至少先解决：</p>
+<ul>
+<li>任务元数据</li>
+<li>参数模板</li>
+<li>触发方式</li>
+</ul>
+<h3 id="3-任务执行模块"><a href="#3-任务执行模块" class="headerlink" title="3. 任务执行模块"></a>3. 任务执行模块</h3><p>至少先解决：</p>
+<ul>
+<li>创建执行记录</li>
+<li>状态流转</li>
+<li>执行入口</li>
+</ul>
+<h3 id="4-日志与报告模块"><a href="#4-日志与报告模块" class="headerlink" title="4. 日志与报告模块"></a>4. 日志与报告模块</h3><p>至少先解决：</p>
+<ul>
+<li>执行日志</li>
+<li>报告关联</li>
+<li>附件存储</li>
+</ul>
+<h3 id="5-环境与配置模块"><a href="#5-环境与配置模块" class="headerlink" title="5. 环境与配置模块"></a>5. 环境与配置模块</h3><p>至少先解决：</p>
+<ul>
+<li>环境隔离</li>
+<li>配置加载</li>
+<li>密钥和敏感信息管理</li>
+</ul>
+<p>这几个模块不要求一次全做深，但边界最好先有。</p>
+<h2 id="七、最小目录结构怎么组织"><a href="#七、最小目录结构怎么组织" class="headerlink" title="七、最小目录结构怎么组织"></a>七、最小目录结构怎么组织</h2><p>如果只是给一个平台后端起步，更偏向这种拆法：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">cmd/</span><br><span class="line">  server/</span><br><span class="line">internal/</span><br><span class="line">  handler/</span><br><span class="line">  service/</span><br><span class="line">  repository/</span><br><span class="line">  model/</span><br><span class="line">  executor/</span><br><span class="line">  auth/</span><br><span class="line">  report/</span><br><span class="line">  config/</span><br><span class="line">pkg/</span><br><span class="line">  logger/</span><br><span class="line">  response/</span><br><span class="line">  middleware/</span><br></pre></td></tr></table></figure>
+
+<p>这里最关键的不是目录名字，而是两个原则：</p>
+<ul>
+<li>Web 层别吞业务层</li>
+<li>执行层别和接口层搅在一起</li>
+</ul>
+<h2 id="八、任务执行链路更推荐这样走"><a href="#八、任务执行链路更推荐这样走" class="headerlink" title="八、任务执行链路更推荐这样走"></a>八、任务执行链路更推荐这样走</h2><p>如果是一个“执行测试任务”的链路，更推荐：</p>
+<ol>
+<li><code>handler</code> 接收执行请求</li>
+<li><code>service</code> 做参数校验和权限校验</li>
+<li>创建一条执行记录</li>
+<li>调用 <code>executor</code> 异步执行</li>
+<li><code>executor</code> 持续回写状态、日志、产物</li>
+<li>报告模块汇总结果</li>
+</ol>
+<p>这条链路如果不拆清楚，后面最容易出现：</p>
+<ul>
+<li>状态更新混乱</li>
+<li>日志丢失</li>
+<li>报告产物对不上</li>
+</ul>
+<h2 id="九、几个特别容易被低估的工程问题"><a href="#九、几个特别容易被低估的工程问题" class="headerlink" title="九、几个特别容易被低估的工程问题"></a>九、几个特别容易被低估的工程问题</h2><h3 id="1-状态机"><a href="#1-状态机" class="headerlink" title="1. 状态机"></a>1. 状态机</h3><p>任务状态不是简单的：</p>
+<ul>
+<li>成功</li>
+<li>失败</li>
+</ul>
+<p>通常还会有：</p>
+<ul>
+<li>待执行</li>
+<li>排队中</li>
+<li>执行中</li>
+<li>取消中</li>
+<li>已取消</li>
+<li>部分失败</li>
+</ul>
+<p>如果状态设计太粗，后面很多界面和排障都很难解释。</p>
+<h3 id="2-幂等"><a href="#2-幂等" class="headerlink" title="2. 幂等"></a>2. 幂等</h3><p>例如：</p>
+<ul>
+<li>用户连点两次执行</li>
+<li>Jenkins 同时触发一次</li>
+</ul>
+<p>如果没有幂等控制，很容易出现重复任务。</p>
+<h3 id="3-日志归属"><a href="#3-日志归属" class="headerlink" title="3. 日志归属"></a>3. 日志归属</h3><p>日志不能只是“打印出来”，而要能回答：</p>
+<ul>
+<li>属于哪次执行</li>
+<li>属于哪个步骤</li>
+<li>属于哪个节点</li>
+</ul>
+<h3 id="4-配置隔离"><a href="#4-配置隔离" class="headerlink" title="4. 配置隔离"></a>4. 配置隔离</h3><p>平台后端最怕：</p>
+<ul>
+<li>测试环境配置串到生产</li>
+<li>不同项目配置互相污染</li>
+</ul>
+<p>所以环境边界必须早考虑。</p>
+<h2 id="十、最容易踩的几个坑"><a href="#十、最容易踩的几个坑" class="headerlink" title="十、最容易踩的几个坑"></a>十、最容易踩的几个坑</h2><h3 id="1-Controller-里写太多逻辑"><a href="#1-Controller-里写太多逻辑" class="headerlink" title="1. Controller 里写太多逻辑"></a>1. Controller 里写太多逻辑</h3><p>这是平台后端最常见的早期坏味道之一。</p>
+<h3 id="2-把执行逻辑直接塞进-Web-进程"><a href="#2-把执行逻辑直接塞进-Web-进程" class="headerlink" title="2. 把执行逻辑直接塞进 Web 进程"></a>2. 把执行逻辑直接塞进 Web 进程</h3><p>早期看起来省事，后面会很难扩。</p>
+<h3 id="3-报告系统后补"><a href="#3-报告系统后补" class="headerlink" title="3. 报告系统后补"></a>3. 报告系统后补</h3><p>很多平台先做执行，结果最后发现：</p>
+<ul>
+<li>结果没法沉淀</li>
+<li>日志没法对齐</li>
+</ul>
+<h3 id="4-权限等后面再说"><a href="#4-权限等后面再说" class="headerlink" title="4. 权限等后面再说"></a>4. 权限等后面再说</h3><p>平台一旦多人共用，再回头补权限，成本会明显高很多。</p>
+<h2 id="十一、真实案例：为什么后端接口都写出来了，平台还是越来越难用"><a href="#十一、真实案例：为什么后端接口都写出来了，平台还是越来越难用" class="headerlink" title="十一、真实案例：为什么后端接口都写出来了，平台还是越来越难用"></a>十一、真实案例：为什么后端接口都写出来了，平台还是越来越难用</h2><h3 id="场景"><a href="#场景" class="headerlink" title="场景"></a>场景</h3><p>一个测试平台早期后端推进得很快：</p>
+<ul>
+<li>有任务接口</li>
+<li>有执行接口</li>
+<li>有查询接口</li>
+</ul>
+<p>前端页面也能跑起来，看上去进展不错。</p>
+<h3 id="执行"><a href="#执行" class="headerlink" title="执行"></a>执行</h3><p>但用了一段时间后，问题集中冒出来：</p>
+<ul>
+<li>执行接口经常超时</li>
+<li>状态更新不一致</li>
+<li>某些任务明明执行完了，页面还卡在“运行中”</li>
+<li>日志和报告经常对不上</li>
+</ul>
+<h3 id="现象"><a href="#现象" class="headerlink" title="现象"></a>现象</h3><p>往下看后发现，根因并不是某个单点 bug，而是后端骨架一开始就混了：</p>
+<ul>
+<li>接口层直接调用脚本执行</li>
+<li>执行状态和返回状态耦合在一次请求里</li>
+<li>日志写本地文件，没有和执行记录强关联</li>
+</ul>
+<p>也就是说，看起来“功能都有了”，但系统边界还没建立起来。</p>
+<h3 id="排查"><a href="#排查" class="headerlink" title="排查"></a>排查</h3><p>后面把问题拆开后会发现，本质是三层没分开：</p>
+<ul>
+<li>任务定义</li>
+<li>执行调度</li>
+<li>结果沉淀</li>
+</ul>
+<p>这些被写在一起，短期能跑，长期一定会乱。</p>
+<h3 id="修复"><a href="#修复" class="headerlink" title="修复"></a>修复</h3><p>真正有效的修复，不是再补几个接口，而是把后端链路重构成：</p>
+<ol>
+<li>请求创建执行记录</li>
+<li>执行器异步跑任务</li>
+<li>状态、日志、报告统一回写</li>
+</ol>
+<p>这个案例很典型地说明：</p>
+<p><strong>测试平台后端最重要的，不是接口数量，而是系统边界。</strong></p>
+<h2 id="十二、写在最后"><a href="#十二、写在最后" class="headerlink" title="十二、写在最后"></a>十二、写在最后</h2><p><code>Go + Gin</code> 做测试平台后端，真正要解决的不是“怎么把服务启动起来”，而是“怎么让这套后端能在任务、环境、执行、报告、权限不断增长时仍然不乱”。</p>
+<p>如果把这件事压缩成一句最实用的话，可以概括为：</p>
+<p><strong>先把对象和边界拆清楚，再去写接口和执行链路。</strong></p>
+<p>只要这一步做对，后面的平台后端才更像系统，而不是一堆能跑的接口拼出来的壳。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0/" rel="tag"># 测试平台</a>
+              <a href="/tags/%E5%B7%A5%E7%A8%8B%E5%8C%96/" rel="tag"># 工程化</a>
+              <a href="/tags/Go/" rel="tag"># Go</a>
+              <a href="/tags/%E5%AE%9E%E6%88%98/" rel="tag"># 实战</a>
+              <a href="/tags/%E6%9E%B6%E6%9E%84%E8%AE%BE%E8%AE%A1/" rel="tag"># 架构设计</a>
+              <a href="/tags/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E5%BC%80%E5%8F%91/" rel="tag"># 测试平台开发</a>
+              <a href="/tags/Gin/" rel="tag"># Gin</a>
+              <a href="/tags/%E5%90%8E%E7%AB%AF%E5%BC%80%E5%8F%91/" rel="tag"># 后端开发</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2021/07/13/%E6%95%88%E7%8E%87%E5%B7%A5%E5%85%B7-01-xshell%E9%85%8D%E8%89%B2/" rel="prev" title="Xshell：配色方案整理">
+                  <i class="fa fa-angle-left"></i> Xshell：配色方案整理
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2021/07/22/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-03-%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E7%9A%84%E6%A8%A1%E5%9D%97%E8%BE%B9%E7%95%8C%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E6%8B%86/" rel="next" title="测试平台-03-测试平台的模块边界应该怎么拆">
+                  测试平台-03-测试平台的模块边界应该怎么拆 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="移动端自动化里，最让人头疼的不是 case 失败，而是 失败了却没有现场。 你大概率见过这种情况：  报告里写着 AssertionError 日志里能看到一点异常，但看不出页面当时长什么样 截图只有一张，而且已经是恢复动作之后的页面 录屏倒是开了，但几十分钟一个大文件，根本没人愿意看  最后排查只能回到老路上：测试同学重新手工复现，研发远程盯着手机看，问题定位效率极低。 所以这一篇我想讲的不是“">
+<meta property="og:type" content="article">
+<meta property="og:title" content="移动端自动化：Android 自动截图、录屏与证据留存方案怎么设计才有排障价值">
+<meta property="og:url" content="https://paynewinnt.github.io/2023/01/10/%E7%A7%BB%E5%8A%A8%E7%AB%AF%E8%87%AA%E5%8A%A8%E5%8C%96-04-Android%E8%87%AA%E5%8A%A8%E6%88%AA%E5%9B%BE%E5%BD%95%E5%B1%8F%E4%B8%8E%E8%AF%81%E6%8D%AE%E7%95%99%E5%AD%98%E6%96%B9%E6%A1%88%E6%80%8E%E4%B9%88%E8%AE%BE%E8%AE%A1%E6%89%8D%E6%9C%89%E6%8E%92%E9%9A%9C%E4%BB%B7%E5%80%BC/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="移动端自动化里，最让人头疼的不是 case 失败，而是 失败了却没有现场。 你大概率见过这种情况：  报告里写着 AssertionError 日志里能看到一点异常，但看不出页面当时长什么样 截图只有一张，而且已经是恢复动作之后的页面 录屏倒是开了，但几十分钟一个大文件，根本没人愿意看  最后排查只能回到老路上：测试同学重新手工复现，研发远程盯着手机看，问题定位效率极低。 所以这一篇我想讲的不是“">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2023-01-10T12:30:00.000Z">
+<meta property="article:modified_time" content="2023-01-10T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="工程化">
+<meta property="article:tag" content="工程实践">
+<meta property="article:tag" content="排障">
+<meta property="article:tag" content="Android">
+<meta property="article:tag" content="ADB">
+<meta property="article:tag" content="移动端自动化">
+<meta property="article:tag" content="录屏">
+<meta property="article:tag" content="截图">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2023/01/10/%E7%A7%BB%E5%8A%A8%E7%AB%AF%E8%87%AA%E5%8A%A8%E5%8C%96-04-Android%E8%87%AA%E5%8A%A8%E6%88%AA%E5%9B%BE%E5%BD%95%E5%B1%8F%E4%B8%8E%E8%AF%81%E6%8D%AE%E7%95%99%E5%AD%98%E6%96%B9%E6%A1%88%E6%80%8E%E4%B9%88%E8%AE%BE%E8%AE%A1%E6%89%8D%E6%9C%89%E6%8E%92%E9%9A%9C%E4%BB%B7%E5%80%BC/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2023/01/10/%E7%A7%BB%E5%8A%A8%E7%AB%AF%E8%87%AA%E5%8A%A8%E5%8C%96-04-Android%E8%87%AA%E5%8A%A8%E6%88%AA%E5%9B%BE%E5%BD%95%E5%B1%8F%E4%B8%8E%E8%AF%81%E6%8D%AE%E7%95%99%E5%AD%98%E6%96%B9%E6%A1%88%E6%80%8E%E4%B9%88%E8%AE%BE%E8%AE%A1%E6%89%8D%E6%9C%89%E6%8E%92%E9%9A%9C%E4%BB%B7%E5%80%BC/","path":"2023/01/10/移动端自动化-04-Android自动截图录屏与证据留存方案怎么设计才有排障价值/","title":"移动端自动化：Android 自动截图、录屏与证据留存方案怎么设计才有排障价值"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>移动端自动化：Android 自动截图、录屏与证据留存方案怎么设计才有排障价值 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E8%AF%81%E6%8D%AE%E7%95%99%E5%AD%98%E8%A6%81%E8%A7%A3%E5%86%B3%E7%9A%84%E6%A0%B8%E5%BF%83%E9%97%AE%E9%A2%98%EF%BC%8C%E4%B8%8D%E6%98%AF%E2%80%9C%E6%9C%89%E6%B2%A1%E6%9C%89%E6%96%87%E4%BB%B6%E2%80%9D%EF%BC%8C%E8%80%8C%E6%98%AF%E2%80%9C%E8%83%BD%E4%B8%8D%E8%83%BD%E8%BF%98%E5%8E%9F%E7%8E%B0%E5%9C%BA%E2%80%9D"><span class="nav-number">1.</span> <span class="nav-text">一、证据留存要解决的核心问题，不是“有没有文件”，而是“能不能还原现场”</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E6%88%AA%E5%9B%BE%E5%92%8C%E5%BD%95%E5%B1%8F%E4%B8%8D%E6%98%AF%E4%BA%92%E7%9B%B8%E6%9B%BF%E4%BB%A3%E5%85%B3%E7%B3%BB%EF%BC%8C%E8%80%8C%E6%98%AF%E4%B8%A4%E7%A7%8D%E4%B8%8D%E5%90%8C%E5%B1%82%E7%BA%A7%E7%9A%84%E8%AF%81%E6%8D%AE"><span class="nav-number">2.</span> <span class="nav-text">二、截图和录屏不是互相替代关系，而是两种不同层级的证据</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%88%AA%E5%9B%BE%E6%9C%80%E9%80%82%E5%90%88%E6%8D%95%E6%8D%89%E5%BC%82%E5%B8%B8%E7%9E%AC%E9%97%B4"><span class="nav-number">2.1.</span> <span class="nav-text">1. 截图最适合捕捉异常瞬间</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%BD%95%E5%B1%8F%E6%9B%B4%E9%80%82%E5%90%88%E8%BF%98%E5%8E%9F%E8%BF%87%E7%A8%8B%E9%97%AE%E9%A2%98"><span class="nav-number">2.2.</span> <span class="nav-text">2. 录屏更适合还原过程问题</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%AF%81%E6%8D%AE%E6%96%B9%E6%A1%88%E4%B8%8D%E8%83%BD%E6%8A%8A%E5%85%A8%E9%83%A8%E5%B8%8C%E6%9C%9B%E5%8E%8B%E5%9C%A8%E5%BD%95%E5%B1%8F%E4%B8%8A"><span class="nav-number">2.3.</span> <span class="nav-text">3. 证据方案不能把全部希望压在录屏上</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E6%88%AA%E5%9B%BE%E8%83%BD%E5%8A%9B%E6%80%8E%E4%B9%88%E5%81%9A%EF%BC%8C%E5%85%B3%E9%94%AE%E4%B8%8D%E5%9C%A8%E5%91%BD%E4%BB%A4%EF%BC%8C%E8%80%8C%E5%9C%A8%E8%A7%A6%E5%8F%91%E6%97%B6%E6%9C%BA"><span class="nav-number">3.</span> <span class="nav-text">三、截图能力怎么做，关键不在命令，而在触发时机</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%85%B3%E9%94%AE%E6%AD%A5%E9%AA%A4%E5%89%8D%E5%90%8E%E6%88%AA%E5%9B%BE"><span class="nav-number">3.1.</span> <span class="nav-text">1. 关键步骤前后截图</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%BC%82%E5%B8%B8%E7%9E%AC%E9%97%B4%E7%AB%8B%E5%8D%B3%E6%88%AA%E5%9B%BE"><span class="nav-number">3.2.</span> <span class="nav-text">2. 异常瞬间立即截图</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%81%A2%E5%A4%8D%E5%89%8D%E5%90%8E%E5%90%84%E7%95%99%E4%B8%80%E5%BC%A0%E5%9B%BE"><span class="nav-number">3.3.</span> <span class="nav-text">3. 恢复前后各留一张图</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E5%BD%95%E5%B1%8F%E8%83%BD%E5%8A%9B%E6%80%8E%E4%B9%88%E5%81%9A%EF%BC%8C%E5%85%B3%E9%94%AE%E4%B8%8D%E5%9C%A8%E8%83%BD%E4%B8%8D%E8%83%BD%E5%BD%95%EF%BC%8C%E8%80%8C%E5%9C%A8%E5%BD%95%E5%A4%9A%E9%95%BF%E3%80%81%E4%BD%95%E6%97%B6%E5%BD%95%E3%80%81%E5%BD%95%E5%AE%8C%E6%80%8E%E4%B9%88%E5%9B%9E%E6%94%B6"><span class="nav-number">4.</span> <span class="nav-text">四、录屏能力怎么做，关键不在能不能录，而在录多长、何时录、录完怎么回收</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%B8%8D%E5%BB%BA%E8%AE%AE%E9%BB%98%E8%AE%A4%E5%85%A8%E7%A8%8B%E5%BD%95%E5%88%B6%E6%89%80%E6%9C%89-case"><span class="nav-number">4.1.</span> <span class="nav-text">1. 不建议默认全程录制所有 case</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%BD%95%E5%B1%8F%E6%97%B6%E9%95%BF%E8%A6%81%E5%8F%97%E6%8E%A7"><span class="nav-number">4.2.</span> <span class="nav-text">2. 录屏时长要受控</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%BD%95%E5%B1%8F%E4%BA%A7%E7%89%A9%E5%BF%85%E9%A1%BB%E6%9C%89%E5%9B%9E%E6%94%B6%E5%92%8C%E6%B8%85%E7%90%86%E7%AD%96%E7%95%A5"><span class="nav-number">4.3.</span> <span class="nav-text">3. 录屏产物必须有回收和清理策略</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E7%9C%9F%E6%AD%A3%E6%9C%89%E4%BB%B7%E5%80%BC%E7%9A%84%E4%B8%8D%E6%98%AF%E6%88%AA%E5%9B%BE%E6%88%96%E5%BD%95%E5%B1%8F%E6%9C%AC%E8%BA%AB%EF%BC%8C%E8%80%8C%E6%98%AF%E2%80%9C%E5%AE%8C%E6%95%B4%E8%AF%81%E6%8D%AE%E9%93%BE%E2%80%9D"><span class="nav-number">5.</span> <span class="nav-text">五、真正有价值的不是截图或录屏本身，而是“完整证据链”</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E8%AF%81%E6%8D%AE%E6%96%87%E4%BB%B6%E6%80%8E%E4%B9%88%E5%91%BD%E5%90%8D%E5%92%8C%E5%BD%92%E6%A1%A3%EF%BC%8C%E7%9B%B4%E6%8E%A5%E5%86%B3%E5%AE%9A%E5%90%8E%E6%9C%9F%E6%8E%92%E6%9F%A5%E6%95%88%E7%8E%87"><span class="nav-number">6.</span> <span class="nav-text">六、证据文件怎么命名和归档，直接决定后期排查效率</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E5%9C%A8%E9%A1%B9%E7%9B%AE%E9%87%8C%E8%B8%A9%E8%BF%87%E7%9A%84%E5%87%A0%E4%B8%AA%E5%85%B8%E5%9E%8B%E8%AF%81%E6%8D%AE%E7%95%99%E5%AD%98%E5%9D%91"><span class="nav-number">7.</span> <span class="nav-text">七、在项目里踩过的几个典型证据留存坑</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9D%91-1%EF%BC%9A%E5%8F%AA%E5%9C%A8-case-%E6%9C%80%E5%90%8E%E5%A4%B1%E8%B4%A5%E6%97%B6%E6%88%AA%E5%9B%BE%EF%BC%8C%E7%8E%B0%E5%9C%BA%E6%97%A9%E5%B0%B1%E5%8F%98%E4%BA%86"><span class="nav-number">7.1.</span> <span class="nav-text">坑 1：只在 case 最后失败时截图，现场早就变了</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9D%91-2%EF%BC%9A%E5%BD%95%E5%B1%8F%E5%BC%80%E4%BA%86%EF%BC%8C%E4%BD%86%E6%A0%B9%E6%9C%AC%E6%B2%A1%E4%BA%BA%E7%9C%8B"><span class="nav-number">7.2.</span> <span class="nav-text">坑 2：录屏开了，但根本没人看</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9D%91-3%EF%BC%9A%E6%88%AA%E5%9B%BE%E3%80%81%E6%97%A5%E5%BF%97%E3%80%81%E5%BD%95%E5%B1%8F%E7%9A%84%E6%97%B6%E9%97%B4%E8%BD%B4%E5%AF%B9%E4%B8%8D%E4%B8%8A"><span class="nav-number">7.3.</span> <span class="nav-text">坑 3：截图、日志、录屏的时间轴对不上</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9D%91-4%EF%BC%9A%E8%AF%81%E6%8D%AE%E9%87%87%E9%9B%86%E6%9C%AC%E8%BA%AB%E6%8B%96%E5%9E%AE%E4%BA%86%E6%89%A7%E8%A1%8C%E7%A8%B3%E5%AE%9A%E6%80%A7"><span class="nav-number">7.4.</span> <span class="nav-text">坑 4：证据采集本身拖垮了执行稳定性</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E6%9B%B4%E6%8E%A8%E8%8D%90%E7%9A%84%E8%AF%81%E6%8D%AE%E7%95%99%E5%AD%98%E8%A7%A6%E5%8F%91%E7%AD%96%E7%95%A5"><span class="nav-number">8.</span> <span class="nav-text">八、更推荐的证据留存触发策略</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E9%BB%98%E8%AE%A4%E8%BD%BB%E9%87%8F%E5%8C%96%E9%87%87%E8%AF%81"><span class="nav-number">8.1.</span> <span class="nav-text">1. 默认轻量化采证</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%A4%B1%E8%B4%A5%E5%A2%9E%E5%BC%BA%E9%87%87%E8%AF%81"><span class="nav-number">8.2.</span> <span class="nav-text">2. 失败增强采证</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E9%AB%98%E4%BB%B7%E5%80%BC%E5%9C%BA%E6%99%AF%E4%B8%93%E9%A1%B9%E9%87%87%E8%AF%81"><span class="nav-number">8.3.</span> <span class="nav-text">3. 高价值场景专项采证</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E6%8E%92%E6%9F%A5%E4%B8%80%E4%B8%AA%E7%A7%BB%E5%8A%A8%E7%AB%AF%E5%A4%B1%E8%B4%A5-case-%E6%97%B6%EF%BC%8C%E8%BF%99%E4%BA%9B%E8%AF%81%E6%8D%AE%E5%8F%AF%E4%BB%A5%E6%80%8E%E4%B9%88%E7%94%A8"><span class="nav-number">9.</span> <span class="nav-text">九、排查一个移动端失败 case 时，这些证据可以怎么用</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%85%88%E7%9C%8B%E5%A4%B1%E8%B4%A5%E6%AD%A5%E9%AA%A4%E5%89%8D%E5%90%8E%E7%9A%84%E6%88%AA%E5%9B%BE"><span class="nav-number">9.1.</span> <span class="nav-text">1. 先看失败步骤前后的截图</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%86%8D%E7%9C%8B%E5%AF%B9%E5%BA%94%E7%AA%97%E5%8F%A3%E7%9A%84%E7%9F%AD%E5%BD%95%E5%B1%8F"><span class="nav-number">9.2.</span> <span class="nav-text">2. 再看对应窗口的短录屏</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%86%8D%E5%AF%B9%E7%85%A7%E5%90%8C%E4%B8%80%E6%97%B6%E9%97%B4%E6%AE%B5%E6%97%A5%E5%BF%97"><span class="nav-number">9.3.</span> <span class="nav-text">3. 再对照同一时间段日志</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%9C%80%E5%90%8E%E7%9C%8B%E8%AE%BE%E5%A4%87%E4%B8%8A%E4%B8%8B%E6%96%87%E5%92%8C%E6%81%A2%E5%A4%8D%E7%BB%93%E6%9E%9C"><span class="nav-number">9.4.</span> <span class="nav-text">4. 最后看设备上下文和恢复结果</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%BB%93%E8%AF%AD"><span class="nav-number">10.</span> <span class="nav-text">结语</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2023/01/10/%E7%A7%BB%E5%8A%A8%E7%AB%AF%E8%87%AA%E5%8A%A8%E5%8C%96-04-Android%E8%87%AA%E5%8A%A8%E6%88%AA%E5%9B%BE%E5%BD%95%E5%B1%8F%E4%B8%8E%E8%AF%81%E6%8D%AE%E7%95%99%E5%AD%98%E6%96%B9%E6%A1%88%E6%80%8E%E4%B9%88%E8%AE%BE%E8%AE%A1%E6%89%8D%E6%9C%89%E6%8E%92%E9%9A%9C%E4%BB%B7%E5%80%BC/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="移动端自动化：Android 自动截图、录屏与证据留存方案怎么设计才有排障价值 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          移动端自动化：Android 自动截图、录屏与证据留存方案怎么设计才有排障价值
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2023-01-10 20:30:00" itemprop="dateCreated datePublished" datetime="2023-01-10T20:30:00+08:00">2023-01-10</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/%E7%A7%BB%E5%8A%A8%E7%AB%AF%E8%87%AA%E5%8A%A8%E5%8C%96/" itemprop="url" rel="index"><span itemprop="name">移动端自动化</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>3.2k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>12 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>移动端自动化里，最让人头疼的不是 case 失败，而是 <strong>失败了却没有现场</strong>。</p>
+<p>你大概率见过这种情况：</p>
+<ul>
+<li>报告里写着 <code>AssertionError</code></li>
+<li>日志里能看到一点异常，但看不出页面当时长什么样</li>
+<li>截图只有一张，而且已经是恢复动作之后的页面</li>
+<li>录屏倒是开了，但几十分钟一个大文件，根本没人愿意看</li>
+</ul>
+<p>最后排查只能回到老路上：测试同学重新手工复现，研发远程盯着手机看，问题定位效率极低。</p>
+<p>所以这一篇我想讲的不是“ADB 怎么截图录屏”，而是一个更实用的问题：</p>
+<p><strong>Android 自动截图、录屏和证据留存方案，到底怎么设计，才能在真实测试里真正有排障价值。</strong></p>
+<h2 id="一、证据留存要解决的核心问题，不是“有没有文件”，而是“能不能还原现场”"><a href="#一、证据留存要解决的核心问题，不是“有没有文件”，而是“能不能还原现场”" class="headerlink" title="一、证据留存要解决的核心问题，不是“有没有文件”，而是“能不能还原现场”"></a>一、证据留存要解决的核心问题，不是“有没有文件”，而是“能不能还原现场”</h2><p>已经做了截图或录屏，但实际效果依然很差。原因通常不是工具不支持，而是方案设计只停在“失败后保存一下文件”。</p>
+<p>这会直接带来几个问题：</p>
+<ul>
+<li>证据触发太晚，真正的异常页面已经消失</li>
+<li>文件命名混乱，查不到对应的设备和 case</li>
+<li>截图、录屏、日志彼此脱节，无法拼成完整证据链</li>
+<li>录屏成本过高，最后要么不开，要么开了也没人用</li>
+</ul>
+<p>所以证据留存的真正目标，不应该只是“把附件存下来”，而应该是：</p>
+<ul>
+<li>能定位到哪台设备、哪个 case、哪一步失败</li>
+<li>能看到失败瞬间前后发生了什么</li>
+<li>能把截图、录屏、日志、设备状态串起来</li>
+<li>能支撑人工复盘，也能支撑自动分析</li>
+</ul>
+<p>只有满足这几件事，证据才不是装饰品。</p>
+<h2 id="二、截图和录屏不是互相替代关系，而是两种不同层级的证据"><a href="#二、截图和录屏不是互相替代关系，而是两种不同层级的证据" class="headerlink" title="二、截图和录屏不是互相替代关系，而是两种不同层级的证据"></a>二、截图和录屏不是互相替代关系，而是两种不同层级的证据</h2><p>这个场景里最核心的问题是：到底应该优先截图还是录屏。结论可以先写清楚：</p>
+<ul>
+<li>截图适合保留“瞬时现场”</li>
+<li>录屏适合还原“动态过程”</li>
+</ul>
+<p>它们不是二选一，而是解决不同问题。</p>
+<h3 id="1-截图最适合捕捉异常瞬间"><a href="#1-截图最适合捕捉异常瞬间" class="headerlink" title="1. 截图最适合捕捉异常瞬间"></a>1. 截图最适合捕捉异常瞬间</h3><p>比如：</p>
+<ul>
+<li>页面白屏</li>
+<li>弹窗遮挡</li>
+<li>元素没显示</li>
+<li>登录失败提示</li>
+<li>崩溃对话框</li>
+</ul>
+<p>这类问题最需要的是“当时看到的是什么”。<br>截图的优点是轻、快、成本低，非常适合默认启用。</p>
+<h3 id="2-录屏更适合还原过程问题"><a href="#2-录屏更适合还原过程问题" class="headerlink" title="2. 录屏更适合还原过程问题"></a>2. 录屏更适合还原过程问题</h3><p>比如：</p>
+<ul>
+<li>某一步点击后页面长时间没反应</li>
+<li>动画过渡异常</li>
+<li>间歇性卡顿</li>
+<li>偶发点击错位</li>
+<li>前后台切换导致页面状态丢失</li>
+</ul>
+<p>这类问题只看一张图通常不够，因为关键不只是“结果长什么样”，而是“过程怎么演变成这个结果”。</p>
+<h3 id="3-证据方案不能把全部希望压在录屏上"><a href="#3-证据方案不能把全部希望压在录屏上" class="headerlink" title="3. 证据方案不能把全部希望压在录屏上"></a>3. 证据方案不能把全部希望压在录屏上</h3><p>为了省事，干脆所有 case 全程录屏，看起来很完整，但后果通常是：</p>
+<ul>
+<li>文件极大</li>
+<li>设备性能受影响</li>
+<li>存储空间被迅速吃满</li>
+<li>报告里挂着一堆视频，但没人会逐个看</li>
+</ul>
+<p>所以录屏更适合作为增强型证据，而不是默认无脑全开。</p>
+<h2 id="三、截图能力怎么做，关键不在命令，而在触发时机"><a href="#三、截图能力怎么做，关键不在命令，而在触发时机" class="headerlink" title="三、截图能力怎么做，关键不在命令，而在触发时机"></a>三、截图能力怎么做，关键不在命令，而在触发时机</h2><p>最常见的截图命令是：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">adb -s &lt;serial&gt; exec-out screencap -p &gt; screen.png</span><br><span class="line">adb -s &lt;serial&gt; shell screencap -p /sdcard/fail.png</span><br><span class="line">adb -s &lt;serial&gt; pull /sdcard/fail.png .</span><br></pre></td></tr></table></figure>
+
+<p>命令本身并不复杂，真正决定价值的是“什么时候截”。</p>
+<p>更推荐的截图策略通常有三层。</p>
+<h3 id="1-关键步骤前后截图"><a href="#1-关键步骤前后截图" class="headerlink" title="1. 关键步骤前后截图"></a>1. 关键步骤前后截图</h3><p>适用场景：</p>
+<ul>
+<li>登录</li>
+<li>提交表单</li>
+<li>支付确认</li>
+<li>页面跳转</li>
+<li>前后台切换</li>
+</ul>
+<p>这样做的价值是，你不仅知道失败了，还能知道失败前页面状态是否已经异常。</p>
+<h3 id="2-异常瞬间立即截图"><a href="#2-异常瞬间立即截图" class="headerlink" title="2. 异常瞬间立即截图"></a>2. 异常瞬间立即截图</h3><p>这一步非常关键。<br>只要脚本检测到下面这些信号，就应该尽量第一时间截图：</p>
+<ul>
+<li>断言失败</li>
+<li>启动失败</li>
+<li>页面超时</li>
+<li>crash 信号</li>
+<li>关键控件不存在</li>
+</ul>
+<p>因为很多失败现场只存在几秒，后续恢复动作、系统弹框变化、页面自动跳转都会把现场覆盖掉。</p>
+<h3 id="3-恢复前后各留一张图"><a href="#3-恢复前后各留一张图" class="headerlink" title="3. 恢复前后各留一张图"></a>3. 恢复前后各留一张图</h3><p>这是 忽略的点。<br>如果失败后脚本直接执行“回桌面”“重启应用”“清数据”，那恢复前的现场往往就没了。</p>
+<p>所以通常要求：</p>
+<ul>
+<li>恢复动作前先截图</li>
+<li>恢复动作完成后再截图</li>
+</ul>
+<p>这样才能区分“原始故障现场”和“恢复结果”。</p>
+<h2 id="四、录屏能力怎么做，关键不在能不能录，而在录多长、何时录、录完怎么回收"><a href="#四、录屏能力怎么做，关键不在能不能录，而在录多长、何时录、录完怎么回收" class="headerlink" title="四、录屏能力怎么做，关键不在能不能录，而在录多长、何时录、录完怎么回收"></a>四、录屏能力怎么做，关键不在能不能录，而在录多长、何时录、录完怎么回收</h2><p>最常见的录屏命令是：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">adb -s &lt;serial&gt; shell screenrecord /sdcard/fail.mp4</span><br><span class="line">adb -s &lt;serial&gt; pull /sdcard/fail.mp4 .</span><br></pre></td></tr></table></figure>
+
+<p>看上去很简单，但它在真实项目里有几个明显问题：</p>
+<ul>
+<li>长时间录制容易拉高设备负载</li>
+<li>文件很大</li>
+<li>有的设备会在长录制时出现不稳定</li>
+<li>录制文件如果不及时清理，会直接影响后续执行</li>
+</ul>
+<p>所以录屏能力不能只理解成“开和关”，而要理解成一套策略。</p>
+<h3 id="1-不建议默认全程录制所有-case"><a href="#1-不建议默认全程录制所有-case" class="headerlink" title="1. 不建议默认全程录制所有 case"></a>1. 不建议默认全程录制所有 case</h3><p>除非你执行规模很小，否则全量全程录制通常不可持续。</p>
+<p>更合理的方式是：</p>
+<ul>
+<li>只对关键用例录屏</li>
+<li>失败后触发短录屏</li>
+<li>在高风险步骤前后录制局部窗口</li>
+</ul>
+<h3 id="2-录屏时长要受控"><a href="#2-录屏时长要受控" class="headerlink" title="2. 录屏时长要受控"></a>2. 录屏时长要受控</h3><p>很多问题的关键窗口其实只有几十秒。<br>如果每次都录十几分钟，绝大多数内容都是无效背景。</p>
+<p>所以更倾向把录屏设计成：</p>
+<ul>
+<li>单次时长上限</li>
+<li>到时间自动停止</li>
+<li>失败后自动拉回并归档</li>
+</ul>
+<h3 id="3-录屏产物必须有回收和清理策略"><a href="#3-录屏产物必须有回收和清理策略" class="headerlink" title="3. 录屏产物必须有回收和清理策略"></a>3. 录屏产物必须有回收和清理策略</h3><p>这是非常现实的问题。<br>如果 <code>/sdcard/</code> 里的视频文件不清掉，设备执行几轮之后就可能出现：</p>
+<ul>
+<li>安装失败</li>
+<li>截图失败</li>
+<li>日志写入异常</li>
+<li>设备明显变慢</li>
+</ul>
+<p>很多所谓“自动化越来越不稳定”，最后根因不是用例逻辑，而是证据文件残留把设备拖脏了。</p>
+<h2 id="五、真正有价值的不是截图或录屏本身，而是“完整证据链”"><a href="#五、真正有价值的不是截图或录屏本身，而是“完整证据链”" class="headerlink" title="五、真正有价值的不是截图或录屏本身，而是“完整证据链”"></a>五、真正有价值的不是截图或录屏本身，而是“完整证据链”</h2><p>截图、录屏如果孤立存在，价值其实有限。<br>真正有效的是把它们和别的证据拼起来。</p>
+<p>更推荐的证据链至少包含下面几类内容：</p>
+<ul>
+<li>失败前后截图</li>
+<li>关键窗口录屏</li>
+<li>对应时间段的 <code>logcat</code></li>
+<li>当前前台 Activity</li>
+<li>目标应用进程状态</li>
+<li>设备基础信息</li>
+<li>用例步骤时间点</li>
+</ul>
+<p>这样你拿到一个失败 case 时，就不只是得到“一个视频文件”，而是得到一套完整上下文：</p>
+<ul>
+<li>哪一步失败</li>
+<li>失败当时页面什么样</li>
+<li>失败前后日志怎么变化</li>
+<li>系统有没有弹窗或回收行为</li>
+<li>恢复动作有没有成功</li>
+</ul>
+<p>这才是真正能支撑排障的证据方案。</p>
+<h2 id="六、证据文件怎么命名和归档，直接决定后期排查效率"><a href="#六、证据文件怎么命名和归档，直接决定后期排查效率" class="headerlink" title="六、证据文件怎么命名和归档，直接决定后期排查效率"></a>六、证据文件怎么命名和归档，直接决定后期排查效率</h2><p>前期也会存截图和视频，但后面还是找不到。这通常不是因为没存，而是因为命名和目录结构根本不适合排查。</p>
+<p>更推荐的组织方式是按下面几个维度归档：</p>
+<ul>
+<li>执行批次</li>
+<li>设备序列号</li>
+<li>case 标识</li>
+<li>步骤标识</li>
+<li>时间戳</li>
+</ul>
+<p>比如一个更可用的目录结构可以是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">outputs/</span><br><span class="line">├── 20230110_203000/</span><br><span class="line">│   ├── device_R58N12345AB/</span><br><span class="line">│   │   ├── case_login_001/</span><br><span class="line">│   │   │   ├── step_03_submit_before.png</span><br><span class="line">│   │   │   ├── step_03_submit_after.png</span><br><span class="line">│   │   │   ├── fail_window.mp4</span><br><span class="line">│   │   │   ├── logcat_filtered.log</span><br><span class="line">│   │   │   ├── logcat_raw.log</span><br><span class="line">│   │   │   └── device_context.json</span><br></pre></td></tr></table></figure>
+
+<p>这个结构的价值非常直接：</p>
+<ul>
+<li>一眼能看出证据属于谁</li>
+<li>不容易多设备串文件</li>
+<li>便于自动上传报告或长期归档</li>
+</ul>
+<p>如果文件名只是 <code>1.png</code>、<code>fail.mp4</code>、<code>log.txt</code> 这种，规模一大就不可维护。</p>
+<h2 id="七、在项目里踩过的几个典型证据留存坑"><a href="#七、在项目里踩过的几个典型证据留存坑" class="headerlink" title="七、在项目里踩过的几个典型证据留存坑"></a>七、在项目里踩过的几个典型证据留存坑</h2><h3 id="坑-1：只在-case-最后失败时截图，现场早就变了"><a href="#坑-1：只在-case-最后失败时截图，现场早就变了" class="headerlink" title="坑 1：只在 case 最后失败时截图，现场早就变了"></a>坑 1：只在 case 最后失败时截图，现场早就变了</h3><p>现象：</p>
+<ul>
+<li>报告里有截图</li>
+<li>但截图里显示的是首页、桌面，甚至是恢复后的页面</li>
+</ul>
+<p>根因很简单：</p>
+<ul>
+<li>截图触发太晚</li>
+<li>失败后自动恢复动作先执行了</li>
+<li>截图不是在第一异常点触发的</li>
+</ul>
+<p>修复思路：</p>
+<ul>
+<li>让关键异常一出现就立即截图</li>
+<li>恢复前强制留证</li>
+<li>恢复后再补一张“恢复结果图”</li>
+</ul>
+<h3 id="坑-2：录屏开了，但根本没人看"><a href="#坑-2：录屏开了，但根本没人看" class="headerlink" title="坑 2：录屏开了，但根本没人看"></a>坑 2：录屏开了，但根本没人看</h3><p>现象：</p>
+<ul>
+<li>每个任务都有视频</li>
+<li>但视频文件过大、时长过长</li>
+<li>报告里挂了视频链接，排查时依然没人点开</li>
+</ul>
+<p>这类问题本质不是“录屏没用”，而是录屏粒度不对。</p>
+<p>修复思路：</p>
+<ul>
+<li>控制录屏时长</li>
+<li>只录关键窗口</li>
+<li>在报告中给出失败发生的大致时间点</li>
+</ul>
+<p>如果让排查者从 15 分钟视频里自己找问题，录屏价值会被大幅抵消。</p>
+<h3 id="坑-3：截图、日志、录屏的时间轴对不上"><a href="#坑-3：截图、日志、录屏的时间轴对不上" class="headerlink" title="坑 3：截图、日志、录屏的时间轴对不上"></a>坑 3：截图、日志、录屏的时间轴对不上</h3><p>现象：</p>
+<ul>
+<li>日志显示 20:31:05 崩溃</li>
+<li>截图时间却是 20:31:20</li>
+<li>视频文件看起来也不是同一轮执行</li>
+</ul>
+<p>这种问题最麻烦，因为你无法确定到底哪份证据可信。</p>
+<p>根因通常是：</p>
+<ul>
+<li>设备时间和执行机时间没校准</li>
+<li>文件命名不带统一时间</li>
+<li>证据生成顺序不一致</li>
+</ul>
+<p>修复思路：</p>
+<ul>
+<li>执行开始时统一记录基准时间</li>
+<li>证据文件名带精确时间和步骤号</li>
+<li>报告里统一引用同一时间轴</li>
+</ul>
+<h3 id="坑-4：证据采集本身拖垮了执行稳定性"><a href="#坑-4：证据采集本身拖垮了执行稳定性" class="headerlink" title="坑 4：证据采集本身拖垮了执行稳定性"></a>坑 4：证据采集本身拖垮了执行稳定性</h3><p>这个坑很隐蔽。<br>把“多留一点证据总没错”当成默认策略，实际会反过来影响执行结果。</p>
+<p>典型表现包括：</p>
+<ul>
+<li>频繁截图拖慢脚本</li>
+<li>全程录屏影响设备性能</li>
+<li>原始日志、视频、图片太多导致 I&#x2F;O 压力大</li>
+<li>多设备并发时采证进程互相争资源</li>
+</ul>
+<p>所以证据能力不能只追求完整，还要控制成本。</p>
+<h2 id="八、更推荐的证据留存触发策略"><a href="#八、更推荐的证据留存触发策略" class="headerlink" title="八、更推荐的证据留存触发策略"></a>八、更推荐的证据留存触发策略</h2><p>如果要在稳定性和排障价值之间找平衡，更推荐下面这套策略。</p>
+<h3 id="1-默认轻量化采证"><a href="#1-默认轻量化采证" class="headerlink" title="1. 默认轻量化采证"></a>1. 默认轻量化采证</h3><p>默认开启：</p>
+<ul>
+<li>关键步骤截图</li>
+<li>失败即时截图</li>
+<li>基础日志采集</li>
+</ul>
+<p>这样成本低，适合大多数回归任务。</p>
+<h3 id="2-失败增强采证"><a href="#2-失败增强采证" class="headerlink" title="2. 失败增强采证"></a>2. 失败增强采证</h3><p>一旦出现失败信号，再触发：</p>
+<ul>
+<li>当前窗口录屏</li>
+<li>额外日志快照</li>
+<li>设备上下文导出</li>
+<li>恢复前后截图</li>
+</ul>
+<p>这样能把资源集中在真正有问题的 case 上。</p>
+<h3 id="3-高价值场景专项采证"><a href="#3-高价值场景专项采证" class="headerlink" title="3. 高价值场景专项采证"></a>3. 高价值场景专项采证</h3><p>对于下面这些场景，可以单独加重采证：</p>
+<ul>
+<li>间歇性问题</li>
+<li>动画或手势相关问题</li>
+<li>前后台切换问题</li>
+<li>启动性能和稳定性问题</li>
+</ul>
+<p>这类问题本来就更依赖动态过程，还原成本高，更值得加强证据。</p>
+<h2 id="九、排查一个移动端失败-case-时，这些证据可以怎么用"><a href="#九、排查一个移动端失败-case-时，这些证据可以怎么用" class="headerlink" title="九、排查一个移动端失败 case 时，这些证据可以怎么用"></a>九、排查一个移动端失败 case 时，这些证据可以怎么用</h2><p>实际排查时，通常不会先看整份日志，而是按下面顺序走：</p>
+<h3 id="1-先看失败步骤前后的截图"><a href="#1-先看失败步骤前后的截图" class="headerlink" title="1. 先看失败步骤前后的截图"></a>1. 先看失败步骤前后的截图</h3><p>目的是快速判断：</p>
+<ul>
+<li>页面是不是走偏了</li>
+<li>有没有弹窗挡住</li>
+<li>页面有没有明显渲染异常</li>
+</ul>
+<h3 id="2-再看对应窗口的短录屏"><a href="#2-再看对应窗口的短录屏" class="headerlink" title="2. 再看对应窗口的短录屏"></a>2. 再看对应窗口的短录屏</h3><p>目的是确认：</p>
+<ul>
+<li>失败是瞬时问题还是过程问题</li>
+<li>点击、跳转、加载过程中发生了什么</li>
+</ul>
+<h3 id="3-再对照同一时间段日志"><a href="#3-再对照同一时间段日志" class="headerlink" title="3. 再对照同一时间段日志"></a>3. 再对照同一时间段日志</h3><p>目的是确认：</p>
+<ul>
+<li>应用有没有 crash</li>
+<li>是否是接口超时</li>
+<li>是否有系统限制、权限拒绝、Activity 异常</li>
+</ul>
+<h3 id="4-最后看设备上下文和恢复结果"><a href="#4-最后看设备上下文和恢复结果" class="headerlink" title="4. 最后看设备上下文和恢复结果"></a>4. 最后看设备上下文和恢复结果</h3><p>目的是判断：</p>
+<ul>
+<li>是业务缺陷</li>
+<li>是环境问题</li>
+<li>还是设备已经脏掉，不适合继续调度</li>
+</ul>
+<p>这样排查的效率会比“先看全量日志、再随便点个视频”高很多。</p>
+<h2 id="结语"><a href="#结语" class="headerlink" title="结语"></a>结语</h2><p>移动端自动化里的截图、录屏和证据留存，价值从来不在“有没有采”，而在于它能不能帮你还原故障现场。</p>
+<p>真正有排障价值的证据方案，至少应该满足几件事：</p>
+<ul>
+<li>截图时机准确，能保住第一现场</li>
+<li>录屏策略受控，不把系统拖垮</li>
+<li>文件归档清晰，能快速定位到设备、case、步骤</li>
+<li>证据和日志、设备状态、恢复动作能对齐</li>
+<li>既能服务人工排查，也能服务后续自动分析</li>
+</ul>
+<p>如果只是随手留一张图、挂一个大视频，那它最多只是“有附件”；<br>如果能把触发、关联、归档、成本控制都设计好，它才会变成移动端测试体系里真正有价值的排障资产。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E5%B7%A5%E7%A8%8B%E5%8C%96/" rel="tag"># 工程化</a>
+              <a href="/tags/%E5%B7%A5%E7%A8%8B%E5%AE%9E%E8%B7%B5/" rel="tag"># 工程实践</a>
+              <a href="/tags/%E6%8E%92%E9%9A%9C/" rel="tag"># 排障</a>
+              <a href="/tags/Android/" rel="tag"># Android</a>
+              <a href="/tags/ADB/" rel="tag"># ADB</a>
+              <a href="/tags/%E7%A7%BB%E5%8A%A8%E7%AB%AF%E8%87%AA%E5%8A%A8%E5%8C%96/" rel="tag"># 移动端自动化</a>
+              <a href="/tags/%E5%BD%95%E5%B1%8F/" rel="tag"># 录屏</a>
+              <a href="/tags/%E6%88%AA%E5%9B%BE/" rel="tag"># 截图</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2022/12/20/%E7%A7%BB%E5%8A%A8%E7%AB%AF%E8%87%AA%E5%8A%A8%E5%8C%96-03-ADB%E6%97%A5%E5%BF%97%E9%87%87%E9%9B%86%E4%B8%8E%E8%87%AA%E5%8A%A8%E5%88%86%E6%9E%90%E6%80%8E%E4%B9%88%E5%81%9A%E6%89%8D%E7%9C%9F%E6%AD%A3%E6%9C%89%E6%8E%92%E9%9A%9C%E4%BB%B7%E5%80%BC/" rel="prev" title="移动端自动化：ADB 日志采集与自动分析怎么做才真正有排障价值">
+                  <i class="fa fa-angle-left"></i> 移动端自动化：ADB 日志采集与自动分析怎么做才真正有排障价值
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2023/02/03/%E7%A7%BB%E5%8A%A8%E7%AB%AF%E8%87%AA%E5%8A%A8%E5%8C%96-05-%E5%A4%9A%E8%AE%BE%E5%A4%87%E5%B9%B6%E5%8F%91%E6%B5%8B%E8%AF%95%E6%80%8E%E4%B9%88%E7%AE%A1%E7%90%86%E6%89%8D%E4%B8%8D%E4%BC%9A%E6%8A%8A%E7%9C%9F%E6%9C%BA%E7%8E%AF%E5%A2%83%E8%B7%91%E5%B4%A9/" rel="next" title="移动端自动化：多设备并发测试怎么管理才不会把真机环境跑崩">
+                  移动端自动化：多设备并发测试怎么管理才不会把真机环境跑崩 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

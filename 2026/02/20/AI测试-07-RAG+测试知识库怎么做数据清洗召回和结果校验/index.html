@@ -1,0 +1,964 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="一提到 RAG，最容易先聊的是向量库、Embedding 模型、Prompt 拼接和大模型回答效果。 这些当然重要，但放到测试知识库场景里，真正决定能不能长期可用的，通常不是模型回答得多像人，而是下面三件更基础的事情：  知识数据干不干净 召回链路稳不稳定 结果校验能不能把误答拦住  如果这三件事没有先收稳，RAG + 测试知识库 很容易迅速变成另一种形式的“搜索看起来能用，回答真正落地却不敢信”">
+<meta property="og:type" content="article">
+<meta property="og:title" content="AI测试-07-RAG+测试知识库怎么做数据清洗召回和结果校验">
+<meta property="og:url" content="https://paynewinnt.github.io/2026/02/20/AI%E6%B5%8B%E8%AF%95-07-RAG+%E6%B5%8B%E8%AF%95%E7%9F%A5%E8%AF%86%E5%BA%93%E6%80%8E%E4%B9%88%E5%81%9A%E6%95%B0%E6%8D%AE%E6%B8%85%E6%B4%97%E5%8F%AC%E5%9B%9E%E5%92%8C%E7%BB%93%E6%9E%9C%E6%A0%A1%E9%AA%8C/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="一提到 RAG，最容易先聊的是向量库、Embedding 模型、Prompt 拼接和大模型回答效果。 这些当然重要，但放到测试知识库场景里，真正决定能不能长期可用的，通常不是模型回答得多像人，而是下面三件更基础的事情：  知识数据干不干净 召回链路稳不稳定 结果校验能不能把误答拦住  如果这三件事没有先收稳，RAG + 测试知识库 很容易迅速变成另一种形式的“搜索看起来能用，回答真正落地却不敢信”">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-02-20T12:30:00.000Z">
+<meta property="article:modified_time" content="2026-02-20T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="AI测试">
+<meta property="article:tag" content="测试平台">
+<meta property="article:tag" content="RAG">
+<meta property="article:tag" content="测试知识库">
+<meta property="article:tag" content="数据清洗">
+<meta property="article:tag" content="召回优化">
+<meta property="article:tag" content="结果校验">
+<meta property="article:tag" content="工程实践">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2026/02/20/AI%E6%B5%8B%E8%AF%95-07-RAG+%E6%B5%8B%E8%AF%95%E7%9F%A5%E8%AF%86%E5%BA%93%E6%80%8E%E4%B9%88%E5%81%9A%E6%95%B0%E6%8D%AE%E6%B8%85%E6%B4%97%E5%8F%AC%E5%9B%9E%E5%92%8C%E7%BB%93%E6%9E%9C%E6%A0%A1%E9%AA%8C/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2026/02/20/AI%E6%B5%8B%E8%AF%95-07-RAG+%E6%B5%8B%E8%AF%95%E7%9F%A5%E8%AF%86%E5%BA%93%E6%80%8E%E4%B9%88%E5%81%9A%E6%95%B0%E6%8D%AE%E6%B8%85%E6%B4%97%E5%8F%AC%E5%9B%9E%E5%92%8C%E7%BB%93%E6%9E%9C%E6%A0%A1%E9%AA%8C/","path":"2026/02/20/AI测试-07-RAG+测试知识库怎么做数据清洗召回和结果校验/","title":"AI测试-07-RAG+测试知识库怎么做数据清洗召回和结果校验"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>AI测试-07-RAG+测试知识库怎么做数据清洗召回和结果校验 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E5%85%88%E6%8A%8A%E7%9B%AE%E6%A0%87%E8%AF%B4%E6%B8%85%EF%BC%9A%E6%B5%8B%E8%AF%95%E7%9F%A5%E8%AF%86%E5%BA%93%E9%87%8C%E7%9A%84-RAG-%E4%B8%8D%E6%98%AF%E2%80%9C%E4%BC%9A%E7%AD%94%E2%80%9D%EF%BC%8C%E8%80%8C%E6%98%AF%E2%80%9C%E7%AD%94%E5%BE%97%E5%8F%AF%E6%89%A7%E8%A1%8C%E3%80%81%E5%8F%AF%E8%BF%BD%E6%BA%AF%E3%80%81%E5%8F%AF%E6%94%B6%E6%95%9B%E2%80%9D"><span class="nav-number">1.</span> <span class="nav-text">一、先把目标说清：测试知识库里的 RAG 不是“会答”，而是“答得可执行、可追溯、可收敛”</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E6%95%B0%E6%8D%AE%E5%88%86%E5%B1%82%EF%BC%9A%E5%85%88%E5%88%86%E6%B8%85%E7%9F%A5%E8%AF%86%E5%AF%B9%E8%B1%A1%EF%BC%8C%E5%86%8D%E8%B0%88%E5%88%87%E7%89%87%E5%92%8C%E5%90%91%E9%87%8F%E5%8C%96"><span class="nav-number">2.</span> <span class="nav-text">二、数据分层：先分清知识对象，再谈切片和向量化</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%A7%84%E8%8C%83%E5%B1%82"><span class="nav-number">2.1.</span> <span class="nav-text">1. 规范层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E7%BB%8F%E9%AA%8C%E5%B1%82"><span class="nav-number">2.2.</span> <span class="nav-text">2. 经验层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%AF%81%E6%8D%AE%E5%B1%82"><span class="nav-number">2.3.</span> <span class="nav-text">3. 证据层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%85%83%E6%95%B0%E6%8D%AE%E5%B1%82"><span class="nav-number">2.4.</span> <span class="nav-text">4. 元数据层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E7%A6%81%E5%85%A5%E5%B1%82"><span class="nav-number">2.5.</span> <span class="nav-text">5. 禁入层</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E6%95%B0%E6%8D%AE%E6%B8%85%E6%B4%97%EF%BC%9A%E7%9C%9F%E6%AD%A3%E9%9A%BE%E7%9A%84%E4%B8%8D%E6%98%AF%E2%80%9C%E5%AF%BC%E8%BF%9B%E5%8E%BB%E2%80%9D%EF%BC%8C%E8%80%8C%E6%98%AF%E2%80%9C%E6%8A%8A%E8%84%8F%E7%9F%A5%E8%AF%86%E6%8C%A1%E5%9C%A8%E5%A4%96%E9%9D%A2%E2%80%9D"><span class="nav-number">3.</span> <span class="nav-text">三、数据清洗：真正难的不是“导进去”，而是“把脏知识挡在外面”</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%85%88%E5%81%9A%E6%96%87%E6%A1%A3%E5%87%86%E5%85%A5%EF%BC%8C%E4%B8%8D%E8%A6%81%E4%B8%80%E4%B8%8A%E6%9D%A5%E5%85%A8%E9%87%8F%E5%85%A5%E5%BA%93"><span class="nav-number">3.1.</span> <span class="nav-text">1. 先做文档准入，不要一上来全量入库</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%8E%BB%E6%8E%89%E6%97%A0%E6%95%88%E5%86%85%E5%AE%B9%E5%9D%97"><span class="nav-number">3.2.</span> <span class="nav-text">2. 去掉无效内容块</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%81%9A%E7%BB%93%E6%9E%84%E5%8C%96%E6%8B%86%E5%88%86%EF%BC%8C%E8%80%8C%E4%B8%8D%E6%98%AF%E5%8F%AA%E6%8C%89%E5%AD%97%E6%95%B0%E5%88%87%E7%89%87"><span class="nav-number">3.3.</span> <span class="nav-text">3. 做结构化拆分，而不是只按字数切片</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E8%A1%A5%E9%BD%90%E5%85%83%E6%95%B0%E6%8D%AE%EF%BC%8C%E4%B8%8D%E8%A6%81%E8%AE%A9%E5%90%91%E9%87%8F%E8%87%AA%E5%B7%B1%E6%89%BF%E6%8B%85%E6%89%80%E6%9C%89%E5%8C%B9%E9%85%8D%E4%BB%BB%E5%8A%A1"><span class="nav-number">3.4.</span> <span class="nav-text">4. 补齐元数据，不要让向量自己承担所有匹配任务</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%81%9A%E9%87%8D%E5%A4%8D%E5%92%8C%E5%86%B2%E7%AA%81%E6%B2%BB%E7%90%86"><span class="nav-number">3.5.</span> <span class="nav-text">5. 做重复和冲突治理</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E5%8F%AC%E5%9B%9E%E9%93%BE%E8%B7%AF%EF%BC%9A%E6%B5%8B%E8%AF%95%E7%9F%A5%E8%AF%86%E5%BA%93%E4%B8%8D%E8%83%BD%E5%8F%AA%E6%9C%89%E2%80%9C%E5%90%91%E9%87%8F%E6%A3%80%E7%B4%A2%E2%80%9D%EF%BC%8C%E5%BF%85%E9%A1%BB%E6%9C%89%E5%89%8D%E7%BD%AE%E7%BA%A6%E6%9D%9F%E5%92%8C%E5%90%8E%E7%BD%AE%E9%87%8D%E6%8E%92"><span class="nav-number">4.</span> <span class="nav-text">四、召回链路：测试知识库不能只有“向量检索”，必须有前置约束和后置重排</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E9%97%AE%E9%A2%98%E5%BD%92%E4%B8%80%E5%8C%96"><span class="nav-number">4.1.</span> <span class="nav-text">1. 问题归一化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%A7%84%E5%88%99%E8%BF%87%E6%BB%A4"><span class="nav-number">4.2.</span> <span class="nav-text">2. 规则过滤</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%A4%9A%E8%B7%AF%E5%8F%AC%E5%9B%9E"><span class="nav-number">4.3.</span> <span class="nav-text">3. 多路召回</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%80%99%E9%80%89%E9%87%8D%E6%8E%92"><span class="nav-number">4.4.</span> <span class="nav-text">4. 候选重排</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E4%B8%8A%E4%B8%8B%E6%96%87%E6%8B%BC%E8%A3%85"><span class="nav-number">4.5.</span> <span class="nav-text">5. 上下文拼装</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E7%BB%93%E6%9E%9C%E6%A0%A1%E9%AA%8C%EF%BC%9ARAG-%E7%9C%9F%E6%AD%A3%E8%BF%9B%E5%85%A5%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%EF%BC%8C%E9%9D%A0%E7%9A%84%E4%B8%8D%E6%98%AF%E5%9B%9E%E7%AD%94%E7%94%9F%E6%88%90%EF%BC%8C%E8%80%8C%E6%98%AF%E6%A0%A1%E9%AA%8C%E6%94%B6%E5%8F%A3"><span class="nav-number">5.</span> <span class="nav-text">五、结果校验：RAG 真正进入测试平台，靠的不是回答生成，而是校验收口</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%9D%A5%E6%BA%90%E6%A0%A1%E9%AA%8C"><span class="nav-number">5.1.</span> <span class="nav-text">1. 来源校验</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%B8%BB%E9%A2%98%E6%A0%A1%E9%AA%8C"><span class="nav-number">5.2.</span> <span class="nav-text">2. 主题校验</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%8A%A8%E4%BD%9C%E6%A0%A1%E9%AA%8C"><span class="nav-number">5.3.</span> <span class="nav-text">3. 动作校验</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E8%AF%81%E6%8D%AE%E6%A0%A1%E9%AA%8C"><span class="nav-number">5.4.</span> <span class="nav-text">4. 证据校验</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%80%E4%B8%AA%E5%8F%AF%E6%89%A7%E8%A1%8C%E7%9A%84%E6%9C%80%E5%B0%8F%E6%A0%A1%E9%AA%8C%E9%AA%A8%E6%9E%B6"><span class="nav-number">5.5.</span> <span class="nav-text">一个可执行的最小校验骨架</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E6%8A%8A-RAG-%E6%8E%A5%E8%BF%9B%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E6%97%B6%EF%BC%8C%E6%9B%B4%E9%80%82%E5%90%88%E7%9A%84%E8%BE%93%E5%87%BA%E4%B8%8D%E6%98%AF%E2%80%9C%E4%B8%80%E4%B8%AA%E7%AD%94%E6%A1%88%E2%80%9D%EF%BC%8C%E8%80%8C%E6%98%AF%E2%80%9C%E7%AD%94%E6%A1%88-%E4%BE%9D%E6%8D%AE-%E9%A3%8E%E9%99%A9%E2%80%9D"><span class="nav-number">6.</span> <span class="nav-text">六、把 RAG 接进测试平台时，更适合的输出不是“一个答案”，而是“答案 + 依据 + 风险”</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E5%B8%B8%E8%A7%81%E5%9D%91%EF%BC%9ARAG-%E5%9C%A8%E6%B5%8B%E8%AF%95%E7%9F%A5%E8%AF%86%E5%BA%93%E9%87%8C%E6%9C%80%E5%AE%B9%E6%98%93%E5%A4%B1%E7%9C%9F%EF%BC%8C%E4%B8%8D%E6%98%AF%E5%9B%A0%E4%B8%BA%E6%A8%A1%E5%9E%8B%E7%AC%A8%EF%BC%8C%E8%80%8C%E6%98%AF%E5%9B%A0%E4%B8%BA%E7%9F%A5%E8%AF%86%E9%93%BE%E8%B7%AF%E6%B2%A1%E6%94%B6%E7%A8%B3"><span class="nav-number">7.</span> <span class="nav-text">七、常见坑：RAG 在测试知识库里最容易失真，不是因为模型笨，而是因为知识链路没收稳</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%8A%8A%E6%89%80%E6%9C%89%E8%B5%84%E6%96%99%E4%B8%80%E8%82%A1%E8%84%91%E5%AF%BC%E5%85%A5%E7%9F%A5%E8%AF%86%E5%BA%93"><span class="nav-number">7.1.</span> <span class="nav-text">1. 把所有资料一股脑导入知识库</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%8F%AA%E5%81%9A%E5%90%91%E9%87%8F%E5%8F%AC%E5%9B%9E%EF%BC%8C%E4%B8%8D%E5%81%9A%E8%A7%84%E5%88%99%E8%BF%87%E6%BB%A4"><span class="nav-number">7.2.</span> <span class="nav-text">2. 只做向量召回，不做规则过滤</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%8F%AA%E6%A0%A1%E9%AA%8C%E7%AD%94%E6%A1%88%E6%98%AF%E5%90%A6%E6%B5%81%E7%95%85%EF%BC%8C%E4%B8%8D%E6%A0%A1%E9%AA%8C%E5%8A%A8%E4%BD%9C%E6%98%AF%E5%90%A6%E5%8F%AF%E6%89%A7%E8%A1%8C"><span class="nav-number">7.3.</span> <span class="nav-text">3. 只校验答案是否流畅，不校验动作是否可执行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%8F%AA%E4%BF%9D%E7%95%99%E6%AD%A3%E6%96%87%EF%BC%8C%E4%B8%8D%E4%BF%9D%E7%95%99%E5%85%83%E6%95%B0%E6%8D%AE"><span class="nav-number">7.4.</span> <span class="nav-text">4. 只保留正文，不保留元数据</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%8A%8A%E6%95%85%E9%9A%9C%E7%8E%B0%E5%9C%BA%E6%97%A5%E5%BF%97%E7%9B%B4%E6%8E%A5%E5%BD%93%E7%9F%A5%E8%AF%86%E4%B8%BB%E6%96%99"><span class="nav-number">7.5.</span> <span class="nav-text">5. 把故障现场日志直接当知识主料</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E6%B2%A1%E6%9C%89%E5%9B%9E%E7%AD%94%E9%99%8D%E7%BA%A7%E7%AD%96%E7%95%A5"><span class="nav-number">7.6.</span> <span class="nav-text">6. 没有回答降级策略</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E7%9C%9F%E5%AE%9E%E6%A1%88%E4%BE%8B%EF%BC%9A%E4%B8%80%E6%9D%A1%E7%9C%8B%E8%B5%B7%E6%9D%A5%E5%BE%88%E5%83%8F%E6%AD%A3%E7%A1%AE%E7%AD%94%E6%A1%88%E7%9A%84-RAG-%E5%9B%9E%E7%AD%94%EF%BC%8C%E4%B8%BA%E4%BB%80%E4%B9%88%E6%9C%80%E5%90%8E%E6%8A%8A%E6%8E%92%E6%9F%A5%E6%96%B9%E5%90%91%E5%B8%A6%E5%81%8F%E4%BA%86"><span class="nav-number">8.</span> <span class="nav-text">八、真实案例：一条看起来很像正确答案的 RAG 回答，为什么最后把排查方向带偏了</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9C%BA%E6%99%AF"><span class="nav-number">8.1.</span> <span class="nav-text">场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%89%A7%E8%A1%8C"><span class="nav-number">8.2.</span> <span class="nav-text">执行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8E%B0%E8%B1%A1"><span class="nav-number">8.3.</span> <span class="nav-text">现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%92%E6%9F%A5"><span class="nav-number">8.4.</span> <span class="nav-text">排查</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BF%AE%E5%A4%8D"><span class="nav-number">8.5.</span> <span class="nav-text">修复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E7%BB%93%E8%AE%BA%EF%BC%9A%E6%B5%8B%E8%AF%95%E7%9F%A5%E8%AF%86%E5%BA%93%E9%87%8C%E7%9A%84-RAG%EF%BC%8C%E6%9C%80%E5%85%88%E8%A6%81%E4%BC%98%E5%8C%96%E7%9A%84%E4%B8%8D%E6%98%AF%E6%A8%A1%E5%9E%8B%E5%9B%9E%E7%AD%94%EF%BC%8C%E8%80%8C%E6%98%AF%E7%9F%A5%E8%AF%86%E8%B4%A8%E9%87%8F%E3%80%81%E5%8F%AC%E5%9B%9E%E9%93%BE%E8%B7%AF%E5%92%8C%E6%A0%A1%E9%AA%8C%E6%94%B6%E5%8F%A3"><span class="nav-number">9.</span> <span class="nav-text">九、结论：测试知识库里的 RAG，最先要优化的不是模型回答，而是知识质量、召回链路和校验收口</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2026/02/20/AI%E6%B5%8B%E8%AF%95-07-RAG+%E6%B5%8B%E8%AF%95%E7%9F%A5%E8%AF%86%E5%BA%93%E6%80%8E%E4%B9%88%E5%81%9A%E6%95%B0%E6%8D%AE%E6%B8%85%E6%B4%97%E5%8F%AC%E5%9B%9E%E5%92%8C%E7%BB%93%E6%9E%9C%E6%A0%A1%E9%AA%8C/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="AI测试-07-RAG+测试知识库怎么做数据清洗召回和结果校验 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          AI测试-07-RAG+测试知识库怎么做数据清洗召回和结果校验
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2026-02-20 20:30:00" itemprop="dateCreated datePublished" datetime="2026-02-20T20:30:00+08:00">2026-02-20</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/AI%E6%B5%8B%E8%AF%95/" itemprop="url" rel="index"><span itemprop="name">AI测试</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>4.7k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>17 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>一提到 <code>RAG</code>，最容易先聊的是向量库、Embedding 模型、Prompt 拼接和大模型回答效果。</p>
+<p>这些当然重要，但放到测试知识库场景里，真正决定能不能长期可用的，通常不是模型回答得多像人，而是下面三件更基础的事情：</p>
+<ul>
+<li>知识数据干不干净</li>
+<li>召回链路稳不稳定</li>
+<li>结果校验能不能把误答拦住</li>
+</ul>
+<p>如果这三件事没有先收稳，<code>RAG + 测试知识库</code> 很容易迅速变成另一种形式的“搜索看起来能用，回答真正落地却不敢信”的系统：</p>
+<ul>
+<li>文档很多，但召回出来的是旧版本</li>
+<li>关键词能命中，但命中的不是当前环境可执行方案</li>
+<li>回答看起来完整，实际把接口文档、故障复盘和口语经验混在一起</li>
+<li>返回了看似合理的步骤，但现场根本复现不了</li>
+<li>错答和半对半错的回答没有被识别，最后还是要靠人工兜底</li>
+</ul>
+<p>所以这篇文章不写空泛的 <code>RAG</code> 原理，只聚焦测试知识库里最容易写坏的三段：</p>
+<ul>
+<li>数据清洗怎么做</li>
+<li>召回链路怎么设计</li>
+<li>结果校验怎么收口</li>
+</ul>
+<h2 id="一、先把目标说清：测试知识库里的-RAG-不是“会答”，而是“答得可执行、可追溯、可收敛”"><a href="#一、先把目标说清：测试知识库里的-RAG-不是“会答”，而是“答得可执行、可追溯、可收敛”" class="headerlink" title="一、先把目标说清：测试知识库里的 RAG 不是“会答”，而是“答得可执行、可追溯、可收敛”"></a>一、先把目标说清：测试知识库里的 RAG 不是“会答”，而是“答得可执行、可追溯、可收敛”</h2><p>测试知识库和通用问答知识库最大的差别，在于它最终要服务的不是泛知识消费，而是工程动作。</p>
+<p>它回答的问题，往往都带着明确的执行目的：</p>
+<ul>
+<li>某个环境问题该怎么排查</li>
+<li>某类接口断言应该怎么组织</li>
+<li>某个中间件故障注入测试应该先看什么指标</li>
+<li>某个 UI 误判场景应该优先怎么留证</li>
+<li>某个测试平台模块出问题时，日志和状态该去哪里找</li>
+</ul>
+<p>这意味着测试知识库里的 <code>RAG</code> 不能只追求“回答像模像样”，而要优先满足 4 个条件：</p>
+<ul>
+<li>回答来源可追溯</li>
+<li>回答内容与当前主题强相关</li>
+<li>回答里的动作具备可执行性</li>
+<li>回答错误时能被识别、拦截或降级</li>
+</ul>
+<p>从这个角度看，测试知识库里的 <code>RAG</code> 更像一条工程决策支持链路，而不是一个只负责生成自然语言答案的能力点。</p>
+<h2 id="二、数据分层：先分清知识对象，再谈切片和向量化"><a href="#二、数据分层：先分清知识对象，再谈切片和向量化" class="headerlink" title="二、数据分层：先分清知识对象，再谈切片和向量化"></a>二、数据分层：先分清知识对象，再谈切片和向量化</h2><p><code>RAG</code> 第一层最容易做错的，不是切片大小，而是把完全不同性质的数据混在一起。</p>
+<p>测试知识库至少应该分成下面 5 层。</p>
+<h3 id="1-规范层"><a href="#1-规范层" class="headerlink" title="1. 规范层"></a>1. 规范层</h3><p>这类数据回答的是“应该怎么做”，通常包括：</p>
+<ul>
+<li>测试规范</li>
+<li>流程模板</li>
+<li>平台使用手册</li>
+<li>接口定义文档</li>
+<li>环境约束说明</li>
+</ul>
+<p>这一层的特点是结构相对稳定、可引用性强，但容易过期。</p>
+<h3 id="2-经验层"><a href="#2-经验层" class="headerlink" title="2. 经验层"></a>2. 经验层</h3><p>这类数据回答的是“现场通常怎么收”，通常包括：</p>
+<ul>
+<li>排障笔记</li>
+<li>复盘文档</li>
+<li>典型问题案例</li>
+<li>已收敛问题的处理路径</li>
+</ul>
+<p>这一层最有价值，但也最容易脏，因为里面常常混着：</p>
+<ul>
+<li>口语描述</li>
+<li>临时判断</li>
+<li>只适用于某次环境的局部结论</li>
+<li>没有闭环的猜测</li>
+</ul>
+<h3 id="3-证据层"><a href="#3-证据层" class="headerlink" title="3. 证据层"></a>3. 证据层</h3><p>这类数据回答的是“当时发生了什么”，通常包括：</p>
+<ul>
+<li>日志片段</li>
+<li>错误码记录</li>
+<li>截图</li>
+<li>报告摘要</li>
+<li>监控结论</li>
+</ul>
+<p>这层适合辅助回答，但不适合直接当标准答案，因为它描述的是具体现场，不一定能直接外推。</p>
+<h3 id="4-元数据层"><a href="#4-元数据层" class="headerlink" title="4. 元数据层"></a>4. 元数据层</h3><p>这类数据不是知识正文，但对召回很重要，例如：</p>
+<ul>
+<li>文档类型</li>
+<li>所属系统</li>
+<li>所属环境</li>
+<li>生效时间</li>
+<li>版本号</li>
+<li>作者或维护模块</li>
+<li>适用阶段</li>
+</ul>
+<p>没有这一层，召回很容易“看起来命中了，实际命中错版本”。</p>
+<h3 id="5-禁入层"><a href="#5-禁入层" class="headerlink" title="5. 禁入层"></a>5. 禁入层</h3><p>并不是所有文档都应该进知识库。<br>测试知识库里最常见的禁入内容包括：</p>
+<ul>
+<li>明显过期但未标注失效的方案</li>
+<li>纯聊天记录</li>
+<li>没有结论的排查草稿</li>
+<li>带敏感信息的原始配置</li>
+<li>无法确认来源的复制内容</li>
+</ul>
+<p>如果禁入层不先挡住，后面的向量化和召回优化都只是在放大噪音。</p>
+<h2 id="三、数据清洗：真正难的不是“导进去”，而是“把脏知识挡在外面”"><a href="#三、数据清洗：真正难的不是“导进去”，而是“把脏知识挡在外面”" class="headerlink" title="三、数据清洗：真正难的不是“导进去”，而是“把脏知识挡在外面”"></a>三、数据清洗：真正难的不是“导进去”，而是“把脏知识挡在外面”</h2><p>测试知识库做数据清洗时，最容易低估的是经验文档的脏度。</p>
+<p>很多看起来像知识的内容，放到 <code>RAG</code> 场景里其实会直接拉低结果质量。</p>
+<h3 id="1-先做文档准入，不要一上来全量入库"><a href="#1-先做文档准入，不要一上来全量入库" class="headerlink" title="1. 先做文档准入，不要一上来全量入库"></a>1. 先做文档准入，不要一上来全量入库</h3><p>每类文档进库前，至少应该经过 4 个问题：</p>
+<ul>
+<li>这份文档是不是仍然生效</li>
+<li>这份文档是不是有明确主题</li>
+<li>这份文档是不是能定位来源</li>
+<li>这份文档是不是适合被引用给别人执行</li>
+</ul>
+<p>一份“只有排查过程、没有收敛结论”的聊天摘录，就不适合作为主知识进入知识库。</p>
+<h3 id="2-去掉无效内容块"><a href="#2-去掉无效内容块" class="headerlink" title="2. 去掉无效内容块"></a>2. 去掉无效内容块</h3><p>测试文档里常见的无效内容包括：</p>
+<ul>
+<li>大段目录</li>
+<li>纯导航语句</li>
+<li>重复截图说明</li>
+<li>无上下文的代码块</li>
+<li>连续空表格</li>
+<li>纯情绪性总结</li>
+</ul>
+<p>这些内容如果直接切片进库，会让召回出现大量“字面相似但没有执行价值”的伪命中。</p>
+<h3 id="3-做结构化拆分，而不是只按字数切片"><a href="#3-做结构化拆分，而不是只按字数切片" class="headerlink" title="3. 做结构化拆分，而不是只按字数切片"></a>3. 做结构化拆分，而不是只按字数切片</h3><p>测试知识库里的切片不应该只按固定长度切。</p>
+<p>更合适的拆法通常是：</p>
+<ul>
+<li>主题标题</li>
+<li>适用场景</li>
+<li>前置条件</li>
+<li>操作步骤</li>
+<li>观察点</li>
+<li>常见错误</li>
+<li>修复结论</li>
+</ul>
+<p>这样拆出来的块更适合后续做：</p>
+<ul>
+<li>场景检索</li>
+<li>步骤检索</li>
+<li>排障检索</li>
+<li>结论校验</li>
+</ul>
+<h3 id="4-补齐元数据，不要让向量自己承担所有匹配任务"><a href="#4-补齐元数据，不要让向量自己承担所有匹配任务" class="headerlink" title="4. 补齐元数据，不要让向量自己承担所有匹配任务"></a>4. 补齐元数据，不要让向量自己承担所有匹配任务</h3><p>仅靠向量语义去区分：</p>
+<ul>
+<li>测试环境和生产环境</li>
+<li>新版流程和旧版流程</li>
+<li>Web 场景和移动端场景</li>
+<li>平台问题和业务问题</li>
+</ul>
+<p>通常不够稳。</p>
+<p>更合适的做法是给每个知识块补上最小元数据，例如：</p>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>doc_type</code></td>
+<td>区分规范、经验、证据、复盘</td>
+</tr>
+<tr>
+<td><code>system</code></td>
+<td>标记业务域或平台模块</td>
+</tr>
+<tr>
+<td><code>env_scope</code></td>
+<td>标记环境范围</td>
+</tr>
+<tr>
+<td><code>version</code></td>
+<td>标记适用版本</td>
+</tr>
+<tr>
+<td><code>status</code></td>
+<td>标记生效、观察中、失效</td>
+</tr>
+<tr>
+<td><code>updated_at</code></td>
+<td>支持时间优先级</td>
+</tr>
+<tr>
+<td><code>confidence</code></td>
+<td>标记人工确认程度</td>
+</tr>
+</tbody></table>
+<h3 id="5-做重复和冲突治理"><a href="#5-做重复和冲突治理" class="headerlink" title="5. 做重复和冲突治理"></a>5. 做重复和冲突治理</h3><p>测试知识库里同一主题常常有多版文档并存。</p>
+<p>如果不做治理，最常见的结果是：</p>
+<ul>
+<li>召回同时捞出新旧两套方案</li>
+<li>模型拿旧版文档拼成回答</li>
+<li>看起来信息很多，实际把执行者带偏</li>
+</ul>
+<p>更稳的做法是：</p>
+<ul>
+<li>给旧文档打失效标记</li>
+<li>给同主题文档建立主从关系</li>
+<li>给冲突文档保留版本说明</li>
+<li>在召回前先按状态和时间做初筛</li>
+</ul>
+<h2 id="四、召回链路：测试知识库不能只有“向量检索”，必须有前置约束和后置重排"><a href="#四、召回链路：测试知识库不能只有“向量检索”，必须有前置约束和后置重排" class="headerlink" title="四、召回链路：测试知识库不能只有“向量检索”，必须有前置约束和后置重排"></a>四、召回链路：测试知识库不能只有“向量检索”，必须有前置约束和后置重排</h2><p>测试知识库的召回链路，如果只有一句“用户问题 -&gt; 向量检索 -&gt; 拼提示词 -&gt; 模型回答”，通常会很快遇到三个问题：</p>
+<ul>
+<li>召回主题对了，但场景不对</li>
+<li>召回文档够多，但答案还是拼偏</li>
+<li>明明命中了好内容，却被噪音淹掉</li>
+</ul>
+<p>更稳的召回链路，至少应该分 5 步。</p>
+<h3 id="1-问题归一化"><a href="#1-问题归一化" class="headerlink" title="1. 问题归一化"></a>1. 问题归一化</h3><p>先把用户问题收成更稳定的检索输入。</p>
+<p>例如把：</p>
+<p><code>为什么发布后页面能打开，但任务都卡在执行中？</code></p>
+<p>归一成：</p>
+<ul>
+<li>问题类型：测试平台执行异常</li>
+<li>观察现象：页面可访问，任务执行不推进</li>
+<li>优先模块：调度、执行引擎、状态写回</li>
+<li>证据需求：日志、状态表、任务实例</li>
+</ul>
+<p>没有这一步，检索词很容易被原始口语表达带偏。</p>
+<h3 id="2-规则过滤"><a href="#2-规则过滤" class="headerlink" title="2. 规则过滤"></a>2. 规则过滤</h3><p>先用元数据过滤掉明显不相关内容，例如：</p>
+<ul>
+<li>环境不匹配</li>
+<li>系统域不匹配</li>
+<li>版本过旧</li>
+<li>状态失效</li>
+<li>文档类型不适合当前问题</li>
+</ul>
+<p>这一步不是为了替代语义召回，而是为了减少明显错误候选。</p>
+<h3 id="3-多路召回"><a href="#3-多路召回" class="headerlink" title="3. 多路召回"></a>3. 多路召回</h3><p>测试知识库不适合只用一种召回方式。</p>
+<p>更常见的组合是：</p>
+<ul>
+<li>关键词召回：抓术语、错误码、组件名</li>
+<li>向量召回：抓语义相近问题</li>
+<li>规则召回：抓固定模板、固定流程、固定步骤</li>
+</ul>
+<p>三路结果再合并，通常会比单纯向量检索稳很多。</p>
+<h3 id="4-候选重排"><a href="#4-候选重排" class="headerlink" title="4. 候选重排"></a>4. 候选重排</h3><p>候选出来以后，不要直接拿前几条拼上下文。</p>
+<p>更合适的重排维度通常包括：</p>
+<ul>
+<li>主题相关性</li>
+<li>文档类型权重</li>
+<li>时间新鲜度</li>
+<li>适用环境匹配度</li>
+<li>是否有明确结论</li>
+<li>是否来自高置信来源</li>
+</ul>
+<p>例如一条“故障复盘结论明确、更新时间新、适用模块精确”的经验文档，通常应该压过一条“泛泛介绍概念”的旧规范。</p>
+<h3 id="5-上下文拼装"><a href="#5-上下文拼装" class="headerlink" title="5. 上下文拼装"></a>5. 上下文拼装</h3><p>拼给模型的上下文也不应该只是把命中的文档原文全塞进去。</p>
+<p>更合适的方式是按角色拼装：</p>
+<ul>
+<li>1 条主结论型知识</li>
+<li>1 到 2 条执行步骤型知识</li>
+<li>1 条边界或风险提示型知识</li>
+<li>必要时补 1 条证据型知识</li>
+</ul>
+<p>这样拼出来的上下文更像“有主线的执行材料”，而不是一堆碎片化片段。</p>
+<h2 id="五、结果校验：RAG-真正进入测试平台，靠的不是回答生成，而是校验收口"><a href="#五、结果校验：RAG-真正进入测试平台，靠的不是回答生成，而是校验收口" class="headerlink" title="五、结果校验：RAG 真正进入测试平台，靠的不是回答生成，而是校验收口"></a>五、结果校验：RAG 真正进入测试平台，靠的不是回答生成，而是校验收口</h2><p>测试知识库里的 <code>RAG</code> 如果要进入平台能力，而不是停留在助手能力，结果校验必须单独设计。</p>
+<p>因为平台真正需要回答的不是“模型说得像不像”，而是：</p>
+<ul>
+<li>这次回答能不能信</li>
+<li>这次回答能不能执行</li>
+<li>这次回答能不能留痕</li>
+<li>这次回答错了有没有降级路径</li>
+</ul>
+<p>更稳的校验骨架，通常可以拆成 4 层。</p>
+<h3 id="1-来源校验"><a href="#1-来源校验" class="headerlink" title="1. 来源校验"></a>1. 来源校验</h3><p>先检查回答引用的知识是不是靠谱。</p>
+<p>至少要看：</p>
+<ul>
+<li>是否引用了有效文档</li>
+<li>是否引用了当前版本</li>
+<li>是否引用了当前环境允许的知识</li>
+<li>是否至少命中了 1 条高置信文档</li>
+</ul>
+<p>如果来源本身就不稳，后面回答写得再完整也不该直接放行。</p>
+<h3 id="2-主题校验"><a href="#2-主题校验" class="headerlink" title="2. 主题校验"></a>2. 主题校验</h3><p>检查回答是否真的围绕用户问题，而不是只在关键词上沾边。</p>
+<p>可以从这几个角度看：</p>
+<ul>
+<li>回答主题是否和问题对象一致</li>
+<li>回答里的模块、系统、组件是否匹配</li>
+<li>回答步骤是否回答了当前问题，而不是旁支问题</li>
+<li>是否把“排查建议”答成了“配置教程”</li>
+</ul>
+<h3 id="3-动作校验"><a href="#3-动作校验" class="headerlink" title="3. 动作校验"></a>3. 动作校验</h3><p>测试知识库最关键的一层，是校验回答里的动作是否具备执行性。</p>
+<p>至少要看：</p>
+<ul>
+<li>步骤是否有明确顺序</li>
+<li>是否说明前置条件</li>
+<li>是否存在高风险动作</li>
+<li>是否混入当前环境不可执行的命令</li>
+<li>是否把猜测写成确定结论</li>
+</ul>
+<p>如果一段答案写了很多动作，但没有前置条件、没有观察点、没有边界，就不适合直接给测试执行者使用。</p>
+<h3 id="4-证据校验"><a href="#4-证据校验" class="headerlink" title="4. 证据校验"></a>4. 证据校验</h3><p>回答应该尽量带出可核验依据，而不是只留一句结论。</p>
+<p>更合适的校验要求通常是：</p>
+<ul>
+<li>至少给出引用来源</li>
+<li>尽量指出对应模块或文档标题</li>
+<li>关键步骤能对应到具体知识块</li>
+<li>高风险结论要附带人工复核提示</li>
+</ul>
+<h3 id="一个可执行的最小校验骨架"><a href="#一个可执行的最小校验骨架" class="headerlink" title="一个可执行的最小校验骨架"></a>一个可执行的最小校验骨架</h3><p>可以把一次 <code>RAG</code> 回答的校验收成下面这张表：</p>
+<table>
+<thead>
+<tr>
+<th>校验项</th>
+<th>通过标准</th>
+<th>不通过时处理</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>来源</td>
+<td>至少 1 条高置信有效文档</td>
+<td>直接降级为搜索结果列表</td>
+</tr>
+<tr>
+<td>主题</td>
+<td>问题对象和回答对象一致</td>
+<td>重新召回并重排</td>
+</tr>
+<tr>
+<td>动作</td>
+<td>步骤清晰且可执行</td>
+<td>标记为“仅供参考，不直接执行”</td>
+</tr>
+<tr>
+<td>风险</td>
+<td>无越权、高危或失效动作</td>
+<td>拦截并要求人工确认</td>
+</tr>
+<tr>
+<td>证据</td>
+<td>能定位引用来源</td>
+<td>回答保留但降低置信等级</td>
+</tr>
+</tbody></table>
+<h2 id="六、把-RAG-接进测试平台时，更适合的输出不是“一个答案”，而是“答案-依据-风险”"><a href="#六、把-RAG-接进测试平台时，更适合的输出不是“一个答案”，而是“答案-依据-风险”" class="headerlink" title="六、把 RAG 接进测试平台时，更适合的输出不是“一个答案”，而是“答案 + 依据 + 风险”"></a>六、把 RAG 接进测试平台时，更适合的输出不是“一个答案”，而是“答案 + 依据 + 风险”</h2><p>测试知识库里的 <code>RAG</code> 输出，不太适合只返回一段自然语言。</p>
+<p>更稳的输出结构通常是：</p>
+<ul>
+<li>结论摘要</li>
+<li>推荐步骤</li>
+<li>适用范围</li>
+<li>风险提示</li>
+<li>引用来源</li>
+<li>置信等级</li>
+</ul>
+<p>例如：</p>
+<ol>
+<li>结论摘要：更可能是执行引擎状态写回异常，而不是前端页面问题</li>
+<li>推荐步骤：先查任务实例状态，再查 worker 日志，再核对状态表写回</li>
+<li>适用范围：适用于 2026Q1 测试平台版本</li>
+<li>风险提示：如果当前任务仍占用环境资源，不要直接重跑</li>
+<li>引用来源：某篇平台排障文档 + 某次故障复盘</li>
+<li>置信等级：中</li>
+</ol>
+<p>这样输出的价值在于：</p>
+<ul>
+<li>执行者知道该先做什么</li>
+<li>执行者知道答案不是绝对真理</li>
+<li>平台知道回答可不可以直接进入自动化链路</li>
+</ul>
+<h2 id="七、常见坑：RAG-在测试知识库里最容易失真，不是因为模型笨，而是因为知识链路没收稳"><a href="#七、常见坑：RAG-在测试知识库里最容易失真，不是因为模型笨，而是因为知识链路没收稳" class="headerlink" title="七、常见坑：RAG 在测试知识库里最容易失真，不是因为模型笨，而是因为知识链路没收稳"></a>七、常见坑：RAG 在测试知识库里最容易失真，不是因为模型笨，而是因为知识链路没收稳</h2><h3 id="1-把所有资料一股脑导入知识库"><a href="#1-把所有资料一股脑导入知识库" class="headerlink" title="1. 把所有资料一股脑导入知识库"></a>1. 把所有资料一股脑导入知识库</h3><p>这会让召回命中率看起来很高，但有效命中率很低。</p>
+<h3 id="2-只做向量召回，不做规则过滤"><a href="#2-只做向量召回，不做规则过滤" class="headerlink" title="2. 只做向量召回，不做规则过滤"></a>2. 只做向量召回，不做规则过滤</h3><p>结果是语义很像的旧文档、错环境文档、旁支主题文档都一起被捞出来。</p>
+<h3 id="3-只校验答案是否流畅，不校验动作是否可执行"><a href="#3-只校验答案是否流畅，不校验动作是否可执行" class="headerlink" title="3. 只校验答案是否流畅，不校验动作是否可执行"></a>3. 只校验答案是否流畅，不校验动作是否可执行</h3><p>这种回答最危险，因为它看起来不像错，但执行时最容易带偏现场。</p>
+<h3 id="4-只保留正文，不保留元数据"><a href="#4-只保留正文，不保留元数据" class="headerlink" title="4. 只保留正文，不保留元数据"></a>4. 只保留正文，不保留元数据</h3><p>一旦缺少版本、环境、生效状态这些元数据，结果就会越来越不稳定。</p>
+<h3 id="5-把故障现场日志直接当知识主料"><a href="#5-把故障现场日志直接当知识主料" class="headerlink" title="5. 把故障现场日志直接当知识主料"></a>5. 把故障现场日志直接当知识主料</h3><p>日志适合辅助解释，不适合作为主结论来源。否则模型很容易复述现象，却给不出可执行收敛路径。</p>
+<h3 id="6-没有回答降级策略"><a href="#6-没有回答降级策略" class="headerlink" title="6. 没有回答降级策略"></a>6. 没有回答降级策略</h3><p>当召回不充分或校验没过时，系统不能硬答。</p>
+<p>更稳的降级方式通常是：</p>
+<ul>
+<li>返回检索到的候选文档</li>
+<li>明确提示“不足以生成可执行答案”</li>
+<li>要求补充环境、系统、版本信息</li>
+</ul>
+<h2 id="八、真实案例：一条看起来很像正确答案的-RAG-回答，为什么最后把排查方向带偏了"><a href="#八、真实案例：一条看起来很像正确答案的-RAG-回答，为什么最后把排查方向带偏了" class="headerlink" title="八、真实案例：一条看起来很像正确答案的 RAG 回答，为什么最后把排查方向带偏了"></a>八、真实案例：一条看起来很像正确答案的 RAG 回答，为什么最后把排查方向带偏了</h2><h3 id="场景"><a href="#场景" class="headerlink" title="场景"></a>场景</h3><p>测试平台在一次发布后出现“任务创建成功，但大量实例卡在执行中”的现象。<br>平台页面可访问，调度中心也在运行，现场希望通过测试知识库助手快速得到排查路径。</p>
+<h3 id="执行"><a href="#执行" class="headerlink" title="执行"></a>执行</h3><p>知识库收到的问题是：</p>
+<p><code>发布后任务都卡在执行中，但页面正常，应该先查哪里？</code></p>
+<p>系统按原有链路执行：</p>
+<ul>
+<li>直接做向量召回</li>
+<li>命中了一篇旧版“执行任务卡住排查手册”</li>
+<li>同时命中一篇泛化的“发布后页面正常但功能异常排查建议”</li>
+<li>把两篇文档拼进上下文后生成答案</li>
+</ul>
+<p>给出的回答重点是：</p>
+<ul>
+<li>先检查前端轮询接口</li>
+<li>再检查网关转发</li>
+<li>再重启调度服务</li>
+</ul>
+<h3 id="现象"><a href="#现象" class="headerlink" title="现象"></a>现象</h3><p>现场按回答执行后，页面接口一切正常，网关也没有异常。<br>调度服务重启后问题仍然存在，反而让原始现场被覆盖了一部分。</p>
+<p>回答表面上看并不离谱，但排查方向明显偏了。</p>
+<h3 id="排查"><a href="#排查" class="headerlink" title="排查"></a>排查</h3><p>后续把整条 <code>RAG</code> 链路拆开后，问题很快暴露出来：</p>
+<ul>
+<li>命中的旧版排查手册适用的是早期单 worker 架构</li>
+<li>当前平台已经拆成调度层和执行层，故障点更可能在状态写回和 worker 消费链路</li>
+<li>向量召回没有过滤版本字段</li>
+<li>召回结果重排时，把“字面更接近卡住”排到了前面</li>
+<li>结果校验只检查了回答是否引用来源，没有检查引用来源是否属于当前版本</li>
+</ul>
+<p>进一步核对现场后，真正的问题是：</p>
+<ul>
+<li>新版 worker 已经消费到任务</li>
+<li>但状态写回表字段变更后，执行层仍按旧字段写入</li>
+<li>页面展示的是旧状态，看起来像任务一直卡住</li>
+</ul>
+<h3 id="修复"><a href="#修复" class="headerlink" title="修复"></a>修复</h3><p>后续把知识库链路做了三类修复：</p>
+<ol>
+<li><p>数据侧修复  </p>
+<ul>
+<li>给排障文档补齐 <code>version</code>、<code>system</code>、<code>status</code> 字段  </li>
+<li>将旧版手册标记为失效，不再参与默认召回</li>
+</ul>
+</li>
+<li><p>召回侧修复  </p>
+<ul>
+<li>增加版本过滤和系统域过滤  </li>
+<li>将“排障手册 + 故障复盘”设为优先文档类型  </li>
+<li>把缺少明确结论的说明文档降权</li>
+</ul>
+</li>
+<li><p>校验侧修复  </p>
+<ul>
+<li>新增“版本一致性校验”  </li>
+<li>新增“动作风险校验”，禁止直接给出重启类建议作为第一步  </li>
+<li>回答必须带出“适用版本”和“引用来源”</li>
+</ul>
+</li>
+</ol>
+<p>修复之后，再问同类问题时，系统给出的回答会先落到：</p>
+<ul>
+<li>查 worker 消费日志</li>
+<li>查状态写回字段</li>
+<li>查任务实例和状态表是否一致</li>
+</ul>
+<p>这时回答不一定更长，但明显更能直接进入排查动作。</p>
+<h2 id="九、结论：测试知识库里的-RAG，最先要优化的不是模型回答，而是知识质量、召回链路和校验收口"><a href="#九、结论：测试知识库里的-RAG，最先要优化的不是模型回答，而是知识质量、召回链路和校验收口" class="headerlink" title="九、结论：测试知识库里的 RAG，最先要优化的不是模型回答，而是知识质量、召回链路和校验收口"></a>九、结论：测试知识库里的 RAG，最先要优化的不是模型回答，而是知识质量、召回链路和校验收口</h2><p><code>RAG + 测试知识库</code> 要真正进入测试平台，最重要的不是把回答写得更像专家，而是把下面三层先收稳：</p>
+<ul>
+<li>数据层：知识要干净、分层、可追溯</li>
+<li>召回层：链路要有过滤、多路召回和重排</li>
+<li>校验层：答案要过来源、主题、动作和证据校验</li>
+</ul>
+<p>只有这三层都建立起来，<code>RAG</code> 才不会只是“帮忙找资料”的外围能力，而会逐步变成测试平台里真正可复用的工程能力：</p>
+<ul>
+<li>能辅助排障</li>
+<li>能辅助方案检索</li>
+<li>能辅助测试设计</li>
+<li>能辅助知识沉淀再利用</li>
+</ul>
+<p>如果这三层还没有收稳，就先不要急着追求“更像人”的答案。<br>在测试知识库场景里，<strong>先让答案可控、可核验、可降级，通常比让答案看起来更聪明更重要。</strong></p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/AI%E6%B5%8B%E8%AF%95/" rel="tag"># AI测试</a>
+              <a href="/tags/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0/" rel="tag"># 测试平台</a>
+              <a href="/tags/RAG/" rel="tag"># RAG</a>
+              <a href="/tags/%E6%B5%8B%E8%AF%95%E7%9F%A5%E8%AF%86%E5%BA%93/" rel="tag"># 测试知识库</a>
+              <a href="/tags/%E6%95%B0%E6%8D%AE%E6%B8%85%E6%B4%97/" rel="tag"># 数据清洗</a>
+              <a href="/tags/%E5%8F%AC%E5%9B%9E%E4%BC%98%E5%8C%96/" rel="tag"># 召回优化</a>
+              <a href="/tags/%E7%BB%93%E6%9E%9C%E6%A0%A1%E9%AA%8C/" rel="tag"># 结果校验</a>
+              <a href="/tags/%E5%B7%A5%E7%A8%8B%E5%AE%9E%E8%B7%B5/" rel="tag"># 工程实践</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2026/02/13/AI%E6%B5%8B%E8%AF%95-06-AI%E8%A7%86%E8%A7%89%E8%AF%86%E5%88%AB%E6%8E%A5%E5%85%A5UI%E8%87%AA%E5%8A%A8%E5%8C%96%E5%90%8E%E6%9C%80%E5%B8%B8%E8%A7%81%E7%9A%84%E8%AF%AF%E5%88%A4%E5%9C%BA%E6%99%AF%E6%80%8E%E4%B9%88%E6%B2%BB%E7%90%86/" rel="prev" title="AI测试-06-AI视觉识别接入UI自动化后最常见的误判场景怎么治理">
+                  <i class="fa fa-angle-left"></i> AI测试-06-AI视觉识别接入UI自动化后最常见的误判场景怎么治理
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2026/02/27/AI%E6%B5%8B%E8%AF%95-08-AI%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E6%80%8E%E4%B9%88%E6%8B%86%E6%A8%A1%E5%9E%8B%E5%B1%82%E5%B7%A5%E5%85%B7%E5%B1%82%E6%89%A7%E8%A1%8C%E5%B1%82%E5%92%8C%E8%AF%81%E6%8D%AE%E5%B1%82/" rel="next" title="AI测试-08-AI测试平台怎么拆模型层工具层执行层和证据层">
+                  AI测试-08-AI测试平台怎么拆模型层工具层执行层和证据层 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="Go 里的双指针、滑动窗口、哈希、递归、回溯，如果只停在题解层面，很快就会和项目脱节。这篇文章围绕一个巡检失败分析与补救计划器，讲清这些模式在合并数据、连续区间分析、去重索引、依赖遍历和资源受限决策里的真实工程价值。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Go：常见算法题的工程价值，双指针、滑动窗口、哈希、递归、回溯怎么理解">
+<meta property="og:url" content="https://paynewinnt.github.io/2018/08/22/Go-19-Go%E5%B8%B8%E8%A7%81%E7%AE%97%E6%B3%95%E9%A2%98%E7%9A%84%E5%B7%A5%E7%A8%8B%E4%BB%B7%E5%80%BC%E5%8F%8C%E6%8C%87%E9%92%88%E6%BB%91%E5%8A%A8%E7%AA%97%E5%8F%A3%E5%93%88%E5%B8%8C%E9%80%92%E5%BD%92%E5%9B%9E%E6%BA%AF%E6%80%8E%E4%B9%88%E7%90%86%E8%A7%A3/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="Go 里的双指针、滑动窗口、哈希、递归、回溯，如果只停在题解层面，很快就会和项目脱节。这篇文章围绕一个巡检失败分析与补救计划器，讲清这些模式在合并数据、连续区间分析、去重索引、依赖遍历和资源受限决策里的真实工程价值。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2018-08-22T12:30:00.000Z">
+<meta property="article:modified_time" content="2018-08-22T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="工程化">
+<meta property="article:tag" content="Go">
+<meta property="article:tag" content="Go专题">
+<meta property="article:tag" content="编程语言">
+<meta property="article:tag" content="数据结构">
+<meta property="article:tag" content="算法">
+<meta property="article:tag" content="回溯">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2018/08/22/Go-19-Go%E5%B8%B8%E8%A7%81%E7%AE%97%E6%B3%95%E9%A2%98%E7%9A%84%E5%B7%A5%E7%A8%8B%E4%BB%B7%E5%80%BC%E5%8F%8C%E6%8C%87%E9%92%88%E6%BB%91%E5%8A%A8%E7%AA%97%E5%8F%A3%E5%93%88%E5%B8%8C%E9%80%92%E5%BD%92%E5%9B%9E%E6%BA%AF%E6%80%8E%E4%B9%88%E7%90%86%E8%A7%A3/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2018/08/22/Go-19-Go%E5%B8%B8%E8%A7%81%E7%AE%97%E6%B3%95%E9%A2%98%E7%9A%84%E5%B7%A5%E7%A8%8B%E4%BB%B7%E5%80%BC%E5%8F%8C%E6%8C%87%E9%92%88%E6%BB%91%E5%8A%A8%E7%AA%97%E5%8F%A3%E5%93%88%E5%B8%8C%E9%80%92%E5%BD%92%E5%9B%9E%E6%BA%AF%E6%80%8E%E4%B9%88%E7%90%86%E8%A7%A3/","path":"2018/08/22/Go-19-Go常见算法题的工程价值双指针滑动窗口哈希递归回溯怎么理解/","title":"Go：常见算法题的工程价值，双指针、滑动窗口、哈希、递归、回溯怎么理解"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>Go：常见算法题的工程价值，双指针、滑动窗口、哈希、递归、回溯怎么理解 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E8%BF%99%E7%AF%87%E6%96%87%E7%AB%A0%E8%A6%81%E8%A7%A3%E5%86%B3%E4%BB%80%E4%B9%88%E9%97%AE%E9%A2%98"><span class="nav-number">1.</span> <span class="nav-text">一、这篇文章要解决什么问题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E5%85%88%E6%8A%8A%E4%B8%80%E5%8F%A5%E8%AF%9D%E7%BB%93%E8%AE%BA%E8%AF%B4%E6%B8%85%E6%A5%9A"><span class="nav-number">2.</span> <span class="nav-text">二、先把一句话结论说清楚</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E5%85%88%E7%9C%8B%E8%BF%99%E7%AF%87%E6%96%87%E7%AB%A0%E9%87%8C%E7%9A%84%E5%B0%8F%E9%A1%B9%E7%9B%AE"><span class="nav-number">3.</span> <span class="nav-text">三、先看这篇文章里的小项目</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E5%85%88%E7%BB%99%E4%B8%80%E4%B8%AA%E6%9C%80%E5%B0%8F%E5%8F%AF%E8%BF%90%E8%A1%8C%E7%89%88%E6%9C%AC"><span class="nav-number">4.</span> <span class="nav-text">四、先给一个最小可运行版本</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E5%93%88%E5%B8%8C%E5%85%88%E8%A7%A3%E5%86%B3%E2%80%9C%E5%8E%BB%E9%87%8D%E3%80%81%E7%B4%A2%E5%BC%95%E3%80%81%E8%81%9A%E5%90%88%E2%80%9D"><span class="nav-number">5.</span> <span class="nav-text">五、哈希先解决“去重、索引、聚合”</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E4%BC%98%E5%85%88%E6%83%B3%E5%88%B0%E5%93%88%E5%B8%8C"><span class="nav-number">5.1.</span> <span class="nav-text">什么时候优先想到哈希</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%80%E4%B8%AA%E9%94%99%E8%AF%AF%E4%BE%8B%E5%AD%90"><span class="nav-number">5.2.</span> <span class="nav-text">一个错误例子</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E5%8F%8C%E6%8C%87%E9%92%88%E8%A7%A3%E5%86%B3%E2%80%9C%E4%B8%A4%E4%B8%AA%E5%BA%8F%E5%88%97%E4%B8%80%E8%B5%B7%E8%B5%B0%E2%80%9D"><span class="nav-number">6.</span> <span class="nav-text">六、双指针解决“两个序列一起走”</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8F%8C%E6%8C%87%E9%92%88%E9%80%82%E5%90%88%E5%93%AA%E4%BA%9B%E5%B7%A5%E7%A8%8B%E5%9C%BA%E6%99%AF"><span class="nav-number">6.1.</span> <span class="nav-text">双指针适合哪些工程场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%80%E4%B8%AA%E5%AE%B9%E6%98%93%E6%BC%8F%E6%8E%89%E7%9A%84%E5%9D%91"><span class="nav-number">6.2.</span> <span class="nav-text">一个容易漏掉的坑</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E6%BB%91%E5%8A%A8%E7%AA%97%E5%8F%A3%E8%A7%A3%E5%86%B3%E2%80%9C%E8%BF%9E%E7%BB%AD%E5%8C%BA%E9%97%B4%E7%9A%84%E5%A2%9E%E9%87%8F%E7%BB%9F%E8%AE%A1%E2%80%9D"><span class="nav-number">7.</span> <span class="nav-text">七、滑动窗口解决“连续区间的增量统计”</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B7%A5%E7%A8%8B%E9%87%8C%E5%93%AA%E4%BA%9B%E5%9C%B0%E6%96%B9%E7%BB%8F%E5%B8%B8%E6%98%AF%E6%BB%91%E5%8A%A8%E7%AA%97%E5%8F%A3"><span class="nav-number">7.1.</span> <span class="nav-text">工程里哪些地方经常是滑动窗口</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%80%E4%B8%AA%E9%94%99%E8%AF%AF%E4%BE%8B%E5%AD%90-1"><span class="nav-number">7.2.</span> <span class="nav-text">一个错误例子</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E9%80%92%E5%BD%92%E8%A7%A3%E5%86%B3%E2%80%9C%E7%BB%93%E6%9E%84%E5%92%8C%E5%AD%90%E7%BB%93%E6%9E%84%E9%95%BF%E5%BE%97%E4%B8%80%E6%A0%B7%E2%80%9D"><span class="nav-number">8.</span> <span class="nav-text">八、递归解决“结构和子结构长得一样”</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%BA%E4%BB%80%E4%B9%88%E8%BF%99%E9%87%8C%E4%B8%8D%E7%94%A8%E4%B8%80%E5%BC%80%E5%A7%8B%E5%B0%B1%E5%86%99%E8%BF%AD%E4%BB%A3"><span class="nav-number">8.1.</span> <span class="nav-text">为什么这里不用一开始就写迭代</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%80%E4%B8%AA%E9%94%99%E8%AF%AF%E4%BE%8B%E5%AD%90-2"><span class="nav-number">8.2.</span> <span class="nav-text">一个错误例子</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E5%9B%9E%E6%BA%AF%E8%A7%A3%E5%86%B3%E2%80%9C%E5%9C%A8%E7%BA%A6%E6%9D%9F%E4%B8%8B%E7%B3%BB%E7%BB%9F%E6%9E%9A%E4%B8%BE%E9%80%89%E6%8B%A9%E2%80%9D"><span class="nav-number">9.</span> <span class="nav-text">九、回溯解决“在约束下系统枚举选择”</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B7%A5%E7%A8%8B%E9%87%8C%E5%93%AA%E4%BA%9B%E5%9C%BA%E6%99%AF%E4%BC%9A%E7%94%A8%E5%88%B0%E5%9B%9E%E6%BA%AF"><span class="nav-number">9.1.</span> <span class="nav-text">工程里哪些场景会用到回溯</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%80%E4%B8%AA%E5%BE%88%E5%B8%B8%E8%A7%81%E7%9A%84%E5%9D%91"><span class="nav-number">9.2.</span> <span class="nav-text">一个很常见的坑</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E6%8A%8A%E4%BA%94%E7%A7%8D%E6%A8%A1%E5%BC%8F%E4%B8%B2%E6%88%90%E4%B8%80%E6%9D%A1%E5%AE%8C%E6%95%B4%E5%A4%84%E7%90%86%E9%93%BE"><span class="nav-number">10.</span> <span class="nav-text">十、把五种模式串成一条完整处理链</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E6%B5%8B%E8%AF%95%E6%97%B6%E4%B8%8D%E8%A6%81%E5%8F%AA%E6%B5%8B%E7%BB%93%E6%9E%9C%EF%BC%8C%E8%A6%81%E6%B5%8B%E8%BE%B9%E7%95%8C%E5%92%8C%E7%8A%B6%E6%80%81"><span class="nav-number">11.</span> <span class="nav-text">十一、测试时不要只测结果，要测边界和状态</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%85%88%E6%B5%8B%E5%93%88%E5%B8%8C%E5%8E%BB%E9%87%8D"><span class="nav-number">11.1.</span> <span class="nav-text">1. 先测哈希去重</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%86%8D%E6%B5%8B%E5%8F%8C%E6%8C%87%E9%92%88%E5%90%88%E5%B9%B6"><span class="nav-number">11.2.</span> <span class="nav-text">2. 再测双指针合并</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%BB%91%E5%8A%A8%E7%AA%97%E5%8F%A3%E8%A6%81%E9%87%8D%E7%82%B9%E6%B5%8B%E8%BE%B9%E7%95%8C"><span class="nav-number">11.3.</span> <span class="nav-text">3. 滑动窗口要重点测边界</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E9%80%92%E5%BD%92%E8%A6%81%E6%B5%8B%E7%8E%AF"><span class="nav-number">11.4.</span> <span class="nav-text">4. 递归要测环</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%9B%9E%E6%BA%AF%E8%A6%81%E6%B5%8B%E2%80%9C%E6%9C%80%E4%BC%98%E6%96%B9%E6%A1%88%E2%80%9D%E5%92%8C%E2%80%9C%E7%8A%B6%E6%80%81%E6%B1%A1%E6%9F%93%E2%80%9D"><span class="nav-number">11.5.</span> <span class="nav-text">5. 回溯要测“最优方案”和“状态污染”</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E4%B8%80%E4%B8%AA%E7%9C%9F%E5%AE%9E%E4%B8%80%E7%82%B9%E7%9A%84%E5%B0%8F%E9%A1%B9%E7%9B%AE%E7%89%88%E6%9C%AC"><span class="nav-number">12.</span> <span class="nav-text">十二、一个真实一点的小项目版本</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81%E5%87%A0%E7%B1%BB%E6%9C%80%E5%B8%B8%E8%A7%81%E7%9A%84%E9%94%99%E8%AF%AF%E5%86%99%E6%B3%95"><span class="nav-number">13.</span> <span class="nav-text">十三、几类最常见的错误写法</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%93%88%E5%B8%8C-key-%E9%80%89%E9%94%99"><span class="nav-number">13.1.</span> <span class="nav-text">1. 哈希 key 选错</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%8F%8C%E6%8C%87%E9%92%88%E8%BE%93%E5%85%A5%E6%9C%AA%E6%8E%92%E5%BA%8F"><span class="nav-number">13.2.</span> <span class="nav-text">2. 双指针输入未排序</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%BB%91%E5%8A%A8%E7%AA%97%E5%8F%A3%E8%BE%B9%E7%95%8C%E6%9D%A1%E4%BB%B6%E4%B8%8D%E6%B8%85%E6%A5%9A"><span class="nav-number">13.3.</span> <span class="nav-text">3. 滑动窗口边界条件不清楚</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E9%80%92%E5%BD%92%E6%B2%A1%E6%9C%89%E7%8E%AF%E4%BF%9D%E6%8A%A4"><span class="nav-number">13.4.</span> <span class="nav-text">4. 递归没有环保护</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%9B%9E%E6%BA%AF%E6%B2%A1%E6%9C%89%E6%92%A4%E9%94%80%E7%8A%B6%E6%80%81"><span class="nav-number">13.5.</span> <span class="nav-text">5. 回溯没有撤销状态</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E5%9B%9E%E6%BA%AF%E6%9C%80%E4%BC%98%E7%BB%93%E6%9E%9C%E6%B2%A1%E6%9C%89%E6%8B%B7%E8%B4%9D%E5%BF%AB%E7%85%A7"><span class="nav-number">13.6.</span> <span class="nav-text">6. 回溯最优结果没有拷贝快照</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81%E6%8E%92%E9%9A%9C%E6%97%B6%E6%80%8E%E4%B9%88%E5%BF%AB%E9%80%9F%E5%88%A4%E6%96%AD%E9%97%AE%E9%A2%98%E5%87%BA%E5%9C%A8%E5%93%AA%E4%B8%80%E5%B1%82"><span class="nav-number">14.</span> <span class="nav-text">十四、排障时怎么快速判断问题出在哪一层</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%85%88%E7%9C%8B%E8%BE%93%E5%85%A5%E5%89%8D%E6%8F%90%E6%9C%89%E6%B2%A1%E6%9C%89%E8%A2%AB%E6%BB%A1%E8%B6%B3"><span class="nav-number">14.1.</span> <span class="nav-text">1. 先看输入前提有没有被满足</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%86%8D%E7%9C%8B%E8%BE%B9%E7%95%8C%E5%80%BC"><span class="nav-number">14.2.</span> <span class="nav-text">2. 再看边界值</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%9C%80%E5%90%8E%E7%9C%8B%E7%8A%B6%E6%80%81%E6%98%AF%E5%90%A6%E8%A2%AB%E6%84%8F%E5%A4%96%E5%85%B1%E4%BA%AB"><span class="nav-number">14.3.</span> <span class="nav-text">3. 最后看状态是否被意外共享</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%94%E3%80%81%E8%BF%99%E4%BA%9B%E6%A8%A1%E5%BC%8F%E7%9A%84%E4%BD%BF%E7%94%A8%E8%BE%B9%E7%95%8C"><span class="nav-number">15.</span> <span class="nav-text">十五、这些模式的使用边界</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%8F%8C%E6%8C%87%E9%92%88%E7%9A%84%E5%89%8D%E6%8F%90%E6%98%AF%E2%80%9C%E5%BA%8F%E2%80%9D"><span class="nav-number">15.1.</span> <span class="nav-text">1. 双指针的前提是“序”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%BB%91%E5%8A%A8%E7%AA%97%E5%8F%A3%E6%9B%B4%E9%80%82%E5%90%88%E8%BF%9E%E7%BB%AD%E5%8C%BA%E9%97%B4"><span class="nav-number">15.2.</span> <span class="nav-text">2. 滑动窗口更适合连续区间</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%93%88%E5%B8%8C%E4%BC%9A%E6%8D%A2%E6%9D%A5%E9%A2%9D%E5%A4%96%E5%86%85%E5%AD%98%E6%88%90%E6%9C%AC"><span class="nav-number">15.3.</span> <span class="nav-text">3. 哈希会换来额外内存成本</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E9%80%92%E5%BD%92%E5%8F%97%E8%B0%83%E7%94%A8%E6%A0%88%E6%B7%B1%E5%BA%A6%E9%99%90%E5%88%B6"><span class="nav-number">15.4.</span> <span class="nav-text">4. 递归受调用栈深度限制</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%9B%9E%E6%BA%AF%E6%9B%B4%E9%80%82%E5%90%88%E5%B0%8F%E8%A7%84%E6%A8%A1%E6%9E%9A%E4%B8%BE"><span class="nav-number">15.5.</span> <span class="nav-text">5. 回溯更适合小规模枚举</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AD%E3%80%81%E7%BB%83%E4%B9%A0%E9%A2%98"><span class="nav-number">16.</span> <span class="nav-text">十六、练习题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%83%E3%80%81%E6%9C%80%E5%90%8E%E6%80%BB%E7%BB%93"><span class="nav-number">17.</span> <span class="nav-text">十七、最后总结</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2018/08/22/Go-19-Go%E5%B8%B8%E8%A7%81%E7%AE%97%E6%B3%95%E9%A2%98%E7%9A%84%E5%B7%A5%E7%A8%8B%E4%BB%B7%E5%80%BC%E5%8F%8C%E6%8C%87%E9%92%88%E6%BB%91%E5%8A%A8%E7%AA%97%E5%8F%A3%E5%93%88%E5%B8%8C%E9%80%92%E5%BD%92%E5%9B%9E%E6%BA%AF%E6%80%8E%E4%B9%88%E7%90%86%E8%A7%A3/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="Go：常见算法题的工程价值，双指针、滑动窗口、哈希、递归、回溯怎么理解 | 大道至简">
+      <meta itemprop="description" content="Go 里的双指针、滑动窗口、哈希、递归、回溯，如果只停在题解层面，很快就会和项目脱节。这篇文章围绕一个巡检失败分析与补救计划器，讲清这些模式在合并数据、连续区间分析、去重索引、依赖遍历和资源受限决策里的真实工程价值。">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Go：常见算法题的工程价值，双指针、滑动窗口、哈希、递归、回溯怎么理解
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2018-08-22 20:30:00" itemprop="dateCreated datePublished" datetime="2018-08-22T20:30:00+08:00">2018-08-22</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>6.1k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>22 分钟</span>
+    </span>
+</div>
+
+            <div class="post-description">Go 里的双指针、滑动窗口、哈希、递归、回溯，如果只停在题解层面，很快就会和项目脱节。这篇文章围绕一个巡检失败分析与补救计划器，讲清这些模式在合并数据、连续区间分析、去重索引、依赖遍历和资源受限决策里的真实工程价值。</div>
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>提到算法，最容易出现的偏差通常是两种：</p>
+<ul>
+<li>一种是把它当成面试题，写完题解就结束</li>
+<li>另一种是觉得业务代码里只需要会调库，算法没有实际价值</li>
+</ul>
+<p>真正开始写 Go 服务、任务执行器、巡检系统、日志分析工具之后，这几类模式会反复出现，只是名字不一定直接写在代码旁边：</p>
+<ul>
+<li>两份有序结果合并去重，常见是双指针</li>
+<li>一段连续时间里的异常峰值分析，常见是滑动窗口</li>
+<li>去重、聚合、索引、快速判断是否出现过，常见是哈希</li>
+<li>树形依赖、目录扫描、层级配置遍历，常见是递归</li>
+<li>在预算、时间、容量受限时挑一组最优动作，常见是回溯</li>
+</ul>
+<p>这一篇不按 LeetCode 题号来讲，而是直接围绕一个实际场景展开：<strong>做一个巡检失败分析与补救计划器</strong>。</p>
+<p>这个工具要做五件事：</p>
+<ol>
+<li>收集多路巡检结果并去重</li>
+<li>合并两份已排序的失败服务列表</li>
+<li>找出 10 分钟内失败最密集的窗口</li>
+<li>递归展开服务依赖树，找出受影响范围</li>
+<li>在补救预算受限时，枚举一组收益更高的补救动作</li>
+</ol>
+<p>这条链路足够小，能把五种模式串在一起；也足够真实，能看清它们在工程里到底解决什么问题。</p>
+<h2 id="一、这篇文章要解决什么问题"><a href="#一、这篇文章要解决什么问题" class="headerlink" title="一、这篇文章要解决什么问题"></a>一、这篇文章要解决什么问题</h2><p>读完这一篇，应该能独立回答这些问题：</p>
+<ol>
+<li>双指针、滑动窗口、哈希、递归、回溯分别适合哪类工程问题</li>
+<li>为什么这些模式的价值不在“会不会背模板”，而在“能不能看出数据流特征”</li>
+<li>Go 里写这些模式时，最常见的错误是什么</li>
+<li>什么时候该优先用简单写法，什么时候该上模式化解法</li>
+<li>这些模式怎么写成可测试、可排障、可维护的代码</li>
+</ol>
+<p>如果这些问题能答清，后面写日志处理、任务编排、故障分析、资源调度、测试工具时，代码会稳很多。</p>
+<h2 id="二、先把一句话结论说清楚"><a href="#二、先把一句话结论说清楚" class="headerlink" title="二、先把一句话结论说清楚"></a>二、先把一句话结论说清楚</h2><p>这些算法模式真正有价值的地方，不是“做题时能过”，而是：</p>
+<p><strong>当数据是有顺序的、连续的、可索引的、层级化的、或者要在约束下做选择时，它们能把复杂度和代码结构一起压下来。</strong></p>
+<p>更具体一点：</p>
+<ul>
+<li>双指针解决的是“两个位置如何协同前进”</li>
+<li>滑动窗口解决的是“连续区间如何增量维护”</li>
+<li>哈希解决的是“如何用空间换时间，快速建立索引”</li>
+<li>递归解决的是“当前问题和子问题结构一致”</li>
+<li>回溯解决的是“需要系统枚举，再及时撤销状态”</li>
+</ul>
+<p>如果看问题时能先看出这五类结构，再选写法，算法就开始变成工程能力，而不是题库记忆。</p>
+<h2 id="三、先看这篇文章里的小项目"><a href="#三、先看这篇文章里的小项目" class="headerlink" title="三、先看这篇文章里的小项目"></a>三、先看这篇文章里的小项目</h2><p>假设现在有一个最小的巡检失败分析器，输入来自两个来源：</p>
+<ul>
+<li>主动巡检任务</li>
+<li>被动告警回传</li>
+</ul>
+<p>每条失败记录至少有这些字段：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> FailureEvent <span class="keyword">struct</span> &#123;</span><br><span class="line">	ID         <span class="type">string</span></span><br><span class="line">	Service    <span class="type">string</span></span><br><span class="line">	OccurredAt time.Time</span><br><span class="line">	LatencyMS  <span class="type">int</span></span><br><span class="line">	Severity   <span class="type">int</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>此外系统还维护一棵服务依赖树：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> ServiceNode <span class="keyword">struct</span> &#123;</span><br><span class="line">	Name     <span class="type">string</span></span><br><span class="line">	Children []*ServiceNode</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>到了事故分析阶段，工具要完成这条链：</p>
+<ol>
+<li>先用哈希对重复事件做去重和按服务聚合</li>
+<li>再把两份已经排好序的失败服务名合并成一份稳定列表</li>
+<li>再用滑动窗口找出失败最集中的时间段</li>
+<li>再递归展开依赖树，找出受影响服务</li>
+<li>最后在 30 分钟预算内，用回溯选一组补救动作</li>
+</ol>
+<p>这不是为了把五个知识点硬塞在一起，而是因为真实工程里的分析链路，往往就是多个模式连续出现。</p>
+<h2 id="四、先给一个最小可运行版本"><a href="#四、先给一个最小可运行版本" class="headerlink" title="四、先给一个最小可运行版本"></a>四、先给一个最小可运行版本</h2><p>先看一份最小代码骨架，后面每一段都围绕它展开。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br><span class="line">146</span><br><span class="line">147</span><br><span class="line">148</span><br><span class="line">149</span><br><span class="line">150</span><br><span class="line">151</span><br><span class="line">152</span><br><span class="line">153</span><br><span class="line">154</span><br><span class="line">155</span><br><span class="line">156</span><br><span class="line">157</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> analyzer</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">	<span class="string">&quot;errors&quot;</span></span><br><span class="line">	<span class="string">&quot;sort&quot;</span></span><br><span class="line">	<span class="string">&quot;time&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> FailureEvent <span class="keyword">struct</span> &#123;</span><br><span class="line">	ID         <span class="type">string</span></span><br><span class="line">	Service    <span class="type">string</span></span><br><span class="line">	OccurredAt time.Time</span><br><span class="line">	LatencyMS  <span class="type">int</span></span><br><span class="line">	Severity   <span class="type">int</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> ServiceNode <span class="keyword">struct</span> &#123;</span><br><span class="line">	Name     <span class="type">string</span></span><br><span class="line">	Children []*ServiceNode</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> RecoveryAction <span class="keyword">struct</span> &#123;</span><br><span class="line">	Name      <span class="type">string</span></span><br><span class="line">	CostMin   <span class="type">int</span></span><br><span class="line">	Benefit   <span class="type">int</span></span><br><span class="line">	AppliesTo <span class="type">string</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">BuildUniqueEvents</span><span class="params">(events []FailureEvent)</span></span> []FailureEvent &#123;</span><br><span class="line">	seen := <span class="built_in">make</span>(<span class="keyword">map</span>[<span class="type">string</span>]<span class="keyword">struct</span>&#123;&#125;, <span class="built_in">len</span>(events))</span><br><span class="line">	result := <span class="built_in">make</span>([]FailureEvent, <span class="number">0</span>, <span class="built_in">len</span>(events))</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> _, event := <span class="keyword">range</span> events &#123;</span><br><span class="line">		<span class="keyword">if</span> _, ok := seen[event.ID]; ok &#123;</span><br><span class="line">			<span class="keyword">continue</span></span><br><span class="line">		&#125;</span><br><span class="line">		seen[event.ID] = <span class="keyword">struct</span>&#123;&#125;&#123;&#125;</span><br><span class="line">		result = <span class="built_in">append</span>(result, event)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> result</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">MergeSortedServices</span><span class="params">(a, b []<span class="type">string</span>)</span></span> []<span class="type">string</span> &#123;</span><br><span class="line">	i := <span class="number">0</span></span><br><span class="line">	j := <span class="number">0</span></span><br><span class="line">	result := <span class="built_in">make</span>([]<span class="type">string</span>, <span class="number">0</span>, <span class="built_in">len</span>(a)+<span class="built_in">len</span>(b))</span><br><span class="line"></span><br><span class="line">	appendIfNeeded := <span class="function"><span class="keyword">func</span><span class="params">(value <span class="type">string</span>)</span></span> &#123;</span><br><span class="line">		<span class="keyword">if</span> <span class="built_in">len</span>(result) == <span class="number">0</span> || result[<span class="built_in">len</span>(result)<span class="number">-1</span>] != value &#123;</span><br><span class="line">			result = <span class="built_in">append</span>(result, value)</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> i &lt; <span class="built_in">len</span>(a) &amp;&amp; j &lt; <span class="built_in">len</span>(b) &#123;</span><br><span class="line">		<span class="keyword">switch</span> &#123;</span><br><span class="line">		<span class="keyword">case</span> a[i] == b[j]:</span><br><span class="line">			appendIfNeeded(a[i])</span><br><span class="line">			i++</span><br><span class="line">			j++</span><br><span class="line">		<span class="keyword">case</span> a[i] &lt; b[j]:</span><br><span class="line">			appendIfNeeded(a[i])</span><br><span class="line">			i++</span><br><span class="line">		<span class="keyword">default</span>:</span><br><span class="line">			appendIfNeeded(b[j])</span><br><span class="line">			j++</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> i &lt; <span class="built_in">len</span>(a) &#123;</span><br><span class="line">		appendIfNeeded(a[i])</span><br><span class="line">		i++</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> j &lt; <span class="built_in">len</span>(b) &#123;</span><br><span class="line">		appendIfNeeded(b[j])</span><br><span class="line">		j++</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> result</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">FindBusiestWindow</span><span class="params">(events []FailureEvent, window time.Duration)</span></span> (<span class="type">int</span>, time.Time, time.Time, <span class="type">error</span>) &#123;</span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(events) == <span class="number">0</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> <span class="number">0</span>, time.Time&#123;&#125;, time.Time&#123;&#125;, errors.New(<span class="string">&quot;empty events&quot;</span>)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	sorted := <span class="built_in">append</span>([]FailureEvent(<span class="literal">nil</span>), events...)</span><br><span class="line">	sort.Slice(sorted, <span class="function"><span class="keyword">func</span><span class="params">(i, j <span class="type">int</span>)</span></span> <span class="type">bool</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> sorted[i].OccurredAt.Before(sorted[j].OccurredAt)</span><br><span class="line">	&#125;)</span><br><span class="line"></span><br><span class="line">	left := <span class="number">0</span></span><br><span class="line">	bestCount := <span class="number">0</span></span><br><span class="line">	bestStart := sorted[<span class="number">0</span>].OccurredAt</span><br><span class="line">	bestEnd := sorted[<span class="number">0</span>].OccurredAt</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> right := <span class="number">0</span>; right &lt; <span class="built_in">len</span>(sorted); right++ &#123;</span><br><span class="line">		<span class="keyword">for</span> sorted[right].OccurredAt.Sub(sorted[left].OccurredAt) &gt; window &#123;</span><br><span class="line">			left++</span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		currentCount := right - left + <span class="number">1</span></span><br><span class="line">		<span class="keyword">if</span> currentCount &gt; bestCount &#123;</span><br><span class="line">			bestCount = currentCount</span><br><span class="line">			bestStart = sorted[left].OccurredAt</span><br><span class="line">			bestEnd = sorted[right].OccurredAt</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> bestCount, bestStart, bestEnd, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">WalkDependencies</span><span class="params">(node *ServiceNode, visit <span class="keyword">func</span>(*ServiceNode)</span></span>, seen <span class="keyword">map</span>[<span class="type">string</span>]<span class="keyword">struct</span>&#123;&#125;) &#123;</span><br><span class="line">	<span class="keyword">if</span> node == <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span></span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> _, ok := seen[node.Name]; ok &#123;</span><br><span class="line">		<span class="keyword">return</span></span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	seen[node.Name] = <span class="keyword">struct</span>&#123;&#125;&#123;&#125;</span><br><span class="line">	visit(node)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> _, child := <span class="keyword">range</span> node.Children &#123;</span><br><span class="line">		WalkDependencies(child, visit, seen)</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">ChooseRecoveryPlan</span><span class="params">(actions []RecoveryAction, budget <span class="type">int</span>)</span></span> (<span class="type">int</span>, []RecoveryAction) &#123;</span><br><span class="line">	bestScore := <span class="number">0</span></span><br><span class="line">	bestPlan := <span class="built_in">make</span>([]RecoveryAction, <span class="number">0</span>)</span><br><span class="line">	path := <span class="built_in">make</span>([]RecoveryAction, <span class="number">0</span>)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">var</span> dfs <span class="function"><span class="keyword">func</span><span class="params">(index <span class="type">int</span>, used <span class="type">int</span>, score <span class="type">int</span>)</span></span></span><br><span class="line">	dfs = <span class="function"><span class="keyword">func</span><span class="params">(index <span class="type">int</span>, used <span class="type">int</span>, score <span class="type">int</span>)</span></span> &#123;</span><br><span class="line">		<span class="keyword">if</span> used &gt; budget &#123;</span><br><span class="line">			<span class="keyword">return</span></span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">if</span> score &gt; bestScore &#123;</span><br><span class="line">			bestScore = score</span><br><span class="line">			bestPlan = <span class="built_in">append</span>([]RecoveryAction(<span class="literal">nil</span>), path...)</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">if</span> index == <span class="built_in">len</span>(actions) &#123;</span><br><span class="line">			<span class="keyword">return</span></span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		path = <span class="built_in">append</span>(path, actions[index])</span><br><span class="line">		dfs(index+<span class="number">1</span>, used+actions[index].CostMin, score+actions[index].Benefit)</span><br><span class="line">		path = path[:<span class="built_in">len</span>(path)<span class="number">-1</span>]</span><br><span class="line"></span><br><span class="line">		dfs(index+<span class="number">1</span>, used, score)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	dfs(<span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>)</span><br><span class="line">	<span class="keyword">return</span> bestScore, bestPlan</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这一版还很简化，但已经能看出五种模式各自在负责什么。</p>
+<h2 id="五、哈希先解决“去重、索引、聚合”"><a href="#五、哈希先解决“去重、索引、聚合”" class="headerlink" title="五、哈希先解决“去重、索引、聚合”"></a>五、哈希先解决“去重、索引、聚合”</h2><p>算法模式里，哈希通常最先在工程里落地，因为它最贴近真实数据处理。</p>
+<p>例如同一次事故里，一条失败事件可能从多个来源重复进来：</p>
+<ul>
+<li>巡检系统发了一次</li>
+<li>告警系统同步了一次</li>
+<li>补偿任务重试时又回传了一次</li>
+</ul>
+<p>如果不先去重，后面所有统计都会偏大。</p>
+<p>最小去重写法通常就是：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">BuildUniqueEvents</span><span class="params">(events []FailureEvent)</span></span> []FailureEvent &#123;</span><br><span class="line">	seen := <span class="built_in">make</span>(<span class="keyword">map</span>[<span class="type">string</span>]<span class="keyword">struct</span>&#123;&#125;, <span class="built_in">len</span>(events))</span><br><span class="line">	result := <span class="built_in">make</span>([]FailureEvent, <span class="number">0</span>, <span class="built_in">len</span>(events))</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> _, event := <span class="keyword">range</span> events &#123;</span><br><span class="line">		<span class="keyword">if</span> _, ok := seen[event.ID]; ok &#123;</span><br><span class="line">			<span class="keyword">continue</span></span><br><span class="line">		&#125;</span><br><span class="line">		seen[event.ID] = <span class="keyword">struct</span>&#123;&#125;&#123;&#125;</span><br><span class="line">		result = <span class="built_in">append</span>(result, event)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> result</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这段代码在做的事很直接：</p>
+<ul>
+<li><code>seen</code> 是索引</li>
+<li><code>event.ID</code> 是 key</li>
+<li><code>struct&#123;&#125;</code> 是最低成本的存在标记</li>
+</ul>
+<p>这不是算法题语境里的“哈希表模板”，而是工程里最常见的一种空间换时间。</p>
+<p>继续往前走一步，哈希还可以直接承担聚合：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">GroupByService</span><span class="params">(events []FailureEvent)</span></span> <span class="keyword">map</span>[<span class="type">string</span>][]FailureEvent &#123;</span><br><span class="line">	result := <span class="built_in">make</span>(<span class="keyword">map</span>[<span class="type">string</span>][]FailureEvent)</span><br><span class="line">	<span class="keyword">for</span> _, event := <span class="keyword">range</span> events &#123;</span><br><span class="line">		result[event.Service] = <span class="built_in">append</span>(result[event.Service], event)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> result</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>于是“按服务聚合失败次数、按事件 ID 去重、按服务名建立快速索引”这三件事，本质上都是同一类思路。</p>
+<h3 id="什么时候优先想到哈希"><a href="#什么时候优先想到哈希" class="headerlink" title="什么时候优先想到哈希"></a>什么时候优先想到哈希</h3><p>下面这些信号一出现，就可以先想哈希：</p>
+<ul>
+<li>要快速判断某个元素是否出现过</li>
+<li>要做去重</li>
+<li>要把元素按某个 key 分类</li>
+<li>要缓存中间结果</li>
+<li>要从 O(n^2) 的查找改成接近 O(n)</li>
+</ul>
+<h3 id="一个错误例子"><a href="#一个错误例子" class="headerlink" title="一个错误例子"></a>一个错误例子</h3><p>下面这种写法在数据量小的时候能跑，但规模一上来就会拖垮：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">BuildUniqueEventsSlow</span><span class="params">(events []FailureEvent)</span></span> []FailureEvent &#123;</span><br><span class="line">	result := <span class="built_in">make</span>([]FailureEvent, <span class="number">0</span>, <span class="built_in">len</span>(events))</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> _, event := <span class="keyword">range</span> events &#123;</span><br><span class="line">		exists := <span class="literal">false</span></span><br><span class="line">		<span class="keyword">for</span> _, item := <span class="keyword">range</span> result &#123;</span><br><span class="line">			<span class="keyword">if</span> item.ID == event.ID &#123;</span><br><span class="line">				exists = <span class="literal">true</span></span><br><span class="line">				<span class="keyword">break</span></span><br><span class="line">			&#125;</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">if</span> !exists &#123;</span><br><span class="line">			result = <span class="built_in">append</span>(result, event)</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> result</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>问题不在“这样写一定错”，而在于它会把一次普通去重，写成随着数据量增长快速退化的嵌套扫描。</p>
+<h2 id="六、双指针解决“两个序列一起走”"><a href="#六、双指针解决“两个序列一起走”" class="headerlink" title="六、双指针解决“两个序列一起走”"></a>六、双指针解决“两个序列一起走”</h2><p>双指针最常见的误解，是把它缩成“数组题技巧”。</p>
+<p>实际上它更像一种过程控制方式：<br><strong>当两个位置都在按某种顺序推进时，双指针可以避免反复回头。</strong></p>
+<p>例如有两份已经排好序的失败服务列表：</p>
+<ul>
+<li>一份来自主动巡检</li>
+<li>一份来自被动告警</li>
+</ul>
+<p>需求是：</p>
+<ol>
+<li>合并成一份升序结果</li>
+<li>重复服务名只保留一次</li>
+</ol>
+<p>这时候最自然的写法就是双指针：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">MergeSortedServices</span><span class="params">(a, b []<span class="type">string</span>)</span></span> []<span class="type">string</span> &#123;</span><br><span class="line">	i := <span class="number">0</span></span><br><span class="line">	j := <span class="number">0</span></span><br><span class="line">	result := <span class="built_in">make</span>([]<span class="type">string</span>, <span class="number">0</span>, <span class="built_in">len</span>(a)+<span class="built_in">len</span>(b))</span><br><span class="line"></span><br><span class="line">	appendIfNeeded := <span class="function"><span class="keyword">func</span><span class="params">(value <span class="type">string</span>)</span></span> &#123;</span><br><span class="line">		<span class="keyword">if</span> <span class="built_in">len</span>(result) == <span class="number">0</span> || result[<span class="built_in">len</span>(result)<span class="number">-1</span>] != value &#123;</span><br><span class="line">			result = <span class="built_in">append</span>(result, value)</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> i &lt; <span class="built_in">len</span>(a) &amp;&amp; j &lt; <span class="built_in">len</span>(b) &#123;</span><br><span class="line">		<span class="keyword">switch</span> &#123;</span><br><span class="line">		<span class="keyword">case</span> a[i] == b[j]:</span><br><span class="line">			appendIfNeeded(a[i])</span><br><span class="line">			i++</span><br><span class="line">			j++</span><br><span class="line">		<span class="keyword">case</span> a[i] &lt; b[j]:</span><br><span class="line">			appendIfNeeded(a[i])</span><br><span class="line">			i++</span><br><span class="line">		<span class="keyword">default</span>:</span><br><span class="line">			appendIfNeeded(b[j])</span><br><span class="line">			j++</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> i &lt; <span class="built_in">len</span>(a) &#123;</span><br><span class="line">		appendIfNeeded(a[i])</span><br><span class="line">		i++</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> j &lt; <span class="built_in">len</span>(b) &#123;</span><br><span class="line">		appendIfNeeded(b[j])</span><br><span class="line">		j++</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> result</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>双指针在这里的价值，不只是复杂度更低，还有两个更实际的工程好处：</p>
+<ol>
+<li><p>结果天然稳定<br>因为输入有序，所以输出顺序可预测，测试也更稳</p>
+</li>
+<li><p>不需要中间大索引<br>如果只是合并两份已排序结果，双指针比“先拼起来再排序再去重”更直观</p>
+</li>
+</ol>
+<h3 id="双指针适合哪些工程场景"><a href="#双指针适合哪些工程场景" class="headerlink" title="双指针适合哪些工程场景"></a>双指针适合哪些工程场景</h3><ul>
+<li>合并两个已排序日志流</li>
+<li>对齐两份时间序列</li>
+<li>扫描两个版本的配置差异</li>
+<li>同时遍历请求列表和白名单列表</li>
+<li>找出两份已排序数据的交集、并集、差集</li>
+</ul>
+<h3 id="一个容易漏掉的坑"><a href="#一个容易漏掉的坑" class="headerlink" title="一个容易漏掉的坑"></a>一个容易漏掉的坑</h3><p>最常见的问题是尾部元素没处理完。</p>
+<p>例如只写：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">for</span> i &lt; <span class="built_in">len</span>(a) &amp;&amp; j &lt; <span class="built_in">len</span>(b) &#123;</span><br><span class="line">	<span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>然后就直接返回，剩余的 <code>a[i:]</code> 或 <code>b[j:]</code> 就丢了。</p>
+<p>双指针代码看起来简单，但每次写完最好主动检查三件事：</p>
+<ol>
+<li>相等分支是否同时推进两个指针</li>
+<li>单边推进后会不会漏掉尾部</li>
+<li>是否需要去重，去重逻辑放在了哪里</li>
+</ol>
+<h2 id="七、滑动窗口解决“连续区间的增量统计”"><a href="#七、滑动窗口解决“连续区间的增量统计”" class="headerlink" title="七、滑动窗口解决“连续区间的增量统计”"></a>七、滑动窗口解决“连续区间的增量统计”</h2><p>滑动窗口最适合的，不是“随便一段数据”，而是：</p>
+<ul>
+<li>数据有顺序</li>
+<li>关注的是连续区间</li>
+<li>窗口向前移动时，大量信息可以复用</li>
+</ul>
+<p>例如事故分析时，常见问题不是“总共失败多少次”，而是：</p>
+<p><strong>10 分钟内失败最密集的窗口出现在哪里？</strong></p>
+<p>这类问题如果对每个起点都重新统计一遍，会变得很慢。<br>如果事件本身按时间有序，滑动窗口就很自然。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">FindBusiestWindow</span><span class="params">(events []FailureEvent, window time.Duration)</span></span> (<span class="type">int</span>, time.Time, time.Time, <span class="type">error</span>) &#123;</span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(events) == <span class="number">0</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> <span class="number">0</span>, time.Time&#123;&#125;, time.Time&#123;&#125;, errors.New(<span class="string">&quot;empty events&quot;</span>)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	sorted := <span class="built_in">append</span>([]FailureEvent(<span class="literal">nil</span>), events...)</span><br><span class="line">	sort.Slice(sorted, <span class="function"><span class="keyword">func</span><span class="params">(i, j <span class="type">int</span>)</span></span> <span class="type">bool</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> sorted[i].OccurredAt.Before(sorted[j].OccurredAt)</span><br><span class="line">	&#125;)</span><br><span class="line"></span><br><span class="line">	left := <span class="number">0</span></span><br><span class="line">	bestCount := <span class="number">0</span></span><br><span class="line">	bestStart := sorted[<span class="number">0</span>].OccurredAt</span><br><span class="line">	bestEnd := sorted[<span class="number">0</span>].OccurredAt</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> right := <span class="number">0</span>; right &lt; <span class="built_in">len</span>(sorted); right++ &#123;</span><br><span class="line">		<span class="keyword">for</span> sorted[right].OccurredAt.Sub(sorted[left].OccurredAt) &gt; window &#123;</span><br><span class="line">			left++</span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		currentCount := right - left + <span class="number">1</span></span><br><span class="line">		<span class="keyword">if</span> currentCount &gt; bestCount &#123;</span><br><span class="line">			bestCount = currentCount</span><br><span class="line">			bestStart = sorted[left].OccurredAt</span><br><span class="line">			bestEnd = sorted[right].OccurredAt</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> bestCount, bestStart, bestEnd, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这里的核心不是“两个指针又出现了一次”，而是窗口含义发生了变化：</p>
+<ul>
+<li><code>left</code> 和 <code>right</code> 不是在合并两个数组</li>
+<li>而是在维护一个始终满足条件的连续区间</li>
+</ul>
+<h3 id="工程里哪些地方经常是滑动窗口"><a href="#工程里哪些地方经常是滑动窗口" class="headerlink" title="工程里哪些地方经常是滑动窗口"></a>工程里哪些地方经常是滑动窗口</h3><ul>
+<li>某一段时间内的失败次数统计</li>
+<li>频控或限流窗口</li>
+<li>连续 N 分钟的 CPU、QPS、错误率峰值</li>
+<li>实时日志里异常关键字的活跃窗口</li>
+<li>测试平台里一批任务的连续超时区间</li>
+</ul>
+<h3 id="一个错误例子-1"><a href="#一个错误例子-1" class="headerlink" title="一个错误例子"></a>一个错误例子</h3><p>下面这种写法很容易把窗口边界搞错：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">FindBusiestWindowWrong</span><span class="params">(events []FailureEvent, window time.Duration)</span></span> <span class="type">int</span> &#123;</span><br><span class="line">	left := <span class="number">0</span></span><br><span class="line">	best := <span class="number">0</span></span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> right := <span class="number">0</span>; right &lt; <span class="built_in">len</span>(events); right++ &#123;</span><br><span class="line">		<span class="keyword">if</span> events[right].OccurredAt.Sub(events[left].OccurredAt) &gt; window &#123;</span><br><span class="line">			left++</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">if</span> right-left+<span class="number">1</span> &gt; best &#123;</span><br><span class="line">			best = right - left + <span class="number">1</span></span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> best</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>问题有两个：</p>
+<ol>
+<li>只 <code>left++</code> 一次，可能窗口依旧超范围</li>
+<li>假设输入已经有序，但函数本身没有保证</li>
+</ol>
+<p>所以这里需要的是 <code>for</code> 收缩窗口，而不是 <code>if</code>。</p>
+<h2 id="八、递归解决“结构和子结构长得一样”"><a href="#八、递归解决“结构和子结构长得一样”" class="headerlink" title="八、递归解决“结构和子结构长得一样”"></a>八、递归解决“结构和子结构长得一样”</h2><p>递归在工程里最常出现的地方不是数学题，而是层级结构：</p>
+<ul>
+<li>目录</li>
+<li>树形配置</li>
+<li>组织架构</li>
+<li>服务依赖图</li>
+<li>菜单或权限树</li>
+</ul>
+<p>例如现在有一棵服务依赖树：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">gateway</span><br><span class="line">├── order-api</span><br><span class="line">│   ├── mysql</span><br><span class="line">│   └── redis</span><br><span class="line">└── user-api</span><br><span class="line">    ├── mysql</span><br><span class="line">    └── profile-cache</span><br></pre></td></tr></table></figure>
+
+<p>当 <code>gateway</code> 的请求大面积失败时，排查工具常常要做的一件事是：<br><strong>递归展开依赖树，找出整条影响链。</strong></p>
+<p>最小写法可以是：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">WalkDependencies</span><span class="params">(node *ServiceNode, visit <span class="keyword">func</span>(*ServiceNode)</span></span>, seen <span class="keyword">map</span>[<span class="type">string</span>]<span class="keyword">struct</span>&#123;&#125;) &#123;</span><br><span class="line">	<span class="keyword">if</span> node == <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span></span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> _, ok := seen[node.Name]; ok &#123;</span><br><span class="line">		<span class="keyword">return</span></span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	seen[node.Name] = <span class="keyword">struct</span>&#123;&#125;&#123;&#125;</span><br><span class="line">	visit(node)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> _, child := <span class="keyword">range</span> node.Children &#123;</span><br><span class="line">		WalkDependencies(child, visit, seen)</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这段代码体现了递归在工程里的真实价值：</p>
+<ol>
+<li>当前节点怎么处理</li>
+<li>子节点重复同一套逻辑</li>
+<li>用 <code>seen</code> 防止环导致死循环</li>
+</ol>
+<h3 id="为什么这里不用一开始就写迭代"><a href="#为什么这里不用一开始就写迭代" class="headerlink" title="为什么这里不用一开始就写迭代"></a>为什么这里不用一开始就写迭代</h3><p>递归不是永远更好，但在“节点处理逻辑 + 子节点重复处理”这种结构里，它表达最直接。</p>
+<p>如果一上来就改成手动栈，代码通常会更长。<br>等到深度很大、调用栈风险明显、或需要更强的过程控制时，再改迭代会更合适。</p>
+<h3 id="一个错误例子-2"><a href="#一个错误例子-2" class="headerlink" title="一个错误例子"></a>一个错误例子</h3><p>下面这种递归在真实依赖图里很危险：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">WalkDependenciesWrong</span><span class="params">(node *ServiceNode, visit <span class="keyword">func</span>(*ServiceNode)</span></span>) &#123;</span><br><span class="line">	<span class="keyword">if</span> node == <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span></span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	visit(node)</span><br><span class="line">	<span class="keyword">for</span> _, child := <span class="keyword">range</span> node.Children &#123;</span><br><span class="line">		WalkDependenciesWrong(child, visit)</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>如果依赖图里有环：</p>
+<ul>
+<li><code>gateway -&gt; order-api</code></li>
+<li><code>order-api -&gt; gateway</code></li>
+</ul>
+<p>这段代码会无限递归。</p>
+<p>所以工程里的递归，除了基本终止条件，经常还要再补一层“访问过”保护。</p>
+<h2 id="九、回溯解决“在约束下系统枚举选择”"><a href="#九、回溯解决“在约束下系统枚举选择”" class="headerlink" title="九、回溯解决“在约束下系统枚举选择”"></a>九、回溯解决“在约束下系统枚举选择”</h2><p>回溯最容易被误读成“暴力搜索”。</p>
+<p>更准确一点，它解决的是：</p>
+<p><strong>当所有方案都需要被系统尝试，但尝试过程中可以及时剪枝和撤销状态时，回溯是一种很自然的组织方式。</strong></p>
+<p>例如事故发生后，现在有一组候选补救动作：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">actions := []RecoveryAction&#123;</span><br><span class="line">	&#123;Name: <span class="string">&quot;restart-order-api&quot;</span>, CostMin: <span class="number">8</span>, Benefit: <span class="number">9</span>, AppliesTo: <span class="string">&quot;order-api&quot;</span>&#125;,</span><br><span class="line">	&#123;Name: <span class="string">&quot;flush-profile-cache&quot;</span>, CostMin: <span class="number">4</span>, Benefit: <span class="number">5</span>, AppliesTo: <span class="string">&quot;profile-cache&quot;</span>&#125;,</span><br><span class="line">	&#123;Name: <span class="string">&quot;scale-gateway&quot;</span>, CostMin: <span class="number">10</span>, Benefit: <span class="number">12</span>, AppliesTo: <span class="string">&quot;gateway&quot;</span>&#125;,</span><br><span class="line">	&#123;Name: <span class="string">&quot;switch-readonly-mysql&quot;</span>, CostMin: <span class="number">14</span>, Benefit: <span class="number">15</span>, AppliesTo: <span class="string">&quot;mysql&quot;</span>&#125;,</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>现在值班窗口只剩 20 分钟，希望选一组收益更高的动作。<br>候选动作数量不大时，回溯就很合适：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">ChooseRecoveryPlan</span><span class="params">(actions []RecoveryAction, budget <span class="type">int</span>)</span></span> (<span class="type">int</span>, []RecoveryAction) &#123;</span><br><span class="line">	bestScore := <span class="number">0</span></span><br><span class="line">	bestPlan := <span class="built_in">make</span>([]RecoveryAction, <span class="number">0</span>)</span><br><span class="line">	path := <span class="built_in">make</span>([]RecoveryAction, <span class="number">0</span>)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">var</span> dfs <span class="function"><span class="keyword">func</span><span class="params">(index <span class="type">int</span>, used <span class="type">int</span>, score <span class="type">int</span>)</span></span></span><br><span class="line">	dfs = <span class="function"><span class="keyword">func</span><span class="params">(index <span class="type">int</span>, used <span class="type">int</span>, score <span class="type">int</span>)</span></span> &#123;</span><br><span class="line">		<span class="keyword">if</span> used &gt; budget &#123;</span><br><span class="line">			<span class="keyword">return</span></span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">if</span> score &gt; bestScore &#123;</span><br><span class="line">			bestScore = score</span><br><span class="line">			bestPlan = <span class="built_in">append</span>([]RecoveryAction(<span class="literal">nil</span>), path...)</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">if</span> index == <span class="built_in">len</span>(actions) &#123;</span><br><span class="line">			<span class="keyword">return</span></span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		path = <span class="built_in">append</span>(path, actions[index])</span><br><span class="line">		dfs(index+<span class="number">1</span>, used+actions[index].CostMin, score+actions[index].Benefit)</span><br><span class="line">		path = path[:<span class="built_in">len</span>(path)<span class="number">-1</span>]</span><br><span class="line"></span><br><span class="line">		dfs(index+<span class="number">1</span>, used, score)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	dfs(<span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>)</span><br><span class="line">	<span class="keyword">return</span> bestScore, bestPlan</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这里最重要的不是“递归调用了两次”，而是理解回溯的状态管理：</p>
+<ul>
+<li><code>path</code> 代表当前方案</li>
+<li>选择一个动作时追加到 <code>path</code></li>
+<li>退出这一分支时撤销这个动作</li>
+<li>超预算时立即剪枝</li>
+</ul>
+<h3 id="工程里哪些场景会用到回溯"><a href="#工程里哪些场景会用到回溯" class="headerlink" title="工程里哪些场景会用到回溯"></a>工程里哪些场景会用到回溯</h3><ul>
+<li>预算受限时组合补救动作</li>
+<li>测试参数组合枚举</li>
+<li>权限路径组合验证</li>
+<li>任务批次切分</li>
+<li>小规模资源调度</li>
+</ul>
+<h3 id="一个很常见的坑"><a href="#一个很常见的坑" class="headerlink" title="一个很常见的坑"></a>一个很常见的坑</h3><p>下面这种写法会把后续修改污染到 <code>bestPlan</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> score &gt; bestScore &#123;</span><br><span class="line">	bestScore = score</span><br><span class="line">	bestPlan = path</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>因为 <code>path</code> 后面还会继续被 <code>append</code> 和截断。<br>这里要拷贝当前切片快照，而不是直接复用底层数组。</p>
+<h2 id="十、把五种模式串成一条完整处理链"><a href="#十、把五种模式串成一条完整处理链" class="headerlink" title="十、把五种模式串成一条完整处理链"></a>十、把五种模式串成一条完整处理链</h2><p>只分别看小函数还不够，工程里的关键是它们如何串起来。</p>
+<p>下面给一个简化版流程：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Analyze</span><span class="params">(</span></span></span><br><span class="line"><span class="params"><span class="function">	active []FailureEvent,</span></span></span><br><span class="line"><span class="params"><span class="function">	passive []FailureEvent,</span></span></span><br><span class="line"><span class="params"><span class="function">	root *ServiceNode,</span></span></span><br><span class="line"><span class="params"><span class="function">	actions []RecoveryAction,</span></span></span><br><span class="line"><span class="params"><span class="function">)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">	allEvents := <span class="built_in">append</span>(<span class="built_in">append</span>([]FailureEvent(<span class="literal">nil</span>), active...), passive...)</span><br><span class="line">	uniqueEvents := BuildUniqueEvents(allEvents)</span><br><span class="line"></span><br><span class="line">	activeServices := ExtractSortedServices(active)</span><br><span class="line">	passiveServices := ExtractSortedServices(passive)</span><br><span class="line">	mergedServices := MergeSortedServices(activeServices, passiveServices)</span><br><span class="line"></span><br><span class="line">	count, start, end, err := FindBusiestWindow(uniqueEvents, <span class="number">10</span>*time.Minute)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> err</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	affected := <span class="built_in">make</span>([]<span class="type">string</span>, <span class="number">0</span>)</span><br><span class="line">	WalkDependencies(root, <span class="function"><span class="keyword">func</span><span class="params">(node *ServiceNode)</span></span> &#123;</span><br><span class="line">		affected = <span class="built_in">append</span>(affected, node.Name)</span><br><span class="line">	&#125;, <span class="keyword">map</span>[<span class="type">string</span>]<span class="keyword">struct</span>&#123;&#125;&#123;&#125;)</span><br><span class="line"></span><br><span class="line">	bestScore, plan := ChooseRecoveryPlan(actions, <span class="number">20</span>)</span><br><span class="line"></span><br><span class="line">	_ = mergedServices</span><br><span class="line">	_ = count</span><br><span class="line">	_ = start</span><br><span class="line">	_ = end</span><br><span class="line">	_ = affected</span><br><span class="line">	_ = bestScore</span><br><span class="line">	_ = plan</span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>还缺一个辅助函数：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">ExtractSortedServices</span><span class="params">(events []FailureEvent)</span></span> []<span class="type">string</span> &#123;</span><br><span class="line">	names := <span class="built_in">make</span>([]<span class="type">string</span>, <span class="number">0</span>, <span class="built_in">len</span>(events))</span><br><span class="line">	<span class="keyword">for</span> _, event := <span class="keyword">range</span> events &#123;</span><br><span class="line">		names = <span class="built_in">append</span>(names, event.Service)</span><br><span class="line">	&#125;</span><br><span class="line">	sort.Strings(names)</span><br><span class="line">	<span class="keyword">return</span> names</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这条链本身就说明了一个很重要的工程判断：</p>
+<ul>
+<li>不是先问“今天写哪个算法”</li>
+<li>而是先问“当前数据是去重问题、顺序问题、连续区间问题、层级问题，还是选择问题”</li>
+</ul>
+<p>模式只是结果，不是起点。</p>
+<h2 id="十一、测试时不要只测结果，要测边界和状态"><a href="#十一、测试时不要只测结果，要测边界和状态" class="headerlink" title="十一、测试时不要只测结果，要测边界和状态"></a>十一、测试时不要只测结果，要测边界和状态</h2><p>这些函数虽然不大，但每个都有清晰的边界条件，非常适合表驱动测试。</p>
+<h3 id="1-先测哈希去重"><a href="#1-先测哈希去重" class="headerlink" title="1. 先测哈希去重"></a>1. 先测哈希去重</h3><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestBuildUniqueEvents</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">	now := time.Date(<span class="number">2024</span>, <span class="number">1</span>, <span class="number">1</span>, <span class="number">10</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>, time.UTC)</span><br><span class="line">	events := []FailureEvent&#123;</span><br><span class="line">		&#123;ID: <span class="string">&quot;e1&quot;</span>, Service: <span class="string">&quot;order-api&quot;</span>, OccurredAt: now&#125;,</span><br><span class="line">		&#123;ID: <span class="string">&quot;e1&quot;</span>, Service: <span class="string">&quot;order-api&quot;</span>, OccurredAt: now&#125;,</span><br><span class="line">		&#123;ID: <span class="string">&quot;e2&quot;</span>, Service: <span class="string">&quot;user-api&quot;</span>, OccurredAt: now&#125;,</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	got := BuildUniqueEvents(events)</span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(got) != <span class="number">2</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;expected 2 unique events, got %d&quot;</span>, <span class="built_in">len</span>(got))</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="2-再测双指针合并"><a href="#2-再测双指针合并" class="headerlink" title="2. 再测双指针合并"></a>2. 再测双指针合并</h3><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestMergeSortedServices</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">	cases := []<span class="keyword">struct</span> &#123;</span><br><span class="line">		name <span class="type">string</span></span><br><span class="line">		a    []<span class="type">string</span></span><br><span class="line">		b    []<span class="type">string</span></span><br><span class="line">		want []<span class="type">string</span></span><br><span class="line">	&#125;&#123;</span><br><span class="line">		&#123;</span><br><span class="line">			name: <span class="string">&quot;deduplicate overlap&quot;</span>,</span><br><span class="line">			a:    []<span class="type">string</span>&#123;<span class="string">&quot;gateway&quot;</span>, <span class="string">&quot;order-api&quot;</span>, <span class="string">&quot;redis&quot;</span>&#125;,</span><br><span class="line">			b:    []<span class="type">string</span>&#123;<span class="string">&quot;gateway&quot;</span>, <span class="string">&quot;mysql&quot;</span>, <span class="string">&quot;redis&quot;</span>&#125;,</span><br><span class="line">			want: []<span class="type">string</span>&#123;<span class="string">&quot;gateway&quot;</span>, <span class="string">&quot;mysql&quot;</span>, <span class="string">&quot;order-api&quot;</span>, <span class="string">&quot;redis&quot;</span>&#125;,</span><br><span class="line">		&#125;,</span><br><span class="line">		&#123;</span><br><span class="line">			name: <span class="string">&quot;one side empty&quot;</span>,</span><br><span class="line">			a:    <span class="literal">nil</span>,</span><br><span class="line">			b:    []<span class="type">string</span>&#123;<span class="string">&quot;mysql&quot;</span>&#125;,</span><br><span class="line">			want: []<span class="type">string</span>&#123;<span class="string">&quot;mysql&quot;</span>&#125;,</span><br><span class="line">		&#125;,</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> _, tc := <span class="keyword">range</span> cases &#123;</span><br><span class="line">		t.Run(tc.name, <span class="function"><span class="keyword">func</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">			got := MergeSortedServices(tc.a, tc.b)</span><br><span class="line">			<span class="keyword">if</span> !reflect.DeepEqual(got, tc.want) &#123;</span><br><span class="line">				t.Fatalf(<span class="string">&quot;want %v, got %v&quot;</span>, tc.want, got)</span><br><span class="line">			&#125;</span><br><span class="line">		&#125;)</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="3-滑动窗口要重点测边界"><a href="#3-滑动窗口要重点测边界" class="headerlink" title="3. 滑动窗口要重点测边界"></a>3. 滑动窗口要重点测边界</h3><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestFindBusiestWindow</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">	base := time.Date(<span class="number">2024</span>, <span class="number">1</span>, <span class="number">1</span>, <span class="number">10</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>, time.UTC)</span><br><span class="line">	events := []FailureEvent&#123;</span><br><span class="line">		&#123;ID: <span class="string">&quot;e1&quot;</span>, OccurredAt: base&#125;,</span><br><span class="line">		&#123;ID: <span class="string">&quot;e2&quot;</span>, OccurredAt: base.Add(<span class="number">2</span> * time.Minute)&#125;,</span><br><span class="line">		&#123;ID: <span class="string">&quot;e3&quot;</span>, OccurredAt: base.Add(<span class="number">4</span> * time.Minute)&#125;,</span><br><span class="line">		&#123;ID: <span class="string">&quot;e4&quot;</span>, OccurredAt: base.Add(<span class="number">20</span> * time.Minute)&#125;,</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	count, _, _, err := FindBusiestWindow(events, <span class="number">5</span>*time.Minute)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;expected nil error, got %v&quot;</span>, err)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> count != <span class="number">3</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;expected 3, got %d&quot;</span>, count)</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="4-递归要测环"><a href="#4-递归要测环" class="headerlink" title="4. 递归要测环"></a>4. 递归要测环</h3><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestWalkDependenciesWithCycle</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">	a := &amp;ServiceNode&#123;Name: <span class="string">&quot;gateway&quot;</span>&#125;</span><br><span class="line">	b := &amp;ServiceNode&#123;Name: <span class="string">&quot;order-api&quot;</span>&#125;</span><br><span class="line">	c := &amp;ServiceNode&#123;Name: <span class="string">&quot;mysql&quot;</span>&#125;</span><br><span class="line"></span><br><span class="line">	a.Children = []*ServiceNode&#123;b&#125;</span><br><span class="line">	b.Children = []*ServiceNode&#123;c&#125;</span><br><span class="line">	c.Children = []*ServiceNode&#123;a&#125;</span><br><span class="line"></span><br><span class="line">	visited := <span class="built_in">make</span>([]<span class="type">string</span>, <span class="number">0</span>)</span><br><span class="line">	WalkDependencies(a, <span class="function"><span class="keyword">func</span><span class="params">(node *ServiceNode)</span></span> &#123;</span><br><span class="line">		visited = <span class="built_in">append</span>(visited, node.Name)</span><br><span class="line">	&#125;, <span class="keyword">map</span>[<span class="type">string</span>]<span class="keyword">struct</span>&#123;&#125;&#123;&#125;)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(visited) != <span class="number">3</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;expected 3 visited nodes, got %d&quot;</span>, <span class="built_in">len</span>(visited))</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="5-回溯要测“最优方案”和“状态污染”"><a href="#5-回溯要测“最优方案”和“状态污染”" class="headerlink" title="5. 回溯要测“最优方案”和“状态污染”"></a>5. 回溯要测“最优方案”和“状态污染”</h3><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestChooseRecoveryPlan</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">	actions := []RecoveryAction&#123;</span><br><span class="line">		&#123;Name: <span class="string">&quot;restart-order-api&quot;</span>, CostMin: <span class="number">8</span>, Benefit: <span class="number">9</span>&#125;,</span><br><span class="line">		&#123;Name: <span class="string">&quot;flush-cache&quot;</span>, CostMin: <span class="number">4</span>, Benefit: <span class="number">5</span>&#125;,</span><br><span class="line">		&#123;Name: <span class="string">&quot;scale-gateway&quot;</span>, CostMin: <span class="number">10</span>, Benefit: <span class="number">12</span>&#125;,</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	score, plan := ChooseRecoveryPlan(actions, <span class="number">12</span>)</span><br><span class="line">	<span class="keyword">if</span> score != <span class="number">14</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;expected score 14, got %d&quot;</span>, score)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(plan) != <span class="number">2</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;expected 2 actions, got %d&quot;</span>, <span class="built_in">len</span>(plan))</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>如果把这几组测试都补齐，后面再重构这些函数时，信心会高很多。</p>
+<h2 id="十二、一个真实一点的小项目版本"><a href="#十二、一个真实一点的小项目版本" class="headerlink" title="十二、一个真实一点的小项目版本"></a>十二、一个真实一点的小项目版本</h2><p>只讲小函数还不够，下面把它们放进一个更接近项目的最小程序里：<br><strong>事故摘要生成器</strong>。</p>
+<p>它输出的结果大概是：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> IncidentSummary <span class="keyword">struct</span> &#123;</span><br><span class="line">	Services           []<span class="type">string</span></span><br><span class="line">	BusiestCount       <span class="type">int</span></span><br><span class="line">	BusiestWindowStart time.Time</span><br><span class="line">	BusiestWindowEnd   time.Time</span><br><span class="line">	AffectedServices   []<span class="type">string</span></span><br><span class="line">	BestActionScore    <span class="type">int</span></span><br><span class="line">	BestActions        []<span class="type">string</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>核心实现可以是：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">BuildIncidentSummary</span><span class="params">(</span></span></span><br><span class="line"><span class="params"><span class="function">	active []FailureEvent,</span></span></span><br><span class="line"><span class="params"><span class="function">	passive []FailureEvent,</span></span></span><br><span class="line"><span class="params"><span class="function">	root *ServiceNode,</span></span></span><br><span class="line"><span class="params"><span class="function">	actions []RecoveryAction,</span></span></span><br><span class="line"><span class="params"><span class="function">)</span></span> (IncidentSummary, <span class="type">error</span>) &#123;</span><br><span class="line">	allEvents := BuildUniqueEvents(<span class="built_in">append</span>(<span class="built_in">append</span>([]FailureEvent(<span class="literal">nil</span>), active...), passive...))</span><br><span class="line"></span><br><span class="line">	count, start, end, err := FindBusiestWindow(allEvents, <span class="number">10</span>*time.Minute)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> IncidentSummary&#123;&#125;, err</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	services := MergeSortedServices(</span><br><span class="line">		ExtractSortedServices(active),</span><br><span class="line">		ExtractSortedServices(passive),</span><br><span class="line">	)</span><br><span class="line"></span><br><span class="line">	affected := <span class="built_in">make</span>([]<span class="type">string</span>, <span class="number">0</span>)</span><br><span class="line">	WalkDependencies(root, <span class="function"><span class="keyword">func</span><span class="params">(node *ServiceNode)</span></span> &#123;</span><br><span class="line">		affected = <span class="built_in">append</span>(affected, node.Name)</span><br><span class="line">	&#125;, <span class="keyword">map</span>[<span class="type">string</span>]<span class="keyword">struct</span>&#123;&#125;&#123;&#125;)</span><br><span class="line">	sort.Strings(affected)</span><br><span class="line"></span><br><span class="line">	score, plan := ChooseRecoveryPlan(actions, <span class="number">20</span>)</span><br><span class="line">	actionNames := <span class="built_in">make</span>([]<span class="type">string</span>, <span class="number">0</span>, <span class="built_in">len</span>(plan))</span><br><span class="line">	<span class="keyword">for</span> _, action := <span class="keyword">range</span> plan &#123;</span><br><span class="line">		actionNames = <span class="built_in">append</span>(actionNames, action.Name)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> IncidentSummary&#123;</span><br><span class="line">		Services:           services,</span><br><span class="line">		BusiestCount:       count,</span><br><span class="line">		BusiestWindowStart: start,</span><br><span class="line">		BusiestWindowEnd:   end,</span><br><span class="line">		AffectedServices:   affected,</span><br><span class="line">		BestActionScore:    score,</span><br><span class="line">		BestActions:        actionNames,</span><br><span class="line">	&#125;, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这段代码的工程意义，不在于业务本身有多复杂，而在于它说明了：</p>
+<ul>
+<li>算法模式完全可以拆成一组可测试的小函数</li>
+<li>每个函数只承担一个明确职责</li>
+<li>小函数组合起来，最后形成一条完整分析链</li>
+</ul>
+<p>这才是“题型能力走进工程”的关键一步。</p>
+<h2 id="十三、几类最常见的错误写法"><a href="#十三、几类最常见的错误写法" class="headerlink" title="十三、几类最常见的错误写法"></a>十三、几类最常见的错误写法</h2><p>把模式记住不难，真正容易出错的是实现细节和边界。</p>
+<h3 id="1-哈希-key-选错"><a href="#1-哈希-key-选错" class="headerlink" title="1. 哈希 key 选错"></a>1. 哈希 key 选错</h3><p>如果把 <code>Service</code> 当成唯一 key 去重：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">seen[event.Service] = <span class="keyword">struct</span>&#123;&#125;&#123;&#125;</span><br></pre></td></tr></table></figure>
+
+<p>那同一服务在不同时间的失败事件会被错误合并。<br>所以先问“唯一性定义是什么”，再决定 key。</p>
+<h3 id="2-双指针输入未排序"><a href="#2-双指针输入未排序" class="headerlink" title="2. 双指针输入未排序"></a>2. 双指针输入未排序</h3><p>如果 <code>a</code> 和 <code>b</code> 本身没排序，双指针的前提就不存在了。<br>这时要么先排序，要么换别的策略。</p>
+<h3 id="3-滑动窗口边界条件不清楚"><a href="#3-滑动窗口边界条件不清楚" class="headerlink" title="3. 滑动窗口边界条件不清楚"></a>3. 滑动窗口边界条件不清楚</h3><p>窗口是：</p>
+<ul>
+<li><code>&lt;= 10 分钟</code></li>
+<li>还是 <code>&lt; 10 分钟</code></li>
+</ul>
+<p>这个判断会直接影响边界事件是否落进窗口。<br>代码里最好明确写出来，测试里也补一条卡边界的 case。</p>
+<h3 id="4-递归没有环保护"><a href="#4-递归没有环保护" class="headerlink" title="4. 递归没有环保护"></a>4. 递归没有环保护</h3><p>树可以不防环，图通常要防。<br>一旦输入来源是注册中心、依赖配置、服务发现结果，保守做法是默认它可能形成环。</p>
+<h3 id="5-回溯没有撤销状态"><a href="#5-回溯没有撤销状态" class="headerlink" title="5. 回溯没有撤销状态"></a>5. 回溯没有撤销状态</h3><p>漏掉这一句：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">path = path[:<span class="built_in">len</span>(path)<span class="number">-1</span>]</span><br></pre></td></tr></table></figure>
+
+<p>后面的路径就会被污染。</p>
+<h3 id="6-回溯最优结果没有拷贝快照"><a href="#6-回溯最优结果没有拷贝快照" class="headerlink" title="6. 回溯最优结果没有拷贝快照"></a>6. 回溯最优结果没有拷贝快照</h3><p>漏掉切片拷贝时，<code>bestPlan</code> 看起来更新了，最后却可能和预期完全不同。</p>
+<h2 id="十四、排障时怎么快速判断问题出在哪一层"><a href="#十四、排障时怎么快速判断问题出在哪一层" class="headerlink" title="十四、排障时怎么快速判断问题出在哪一层"></a>十四、排障时怎么快速判断问题出在哪一层</h2><p>如果这类代码上线后结果不对，可以按下面顺序排：</p>
+<h3 id="1-先看输入前提有没有被满足"><a href="#1-先看输入前提有没有被满足" class="headerlink" title="1. 先看输入前提有没有被满足"></a>1. 先看输入前提有没有被满足</h3><ul>
+<li>双指针输入是否有序</li>
+<li>滑动窗口输入是否按时间可比较</li>
+<li>递归输入是否可能形成环</li>
+<li>回溯预算是否允许负值或零值动作</li>
+</ul>
+<p>很多问题不是算法实现坏了，而是调用方没满足前提。</p>
+<h3 id="2-再看边界值"><a href="#2-再看边界值" class="headerlink" title="2. 再看边界值"></a>2. 再看边界值</h3><ul>
+<li>空切片怎么办</li>
+<li>单元素怎么办</li>
+<li>时间窗口刚好压线怎么办</li>
+<li>预算刚好等于动作成本怎么办</li>
+<li>依赖树根节点为空怎么办</li>
+</ul>
+<p>如果边界 case 没补测试，线上结果很容易在这些地方偏掉。</p>
+<h3 id="3-最后看状态是否被意外共享"><a href="#3-最后看状态是否被意外共享" class="headerlink" title="3. 最后看状态是否被意外共享"></a>3. 最后看状态是否被意外共享</h3><p>Go 里切片、map、闭包变量共享状态时，最容易把这类小函数写出隐藏 bug。</p>
+<p>例如：</p>
+<ul>
+<li>回溯里的 <code>path</code> 没有正确撤销</li>
+<li>递归遍历时复用同一个结果切片但没隔离</li>
+<li>返回内部 map 给外层后又被修改</li>
+</ul>
+<p>这类问题通常表现为：</p>
+<ul>
+<li>单测偶尔过</li>
+<li>输出顺序时好时坏</li>
+<li>数据条数看起来不稳定</li>
+</ul>
+<h2 id="十五、这些模式的使用边界"><a href="#十五、这些模式的使用边界" class="headerlink" title="十五、这些模式的使用边界"></a>十五、这些模式的使用边界</h2><p>算法模式有价值，但也有明显边界。</p>
+<h3 id="1-双指针的前提是“序”"><a href="#1-双指针的前提是“序”" class="headerlink" title="1. 双指针的前提是“序”"></a>1. 双指针的前提是“序”</h3><p>如果输入完全无序，还硬上双指针，代码只会更绕。</p>
+<h3 id="2-滑动窗口更适合连续区间"><a href="#2-滑动窗口更适合连续区间" class="headerlink" title="2. 滑动窗口更适合连续区间"></a>2. 滑动窗口更适合连续区间</h3><p>如果问题不是连续区间，而是任意子集选择，滑动窗口通常就不合适。</p>
+<h3 id="3-哈希会换来额外内存成本"><a href="#3-哈希会换来额外内存成本" class="headerlink" title="3. 哈希会换来额外内存成本"></a>3. 哈希会换来额外内存成本</h3><p>数据量非常大时，需要再评估：</p>
+<ul>
+<li>内存是否扛得住</li>
+<li>key 是否过长</li>
+<li>是否需要分桶、落盘或流式处理</li>
+</ul>
+<h3 id="4-递归受调用栈深度限制"><a href="#4-递归受调用栈深度限制" class="headerlink" title="4. 递归受调用栈深度限制"></a>4. 递归受调用栈深度限制</h3><p>树特别深、输入又不可控时，要考虑改成显式栈迭代。</p>
+<h3 id="5-回溯更适合小规模枚举"><a href="#5-回溯更适合小规模枚举" class="headerlink" title="5. 回溯更适合小规模枚举"></a>5. 回溯更适合小规模枚举</h3><p>候选动作数量变大后，回溯会迅速膨胀。<br>这时要考虑：</p>
+<ul>
+<li>剪枝</li>
+<li>排序优化</li>
+<li>动态规划</li>
+<li>贪心近似</li>
+</ul>
+<p>回溯不是不能用，而是要知道它适合解决的规模区间。</p>
+<h2 id="十六、练习题"><a href="#十六、练习题" class="headerlink" title="十六、练习题"></a>十六、练习题</h2><p>如果想把这一篇真正吃透，可以自己补这几道练习：</p>
+<ol>
+<li>把 <code>BuildUniqueEvents</code> 改成“按 <code>Service + Minute</code> 去重”，看 key 设计怎么变化</li>
+<li>给 <code>MergeSortedServices</code> 增加一个 <code>exclude</code> 列表，输出时过滤黑名单服务</li>
+<li>把 <code>FindBusiestWindow</code> 改成同时返回窗口里的服务名集合</li>
+<li>给 <code>WalkDependencies</code> 增加错误返回，让 <code>visit</code> 失败时能中断遍历</li>
+<li>给 <code>ChooseRecoveryPlan</code> 增加一个约束：同一服务只能选一个动作</li>
+<li>思考当候选动作从 10 个涨到 200 个时，为什么单纯回溯已经不再合适</li>
+</ol>
+<p>这几题做完，模式和工程场景之间的连接会更牢。</p>
+<h2 id="十七、最后总结"><a href="#十七、最后总结" class="headerlink" title="十七、最后总结"></a>十七、最后总结</h2><p>双指针、滑动窗口、哈希、递归、回溯，在工程里真正重要的不是名字，而是它们各自对应的数据形状和问题结构：</p>
+<ul>
+<li>数据要去重、聚合、快速索引，先想哈希</li>
+<li>两个有序序列一起推进，先想双指针</li>
+<li>连续区间统计需要增量维护，先想滑动窗口</li>
+<li>当前结构和子结构重复出现，先想递归</li>
+<li>在约束下系统枚举选择，先想回溯</li>
+</ul>
+<p>如果只把它们当题型，做完题就断了。<br>如果把它们看成几类稳定的思考模式，后面写 Go 服务、测试工具、分析脚本、任务编排时，会越来越自然地用出来。</p>
+<p>下一篇如果继续往后接，更自然的方向通常有两个：</p>
+<ul>
+<li>一个是继续讲动态规划，说明它和回溯的关系</li>
+<li>另一个是把这些模式放进更完整的服务设计和性能权衡里</li>
+</ul>
+<p>到这里，算法就不再只是“刷题阶段的附属品”，而开始变成可复用的工程判断。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E5%B7%A5%E7%A8%8B%E5%8C%96/" rel="tag"># 工程化</a>
+              <a href="/tags/Go/" rel="tag"># Go</a>
+              <a href="/tags/Go%E4%B8%93%E9%A2%98/" rel="tag"># Go专题</a>
+              <a href="/tags/%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80/" rel="tag"># 编程语言</a>
+              <a href="/tags/%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84/" rel="tag"># 数据结构</a>
+              <a href="/tags/%E7%AE%97%E6%B3%95/" rel="tag"># 算法</a>
+              <a href="/tags/%E5%9B%9E%E6%BA%AF/" rel="tag"># 回溯</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2018/08/22/Python-19-Python%E6%8E%92%E5%BA%8F%E6%9F%A5%E6%89%BE%E6%A0%91%E5%A0%86%E5%9B%BE%E8%BF%99%E4%BA%9B%E5%9F%BA%E7%A1%80%E6%80%8E%E6%A0%B7%E4%BB%8E%E9%A2%98%E8%A7%A3%E8%B5%B0%E5%90%91%E4%BB%A3%E7%A0%81%E8%83%BD%E5%8A%9B/" rel="prev" title="Python：排序、查找、树、堆、图这些基础，怎样从题解走向代码能力">
+                  <i class="fa fa-angle-left"></i> Python：排序、查找、树、堆、图这些基础，怎样从题解走向代码能力
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2018/08/29/Python-20-Python%E5%9C%A8%E6%8E%A5%E5%8F%A3%E8%87%AA%E5%8A%A8%E5%8C%96%E6%95%B0%E6%8D%AE%E5%A4%84%E7%90%86%E5%B9%B3%E5%8F%B0%E8%84%9A%E6%9C%AC%E5%92%8CAI%E5%B7%A5%E5%85%B7%E9%93%BE%E9%87%8C%E5%88%86%E5%88%AB%E9%80%82%E5%90%88%E6%89%BF%E6%8B%85%E4%BB%80%E4%B9%88%E8%A7%92%E8%89%B2/" rel="next" title="Python：在接口自动化、数据处理、平台脚本和 AI 工具链里分别适合承担什么角色">
+                  Python：在接口自动化、数据处理、平台脚本和 AI 工具链里分别适合承担什么角色 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

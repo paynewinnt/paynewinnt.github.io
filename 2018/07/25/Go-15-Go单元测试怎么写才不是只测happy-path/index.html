@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="Go 里的单元测试不是把 happy path 跑通就结束。真正有价值的测试，要覆盖错误分支、边界条件、可重复性、可测试设计和常见反模式。这篇文章围绕一个最小告警规则评估器，系统讲清 Go 单元测试到底该测什么、怎么测、怎么避免写成一堆脆弱样板。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Go：单元测试怎么写，才不是只测 happy path">
+<meta property="og:url" content="https://paynewinnt.github.io/2018/07/25/Go-15-Go%E5%8D%95%E5%85%83%E6%B5%8B%E8%AF%95%E6%80%8E%E4%B9%88%E5%86%99%E6%89%8D%E4%B8%8D%E6%98%AF%E5%8F%AA%E6%B5%8Bhappy-path/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="Go 里的单元测试不是把 happy path 跑通就结束。真正有价值的测试，要覆盖错误分支、边界条件、可重复性、可测试设计和常见反模式。这篇文章围绕一个最小告警规则评估器，系统讲清 Go 单元测试到底该测什么、怎么测、怎么避免写成一堆脆弱样板。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2018-07-25T12:30:00.000Z">
+<meta property="article:modified_time" content="2018-07-25T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="工程化">
+<meta property="article:tag" content="Go">
+<meta property="article:tag" content="Go专题">
+<meta property="article:tag" content="编程语言">
+<meta property="article:tag" content="单元测试">
+<meta property="article:tag" content="测试设计">
+<meta property="article:tag" content="可测试性">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2018/07/25/Go-15-Go%E5%8D%95%E5%85%83%E6%B5%8B%E8%AF%95%E6%80%8E%E4%B9%88%E5%86%99%E6%89%8D%E4%B8%8D%E6%98%AF%E5%8F%AA%E6%B5%8Bhappy-path/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2018/07/25/Go-15-Go%E5%8D%95%E5%85%83%E6%B5%8B%E8%AF%95%E6%80%8E%E4%B9%88%E5%86%99%E6%89%8D%E4%B8%8D%E6%98%AF%E5%8F%AA%E6%B5%8Bhappy-path/","path":"2018/07/25/Go-15-Go单元测试怎么写才不是只测happy-path/","title":"Go：单元测试怎么写，才不是只测 happy path"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>Go：单元测试怎么写，才不是只测 happy path | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E8%BF%99%E7%AF%87%E6%96%87%E7%AB%A0%E8%A6%81%E8%A7%A3%E5%86%B3%E4%BB%80%E4%B9%88%E9%97%AE%E9%A2%98"><span class="nav-number">1.</span> <span class="nav-text">一、这篇文章要解决什么问题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E5%85%88%E6%8A%8A%E4%B8%80%E5%8F%A5%E8%AF%9D%E7%BB%93%E8%AE%BA%E8%AF%B4%E6%B8%85%E6%A5%9A"><span class="nav-number">2.</span> <span class="nav-text">二、先把一句话结论说清楚</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E5%85%88%E7%9C%8B%E8%BF%99%E7%AF%87%E6%96%87%E7%AB%A0%E8%B4%AF%E7%A9%BF%E5%A7%8B%E7%BB%88%E7%9A%84%E5%B0%8F%E9%A1%B9%E7%9B%AE"><span class="nav-number">3.</span> <span class="nav-text">三、先看这篇文章贯穿始终的小项目</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E5%85%88%E7%BB%99%E4%B8%80%E4%B8%AA%E6%9C%80%E5%B0%8F%E5%8F%AF%E8%BF%90%E8%A1%8C%E7%89%88%E6%9C%AC"><span class="nav-number">4.</span> <span class="nav-text">四、先给一个最小可运行版本</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E4%B8%BA%E4%BB%80%E4%B9%88%E5%8F%AA%E6%B5%8B-happy-path-%E5%87%A0%E4%B9%8E%E4%B8%80%E5%AE%9A%E4%B8%8D%E5%A4%9F"><span class="nav-number">5.</span> <span class="nav-text">五、为什么只测 happy path 几乎一定不够</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%8F%82%E6%95%B0%E6%A0%A1%E9%AA%8C%E8%A2%AB%E5%88%A0%E6%8E%89%E4%BA%86"><span class="nav-number">5.1.</span> <span class="nav-text">1. 参数校验被删掉了</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%BE%B9%E7%95%8C%E6%9D%A1%E4%BB%B6%E6%82%84%E6%82%84%E5%8F%98%E4%BA%86"><span class="nav-number">5.2.</span> <span class="nav-text">2. 边界条件悄悄变了</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E9%94%99%E8%AF%AF%E8%A2%AB%E5%90%9E%E4%BA%86"><span class="nav-number">5.3.</span> <span class="nav-text">3. 错误被吞了</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%B5%8B%E8%AF%95%E6%9C%AC%E8%BA%AB%E4%B8%8D%E7%A8%B3%E5%AE%9A"><span class="nav-number">5.4.</span> <span class="nav-text">4. 测试本身不稳定</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E8%A1%8C%E4%B8%BA%E5%AF%B9%E4%BA%86%EF%BC%8C%E4%BD%86%E6%96%AD%E8%A8%80%E5%A4%AA%E6%9D%BE"><span class="nav-number">5.5.</span> <span class="nav-text">5. 行为对了，但断言太松</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E5%8D%95%E5%85%83%E6%B5%8B%E8%AF%95%E8%87%B3%E5%B0%91%E8%AF%A5%E8%A6%86%E7%9B%96%E5%93%AA%E4%BA%9B%E7%BB%B4%E5%BA%A6"><span class="nav-number">6.</span> <span class="nav-text">六、单元测试至少该覆盖哪些维度</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%AD%A3%E5%B8%B8%E8%B7%AF%E5%BE%84"><span class="nav-number">6.1.</span> <span class="nav-text">1. 正常路径</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E9%94%99%E8%AF%AF%E8%B7%AF%E5%BE%84"><span class="nav-number">6.2.</span> <span class="nav-text">2. 错误路径</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%BE%B9%E7%95%8C%E5%80%BC"><span class="nav-number">6.3.</span> <span class="nav-text">3. 边界值</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E9%9B%B6%E5%80%BC%E5%92%8C%E7%A9%BA%E5%80%BC"><span class="nav-number">6.4.</span> <span class="nav-text">4. 零值和空值</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E9%94%99%E8%AF%AF%E6%96%AD%E8%A8%80"><span class="nav-number">6.5.</span> <span class="nav-text">5. 错误断言</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E5%89%AF%E4%BD%9C%E7%94%A8"><span class="nav-number">6.6.</span> <span class="nav-text">6. 副作用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-%E5%8F%AF%E9%87%8D%E5%A4%8D%E6%80%A7"><span class="nav-number">6.7.</span> <span class="nav-text">7. 可重复性</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E6%96%AD%E8%A8%80%E5%88%B0%E5%BA%95%E5%BA%94%E8%AF%A5%E6%96%AD%E4%BB%80%E4%B9%88"><span class="nav-number">7.</span> <span class="nav-text">七、断言到底应该断什么</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%BC%98%E5%85%88%E6%96%AD%E4%B8%9A%E5%8A%A1%E8%A1%8C%E4%B8%BA"><span class="nav-number">7.1.</span> <span class="nav-text">1. 优先断业务行为</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E9%94%99%E8%AF%AF%E7%94%A8-errors-Is-%E6%88%96%E6%98%8E%E7%A1%AE%E6%96%87%E6%9C%AC%E7%89%87%E6%AE%B5"><span class="nav-number">7.2.</span> <span class="nav-text">2. 错误用 errors.Is 或明确文本片段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%BB%93%E6%9E%84%E4%BD%93%E6%96%AD%E8%A8%80%E4%B8%8D%E8%A6%81%E4%B8%80%E6%8A%8A%E6%A2%AD%E5%9C%B0%E5%81%B7%E6%87%92"><span class="nav-number">7.3.</span> <span class="nav-text">3. 结构体断言不要一把梭地偷懒</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%B0%91%E6%96%AD%E5%86%85%E9%83%A8%E5%AE%9E%E7%8E%B0%E7%BB%86%E8%8A%82"><span class="nav-number">7.4.</span> <span class="nav-text">4. 少断内部实现细节</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E7%94%A8%E8%A1%A8%E9%A9%B1%E5%8A%A8%E6%B5%8B%E8%AF%95%E6%8A%8A%E6%A0%B8%E5%BF%83%E5%88%86%E6%94%AF%E4%B8%80%E6%AC%A1%E8%AE%B2%E6%B8%85"><span class="nav-number">8.</span> <span class="nav-text">八、用表驱动测试把核心分支一次讲清</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E9%94%99%E8%AF%AF%E5%9C%BA%E6%99%AF%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E6%B5%8B%EF%BC%8C%E6%89%8D%E4%B8%8D%E6%98%AF%E5%8F%AA%E5%86%99%E4%B8%80%E5%8F%A5-expected-error"><span class="nav-number">9.</span> <span class="nav-text">九、错误场景应该怎么测，才不是只写一句 expected error</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E8%BE%B9%E7%95%8C%E5%80%BC%E6%B5%8B%E8%AF%95%E4%B8%BA%E4%BB%80%E4%B9%88%E7%BB%8F%E5%B8%B8%E6%AF%94%E6%AD%A3%E5%B8%B8%E5%80%BC%E6%9B%B4%E9%87%8D%E8%A6%81"><span class="nav-number">10.</span> <span class="nav-text">十、边界值测试为什么经常比正常值更重要</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E7%9C%9F%E5%AE%9E%E9%A1%B9%E7%9B%AE%E9%87%8C%EF%BC%8C%E5%8D%95%E5%85%83%E6%B5%8B%E8%AF%95%E8%BF%98%E8%A6%81%E8%A6%86%E7%9B%96%E5%89%AF%E4%BD%9C%E7%94%A8%E5%92%8C%E4%BE%9D%E8%B5%96%E5%A4%B1%E8%B4%A5"><span class="nav-number">11.</span> <span class="nav-text">十一、真实项目里，单元测试还要覆盖副作用和依赖失败</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E6%83%B3%E8%AE%A9%E6%B5%8B%E8%AF%95%E7%A8%B3%E5%AE%9A%EF%BC%8C%E5%85%88%E6%8A%8A%E4%B8%8D%E7%A1%AE%E5%AE%9A%E6%80%A7%E4%BB%8E%E8%AE%BE%E8%AE%A1%E9%87%8C%E6%8B%86%E5%87%BA%E5%8E%BB"><span class="nav-number">12.</span> <span class="nav-text">十二、想让测试稳定，先把不确定性从设计里拆出去</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81%E4%BB%80%E4%B9%88%E6%A0%B7%E7%9A%84%E4%BB%A3%E7%A0%81%E5%A4%A9%E7%94%9F%E6%9B%B4%E5%AE%B9%E6%98%93%E5%86%99%E5%8D%95%E5%85%83%E6%B5%8B%E8%AF%95"><span class="nav-number">13.</span> <span class="nav-text">十三、什么样的代码天生更容易写单元测试</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%BE%93%E5%85%A5%E6%98%8E%E7%A1%AE%EF%BC%8C%E8%BE%93%E5%87%BA%E6%98%8E%E7%A1%AE"><span class="nav-number">13.1.</span> <span class="nav-text">1. 输入明确，输出明确</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E7%BA%AF%E9%80%BB%E8%BE%91%E5%92%8C%E5%89%AF%E4%BD%9C%E7%94%A8%E5%88%86%E5%B1%82"><span class="nav-number">13.2.</span> <span class="nav-text">2. 纯逻辑和副作用分层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%BE%9D%E8%B5%96%E4%BB%8E%E5%A4%96%E9%83%A8%E4%BC%A0%E5%85%A5"><span class="nav-number">13.3.</span> <span class="nav-text">3. 依赖从外部传入</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E9%94%99%E8%AF%AF%E6%9C%89%E5%88%86%E7%B1%BB"><span class="nav-number">13.4.</span> <span class="nav-text">4. 错误有分类</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%8D%95%E4%B8%AA%E5%87%BD%E6%95%B0%E8%81%8C%E8%B4%A3%E4%B8%8D%E8%A6%81%E5%A4%AA%E6%9D%82"><span class="nav-number">13.5.</span> <span class="nav-text">5. 单个函数职责不要太杂</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81%E7%9C%8B%E4%B8%80%E4%B8%AA%E6%9B%B4%E5%AE%8C%E6%95%B4%E4%BD%86%E4%BB%8D%E7%84%B6%E5%A4%9F%E5%B0%8F%E7%9A%84%E9%A1%B9%E7%9B%AE%E9%AA%A8%E6%9E%B6"><span class="nav-number">14.</span> <span class="nav-text">十四、看一个更完整但仍然够小的项目骨架</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%94%E3%80%81%E5%B8%B8%E8%A7%81%E5%8F%8D%E6%A8%A1%E5%BC%8F%EF%BC%9A%E8%BF%99%E4%BA%9B%E6%B5%8B%E8%AF%95%E7%9C%8B%E8%B5%B7%E6%9D%A5%E5%86%99%E4%BA%86%EF%BC%8C%E5%85%B6%E5%AE%9E%E4%BB%B7%E5%80%BC%E5%BE%88%E4%BD%8E"><span class="nav-number">15.</span> <span class="nav-text">十五、常见反模式：这些测试看起来写了，其实价值很低</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%8F%AA%E6%B5%8B-happy-path"><span class="nav-number">15.1.</span> <span class="nav-text">1. 只测 happy path</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%96%AD%E8%A8%80%E5%8F%AA%E6%9C%89-err-nil"><span class="nav-number">15.2.</span> <span class="nav-text">2. 断言只有 err !&#x3D; nil</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%9B%B4%E6%8E%A5%E4%BE%9D%E8%B5%96%E7%9C%9F%E5%AE%9E%E6%97%B6%E9%97%B4%E5%92%8C%E7%9D%A1%E7%9C%A0"><span class="nav-number">15.3.</span> <span class="nav-text">3. 直接依赖真实时间和睡眠</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%B8%BA%E4%BA%86%E6%B5%8B%E6%96%B9%E4%BE%BF%EF%BC%8C%E6%8A%8A%E4%B8%80%E5%A0%86%E9%80%BB%E8%BE%91%E5%A1%9E%E8%BF%9B-main"><span class="nav-number">15.4.</span> <span class="nav-text">4. 为了测方便，把一堆逻辑塞进 main</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%AF%B9%E5%86%85%E9%83%A8%E5%AE%9E%E7%8E%B0%E7%BB%91%E5%AE%9A%E8%BF%87%E6%B7%B1"><span class="nav-number">15.5.</span> <span class="nav-text">5. 对内部实现绑定过深</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E4%B8%80%E4%BB%BD%E6%B5%8B%E8%AF%95%E9%87%8C%E5%A1%9E%E5%A4%AA%E5%A4%9A%E6%96%AD%E8%A8%80%E5%92%8C%E5%A4%AA%E5%A4%9A%E5%9C%BA%E6%99%AF"><span class="nav-number">15.6.</span> <span class="nav-text">6. 一份测试里塞太多断言和太多场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-%E4%B8%BA%E4%BA%86%E8%BF%BD%E8%A6%86%E7%9B%96%E7%8E%87%EF%BC%8C%E5%86%99%E6%B2%A1%E6%9C%89%E4%B8%9A%E5%8A%A1%E4%BB%B7%E5%80%BC%E7%9A%84%E6%B5%8B%E8%AF%95"><span class="nav-number">15.7.</span> <span class="nav-text">7. 为了追覆盖率，写没有业务价值的测试</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AD%E3%80%81%E6%B5%8B%E8%AF%95%E4%B8%8E%E9%AA%8C%E8%AF%81%EF%BC%9A%E8%BF%99%E7%AF%87%E6%96%87%E7%AB%A0%E9%87%8C%E7%9A%84%E4%BB%A3%E7%A0%81%E8%87%B3%E5%B0%91%E8%AF%A5%E6%80%8E%E4%B9%88%E9%AA%8C"><span class="nav-number">16.</span> <span class="nav-text">十六、测试与验证：这篇文章里的代码至少该怎么验</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%83%E3%80%81%E6%8E%92%E9%9A%9C%E6%97%B6%E5%85%88%E6%9F%A5%E4%BB%80%E4%B9%88%EF%BC%8C%E5%88%AB%E4%B8%80%E4%B8%8A%E6%9D%A5%E5%B0%B1%E6%80%80%E7%96%91%E6%B5%8B%E8%AF%95%E6%A1%86%E6%9E%B6"><span class="nav-number">17.</span> <span class="nav-text">十七、排障时先查什么，别一上来就怀疑测试框架</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%85%88%E7%9C%8B%E5%A4%B1%E8%B4%A5%E6%98%AF%E4%B8%9A%E5%8A%A1%E8%A7%84%E5%88%99%E5%8F%98%E4%BA%86%EF%BC%8C%E8%BF%98%E6%98%AF%E6%B5%8B%E8%AF%95%E5%81%87%E8%AE%BE%E9%94%99%E4%BA%86"><span class="nav-number">17.1.</span> <span class="nav-text">1. 先看失败是业务规则变了，还是测试假设错了</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%86%8D%E7%9C%8B%E6%98%AF%E5%90%A6%E6%B7%B7%E5%85%A5%E4%BA%86%E4%B8%8D%E7%A1%AE%E5%AE%9A%E5%9B%A0%E7%B4%A0"><span class="nav-number">17.2.</span> <span class="nav-text">2. 再看是否混入了不确定因素</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%86%8D%E7%9C%8B%E6%96%AD%E8%A8%80%E6%98%AF%E4%B8%8D%E6%98%AF%E8%BF%87%E5%BC%BA"><span class="nav-number">17.3.</span> <span class="nav-text">3. 再看断言是不是过强</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%9C%80%E5%90%8E%E7%9C%8B%E6%B5%8B%E8%AF%95%E6%95%B0%E6%8D%AE%E6%98%AF%E4%B8%8D%E6%98%AF%E5%A4%AA%E8%BF%9C%E7%A6%BB%E7%9C%9F%E5%AE%9E%E5%9C%BA%E6%99%AF"><span class="nav-number">17.4.</span> <span class="nav-text">4. 最后看测试数据是不是太远离真实场景</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AB%E3%80%81%E5%8D%95%E5%85%83%E6%B5%8B%E8%AF%95%E7%9A%84%E8%BE%B9%E7%95%8C%E5%9C%A8%E5%93%AA%E9%87%8C"><span class="nav-number">18.</span> <span class="nav-text">十八、单元测试的边界在哪里</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B9%9D%E3%80%81%E7%BB%99%E4%BD%A0%E4%B8%80%E7%BB%84%E7%BB%83%E4%B9%A0%EF%BC%8C%E6%A3%80%E9%AA%8C%E8%87%AA%E5%B7%B1%E6%98%AF%E4%B8%8D%E6%98%AF%E7%9C%9F%E7%9A%84%E4%BC%9A%E5%86%99"><span class="nav-number">19.</span> <span class="nav-text">十九、给你一组练习，检验自己是不是真的会写</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E3%80%81%E6%9C%80%E5%90%8E%E6%94%B6%E4%B8%AA%E5%B0%BE"><span class="nav-number">20.</span> <span class="nav-text">二十、最后收个尾</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2018/07/25/Go-15-Go%E5%8D%95%E5%85%83%E6%B5%8B%E8%AF%95%E6%80%8E%E4%B9%88%E5%86%99%E6%89%8D%E4%B8%8D%E6%98%AF%E5%8F%AA%E6%B5%8Bhappy-path/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="Go：单元测试怎么写，才不是只测 happy path | 大道至简">
+      <meta itemprop="description" content="Go 里的单元测试不是把 happy path 跑通就结束。真正有价值的测试，要覆盖错误分支、边界条件、可重复性、可测试设计和常见反模式。这篇文章围绕一个最小告警规则评估器，系统讲清 Go 单元测试到底该测什么、怎么测、怎么避免写成一堆脆弱样板。">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Go：单元测试怎么写，才不是只测 happy path
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2018-07-25 20:30:00" itemprop="dateCreated datePublished" datetime="2018-07-25T20:30:00+08:00">2018-07-25</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>5.6k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>20 分钟</span>
+    </span>
+</div>
+
+            <div class="post-description">Go 里的单元测试不是把 happy path 跑通就结束。真正有价值的测试，要覆盖错误分支、边界条件、可重复性、可测试设计和常见反模式。这篇文章围绕一个最小告警规则评估器，系统讲清 Go 单元测试到底该测什么、怎么测、怎么避免写成一堆脆弱样板。</div>
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>学 Go 学到测试这一段时，最容易先形成一种很危险的“完成错觉”：</p>
+<ul>
+<li>会写 <code>go test</code></li>
+<li>会建 <code>xxx_test.go</code></li>
+<li>会把一个函数输进去、一个结果拿出来</li>
+<li>绿色通过了，就觉得测试已经补完</li>
+</ul>
+<p>问题在于，这类测试经常只覆盖了一条最顺的路径：</p>
+<ul>
+<li>输入合法</li>
+<li>下游不报错</li>
+<li>时间刚好正常</li>
+<li>配置也刚好完整</li>
+<li>结果结构完全符合预期</li>
+</ul>
+<p>也就是通常所说的 happy path。</p>
+<p>happy path 当然要测，但如果单元测试只剩这一条线，它在真实项目里会很快失去大部分价值。</p>
+<p>因为真实问题往往出现在这些地方：</p>
+<ul>
+<li>参数缺失</li>
+<li>零值处理错误</li>
+<li>边界值判断偏一位</li>
+<li>下游返回错误但没被包装</li>
+<li>同样的测试今天过、明天不过</li>
+<li>代码和时间、随机数、网络、文件系统绑得太死，根本不好测</li>
+<li>为了追求覆盖率，测试写成一堆复制粘贴和脆弱断言</li>
+</ul>
+<p>这一篇不按零碎技巧来讲，而是围绕一个真实一点的小场景来讲：<strong>做一个服务巡检结果的告警规则评估器</strong>。</p>
+<p>这个评估器要做几件事：</p>
+<ol>
+<li>接收巡检结果</li>
+<li>按失败次数和响应时间判断告警级别</li>
+<li>生成一条告警消息</li>
+<li>把结果交给通知发送器</li>
+<li>对参数错误、状态错误和发送错误做区分</li>
+</ol>
+<p>这个场景不大，但足够把 Go 单元测试里最常见、也最容易被忽略的问题串起来。</p>
+<h2 id="一、这篇文章要解决什么问题"><a href="#一、这篇文章要解决什么问题" class="headerlink" title="一、这篇文章要解决什么问题"></a>一、这篇文章要解决什么问题</h2><p>读完这一篇，应该能独立回答这些问题：</p>
+<ol>
+<li>单元测试到底为什么不能只测 happy path</li>
+<li>一个 Go 函数至少应该从哪些维度设计测试用例</li>
+<li>错误断言、边界断言和结构断言分别该怎么写</li>
+<li>什么叫可重复、可预测、可确定的测试</li>
+<li>怎样写代码，测试才不至于又臭又长</li>
+<li>Go 测试里最常见的几种反模式是什么</li>
+</ol>
+<p>如果这些问题能答清，后面你写 CLI、任务执行器、HTTP 服务、规则引擎、平台工具时，测试质量会稳很多。</p>
+<h2 id="二、先把一句话结论说清楚"><a href="#二、先把一句话结论说清楚" class="headerlink" title="二、先把一句话结论说清楚"></a>二、先把一句话结论说清楚</h2><p>Go 单元测试最重要的目标不是“证明代码能工作一次”，而是：</p>
+<p><strong>持续验证这段代码在正常输入、异常输入、边界输入和不稳定环境因素下，仍然符合你定义的行为。</strong></p>
+<p>这里面至少有五层意思：</p>
+<ol>
+<li>不只测正常路径，也测失败路径</li>
+<li>不只测一个例子，也测边界和零值</li>
+<li>不只看返回值，也看错误类型、状态和副作用</li>
+<li>不只让它跑过一次，也要让它稳定可重复</li>
+<li>不只会写测试，还要把代码设计成容易测试</li>
+</ol>
+<p>很多“测试写了等于没写”的问题，本质上都不是测试框架问题，而是这五层里漏了两三层。</p>
+<h2 id="三、先看这篇文章贯穿始终的小项目"><a href="#三、先看这篇文章贯穿始终的小项目" class="headerlink" title="三、先看这篇文章贯穿始终的小项目"></a>三、先看这篇文章贯穿始终的小项目</h2><p>假设你在做一个最小的巡检告警模块。</p>
+<p>平台每分钟会收到一批巡检结果，每条结果至少包含：</p>
+<ul>
+<li>服务名</li>
+<li>是否健康</li>
+<li>连续失败次数</li>
+<li>平均响应时间</li>
+<li>检查时间</li>
+</ul>
+<p>然后你要根据规则输出告警级别：</p>
+<ul>
+<li>健康且响应时间正常，返回 <code>Info</code></li>
+<li>不健康但失败次数还少，返回 <code>Warn</code></li>
+<li>连续失败达到阈值，返回 <code>Critical</code></li>
+<li>输入数据非法，直接返回错误</li>
+<li>发送通知失败，要把错误向上返回并补上下文</li>
+</ul>
+<p>这个模块看上去不复杂，但已经足够暴露大多数测试问题：</p>
+<ul>
+<li>连续失败次数到底从几次开始升级</li>
+<li>响应时间阈值是大于还是大于等于</li>
+<li><code>Service</code> 为空怎么办</li>
+<li><code>CheckedAt</code> 是不是允许零值</li>
+<li>发送器报错时，错误有没有被保留下来</li>
+<li>使用 <code>time.Now()</code> 直接拼消息时，测试会不会变得不稳定</li>
+</ul>
+<p>后面所有示例，都围绕这个场景展开。</p>
+<h2 id="四、先给一个最小可运行版本"><a href="#四、先给一个最小可运行版本" class="headerlink" title="四、先给一个最小可运行版本"></a>四、先给一个最小可运行版本</h2><p>先看一个最小版本的评估器：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> alert</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">	<span class="string">&quot;errors&quot;</span></span><br><span class="line">	<span class="string">&quot;fmt&quot;</span></span><br><span class="line">	<span class="string">&quot;time&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">var</span> ErrInvalidProbe = errors.New(<span class="string">&quot;invalid probe result&quot;</span>)</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Level <span class="type">string</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">const</span> (</span><br><span class="line">	LevelInfo     Level = <span class="string">&quot;info&quot;</span></span><br><span class="line">	LevelWarn     Level = <span class="string">&quot;warn&quot;</span></span><br><span class="line">	LevelCritical Level = <span class="string">&quot;critical&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> ProbeResult <span class="keyword">struct</span> &#123;</span><br><span class="line">	Service      <span class="type">string</span></span><br><span class="line">	Healthy      <span class="type">bool</span></span><br><span class="line">	FailureCount <span class="type">int</span></span><br><span class="line">	LatencyMS    <span class="type">int</span></span><br><span class="line">	CheckedAt    time.Time</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Alert <span class="keyword">struct</span> &#123;</span><br><span class="line">	Service     <span class="type">string</span></span><br><span class="line">	Level       Level</span><br><span class="line">	Message     <span class="type">string</span></span><br><span class="line">	TriggeredAt time.Time</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Evaluate</span><span class="params">(result ProbeResult, now <span class="keyword">func</span>()</span></span> time.Time) (Alert, <span class="type">error</span>) &#123;</span><br><span class="line">	<span class="keyword">if</span> result.Service == <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> Alert&#123;&#125;, fmt.Errorf(<span class="string">&quot;%w: empty service&quot;</span>, ErrInvalidProbe)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> result.FailureCount &lt; <span class="number">0</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> Alert&#123;&#125;, fmt.Errorf(<span class="string">&quot;%w: negative failure count&quot;</span>, ErrInvalidProbe)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> result.LatencyMS &lt; <span class="number">0</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> Alert&#123;&#125;, fmt.Errorf(<span class="string">&quot;%w: negative latency&quot;</span>, ErrInvalidProbe)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> result.CheckedAt.IsZero() &#123;</span><br><span class="line">		<span class="keyword">return</span> Alert&#123;&#125;, fmt.Errorf(<span class="string">&quot;%w: zero checked time&quot;</span>, ErrInvalidProbe)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	level := LevelInfo</span><br><span class="line">	<span class="keyword">switch</span> &#123;</span><br><span class="line">	<span class="keyword">case</span> !result.Healthy &amp;&amp; result.FailureCount &gt;= <span class="number">3</span>:</span><br><span class="line">		level = LevelCritical</span><br><span class="line">	<span class="keyword">case</span> !result.Healthy:</span><br><span class="line">		level = LevelWarn</span><br><span class="line">	<span class="keyword">case</span> result.LatencyMS &gt;= <span class="number">800</span>:</span><br><span class="line">		level = LevelWarn</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> Alert&#123;</span><br><span class="line">		Service:    result.Service,</span><br><span class="line">		Level:      level,</span><br><span class="line">		Message:    buildMessage(result, level),</span><br><span class="line">		TriggeredAt: now(),</span><br><span class="line">	&#125;, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">buildMessage</span><span class="params">(result ProbeResult, level Level)</span></span> <span class="type">string</span> &#123;</span><br><span class="line">	<span class="keyword">return</span> fmt.Sprintf(</span><br><span class="line">		<span class="string">&quot;service=%s level=%s healthy=%t failures=%d latency_ms=%d&quot;</span>,</span><br><span class="line">		result.Service,</span><br><span class="line">		level,</span><br><span class="line">		result.Healthy,</span><br><span class="line">		result.FailureCount,</span><br><span class="line">		result.LatencyMS,</span><br><span class="line">	)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这个版本已经能写测试，但如果你只测下面这个例子：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestEvaluateSuccess</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">	now := <span class="function"><span class="keyword">func</span><span class="params">()</span></span> time.Time &#123;</span><br><span class="line">		<span class="keyword">return</span> time.Date(<span class="number">2024</span>, <span class="number">1</span>, <span class="number">1</span>, <span class="number">10</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>, time.UTC)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	got, err := Evaluate(ProbeResult&#123;</span><br><span class="line">		Service:      <span class="string">&quot;order-api&quot;</span>,</span><br><span class="line">		Healthy:      <span class="literal">true</span>,</span><br><span class="line">		FailureCount: <span class="number">0</span>,</span><br><span class="line">		LatencyMS:    <span class="number">120</span>,</span><br><span class="line">		CheckedAt:    time.Date(<span class="number">2024</span>, <span class="number">1</span>, <span class="number">1</span>, <span class="number">9</span>, <span class="number">59</span>, <span class="number">0</span>, <span class="number">0</span>, time.UTC),</span><br><span class="line">	&#125;, now)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;expected nil error, got %v&quot;</span>, err)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> got.Level != LevelInfo &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;expected info, got %s&quot;</span>, got.Level)</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>那这份测试只能说明：</p>
+<ul>
+<li>某一个正常输入可以得到 <code>Info</code></li>
+</ul>
+<p>它还说明不了其他更重要的事情。</p>
+<h2 id="五、为什么只测-happy-path-几乎一定不够"><a href="#五、为什么只测-happy-path-几乎一定不够" class="headerlink" title="五、为什么只测 happy path 几乎一定不够"></a>五、为什么只测 happy path 几乎一定不够</h2><p>因为单元测试不是为了证明“作者当时想的那条路能跑通”，而是为了防住后续改动把行为改坏。</p>
+<p>只测 happy path 时，最容易漏掉下面几类回归：</p>
+<h3 id="1-参数校验被删掉了"><a href="#1-参数校验被删掉了" class="headerlink" title="1. 参数校验被删掉了"></a>1. 参数校验被删掉了</h3><p>比如后续有人重构时删掉了：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> result.Service == <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">	<span class="keyword">return</span> Alert&#123;&#125;, fmt.Errorf(<span class="string">&quot;%w: empty service&quot;</span>, ErrInvalidProbe)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>happy path 测试仍然会绿，因为它本来就传了合法参数。</p>
+<h3 id="2-边界条件悄悄变了"><a href="#2-边界条件悄悄变了" class="headerlink" title="2. 边界条件悄悄变了"></a>2. 边界条件悄悄变了</h3><p>例如原来规定：</p>
+<ul>
+<li><code>FailureCount &gt;= 3</code> 是 <code>Critical</code></li>
+</ul>
+<p>后来有人误改成：</p>
+<ul>
+<li><code>FailureCount &gt; 3</code> 才是 <code>Critical</code></li>
+</ul>
+<p>如果你没有专门测“恰好等于 3”，这个 bug 很容易溜过去。</p>
+<h3 id="3-错误被吞了"><a href="#3-错误被吞了" class="headerlink" title="3. 错误被吞了"></a>3. 错误被吞了</h3><p>例如把包装错误的 <code>%w</code> 改没了，或者直接 <code>return nil</code>。</p>
+<p>happy path 一样看不出来。</p>
+<h3 id="4-测试本身不稳定"><a href="#4-测试本身不稳定" class="headerlink" title="4. 测试本身不稳定"></a>4. 测试本身不稳定</h3><p>如果你在代码里直接用 <code>time.Now()</code>、<code>rand.Intn()</code>、真实网络请求、真实文件路径，今天能过，不代表明天还能过。</p>
+<h3 id="5-行为对了，但断言太松"><a href="#5-行为对了，但断言太松" class="headerlink" title="5. 行为对了，但断言太松"></a>5. 行为对了，但断言太松</h3><p>比如你只断言“返回了一个非空消息”，却没断言消息里包含关键信息。<br>后续有人把 <code>service</code> 丢了，测试还是过。</p>
+<p>所以真正有用的测试，会主动去覆盖“代码最容易坏掉的地方”。</p>
+<h2 id="六、单元测试至少该覆盖哪些维度"><a href="#六、单元测试至少该覆盖哪些维度" class="headerlink" title="六、单元测试至少该覆盖哪些维度"></a>六、单元测试至少该覆盖哪些维度</h2><p>对大多数 Go 业务函数来说，更稳的做法是至少从下面七个维度想测试，而不是只想“来一条正常例子”。</p>
+<h3 id="1-正常路径"><a href="#1-正常路径" class="headerlink" title="1. 正常路径"></a>1. 正常路径</h3><p>先验证主要功能确实能跑通。</p>
+<p>例如：</p>
+<ul>
+<li>健康服务返回 <code>Info</code></li>
+<li>非健康服务返回 <code>Warn</code></li>
+</ul>
+<h3 id="2-错误路径"><a href="#2-错误路径" class="headerlink" title="2. 错误路径"></a>2. 错误路径</h3><p>要明确哪些输入应该报错，哪些下游失败应该返回错误。</p>
+<p>例如：</p>
+<ul>
+<li><code>Service</code> 为空</li>
+<li><code>FailureCount</code> 为负数</li>
+<li><code>CheckedAt</code> 为零值</li>
+</ul>
+<h3 id="3-边界值"><a href="#3-边界值" class="headerlink" title="3. 边界值"></a>3. 边界值</h3><p>边界值比“普通值”更容易出错。</p>
+<p>例如：</p>
+<ul>
+<li><code>FailureCount == 2</code></li>
+<li><code>FailureCount == 3</code></li>
+<li><code>LatencyMS == 799</code></li>
+<li><code>LatencyMS == 800</code></li>
+</ul>
+<h3 id="4-零值和空值"><a href="#4-零值和空值" class="headerlink" title="4. 零值和空值"></a>4. 零值和空值</h3><p>Go 的零值语义很强，很多 bug 恰恰出在“没显式赋值也能跑”。</p>
+<p>例如：</p>
+<ul>
+<li>空字符串</li>
+<li>零时间</li>
+<li><code>nil</code> 依赖</li>
+</ul>
+<h3 id="5-错误断言"><a href="#5-错误断言" class="headerlink" title="5. 错误断言"></a>5. 错误断言</h3><p>不是只断言“有错”，而是要断言：</p>
+<ul>
+<li>是不是预期那类错误</li>
+<li>错误链有没有保留</li>
+<li>文本上下文是否足够定位</li>
+</ul>
+<h3 id="6-副作用"><a href="#6-副作用" class="headerlink" title="6. 副作用"></a>6. 副作用</h3><p>如果函数除了返回值，还会写日志、发通知、写缓存、修改状态，就要测副作用。</p>
+<p>例如：</p>
+<ul>
+<li>只在 <code>Warn</code> 或 <code>Critical</code> 时发送通知</li>
+<li><code>Info</code> 不发送通知</li>
+</ul>
+<h3 id="7-可重复性"><a href="#7-可重复性" class="headerlink" title="7. 可重复性"></a>7. 可重复性</h3><p>同样输入重复跑，结果应当稳定。</p>
+<p>例如：</p>
+<ul>
+<li>固定时间源</li>
+<li>不依赖随机顺序</li>
+<li>不共享外部状态</li>
+</ul>
+<p>这七类覆盖不一定每次都全部拉满，但只要你开始这样思考，测试质量会明显高于“一个 happy path + 一个失败 path 就收工”。</p>
+<h2 id="七、断言到底应该断什么"><a href="#七、断言到底应该断什么" class="headerlink" title="七、断言到底应该断什么"></a>七、断言到底应该断什么</h2><p>很多测试写得脆弱，不是因为场景选错了，而是断言对象选错了。</p>
+<p>Go 测试里更稳的思路是：<strong>断行为，断协议，断边界，少断实现细节。</strong></p>
+<h3 id="1-优先断业务行为"><a href="#1-优先断业务行为" class="headerlink" title="1. 优先断业务行为"></a>1. 优先断业务行为</h3><p>比如这类断言是高价值的：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> got.Level != LevelCritical &#123;</span><br><span class="line">	t.Fatalf(<span class="string">&quot;expected critical, got %s&quot;</span>, got.Level)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>因为它直接对应业务规则。</p>
+<h3 id="2-错误用-errors-Is-或明确文本片段"><a href="#2-错误用-errors-Is-或明确文本片段" class="headerlink" title="2. 错误用 errors.Is 或明确文本片段"></a>2. 错误用 <code>errors.Is</code> 或明确文本片段</h3><p>比如：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> !errors.Is(err, ErrInvalidProbe) &#123;</span><br><span class="line">	t.Fatalf(<span class="string">&quot;expected ErrInvalidProbe, got %v&quot;</span>, err)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>如果还需要补上下文，再断一段关键文本：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> !strings.Contains(err.Error(), <span class="string">&quot;empty service&quot;</span>) &#123;</span><br><span class="line">	t.Fatalf(<span class="string">&quot;expected detailed error, got %v&quot;</span>, err)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="3-结构体断言不要一把梭地偷懒"><a href="#3-结构体断言不要一把梭地偷懒" class="headerlink" title="3. 结构体断言不要一把梭地偷懒"></a>3. 结构体断言不要一把梭地偷懒</h3><p>这里常见的偷懒写法是直接比较整个结构体：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> !reflect.DeepEqual(got, want) &#123;</span><br><span class="line">	t.Fatalf(<span class="string">&quot;not equal&quot;</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这不是不能用，但要小心两个问题：</p>
+<ul>
+<li>一旦结构体新增字段，测试会成片破</li>
+<li>某些字段本来就不是本测试关心的重点</li>
+</ul>
+<p>更稳的做法是断关键字段：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> got.Service != <span class="string">&quot;order-api&quot;</span> &#123;</span><br><span class="line">	t.Fatalf(<span class="string">&quot;unexpected service: %s&quot;</span>, got.Service)</span><br><span class="line">&#125;</span><br><span class="line"><span class="keyword">if</span> got.Level != LevelWarn &#123;</span><br><span class="line">	t.Fatalf(<span class="string">&quot;unexpected level: %s&quot;</span>, got.Level)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="4-少断内部实现细节"><a href="#4-少断内部实现细节" class="headerlink" title="4. 少断内部实现细节"></a>4. 少断内部实现细节</h3><p>比如为了验证结果，不应该去断“内部调用了第 3 行的某个私有函数”。<br>测试应该更关心：</p>
+<ul>
+<li>最终返回了什么</li>
+<li>依赖有没有被调用</li>
+<li>错误有没有按约定传播</li>
+</ul>
+<p>如果测试过度依赖内部实现，一重构就会全碎。</p>
+<h2 id="八、用表驱动测试把核心分支一次讲清"><a href="#八、用表驱动测试把核心分支一次讲清" class="headerlink" title="八、用表驱动测试把核心分支一次讲清"></a>八、用表驱动测试把核心分支一次讲清</h2><p>Go 里表驱动测试很常见，不是为了显得规范，而是因为它特别适合承载“同一个行为的多个边界用例”。</p>
+<p>例如 <code>Evaluate</code> 的规则判断，很适合写成这样：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestEvaluateLevel</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">	fixedNow := time.Date(<span class="number">2024</span>, <span class="number">1</span>, <span class="number">1</span>, <span class="number">10</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>, time.UTC)</span><br><span class="line">	now := <span class="function"><span class="keyword">func</span><span class="params">()</span></span> time.Time &#123; <span class="keyword">return</span> fixedNow &#125;</span><br><span class="line">	checkedAt := time.Date(<span class="number">2024</span>, <span class="number">1</span>, <span class="number">1</span>, <span class="number">9</span>, <span class="number">59</span>, <span class="number">0</span>, <span class="number">0</span>, time.UTC)</span><br><span class="line"></span><br><span class="line">	tests := []<span class="keyword">struct</span> &#123;</span><br><span class="line">		name   <span class="type">string</span></span><br><span class="line">		input  ProbeResult</span><br><span class="line">		level  Level</span><br><span class="line">	&#125;&#123;</span><br><span class="line">		&#123;</span><br><span class="line">			name: <span class="string">&quot;healthy service returns info&quot;</span>,</span><br><span class="line">			input: ProbeResult&#123;</span><br><span class="line">				Service:      <span class="string">&quot;order-api&quot;</span>,</span><br><span class="line">				Healthy:      <span class="literal">true</span>,</span><br><span class="line">				FailureCount: <span class="number">0</span>,</span><br><span class="line">				LatencyMS:    <span class="number">120</span>,</span><br><span class="line">				CheckedAt:    checkedAt,</span><br><span class="line">			&#125;,</span><br><span class="line">			level: LevelInfo,</span><br><span class="line">		&#125;,</span><br><span class="line">		&#123;</span><br><span class="line">			name: <span class="string">&quot;high latency returns warn&quot;</span>,</span><br><span class="line">			input: ProbeResult&#123;</span><br><span class="line">				Service:      <span class="string">&quot;order-api&quot;</span>,</span><br><span class="line">				Healthy:      <span class="literal">true</span>,</span><br><span class="line">				FailureCount: <span class="number">0</span>,</span><br><span class="line">				LatencyMS:    <span class="number">800</span>,</span><br><span class="line">				CheckedAt:    checkedAt,</span><br><span class="line">			&#125;,</span><br><span class="line">			level: LevelWarn,</span><br><span class="line">		&#125;,</span><br><span class="line">		&#123;</span><br><span class="line">			name: <span class="string">&quot;three failures returns critical&quot;</span>,</span><br><span class="line">			input: ProbeResult&#123;</span><br><span class="line">				Service:      <span class="string">&quot;order-api&quot;</span>,</span><br><span class="line">				Healthy:      <span class="literal">false</span>,</span><br><span class="line">				FailureCount: <span class="number">3</span>,</span><br><span class="line">				LatencyMS:    <span class="number">200</span>,</span><br><span class="line">				CheckedAt:    checkedAt,</span><br><span class="line">			&#125;,</span><br><span class="line">			level: LevelCritical,</span><br><span class="line">		&#125;,</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> _, tt := <span class="keyword">range</span> tests &#123;</span><br><span class="line">		t.Run(tt.name, <span class="function"><span class="keyword">func</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">			got, err := Evaluate(tt.input, now)</span><br><span class="line">			<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">				t.Fatalf(<span class="string">&quot;expected nil error, got %v&quot;</span>, err)</span><br><span class="line">			&#125;</span><br><span class="line">			<span class="keyword">if</span> got.Level != tt.level &#123;</span><br><span class="line">				t.Fatalf(<span class="string">&quot;expected %s, got %s&quot;</span>, tt.level, got.Level)</span><br><span class="line">			&#125;</span><br><span class="line">			<span class="keyword">if</span> !got.TriggeredAt.Equal(fixedNow) &#123;</span><br><span class="line">				t.Fatalf(<span class="string">&quot;unexpected time: %v&quot;</span>, got.TriggeredAt)</span><br><span class="line">			&#125;</span><br><span class="line">		&#125;)</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这个写法的好处不是“形式整齐”，而是你可以很容易看出规则覆盖了哪些格子、缺了哪些格子。</p>
+<h2 id="九、错误场景应该怎么测，才不是只写一句-expected-error"><a href="#九、错误场景应该怎么测，才不是只写一句-expected-error" class="headerlink" title="九、错误场景应该怎么测，才不是只写一句 expected error"></a>九、错误场景应该怎么测，才不是只写一句 expected error</h2><p>很多测试会写成这样：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">_, err := Evaluate(ProbeResult&#123;&#125;, time.Now)</span><br><span class="line"><span class="keyword">if</span> err == <span class="literal">nil</span> &#123;</span><br><span class="line">	t.Fatal(<span class="string">&quot;expected error&quot;</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这只能证明“有错误”，但信息量太低。</p>
+<p>更稳的错误测试，至少要回答两件事：</p>
+<ol>
+<li>错误是不是对的类型</li>
+<li>错误上下文是不是足够定位</li>
+</ol>
+<p>例如：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestEvaluateInvalidProbe</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">	_, err := Evaluate(ProbeResult&#123;</span><br><span class="line">		Service:      <span class="string">&quot;&quot;</span>,</span><br><span class="line">		Healthy:      <span class="literal">true</span>,</span><br><span class="line">		FailureCount: <span class="number">0</span>,</span><br><span class="line">		LatencyMS:    <span class="number">100</span>,</span><br><span class="line">		CheckedAt:    time.Date(<span class="number">2024</span>, <span class="number">1</span>, <span class="number">1</span>, <span class="number">9</span>, <span class="number">59</span>, <span class="number">0</span>, <span class="number">0</span>, time.UTC),</span><br><span class="line">	&#125;, time.Now)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> err == <span class="literal">nil</span> &#123;</span><br><span class="line">		t.Fatal(<span class="string">&quot;expected error, got nil&quot;</span>)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> !errors.Is(err, ErrInvalidProbe) &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;expected ErrInvalidProbe, got %v&quot;</span>, err)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> !strings.Contains(err.Error(), <span class="string">&quot;empty service&quot;</span>) &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;expected error context, got %v&quot;</span>, err)</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>如果你的系统后续还要基于错误类型做重试、统计或状态分流，那这类断言就不是“锦上添花”，而是核心保障。</p>
+<h2 id="十、边界值测试为什么经常比正常值更重要"><a href="#十、边界值测试为什么经常比正常值更重要" class="headerlink" title="十、边界值测试为什么经常比正常值更重要"></a>十、边界值测试为什么经常比正常值更重要</h2><p>很多逻辑 bug 根本不出现在“明显错误输入”上，而是出现在边界上。</p>
+<p>就拿这篇文章的小规则来说：</p>
+<ul>
+<li><code>LatencyMS &gt;= 800</code> 算慢</li>
+<li><code>FailureCount &gt;= 3</code> 算严重</li>
+</ul>
+<p>那最值得测的就不是 120 或 2000，而是：</p>
+<ul>
+<li>799</li>
+<li>800</li>
+<li>2</li>
+<li>3</li>
+</ul>
+<p>边界值测试最容易直接拦住“比较符号改错”的回归。</p>
+<p>例如：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestEvaluateLatencyBoundary</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">	now := <span class="function"><span class="keyword">func</span><span class="params">()</span></span> time.Time &#123;</span><br><span class="line">		<span class="keyword">return</span> time.Date(<span class="number">2024</span>, <span class="number">1</span>, <span class="number">1</span>, <span class="number">10</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>, time.UTC)</span><br><span class="line">	&#125;</span><br><span class="line">	checkedAt := time.Date(<span class="number">2024</span>, <span class="number">1</span>, <span class="number">1</span>, <span class="number">9</span>, <span class="number">59</span>, <span class="number">0</span>, <span class="number">0</span>, time.UTC)</span><br><span class="line"></span><br><span class="line">	got799, err := Evaluate(ProbeResult&#123;</span><br><span class="line">		Service:      <span class="string">&quot;order-api&quot;</span>,</span><br><span class="line">		Healthy:      <span class="literal">true</span>,</span><br><span class="line">		FailureCount: <span class="number">0</span>,</span><br><span class="line">		LatencyMS:    <span class="number">799</span>,</span><br><span class="line">		CheckedAt:    checkedAt,</span><br><span class="line">	&#125;, now)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;unexpected error: %v&quot;</span>, err)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> got799.Level != LevelInfo &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;expected info for 799ms, got %s&quot;</span>, got799.Level)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	got800, err := Evaluate(ProbeResult&#123;</span><br><span class="line">		Service:      <span class="string">&quot;order-api&quot;</span>,</span><br><span class="line">		Healthy:      <span class="literal">true</span>,</span><br><span class="line">		FailureCount: <span class="number">0</span>,</span><br><span class="line">		LatencyMS:    <span class="number">800</span>,</span><br><span class="line">		CheckedAt:    checkedAt,</span><br><span class="line">	&#125;, now)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;unexpected error: %v&quot;</span>, err)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> got800.Level != LevelWarn &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;expected warn for 800ms, got %s&quot;</span>, got800.Level)</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这类测试看起来不花哨，但在工程里非常值钱。</p>
+<h2 id="十一、真实项目里，单元测试还要覆盖副作用和依赖失败"><a href="#十一、真实项目里，单元测试还要覆盖副作用和依赖失败" class="headerlink" title="十一、真实项目里，单元测试还要覆盖副作用和依赖失败"></a>十一、真实项目里，单元测试还要覆盖副作用和依赖失败</h2><p>到这里如果只测 <code>Evaluate</code>，还不够像真实项目。<br>因为真实代码通常不只是返回一个结构体，还会调用依赖。</p>
+<p>比如这里会有一个通知发送器：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> alert</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> <span class="string">&quot;fmt&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Sender <span class="keyword">interface</span> &#123;</span><br><span class="line">	Send(Alert) <span class="type">error</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NotifyIfNeeded</span><span class="params">(sender Sender, alert Alert)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">	<span class="keyword">if</span> alert.Level == LevelInfo &#123;</span><br><span class="line">		<span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> err := sender.Send(alert); err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> fmt.Errorf(<span class="string">&quot;send alert for %s: %w&quot;</span>, alert.Service, err)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这个函数至少要测三件事：</p>
+<ol>
+<li><code>Info</code> 不发送</li>
+<li><code>Warn</code> 或 <code>Critical</code> 会发送</li>
+<li>发送失败时错误链被保留</li>
+</ol>
+<p>可以写一个最小假对象：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> fakeSender <span class="keyword">struct</span> &#123;</span><br><span class="line">	calls  <span class="type">int</span></span><br><span class="line">	alerts []Alert</span><br><span class="line">	err    <span class="type">error</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(f *fakeSender)</span></span> Send(alert Alert) <span class="type">error</span> &#123;</span><br><span class="line">	f.calls++</span><br><span class="line">	f.alerts = <span class="built_in">append</span>(f.alerts, alert)</span><br><span class="line">	<span class="keyword">return</span> f.err</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>测试：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestNotifyIfNeeded</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">	t.Run(<span class="string">&quot;info does not send&quot;</span>, <span class="function"><span class="keyword">func</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">		sender := &amp;fakeSender&#123;&#125;</span><br><span class="line">		err := NotifyIfNeeded(sender, Alert&#123;</span><br><span class="line">			Service: <span class="string">&quot;order-api&quot;</span>,</span><br><span class="line">			Level:   LevelInfo,</span><br><span class="line">		&#125;)</span><br><span class="line">		<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">			t.Fatalf(<span class="string">&quot;expected nil error, got %v&quot;</span>, err)</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">if</span> sender.calls != <span class="number">0</span> &#123;</span><br><span class="line">			t.Fatalf(<span class="string">&quot;expected no send, got %d&quot;</span>, sender.calls)</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;)</span><br><span class="line"></span><br><span class="line">	t.Run(<span class="string">&quot;warn sends once&quot;</span>, <span class="function"><span class="keyword">func</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">		sender := &amp;fakeSender&#123;&#125;</span><br><span class="line">		err := NotifyIfNeeded(sender, Alert&#123;</span><br><span class="line">			Service: <span class="string">&quot;order-api&quot;</span>,</span><br><span class="line">			Level:   LevelWarn,</span><br><span class="line">		&#125;)</span><br><span class="line">		<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">			t.Fatalf(<span class="string">&quot;expected nil error, got %v&quot;</span>, err)</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">if</span> sender.calls != <span class="number">1</span> &#123;</span><br><span class="line">			t.Fatalf(<span class="string">&quot;expected one send, got %d&quot;</span>, sender.calls)</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">if</span> <span class="built_in">len</span>(sender.alerts) != <span class="number">1</span> || sender.alerts[<span class="number">0</span>].Service != <span class="string">&quot;order-api&quot;</span> &#123;</span><br><span class="line">			t.Fatalf(<span class="string">&quot;unexpected alerts: %#v&quot;</span>, sender.alerts)</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>再测错误链：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestNotifyIfNeededWrapsError</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">	expected := errors.New(<span class="string">&quot;network timeout&quot;</span>)</span><br><span class="line">	sender := &amp;fakeSender&#123;err: expected&#125;</span><br><span class="line"></span><br><span class="line">	err := NotifyIfNeeded(sender, Alert&#123;</span><br><span class="line">		Service: <span class="string">&quot;order-api&quot;</span>,</span><br><span class="line">		Level:   LevelCritical,</span><br><span class="line">	&#125;)</span><br><span class="line">	<span class="keyword">if</span> err == <span class="literal">nil</span> &#123;</span><br><span class="line">		t.Fatal(<span class="string">&quot;expected error, got nil&quot;</span>)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> !errors.Is(err, expected) &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;expected wrapped error, got %v&quot;</span>, err)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> !strings.Contains(err.Error(), <span class="string">&quot;order-api&quot;</span>) &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;expected service context, got %v&quot;</span>, err)</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>到这里可以看到，单元测试不只是测“纯函数结果”，还要测：</p>
+<ul>
+<li>依赖有没有被调用</li>
+<li>被调用了几次</li>
+<li>传了什么参数</li>
+<li>失败时错误有没有被正确传播</li>
+</ul>
+<h2 id="十二、想让测试稳定，先把不确定性从设计里拆出去"><a href="#十二、想让测试稳定，先把不确定性从设计里拆出去" class="headerlink" title="十二、想让测试稳定，先把不确定性从设计里拆出去"></a>十二、想让测试稳定，先把不确定性从设计里拆出去</h2><p>很多 Go 测试不稳定，不是 <code>testing</code> 包不行，而是代码把不确定因素写死了。</p>
+<p>最常见的几个来源是：</p>
+<ul>
+<li><code>time.Now()</code></li>
+<li><code>time.Sleep()</code></li>
+<li>随机数</li>
+<li>真实网络</li>
+<li>真实文件系统</li>
+<li>真实环境变量</li>
+<li>map 迭代顺序</li>
+</ul>
+<p>先看一个不太适合测试的写法：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Evaluate</span><span class="params">(result ProbeResult)</span></span> (Alert, <span class="type">error</span>) &#123;</span><br><span class="line">	...</span><br><span class="line">	<span class="keyword">return</span> Alert&#123;</span><br><span class="line">		Service:    result.Service,</span><br><span class="line">		Level:      level,</span><br><span class="line">		Message:    buildMessage(result, level),</span><br><span class="line">		TriggeredAt: time.Now(),</span><br><span class="line">	&#125;, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这样一来，测试如果比较整个结构体，要么每次都手动绕开 <code>TriggeredAt</code>，要么变得非常脆弱。</p>
+<p>更可测的做法是把时间源作为依赖传进来：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Evaluate</span><span class="params">(result ProbeResult, now <span class="keyword">func</span>()</span></span> time.Time) (Alert, <span class="type">error</span>) &#123;</span><br><span class="line">	...</span><br><span class="line">	<span class="keyword">return</span> Alert&#123;</span><br><span class="line">		TriggeredAt: now(),</span><br><span class="line">	&#125;, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>同样的思路也适用于：</p>
+<ul>
+<li>把 HTTP 客户端抽成接口</li>
+<li>把文件读取抽成 <code>io.Reader</code></li>
+<li>把随机数生成抽成函数注入</li>
+<li>把环境变量读取集中到配置层，而不是散在业务逻辑里</li>
+</ul>
+<p><strong>可测试设计，本质上就是把业务规则和外部世界拆开。</strong></p>
+<h2 id="十三、什么样的代码天生更容易写单元测试"><a href="#十三、什么样的代码天生更容易写单元测试" class="headerlink" title="十三、什么样的代码天生更容易写单元测试"></a>十三、什么样的代码天生更容易写单元测试</h2><p>测试写得顺不顺，往往在你开始写 <code>xxx_test.go</code> 之前就已经决定了一半。</p>
+<p>更容易测试的 Go 代码通常有这些特征：</p>
+<h3 id="1-输入明确，输出明确"><a href="#1-输入明确，输出明确" class="headerlink" title="1. 输入明确，输出明确"></a>1. 输入明确，输出明确</h3><p>例如一个函数明确接收参数，明确返回结果和错误，而不是偷偷读全局状态。</p>
+<h3 id="2-纯逻辑和副作用分层"><a href="#2-纯逻辑和副作用分层" class="headerlink" title="2. 纯逻辑和副作用分层"></a>2. 纯逻辑和副作用分层</h3><p>例如：</p>
+<ul>
+<li><code>Evaluate</code> 只负责规则判断</li>
+<li><code>NotifyIfNeeded</code> 只负责通知边界</li>
+</ul>
+<p>这样一来，规则和依赖调用可以分开测。</p>
+<h3 id="3-依赖从外部传入"><a href="#3-依赖从外部传入" class="headerlink" title="3. 依赖从外部传入"></a>3. 依赖从外部传入</h3><p>不是在函数里直接 <code>http.Get</code>、<code>os.Open</code>、<code>time.Now</code>，而是把依赖注入进来。</p>
+<h3 id="4-错误有分类"><a href="#4-错误有分类" class="headerlink" title="4. 错误有分类"></a>4. 错误有分类</h3><p>这样你才有机会在测试里用 <code>errors.Is</code> 做稳定断言，而不是全靠字符串碰运气。</p>
+<h3 id="5-单个函数职责不要太杂"><a href="#5-单个函数职责不要太杂" class="headerlink" title="5. 单个函数职责不要太杂"></a>5. 单个函数职责不要太杂</h3><p>如果一个函数同时做参数校验、读配置、发请求、组装消息、写数据库，那单元测试一定很累，最后不是样板很多，就是测试粒度变形。</p>
+<h2 id="十四、看一个更完整但仍然够小的项目骨架"><a href="#十四、看一个更完整但仍然够小的项目骨架" class="headerlink" title="十四、看一个更完整但仍然够小的项目骨架"></a>十四、看一个更完整但仍然够小的项目骨架</h2><p>把前面的纯逻辑和副作用拼起来，可以得到一个最小但很像真实工程的骨架：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> alert</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">	<span class="string">&quot;context&quot;</span></span><br><span class="line">	<span class="string">&quot;fmt&quot;</span></span><br><span class="line">	<span class="string">&quot;time&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Evaluator <span class="keyword">struct</span> &#123;</span><br><span class="line">	Now    <span class="function"><span class="keyword">func</span><span class="params">()</span></span> time.Time</span><br><span class="line">	Sender Sender</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(e Evaluator)</span></span> Handle(ctx context.Context, result ProbeResult) (Alert, <span class="type">error</span>) &#123;</span><br><span class="line">	<span class="keyword">if</span> err := e.Validate(); err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> Alert&#123;&#125;, err</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	alert, err := Evaluate(result, e.Now)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> Alert&#123;&#125;, err</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">select</span> &#123;</span><br><span class="line">	<span class="keyword">case</span> &lt;-ctx.Done():</span><br><span class="line">		<span class="keyword">return</span> Alert&#123;&#125;, ctx.Err()</span><br><span class="line">	<span class="keyword">default</span>:</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> err := NotifyIfNeeded(e.Sender, alert); err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> Alert&#123;&#125;, err</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> alert, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(e Evaluator)</span></span> Validate() <span class="type">error</span> &#123;</span><br><span class="line">	<span class="keyword">if</span> e.Now == <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> fmt.Errorf(<span class="string">&quot;now func can not be nil&quot;</span>)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> e.Sender == <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> fmt.Errorf(<span class="string">&quot;sender can not be nil&quot;</span>)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>针对这个骨架，测试可以分成三层：</p>
+<ol>
+<li><p><code>Evaluate</code><br>测规则、边界、错误输入</p>
+</li>
+<li><p><code>NotifyIfNeeded</code><br>测副作用、调用次数、错误包装</p>
+</li>
+<li><p><code>Handle</code><br>测流程编排、上下文取消、依赖组合</p>
+</li>
+</ol>
+<p>这样的分层比“直接上来测一个最终大函数”更稳，也更容易定位失败原因。</p>
+<h2 id="十五、常见反模式：这些测试看起来写了，其实价值很低"><a href="#十五、常见反模式：这些测试看起来写了，其实价值很低" class="headerlink" title="十五、常见反模式：这些测试看起来写了，其实价值很低"></a>十五、常见反模式：这些测试看起来写了，其实价值很低</h2><p>下面这些写法在 Go 项目里非常常见，但长期看都不划算。</p>
+<h3 id="1-只测-happy-path"><a href="#1-只测-happy-path" class="headerlink" title="1. 只测 happy path"></a>1. 只测 happy path</h3><p>这是最常见的反模式。<br>结果就是线上真正会出的错误，全没被覆盖。</p>
+<h3 id="2-断言只有-err-nil"><a href="#2-断言只有-err-nil" class="headerlink" title="2. 断言只有 err != nil"></a>2. 断言只有 <code>err != nil</code></h3><p>这种测试太弱，既无法确认错误类型，也无法确认上下文是否保留。</p>
+<h3 id="3-直接依赖真实时间和睡眠"><a href="#3-直接依赖真实时间和睡眠" class="headerlink" title="3. 直接依赖真实时间和睡眠"></a>3. 直接依赖真实时间和睡眠</h3><p>例如：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">time.Sleep(<span class="number">2</span> * time.Second)</span><br></pre></td></tr></table></figure>
+
+<p>这类测试通常慢、不稳定，还容易在 CI 上偶发失败。</p>
+<h3 id="4-为了测方便，把一堆逻辑塞进-main"><a href="#4-为了测方便，把一堆逻辑塞进-main" class="headerlink" title="4. 为了测方便，把一堆逻辑塞进 main"></a>4. 为了测方便，把一堆逻辑塞进 <code>main</code></h3><p><code>main</code> 不是不能测，而是往往不值得承载核心业务逻辑。<br>核心逻辑应该下沉到可直接调用的包函数或类型方法。</p>
+<h3 id="5-对内部实现绑定过深"><a href="#5-对内部实现绑定过深" class="headerlink" title="5. 对内部实现绑定过深"></a>5. 对内部实现绑定过深</h3><p>例如重构后只是把一个私有函数拆成两个，业务行为没变，结果测试全红。<br>这说明测试断得太细了，断到了实现而不是行为。</p>
+<h3 id="6-一份测试里塞太多断言和太多场景"><a href="#6-一份测试里塞太多断言和太多场景" class="headerlink" title="6. 一份测试里塞太多断言和太多场景"></a>6. 一份测试里塞太多断言和太多场景</h3><p>这样一失败，定位成本很高。<br>更好的方式是：</p>
+<ul>
+<li>用表驱动收同一类规则</li>
+<li>用不同 <code>t.Run</code> 切分不同性质场景</li>
+</ul>
+<h3 id="7-为了追覆盖率，写没有业务价值的测试"><a href="#7-为了追覆盖率，写没有业务价值的测试" class="headerlink" title="7. 为了追覆盖率，写没有业务价值的测试"></a>7. 为了追覆盖率，写没有业务价值的测试</h3><p>比如 getter、纯搬运代码、没有分支且没风险的样板，全补一遍。<br>覆盖率数字会变好看，但故障预防能力不一定更强。</p>
+<h2 id="十六、测试与验证：这篇文章里的代码至少该怎么验"><a href="#十六、测试与验证：这篇文章里的代码至少该怎么验" class="headerlink" title="十六、测试与验证：这篇文章里的代码至少该怎么验"></a>十六、测试与验证：这篇文章里的代码至少该怎么验</h2><p>如果本地环境有 Go，最小验证动作通常是：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">go <span class="built_in">test</span> ./...</span><br></pre></td></tr></table></figure>
+
+<p>如果这个包里以规则判断为主，还可以优先关注：</p>
+<ol>
+<li>表驱动测试是否把关键边界都覆盖到了</li>
+<li>错误测试是否用了 <code>errors.Is</code></li>
+<li>时间相关断言是否全部固定了时间源</li>
+<li>fake 依赖是否只实现了测试真正关心的那部分行为</li>
+</ol>
+<p>如果你开始看到这些信号，说明测试已经从“会写”往“写得稳”迈进了。</p>
+<h2 id="十七、排障时先查什么，别一上来就怀疑测试框架"><a href="#十七、排障时先查什么，别一上来就怀疑测试框架" class="headerlink" title="十七、排障时先查什么，别一上来就怀疑测试框架"></a>十七、排障时先查什么，别一上来就怀疑测试框架</h2><p>测试失败时，更稳的排查顺序通常是：</p>
+<h3 id="1-先看失败是业务规则变了，还是测试假设错了"><a href="#1-先看失败是业务规则变了，还是测试假设错了" class="headerlink" title="1. 先看失败是业务规则变了，还是测试假设错了"></a>1. 先看失败是业务规则变了，还是测试假设错了</h3><p>很多失败不是代码错，而是规则调整了，但测试没更新。</p>
+<h3 id="2-再看是否混入了不确定因素"><a href="#2-再看是否混入了不确定因素" class="headerlink" title="2. 再看是否混入了不确定因素"></a>2. 再看是否混入了不确定因素</h3><p>例如：</p>
+<ul>
+<li>当前时间</li>
+<li>时区</li>
+<li>map 顺序</li>
+<li>并发写入</li>
+<li>环境变量污染</li>
+</ul>
+<h3 id="3-再看断言是不是过强"><a href="#3-再看断言是不是过强" class="headerlink" title="3. 再看断言是不是过强"></a>3. 再看断言是不是过强</h3><p>比如你本来只关心 <code>Level</code>，却把整条完整消息全文匹配了。<br>消息文案微调后，测试就会假红。</p>
+<h3 id="4-最后看测试数据是不是太远离真实场景"><a href="#4-最后看测试数据是不是太远离真实场景" class="headerlink" title="4. 最后看测试数据是不是太远离真实场景"></a>4. 最后看测试数据是不是太远离真实场景</h3><p>如果测试数据全是“完美对象”，那很多真实 bug 根本触发不出来。</p>
+<p>一个很实用的方法是：<br>把线上或联调里出现过的真实异常输入，收敛成最小测试样本。</p>
+<h2 id="十八、单元测试的边界在哪里"><a href="#十八、单元测试的边界在哪里" class="headerlink" title="十八、单元测试的边界在哪里"></a>十八、单元测试的边界在哪里</h2><p>讲到这里，也要把边界说清楚。</p>
+<p>单元测试很重要，但它不是万能的。</p>
+<p>下面这些问题，通常不应该指望只靠单元测试解决：</p>
+<ol>
+<li>真正的数据库连接兼容性</li>
+<li>HTTP 服务之间的真实集成行为</li>
+<li>配置文件加载和部署环境差异</li>
+<li>并发竞态、资源泄漏、性能瓶颈</li>
+<li>端到端链路是否全通</li>
+</ol>
+<p>这些更适合集成测试、契约测试、接口测试、端到端测试或性能测试。</p>
+<p>单元测试最擅长的是：</p>
+<ul>
+<li>快速反馈</li>
+<li>精准定位</li>
+<li>保护局部规则不被改坏</li>
+<li>把边界和错误语义固定住</li>
+</ul>
+<p>不要让它越位，也不要因为它不能解决全部问题，就把它降格成“只跑 happy path”。</p>
+<h2 id="十九、给你一组练习，检验自己是不是真的会写"><a href="#十九、给你一组练习，检验自己是不是真的会写" class="headerlink" title="十九、给你一组练习，检验自己是不是真的会写"></a>十九、给你一组练习，检验自己是不是真的会写</h2><p>如果你想把这一篇吃透，建议自己补下面几组测试：</p>
+<ol>
+<li>给 <code>Evaluate</code> 补一个 <code>FailureCount == 2</code> 返回 <code>Warn</code> 的测试</li>
+<li>给 <code>Evaluate</code> 补一个 <code>CheckedAt</code> 为零值的错误测试</li>
+<li>给 <code>NotifyIfNeeded</code> 补一个 <code>Critical</code> 发送两次不应该发生的保护测试</li>
+<li>给 <code>Handle</code> 补一个 <code>ctx</code> 已取消时直接返回 <code>context.Canceled</code> 的测试</li>
+<li>把 <code>buildMessage</code> 改成包含时间格式后，重构测试，确保它仍然稳定</li>
+</ol>
+<p>如果这些练习能比较顺地写出来，说明你已经开始真正理解：</p>
+<ul>
+<li>什么该断</li>
+<li>什么不该断</li>
+<li>什么属于 happy path 之外的高价值覆盖</li>
+</ul>
+<h2 id="二十、最后收个尾"><a href="#二十、最后收个尾" class="headerlink" title="二十、最后收个尾"></a>二十、最后收个尾</h2><p>Go 单元测试真正难的地方，从来不是 <code>testing</code> 包语法，而是你能不能建立这样一套判断：</p>
+<ul>
+<li>哪些行为最值得保护</li>
+<li>哪些输入最容易把代码打坏</li>
+<li>哪些错误必须被精确识别</li>
+<li>哪些外部因素必须被隔离</li>
+<li>哪些设计方式能让测试长期可维护</li>
+</ul>
+<p>所以，“单元测试怎么写才不是只测 happy path” 的答案并不是多写几个 <code>t.Run</code>，而是要把下面这条线建立起来：</p>
+<p><strong>正常路径、错误路径、边界条件、副作用、确定性、可测试设计，这几个维度要一起考虑。</strong></p>
+<p>这样写出来的测试，才不是交作业式的“绿色截图”，而是真正能陪代码一起演进的工程资产。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E5%B7%A5%E7%A8%8B%E5%8C%96/" rel="tag"># 工程化</a>
+              <a href="/tags/Go/" rel="tag"># Go</a>
+              <a href="/tags/Go%E4%B8%93%E9%A2%98/" rel="tag"># Go专题</a>
+              <a href="/tags/%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80/" rel="tag"># 编程语言</a>
+              <a href="/tags/%E5%8D%95%E5%85%83%E6%B5%8B%E8%AF%95/" rel="tag"># 单元测试</a>
+              <a href="/tags/%E6%B5%8B%E8%AF%95%E8%AE%BE%E8%AE%A1/" rel="tag"># 测试设计</a>
+              <a href="/tags/%E5%8F%AF%E6%B5%8B%E8%AF%95%E6%80%A7/" rel="tag"># 可测试性</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2018/07/25/Python-15-Python%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96%E5%85%A5%E9%97%A8%E5%AE%9A%E4%BD%8D%E6%85%A2%E4%BB%A3%E7%A0%81%E5%87%8F%E5%B0%91%E6%97%A0%E6%95%88%E5%AF%B9%E8%B1%A1%E5%92%8C%E5%A4%84%E7%90%86IO%E7%93%B6%E9%A2%88/" rel="prev" title="Python：性能优化入门，定位慢代码、减少无效对象和处理 I&#x2F;O 瓶颈">
+                  <i class="fa fa-angle-left"></i> Python：性能优化入门，定位慢代码、减少无效对象和处理 I/O 瓶颈
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2018/08/01/Python-16-Python%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84%E4%B8%8E%E7%AE%97%E6%B3%95%E5%85%A5%E9%97%A8%E5%88%97%E8%A1%A8%E9%93%BE%E8%A1%A8%E6%A0%88%E9%98%9F%E5%88%97%E5%93%88%E5%B8%8C%E5%88%B0%E5%BA%95%E6%80%8E%E4%B9%88%E7%90%86%E8%A7%A3/" rel="next" title="Python：数据结构与算法入门，列表、链表、栈、队列、哈希到底怎么理解">
+                  Python：数据结构与算法入门，列表、链表、栈、队列、哈希到底怎么理解 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="做测试平台时，报告系统最开始都容易被理解成：  一张结果列表 一个成功失败统计 一页执行日志  从页面功能上看，这样已经像是“有报告了”。 但只要平台真正服务到多人协作，报告很快就会暴露几个典型问题：  只能看到失败，却看不到失败现场 同样的失败反复出现，但没有聚合视角 结果页能看，问题却没法复现 一次执行结束后，环境、参数、证据很快丢失 项目负责人问“这轮回归到底值不值得拦发布”，报告给不出结论">
+<meta property="og:type" content="article">
+<meta property="og:title" content="测试平台-07-测试平台的测试报告系统设计">
+<meta property="og:url" content="https://paynewinnt.github.io/2021/08/19/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-07-%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E7%9A%84%E6%B5%8B%E8%AF%95%E6%8A%A5%E5%91%8A%E7%B3%BB%E7%BB%9F%E8%AE%BE%E8%AE%A1/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="做测试平台时，报告系统最开始都容易被理解成：  一张结果列表 一个成功失败统计 一页执行日志  从页面功能上看，这样已经像是“有报告了”。 但只要平台真正服务到多人协作，报告很快就会暴露几个典型问题：  只能看到失败，却看不到失败现场 同样的失败反复出现，但没有聚合视角 结果页能看，问题却没法复现 一次执行结束后，环境、参数、证据很快丢失 项目负责人问“这轮回归到底值不值得拦发布”，报告给不出结论">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2021-08-19T12:30:00.000Z">
+<meta property="article:modified_time" content="2021-08-19T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="测试平台">
+<meta property="article:tag" content="工程化">
+<meta property="article:tag" content="测试报告">
+<meta property="article:tag" content="实战">
+<meta property="article:tag" content="证据留存">
+<meta property="article:tag" content="架构设计">
+<meta property="article:tag" content="测试平台开发">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2021/08/19/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-07-%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E7%9A%84%E6%B5%8B%E8%AF%95%E6%8A%A5%E5%91%8A%E7%B3%BB%E7%BB%9F%E8%AE%BE%E8%AE%A1/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2021/08/19/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-07-%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E7%9A%84%E6%B5%8B%E8%AF%95%E6%8A%A5%E5%91%8A%E7%B3%BB%E7%BB%9F%E8%AE%BE%E8%AE%A1/","path":"2021/08/19/测试平台-07-测试平台的测试报告系统设计/","title":"测试平台-07-测试平台的测试报告系统设计"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>测试平台-07-测试平台的测试报告系统设计 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E6%8A%A5%E5%91%8A%E7%B3%BB%E7%BB%9F%E6%9C%80%E5%AE%B9%E6%98%93%E8%A2%AB%E5%81%9A%E8%BD%BB%E7%9A%84%EF%BC%8C%E4%B8%8D%E6%98%AF%E6%A0%B7%E5%BC%8F%EF%BC%8C%E8%80%8C%E6%98%AF%E6%8A%A5%E5%91%8A%E5%AF%B9%E8%B1%A1"><span class="nav-number">1.</span> <span class="nav-text">一、报告系统最容易被做轻的，不是样式，而是报告对象</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E6%8A%A5%E5%91%8A%E7%B3%BB%E7%BB%9F%E7%9C%9F%E6%AD%A3%E9%9A%BE%E7%9A%84%EF%BC%8C%E4%B8%8D%E6%98%AF%E5%B1%95%E7%A4%BA%E7%BB%93%E6%9E%9C%EF%BC%8C%E8%80%8C%E6%98%AF%E8%BF%98%E5%8E%9F%E7%8E%B0%E5%9C%BA"><span class="nav-number">2.</span> <span class="nav-text">二、报告系统真正难的，不是展示结果，而是还原现场</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%89%A7%E8%A1%8C%E4%B8%8A%E4%B8%8B%E6%96%87"><span class="nav-number">2.1.</span> <span class="nav-text">1. 执行上下文</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E7%BB%93%E6%9E%9C%E7%BB%86%E8%8A%82"><span class="nav-number">2.2.</span> <span class="nav-text">2. 结果细节</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%AF%81%E6%8D%AE%E9%93%BE"><span class="nav-number">2.3.</span> <span class="nav-text">3. 证据链</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E7%BB%93%E8%AE%BA%E4%BF%A1%E6%81%AF"><span class="nav-number">2.4.</span> <span class="nav-text">4. 结论信息</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E6%9B%B4%E6%8E%A8%E8%8D%90%E7%9A%84%E4%B8%80%E5%A5%97%E6%8A%A5%E5%91%8A%E7%B3%BB%E7%BB%9F%E5%88%86%E5%B1%82"><span class="nav-number">3.</span> <span class="nav-text">三、更推荐的一套报告系统分层</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%89%A7%E8%A1%8C%E6%8A%A5%E5%91%8A%E5%B1%82"><span class="nav-number">3.1.</span> <span class="nav-text">1. 执行报告层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E7%94%A8%E4%BE%8B%E7%BB%93%E6%9E%9C%E5%B1%82"><span class="nav-number">3.2.</span> <span class="nav-text">2. 用例结果层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%AF%81%E6%8D%AE%E8%B5%84%E4%BA%A7%E5%B1%82"><span class="nav-number">3.3.</span> <span class="nav-text">3. 证据资产层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E8%B6%8B%E5%8A%BF%E8%81%9A%E5%90%88%E5%B1%82"><span class="nav-number">3.4.</span> <span class="nav-text">4. 趋势聚合层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E7%BB%93%E8%AE%BA%E4%B8%8E%E9%A3%8E%E9%99%A9%E5%B1%82"><span class="nav-number">3.5.</span> <span class="nav-text">5. 结论与风险层</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E6%8A%A5%E5%91%8A%E7%B3%BB%E7%BB%9F%E4%B8%8D%E8%A6%81%E5%8F%AA%E5%90%83%E2%80%9C%E6%9C%80%E7%BB%88%E7%8A%B6%E6%80%81%E2%80%9D%EF%BC%8C%E6%9C%80%E5%A5%BD%E4%BF%9D%E7%95%99%E7%BB%93%E6%9E%84%E5%8C%96%E8%BF%87%E7%A8%8B"><span class="nav-number">4.</span> <span class="nav-text">四、报告系统不要只吃“最终状态”，最好保留结构化过程</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%89%A7%E8%A1%8C%E7%BA%A7"><span class="nav-number">4.1.</span> <span class="nav-text">1. 执行级</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%8A%82%E7%82%B9%E7%BA%A7%E6%88%96%E6%AD%A5%E9%AA%A4%E7%BA%A7"><span class="nav-number">4.2.</span> <span class="nav-text">2. 节点级或步骤级</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%AF%81%E6%8D%AE%E7%BA%A7"><span class="nav-number">4.3.</span> <span class="nav-text">3. 证据级</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E6%8A%A5%E5%91%8A%E7%B3%BB%E7%BB%9F%E6%9C%80%E5%80%BC%E5%BE%97%E8%A1%A5%E7%9A%84%EF%BC%8C%E4%B8%8D%E6%98%AF%E5%9B%BE%E8%A1%A8%EF%BC%8C%E8%80%8C%E6%98%AF%E5%8F%AF%E6%AF%94%E6%80%A7"><span class="nav-number">5.</span> <span class="nav-text">五、报告系统最值得补的，不是图表，而是可比性</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E6%9C%80%E5%B0%8F%E5%8F%AF%E6%89%A7%E8%A1%8C%E5%AE%9E%E8%B7%B5%EF%BC%9A%E7%AC%AC%E4%B8%80%E7%89%88%E6%8A%A5%E5%91%8A%E7%B3%BB%E7%BB%9F%E6%80%8E%E4%B9%88%E8%90%BD"><span class="nav-number">6.</span> <span class="nav-text">六、最小可执行实践：第一版报告系统怎么落</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%B8%80%E5%BC%A0%E6%89%A7%E8%A1%8C%E6%8A%A5%E5%91%8A%E4%B8%BB%E8%A1%A8"><span class="nav-number">6.1.</span> <span class="nav-text">1. 一张执行报告主表</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%B8%80%E5%BC%A0%E6%AD%A5%E9%AA%A4%E6%88%96%E7%94%A8%E4%BE%8B%E7%BB%93%E6%9E%9C%E8%A1%A8"><span class="nav-number">6.2.</span> <span class="nav-text">2. 一张步骤或用例结果表</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%B8%80%E5%BC%A0%E8%AF%81%E6%8D%AE%E7%B4%A2%E5%BC%95%E8%A1%A8"><span class="nav-number">6.3.</span> <span class="nav-text">3. 一张证据索引表</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%B8%80%E5%BC%A0%E5%BC%82%E5%B8%B8%E5%BD%92%E5%9B%A0%E6%88%96%E6%A0%87%E7%AD%BE%E8%A1%A8"><span class="nav-number">6.4.</span> <span class="nav-text">4. 一张异常归因或标签表</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%8A%A5%E5%91%8A%E9%A1%B5%E5%9B%BA%E5%AE%9A%E6%9C%89-4-%E4%B8%AA%E5%8C%BA%E5%9D%97"><span class="nav-number">6.5.</span> <span class="nav-text">5. 报告页固定有 4 个区块</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E7%8E%B0%E5%9C%BA%E8%A7%82%E5%AF%9F%E7%82%B9%EF%BC%9A%E4%B8%80%E4%BB%BD%E6%8A%A5%E5%91%8A%E2%80%9C%E7%9C%8B%E4%B8%8D%E5%87%BA%E4%BB%B7%E5%80%BC%E2%80%9D%E6%97%B6%E5%85%88%E6%9F%A5%E5%93%AA%E5%87%A0%E4%BB%B6%E4%BA%8B"><span class="nav-number">7.</span> <span class="nav-text">七、现场观察点：一份报告“看不出价值”时先查哪几件事</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%B8%8A%E4%B8%8B%E6%96%87%E6%98%AF%E5%90%A6%E7%BC%BA%E5%A4%B1"><span class="nav-number">7.1.</span> <span class="nav-text">1. 上下文是否缺失</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%A4%B1%E8%B4%A5%E6%98%AF%E5%90%A6%E4%B8%8D%E5%8F%AF%E8%A7%A3%E9%87%8A"><span class="nav-number">7.2.</span> <span class="nav-text">2. 失败是否不可解释</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%AF%81%E6%8D%AE%E6%98%AF%E5%90%A6%E6%95%A3%E8%90%BD"><span class="nav-number">7.3.</span> <span class="nav-text">3. 证据是否散落</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E7%BC%BA%E5%B0%91%E5%AF%B9%E6%AF%94%E8%83%BD%E5%8A%9B"><span class="nav-number">7.4.</span> <span class="nav-text">4. 缺少对比能力</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E7%BC%BA%E5%B0%91%E5%BD%92%E5%9B%A0%E5%92%8C%E7%BB%93%E8%AE%BA"><span class="nav-number">7.5.</span> <span class="nav-text">5. 缺少归因和结论</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E7%9C%9F%E5%AE%9E%E9%A1%B9%E7%9B%AE%E9%87%8C%E6%9C%80%E5%AE%B9%E6%98%93%E8%B8%A9%E7%9A%84-6-%E4%B8%AA%E5%9D%91"><span class="nav-number">8.</span> <span class="nav-text">八、真实项目里最容易踩的 6 个坑</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%8A%8A-Jenkins-%E5%8E%9F%E5%A7%8B%E6%97%A5%E5%BF%97%E7%9B%B4%E6%8E%A5%E5%BD%93%E6%8A%A5%E5%91%8A"><span class="nav-number">8.1.</span> <span class="nav-text">1. 把 Jenkins 原始日志直接当报告</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%8A%A5%E5%91%8A%E5%8F%AA%E4%BF%9D%E7%95%99%E6%9C%80%E7%BB%88%E7%8A%B6%E6%80%81"><span class="nav-number">8.2.</span> <span class="nav-text">2. 报告只保留最终状态</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%AF%81%E6%8D%AE%E6%B2%A1%E6%9C%89%E7%B4%A2%E5%BC%95%E8%83%BD%E5%8A%9B"><span class="nav-number">8.3.</span> <span class="nav-text">3. 证据没有索引能力</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%8A%A5%E5%91%8A%E4%B8%8D%E5%AD%98%E7%8E%AF%E5%A2%83%E5%BF%AB%E7%85%A7%E5%92%8C%E5%8F%82%E6%95%B0%E5%BF%AB%E7%85%A7"><span class="nav-number">8.4.</span> <span class="nav-text">4. 报告不存环境快照和参数快照</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%8A%A5%E5%91%8A%E6%B2%A1%E6%9C%89%E5%8C%BA%E5%88%86%E6%96%B0%E5%A2%9E%E5%A4%B1%E8%B4%A5%E5%92%8C%E5%B7%B2%E7%9F%A5%E5%A4%B1%E8%B4%A5"><span class="nav-number">8.5.</span> <span class="nav-text">5. 报告没有区分新增失败和已知失败</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E8%B6%8B%E5%8A%BF%E5%8F%AA%E5%81%9A%E5%9B%BE%EF%BC%8C%E4%B8%8D%E5%81%9A%E8%A7%A3%E9%87%8A"><span class="nav-number">8.6.</span> <span class="nav-text">6. 趋势只做图，不做解释</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E7%9C%9F%E5%AE%9E%E6%A1%88%E4%BE%8B%E5%9E%8B%E6%AE%B5%E8%90%BD%EF%BC%9A%E4%B8%80%E6%AC%A1%E2%80%9C%E6%8A%A5%E5%91%8A%E7%9C%8B%E8%B5%B7%E6%9D%A5%E5%BE%88%E7%BA%A2%E2%80%9D%E7%9A%84%E5%9B%9E%E5%BD%92%EF%BC%8C%E7%9C%9F%E6%AD%A3%E6%96%B0%E5%A2%9E%E9%97%AE%E9%A2%98%E5%B9%B6%E4%B8%8D%E5%A4%9A"><span class="nav-number">9.</span> <span class="nav-text">九、真实案例型段落：一次“报告看起来很红”的回归，真正新增问题并不多</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9C%BA%E6%99%AF"><span class="nav-number">9.1.</span> <span class="nav-text">场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%89%A7%E8%A1%8C"><span class="nav-number">9.2.</span> <span class="nav-text">执行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8E%B0%E8%B1%A1"><span class="nav-number">9.3.</span> <span class="nav-text">现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%92%E6%9F%A5"><span class="nav-number">9.4.</span> <span class="nav-text">排查</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BF%AE%E5%A4%8D"><span class="nav-number">9.5.</span> <span class="nav-text">修复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E6%8A%A5%E5%91%8A%E7%B3%BB%E7%BB%9F%E7%9A%84%E4%B8%80%E4%B8%AA%E5%88%A4%E6%96%AD%E6%A0%87%E5%87%86"><span class="nav-number">10.</span> <span class="nav-text">十、测试平台报告系统的一个判断标准</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2021/08/19/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-07-%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E7%9A%84%E6%B5%8B%E8%AF%95%E6%8A%A5%E5%91%8A%E7%B3%BB%E7%BB%9F%E8%AE%BE%E8%AE%A1/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="测试平台-07-测试平台的测试报告系统设计 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          测试平台-07-测试平台的测试报告系统设计
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2021-08-19 20:30:00" itemprop="dateCreated datePublished" datetime="2021-08-19T20:30:00+08:00">2021-08-19</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0/" itemprop="url" rel="index"><span itemprop="name">测试平台</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>2.8k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>10 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>做测试平台时，报告系统最开始都容易被理解成：</p>
+<ul>
+<li>一张结果列表</li>
+<li>一个成功失败统计</li>
+<li>一页执行日志</li>
+</ul>
+<p>从页面功能上看，这样已经像是“有报告了”。</p>
+<p>但只要平台真正服务到多人协作，报告很快就会暴露几个典型问题：</p>
+<ul>
+<li>只能看到失败，却看不到失败现场</li>
+<li>同样的失败反复出现，但没有聚合视角</li>
+<li>结果页能看，问题却没法复现</li>
+<li>一次执行结束后，环境、参数、证据很快丢失</li>
+<li>项目负责人问“这轮回归到底值不值得拦发布”，报告给不出结论</li>
+</ul>
+<p>所以测试平台里的报告系统，本质上不是“结果展示页”，而是：</p>
+<p><strong>把一次执行变成可追溯、可解释、可复盘的证据资产。</strong></p>
+<p>这篇文章就只讲这个问题：</p>
+<p><strong>测试平台的测试报告系统到底该怎么设计，才不至于后面越看越像日志仓库、越用越没有决策价值。</strong></p>
+<h2 id="一、报告系统最容易被做轻的，不是样式，而是报告对象"><a href="#一、报告系统最容易被做轻的，不是样式，而是报告对象" class="headerlink" title="一、报告系统最容易被做轻的，不是样式，而是报告对象"></a>一、报告系统最容易被做轻的，不是样式，而是报告对象</h2><p>很多平台早期做报告，最容易直接把“任务执行结果”当成报告本身：</p>
+<ul>
+<li>成功</li>
+<li>失败</li>
+<li>耗时</li>
+<li>日志链接</li>
+</ul>
+<p>这当然是一部分，但远远不够。</p>
+<p>因为一份真正有价值的测试报告，至少要能回答下面几件事：</p>
+<ul>
+<li>这次到底测了什么</li>
+<li>在什么上下文里测的</li>
+<li>结果为什么是这样</li>
+<li>失败有没有证据链</li>
+<li>这次结果和上次比有没有异常变化</li>
+<li>这次执行对发布决策意味着什么</li>
+</ul>
+<p>也就是说，报告系统里的“对象”不应该只有一个执行结果，而应该至少包含：</p>
+<ul>
+<li>执行概览</li>
+<li>运行上下文</li>
+<li>证据集合</li>
+<li>用例维度结果</li>
+<li>聚合趋势结果</li>
+<li>结论与风险判断</li>
+</ul>
+<h2 id="二、报告系统真正难的，不是展示结果，而是还原现场"><a href="#二、报告系统真正难的，不是展示结果，而是还原现场" class="headerlink" title="二、报告系统真正难的，不是展示结果，而是还原现场"></a>二、报告系统真正难的，不是展示结果，而是还原现场</h2><p>很多测试平台里的报告页看起来很丰富：</p>
+<ul>
+<li>有统计卡片</li>
+<li>有通过率</li>
+<li>有日志按钮</li>
+<li>有附件下载</li>
+</ul>
+<p>但一旦真的要定位问题，最终还是会回到：</p>
+<ul>
+<li>Jenkins 控制台</li>
+<li>执行机目录</li>
+<li>共享盘截图</li>
+<li>群消息里的临时补充说明</li>
+</ul>
+<p>这说明报告没有真正承接“现场还原”。</p>
+<p>更关注的是报告能不能把一次执行的现场最小闭环保存下来，至少包括：</p>
+<h3 id="1-执行上下文"><a href="#1-执行上下文" class="headerlink" title="1. 执行上下文"></a>1. 执行上下文</h3><p>例如：</p>
+<ul>
+<li>任务定义版本</li>
+<li>实际执行参数</li>
+<li>环境快照</li>
+<li>执行节点</li>
+<li>触发来源</li>
+</ul>
+<h3 id="2-结果细节"><a href="#2-结果细节" class="headerlink" title="2. 结果细节"></a>2. 结果细节</h3><p>例如：</p>
+<ul>
+<li>用例级结果</li>
+<li>步骤级结果</li>
+<li>错误信息</li>
+<li>开始结束时间</li>
+</ul>
+<h3 id="3-证据链"><a href="#3-证据链" class="headerlink" title="3. 证据链"></a>3. 证据链</h3><p>例如：</p>
+<ul>
+<li>原始日志</li>
+<li>关键截图</li>
+<li>录屏</li>
+<li>请求响应片段</li>
+<li>设备或浏览器信息</li>
+</ul>
+<h3 id="4-结论信息"><a href="#4-结论信息" class="headerlink" title="4. 结论信息"></a>4. 结论信息</h3><p>例如：</p>
+<ul>
+<li>本轮失败主要集中在哪类问题</li>
+<li>是否属于环境性失败</li>
+<li>是否命中已知问题</li>
+<li>是否影响发布判断</li>
+</ul>
+<p>如果这些东西没有进报告，平台其实还没有真正“沉淀结果”，只是把运行产物换了个地方展示。</p>
+<h2 id="三、更推荐的一套报告系统分层"><a href="#三、更推荐的一套报告系统分层" class="headerlink" title="三、更推荐的一套报告系统分层"></a>三、更推荐的一套报告系统分层</h2><p>如果现在从 0 到 1 做测试平台报告系统，更倾向至少把它分成下面几层。</p>
+<h3 id="1-执行报告层"><a href="#1-执行报告层" class="headerlink" title="1. 执行报告层"></a>1. 执行报告层</h3><p>负责回答：</p>
+<ul>
+<li>这一次执行发生了什么</li>
+</ul>
+<p>这是最基础的一层，关注单次执行。</p>
+<h3 id="2-用例结果层"><a href="#2-用例结果层" class="headerlink" title="2. 用例结果层"></a>2. 用例结果层</h3><p>负责回答：</p>
+<ul>
+<li>这次执行里哪些用例通过、失败、跳过</li>
+<li>失败发生在哪一步</li>
+<li>相比上次有没有状态变化</li>
+</ul>
+<h3 id="3-证据资产层"><a href="#3-证据资产层" class="headerlink" title="3. 证据资产层"></a>3. 证据资产层</h3><p>负责沉淀：</p>
+<ul>
+<li>日志</li>
+<li>截图</li>
+<li>录屏</li>
+<li>抓包</li>
+<li>附件</li>
+</ul>
+<p>这层最好不要只存一个路径，而要有结构化索引。</p>
+<h3 id="4-趋势聚合层"><a href="#4-趋势聚合层" class="headerlink" title="4. 趋势聚合层"></a>4. 趋势聚合层</h3><p>负责回答：</p>
+<ul>
+<li>最近 7 天哪些任务稳定、哪些开始飘</li>
+<li>同一类失败有没有反复出现</li>
+<li>通过率变化是否和环境或版本有关</li>
+</ul>
+<h3 id="5-结论与风险层"><a href="#5-结论与风险层" class="headerlink" title="5. 结论与风险层"></a>5. 结论与风险层</h3><p>负责回答：</p>
+<ul>
+<li>这轮执行值不值得拦发布</li>
+<li>哪些失败该看</li>
+<li>哪些失败可以归为环境或已知问题</li>
+</ul>
+<p>这层如果没有，报告就很难服务到发布和管理动作。</p>
+<h2 id="四、报告系统不要只吃“最终状态”，最好保留结构化过程"><a href="#四、报告系统不要只吃“最终状态”，最好保留结构化过程" class="headerlink" title="四、报告系统不要只吃“最终状态”，最好保留结构化过程"></a>四、报告系统不要只吃“最终状态”，最好保留结构化过程</h2><p>很多平台一开始存报告，最容易只存一个最终结果：</p>
+<ul>
+<li><code>status=success</code></li>
+<li><code>duration=325</code></li>
+<li><code>log_url=...</code></li>
+</ul>
+<p>这种方式做列表页够了，但后面会很快碰到上限。</p>
+<p>因为真正的测试执行过程通常不是一个点，而是一条线：</p>
+<ul>
+<li>哪个阶段开始</li>
+<li>哪个步骤卡住</li>
+<li>哪个依赖报错</li>
+<li>哪个恢复动作发生过</li>
+<li>哪个产物在失败前生成</li>
+</ul>
+<p>所以更推荐报告系统至少保留三层结构化信息：</p>
+<h3 id="1-执行级"><a href="#1-执行级" class="headerlink" title="1. 执行级"></a>1. 执行级</h3><p>存：</p>
+<ul>
+<li>总状态</li>
+<li>总耗时</li>
+<li>执行上下文</li>
+<li>汇总指标</li>
+</ul>
+<h3 id="2-节点级或步骤级"><a href="#2-节点级或步骤级" class="headerlink" title="2. 节点级或步骤级"></a>2. 节点级或步骤级</h3><p>存：</p>
+<ul>
+<li>阶段名称</li>
+<li>状态变化</li>
+<li>时间点</li>
+<li>异常摘要</li>
+</ul>
+<h3 id="3-证据级"><a href="#3-证据级" class="headerlink" title="3. 证据级"></a>3. 证据级</h3><p>存：</p>
+<ul>
+<li>类型</li>
+<li>采集时间</li>
+<li>来源模块</li>
+<li>路径或对象地址</li>
+</ul>
+<p>这样后面才能做：</p>
+<ul>
+<li>时间线还原</li>
+<li>相同问题聚合</li>
+<li>部分失败解释</li>
+</ul>
+<h2 id="五、报告系统最值得补的，不是图表，而是可比性"><a href="#五、报告系统最值得补的，不是图表，而是可比性" class="headerlink" title="五、报告系统最值得补的，不是图表，而是可比性"></a>五、报告系统最值得补的，不是图表，而是可比性</h2><p>做报告会花很多时间做：</p>
+<ul>
+<li>饼图</li>
+<li>柱状图</li>
+<li>趋势图</li>
+</ul>
+<p>这些当然有用，但如果报告系统没有“可比性”，图再多也只是展示。</p>
+<p>更在意的是，报告能不能支持下面这些对比：</p>
+<ul>
+<li>本次和上次相比，通过率差了多少</li>
+<li>哪些失败是新增失败</li>
+<li>哪些失败是连续失败</li>
+<li>同一分支和不同环境下结果有什么差异</li>
+<li>同一类错误最近是不是集中上升</li>
+</ul>
+<p>因为报告真正的价值，不在于“这次是多少”，而在于：</p>
+<p><strong>为什么这次和过去不一样。</strong></p>
+<h2 id="六、最小可执行实践：第一版报告系统怎么落"><a href="#六、最小可执行实践：第一版报告系统怎么落" class="headerlink" title="六、最小可执行实践：第一版报告系统怎么落"></a>六、最小可执行实践：第一版报告系统怎么落</h2><p>如果现在从 0 到 1 做一版测试平台报告系统，更适合优先落下面这些对象。</p>
+<h3 id="1-一张执行报告主表"><a href="#1-一张执行报告主表" class="headerlink" title="1. 一张执行报告主表"></a>1. 一张执行报告主表</h3><p>最少包括：</p>
+<ul>
+<li><code>execution_id</code></li>
+<li><code>task_id</code></li>
+<li><code>status</code></li>
+<li><code>start_time</code></li>
+<li><code>end_time</code></li>
+<li><code>duration_ms</code></li>
+<li><code>trigger_source</code></li>
+<li><code>env_snapshot_version</code></li>
+<li><code>summary</code></li>
+</ul>
+<p>它回答的是“本次执行整体情况是什么”。</p>
+<h3 id="2-一张步骤或用例结果表"><a href="#2-一张步骤或用例结果表" class="headerlink" title="2. 一张步骤或用例结果表"></a>2. 一张步骤或用例结果表</h3><p>例如：</p>
+<ul>
+<li><code>report_case_result</code></li>
+</ul>
+<p>记录：</p>
+<ul>
+<li>case 标识</li>
+<li>状态</li>
+<li>耗时</li>
+<li>错误摘要</li>
+<li>重试次数</li>
+</ul>
+<h3 id="3-一张证据索引表"><a href="#3-一张证据索引表" class="headerlink" title="3. 一张证据索引表"></a>3. 一张证据索引表</h3><p>例如：</p>
+<ul>
+<li><code>report_artifact</code></li>
+</ul>
+<p>记录：</p>
+<ul>
+<li>证据类型</li>
+<li>采集时间</li>
+<li>来源</li>
+<li>存储地址</li>
+<li>所属执行或所属 case</li>
+</ul>
+<h3 id="4-一张异常归因或标签表"><a href="#4-一张异常归因或标签表" class="headerlink" title="4. 一张异常归因或标签表"></a>4. 一张异常归因或标签表</h3><p>例如：</p>
+<ul>
+<li><code>report_issue_tag</code></li>
+</ul>
+<p>用来标：</p>
+<ul>
+<li>环境问题</li>
+<li>已知缺陷</li>
+<li>脚本问题</li>
+<li>产品缺陷</li>
+<li>外部依赖异常</li>
+</ul>
+<p>这样后面趋势聚合才有抓手。</p>
+<h3 id="5-报告页固定有-4-个区块"><a href="#5-报告页固定有-4-个区块" class="headerlink" title="5. 报告页固定有 4 个区块"></a>5. 报告页固定有 4 个区块</h3><ul>
+<li>执行概览</li>
+<li>失败明细</li>
+<li>证据区</li>
+<li>趋势与对比区</li>
+</ul>
+<p>第一版不用把图做得太花，但这 4 块最好先立住。</p>
+<h2 id="七、现场观察点：一份报告“看不出价值”时先查哪几件事"><a href="#七、现场观察点：一份报告“看不出价值”时先查哪几件事" class="headerlink" title="七、现场观察点：一份报告“看不出价值”时先查哪几件事"></a>七、现场观察点：一份报告“看不出价值”时先查哪几件事</h2><p>如果一份报告用了几次以后，仍然要回头翻原始日志，通常会先看下面这几个问题。</p>
+<h3 id="1-上下文是否缺失"><a href="#1-上下文是否缺失" class="headerlink" title="1. 上下文是否缺失"></a>1. 上下文是否缺失</h3><p>例如：</p>
+<ul>
+<li>不知道本次跑的是哪个版本</li>
+<li>不知道用了哪套环境</li>
+<li>不知道是谁触发的</li>
+</ul>
+<h3 id="2-失败是否不可解释"><a href="#2-失败是否不可解释" class="headerlink" title="2. 失败是否不可解释"></a>2. 失败是否不可解释</h3><p>例如：</p>
+<ul>
+<li>只看到 <code>assert failed</code></li>
+<li>没有步骤信息</li>
+<li>没有关键输入输出</li>
+</ul>
+<h3 id="3-证据是否散落"><a href="#3-证据是否散落" class="headerlink" title="3. 证据是否散落"></a>3. 证据是否散落</h3><p>例如：</p>
+<ul>
+<li>日志在一处</li>
+<li>截图在另一处</li>
+<li>报告页没有统一入口</li>
+</ul>
+<h3 id="4-缺少对比能力"><a href="#4-缺少对比能力" class="headerlink" title="4. 缺少对比能力"></a>4. 缺少对比能力</h3><p>例如：</p>
+<ul>
+<li>无法知道失败是不是新问题</li>
+<li>无法知道本轮是否明显变差</li>
+</ul>
+<h3 id="5-缺少归因和结论"><a href="#5-缺少归因和结论" class="headerlink" title="5. 缺少归因和结论"></a>5. 缺少归因和结论</h3><p>例如：</p>
+<ul>
+<li>明明失败很多，但不知道哪些最值得处理</li>
+<li>管理者只能看见红绿灯，看不见风险结构</li>
+</ul>
+<h2 id="八、真实项目里最容易踩的-6-个坑"><a href="#八、真实项目里最容易踩的-6-个坑" class="headerlink" title="八、真实项目里最容易踩的 6 个坑"></a>八、真实项目里最容易踩的 6 个坑</h2><h3 id="1-把-Jenkins-原始日志直接当报告"><a href="#1-把-Jenkins-原始日志直接当报告" class="headerlink" title="1. 把 Jenkins 原始日志直接当报告"></a>1. 把 Jenkins 原始日志直接当报告</h3><p>短期能用，长期不可检索、不可聚合、不可比较。</p>
+<h3 id="2-报告只保留最终状态"><a href="#2-报告只保留最终状态" class="headerlink" title="2. 报告只保留最终状态"></a>2. 报告只保留最终状态</h3><p>最后只能知道“失败了”，却不知道“怎么失败的”。</p>
+<h3 id="3-证据没有索引能力"><a href="#3-证据没有索引能力" class="headerlink" title="3. 证据没有索引能力"></a>3. 证据没有索引能力</h3><p>附件很多，但谁也找不到关键证据。</p>
+<h3 id="4-报告不存环境快照和参数快照"><a href="#4-报告不存环境快照和参数快照" class="headerlink" title="4. 报告不存环境快照和参数快照"></a>4. 报告不存环境快照和参数快照</h3><p>出了问题没法还原现场。</p>
+<h3 id="5-报告没有区分新增失败和已知失败"><a href="#5-报告没有区分新增失败和已知失败" class="headerlink" title="5. 报告没有区分新增失败和已知失败"></a>5. 报告没有区分新增失败和已知失败</h3><p>一轮回归看上去全红，实际真正新增问题可能只有两个。</p>
+<h3 id="6-趋势只做图，不做解释"><a href="#6-趋势只做图，不做解释" class="headerlink" title="6. 趋势只做图，不做解释"></a>6. 趋势只做图，不做解释</h3><p>报告页能看到波动，却不知道该不该行动。</p>
+<h2 id="九、真实案例型段落：一次“报告看起来很红”的回归，真正新增问题并不多"><a href="#九、真实案例型段落：一次“报告看起来很红”的回归，真正新增问题并不多" class="headerlink" title="九、真实案例型段落：一次“报告看起来很红”的回归，真正新增问题并不多"></a>九、真实案例型段落：一次“报告看起来很红”的回归，真正新增问题并不多</h2><h3 id="场景"><a href="#场景" class="headerlink" title="场景"></a>场景</h3><p>某次版本回归结束后，平台报告页一眼看过去失败很多。</p>
+<p>最初的判断是：</p>
+<ul>
+<li>这一版质量不行</li>
+<li>发布要先停</li>
+</ul>
+<p>但研发和测试同时都觉得不对，因为现场感知并没有这么糟。</p>
+<h3 id="执行"><a href="#执行" class="headerlink" title="执行"></a>执行</h3><p>于是现场没有直接盯总通过率，而是先做了 4 组拆分：</p>
+<ul>
+<li>把失败按新增失败和连续失败拆开</li>
+<li>把失败按环境问题、已知缺陷、业务缺陷拆标签</li>
+<li>查失败 case 的证据链是否完整</li>
+<li>对照上一轮同分支报告看变动点</li>
+</ul>
+<h3 id="现象"><a href="#现象" class="headerlink" title="现象"></a>现象</h3><p>拆完以后发现：</p>
+<ul>
+<li>总失败数确实多</li>
+<li>但大部分都是历史已知问题</li>
+<li>还有一部分是同一个环境波动引起的批量假失败</li>
+</ul>
+<p>真正新增、且影响主流程的失败只有 3 个。</p>
+<h3 id="排查"><a href="#排查" class="headerlink" title="排查"></a>排查</h3><p>继续看失败证据，发现平台原先的报告页有两个明显缺陷：</p>
+<ul>
+<li>只看总失败数，不区分新增还是延续</li>
+<li>报告虽然挂了附件，但没有做结构化归因</li>
+</ul>
+<p>这导致所有失败被平铺到一起，视觉上很吓人，但决策价值很低。</p>
+<h3 id="修复"><a href="#修复" class="headerlink" title="修复"></a>修复</h3><p>最后做了 4 个动作：</p>
+<ul>
+<li>报告首页增加“新增失败”“连续失败”“环境性失败”分组</li>
+<li>用例结果支持继承历史失败标签</li>
+<li>报告页补最近三次结果对比</li>
+<li>结论区增加“建议拦截&#x2F;建议放行但跟踪&#x2F;建议忽略”三级判断</li>
+</ul>
+<p>修完之后，同样一轮回归，团队能更快识别真正要阻断发布的风险。</p>
+<h2 id="十、测试平台报告系统的一个判断标准"><a href="#十、测试平台报告系统的一个判断标准" class="headerlink" title="十、测试平台报告系统的一个判断标准"></a>十、测试平台报告系统的一个判断标准</h2><p>判断一个平台报告系统做得成不成熟，通常不会先看：</p>
+<ul>
+<li>页面好不好看</li>
+<li>图表是不是很多</li>
+</ul>
+<p>更看下面几件事：</p>
+<ul>
+<li>它能不能还原单次执行现场</li>
+<li>它能不能把证据收成结构化资产</li>
+<li>它能不能做历史比较和新增失败识别</li>
+<li>它能不能把结果翻译成风险判断</li>
+</ul>
+<p>如果这些做不到，所谓报告系统本质上还是：</p>
+<p><strong>一个结果列表页。</strong></p>
+<p>真正成熟的测试平台报告系统，不只是告诉你“这轮有多少红”，而是：</p>
+<p><strong>告诉你哪些红值得管、为什么会红、下一步该怎么判断和处理。</strong></p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0/" rel="tag"># 测试平台</a>
+              <a href="/tags/%E5%B7%A5%E7%A8%8B%E5%8C%96/" rel="tag"># 工程化</a>
+              <a href="/tags/%E6%B5%8B%E8%AF%95%E6%8A%A5%E5%91%8A/" rel="tag"># 测试报告</a>
+              <a href="/tags/%E5%AE%9E%E6%88%98/" rel="tag"># 实战</a>
+              <a href="/tags/%E8%AF%81%E6%8D%AE%E7%95%99%E5%AD%98/" rel="tag"># 证据留存</a>
+              <a href="/tags/%E6%9E%B6%E6%9E%84%E8%AE%BE%E8%AE%A1/" rel="tag"># 架构设计</a>
+              <a href="/tags/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E5%BC%80%E5%8F%91/" rel="tag"># 测试平台开发</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2021/08/12/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-06-%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E7%9A%84%E7%8E%AF%E5%A2%83%E7%AE%A1%E7%90%86%E8%AE%BE%E8%AE%A1/" rel="prev" title="测试平台-06-测试平台的环境管理设计">
+                  <i class="fa fa-angle-left"></i> 测试平台-06-测试平台的环境管理设计
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2021/08/26/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-08-%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E5%A6%82%E4%BD%95%E6%8E%A5%E5%85%A5Jenkins%E4%B8%8E%E5%91%8A%E8%AD%A6/" rel="next" title="测试平台-08-测试平台如何接入Jenkins与告警">
+                  测试平台-08-测试平台如何接入Jenkins与告警 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

@@ -1,0 +1,1162 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="围绕一个接口日志聚合器，把 Go 里的数组、切片、map 放进真实代码里讲清楚：谁是真正的底层存储，谁只是视图，谁是哈希索引；为什么传参、append、共享底层数组、map 写入和并发访问总让人踩坑。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Go：数组、切片、map 到底是什么关系，为什么这么容易踩坑">
+<meta property="og:url" content="https://paynewinnt.github.io/2018/05/02/Go-03-Go%E7%9A%84%E6%95%B0%E7%BB%84%E5%88%87%E7%89%87map%E5%88%B0%E5%BA%95%E6%98%AF%E4%BB%80%E4%B9%88%E5%85%B3%E7%B3%BB%E4%B8%BA%E4%BB%80%E4%B9%88%E8%BF%99%E4%B9%88%E5%AE%B9%E6%98%93%E8%B8%A9%E5%9D%91/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="围绕一个接口日志聚合器，把 Go 里的数组、切片、map 放进真实代码里讲清楚：谁是真正的底层存储，谁只是视图，谁是哈希索引；为什么传参、append、共享底层数组、map 写入和并发访问总让人踩坑。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2018-05-02T12:30:00.000Z">
+<meta property="article:modified_time" content="2018-05-02T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="Go">
+<meta property="article:tag" content="Go专题">
+<meta property="article:tag" content="编程语言">
+<meta property="article:tag" content="切片">
+<meta property="article:tag" content="map">
+<meta property="article:tag" content="数组">
+<meta property="article:tag" content="数据结构">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2018/05/02/Go-03-Go%E7%9A%84%E6%95%B0%E7%BB%84%E5%88%87%E7%89%87map%E5%88%B0%E5%BA%95%E6%98%AF%E4%BB%80%E4%B9%88%E5%85%B3%E7%B3%BB%E4%B8%BA%E4%BB%80%E4%B9%88%E8%BF%99%E4%B9%88%E5%AE%B9%E6%98%93%E8%B8%A9%E5%9D%91/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2018/05/02/Go-03-Go%E7%9A%84%E6%95%B0%E7%BB%84%E5%88%87%E7%89%87map%E5%88%B0%E5%BA%95%E6%98%AF%E4%BB%80%E4%B9%88%E5%85%B3%E7%B3%BB%E4%B8%BA%E4%BB%80%E4%B9%88%E8%BF%99%E4%B9%88%E5%AE%B9%E6%98%93%E8%B8%A9%E5%9D%91/","path":"2018/05/02/Go-03-Go的数组切片map到底是什么关系为什么这么容易踩坑/","title":"Go：数组、切片、map 到底是什么关系，为什么这么容易踩坑"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>Go：数组、切片、map 到底是什么关系，为什么这么容易踩坑 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E8%BF%99%E7%AF%87%E6%96%87%E7%AB%A0%E8%A6%81%E8%A7%A3%E5%86%B3%E4%BB%80%E4%B9%88%E9%97%AE%E9%A2%98"><span class="nav-number">1.</span> <span class="nav-text">一、这篇文章要解决什么问题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E5%85%88%E7%9C%8B%E8%BF%99%E7%AF%87%E6%96%87%E7%AB%A0%E9%87%8C%E7%9A%84%E5%AE%9E%E9%99%85%E5%9C%BA%E6%99%AF"><span class="nav-number">2.</span> <span class="nav-text">二、先看这篇文章里的实际场景</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E5%85%88%E7%BB%99%E4%B8%80%E4%B8%AA%E6%9C%80%E5%B0%8F%E5%8F%AF%E8%BF%90%E8%A1%8C%E7%A4%BA%E4%BE%8B"><span class="nav-number">3.</span> <span class="nav-text">三、先给一个最小可运行示例</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E5%85%88%E6%8A%8A%E4%B8%80%E5%8F%A5%E8%AF%9D%E7%BB%93%E8%AE%BA%E8%AF%B4%E6%B8%85%E6%A5%9A"><span class="nav-number">4.</span> <span class="nav-text">四、先把一句话结论说清楚</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E6%95%B0%E7%BB%84%E5%88%B0%E5%BA%95%E6%98%AF%E4%BB%80%E4%B9%88"><span class="nav-number">5.</span> <span class="nav-text">五、数组到底是什么</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%95%B0%E7%BB%84%E4%B8%8D%E6%98%AF%E2%80%9C%E5%BE%88%E5%B0%91%E7%94%A8%E6%89%80%E4%BB%A5%E5%8F%AF%E4%BB%A5%E4%B8%8D%E5%AD%A6%E2%80%9D"><span class="nav-number">5.1.</span> <span class="nav-text">1. 数组不是“很少用所以可以不学”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%95%B0%E7%BB%84%E6%98%AF%E5%80%BC%E7%B1%BB%E5%9E%8B"><span class="nav-number">5.2.</span> <span class="nav-text">2. 数组是值类型</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%95%B0%E7%BB%84%E9%80%82%E5%90%88%E4%BB%80%E4%B9%88%E5%9C%BA%E6%99%AF"><span class="nav-number">5.3.</span> <span class="nav-text">3. 数组适合什么场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%95%B0%E7%BB%84%E8%BF%98%E8%83%BD%E5%81%9A%E4%BB%80%E4%B9%88%E5%88%87%E7%89%87%E5%81%9A%E4%B8%8D%E4%BA%86%E7%9A%84%E4%BA%8B"><span class="nav-number">5.4.</span> <span class="nav-text">4. 数组还能做什么切片做不了的事</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E5%88%87%E7%89%87%E5%88%B0%E5%BA%95%E6%98%AF%E4%BB%80%E4%B9%88"><span class="nav-number">6.</span> <span class="nav-text">六、切片到底是什么</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%88%87%E7%89%87%E4%B8%8D%E6%98%AF%E6%95%B0%E7%BB%84%EF%BC%8C%E5%8F%AA%E6%98%AF%E2%80%9C%E7%9C%8B%E5%90%91%E6%95%B0%E7%BB%84%E7%9A%84%E4%B8%80%E5%BC%A0%E8%AF%B4%E6%98%8E%E4%B9%A6%E2%80%9D"><span class="nav-number">6.1.</span> <span class="nav-text">1. 切片不是数组，只是“看向数组的一张说明书”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%88%87%E7%89%87%E4%BF%AE%E6%94%B9%E4%B8%BA%E4%BB%80%E4%B9%88%E4%BC%9A%E5%BD%B1%E5%93%8D%E5%8E%9F%E6%95%B0%E7%BB%84"><span class="nav-number">6.2.</span> <span class="nav-text">2. 切片修改为什么会影响原数组</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%B8%A4%E4%B8%AA%E5%88%87%E7%89%87%E4%B8%BA%E4%BB%80%E4%B9%88%E4%BC%9A%E4%BA%92%E7%9B%B8%E5%BD%B1%E5%93%8D"><span class="nav-number">6.3.</span> <span class="nav-text">3. 两个切片为什么会互相影响</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81append-%E4%B8%BA%E4%BB%80%E4%B9%88%E6%98%AF%E5%88%87%E7%89%87%E6%9C%80%E5%AE%B9%E6%98%93%E8%B8%A9%E5%9D%91%E7%9A%84%E5%9C%B0%E6%96%B9"><span class="nav-number">7.</span> <span class="nav-text">七、append 为什么是切片最容易踩坑的地方</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-append-%E4%B8%8D%E6%98%AF%E7%AE%80%E5%8D%95%E5%9C%B0%E2%80%9C%E5%BE%80%E5%90%8E%E5%8A%A0%E4%B8%80%E4%B8%AA%E5%85%83%E7%B4%A0%E2%80%9D"><span class="nav-number">7.1.</span> <span class="nav-text">1. append 不是简单地“往后加一个元素”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%87%BD%E6%95%B0%E9%87%8C-append%EF%BC%8C%E5%A4%96%E9%9D%A2%E4%B8%BA%E4%BB%80%E4%B9%88%E6%9C%89%E6%97%B6%E7%9C%8B%E5%BE%97%E5%88%B0%EF%BC%8C%E6%9C%89%E6%97%B6%E7%9C%8B%E4%B8%8D%E5%88%B0"><span class="nav-number">7.2.</span> <span class="nav-text">2. 函数里 append，外面为什么有时看得到，有时看不到</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-append-%E8%BF%98%E4%BC%9A%E5%B8%A6%E6%9D%A5%E2%80%9C%E9%9A%90%E8%97%8F%E5%85%B1%E4%BA%AB%E2%80%9D"><span class="nav-number">7.3.</span> <span class="nav-text">3. append 还会带来“隐藏共享”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E9%A1%B9%E7%9B%AE%E9%87%8C%E6%80%8E%E4%B9%88%E9%99%8D%E4%BD%8E%E8%BF%99%E7%B1%BB%E9%A3%8E%E9%99%A9"><span class="nav-number">7.4.</span> <span class="nav-text">4. 项目里怎么降低这类风险</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E5%88%87%E7%89%87%E8%BF%98%E6%9C%89%E4%B8%A4%E4%B8%AA%E9%AB%98%E9%A2%91%E5%9D%91%EF%BC%9A%E5%86%85%E5%AD%98%E4%BF%9D%E7%95%99%E5%92%8C-range"><span class="nav-number">8.</span> <span class="nav-text">八、切片还有两个高频坑：内存保留和 range</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%B0%8F%E5%88%87%E7%89%87%E5%8F%AF%E8%83%BD%E6%8A%8A%E5%A4%A7%E6%95%B0%E7%BB%84%E4%B8%80%E7%9B%B4%E7%95%99%E5%9C%A8%E5%86%85%E5%AD%98%E9%87%8C"><span class="nav-number">8.1.</span> <span class="nav-text">1. 小切片可能把大数组一直留在内存里</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-range-%E6%8B%BF%E5%88%B0%E7%9A%84%E6%98%AF%E5%85%83%E7%B4%A0%E5%89%AF%E6%9C%AC"><span class="nav-number">8.2.</span> <span class="nav-text">2. range 拿到的是元素副本</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81map-%E5%88%B0%E5%BA%95%E6%98%AF%E4%BB%80%E4%B9%88"><span class="nav-number">9.</span> <span class="nav-text">九、map 到底是什么</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-map-%E4%B8%8D%E6%98%AF%E6%95%B0%E7%BB%84%EF%BC%8C%E4%B9%9F%E4%B8%8D%E6%98%AF%E5%88%87%E7%89%87%E7%9A%84%E5%8D%87%E7%BA%A7%E7%89%88"><span class="nav-number">9.1.</span> <span class="nav-text">1. map 不是数组，也不是切片的升级版</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-nil-map-%E5%92%8C-nil-slice-%E8%A1%8C%E4%B8%BA%E5%AE%8C%E5%85%A8%E4%B8%8D%E5%90%8C"><span class="nav-number">9.2.</span> <span class="nav-text">2. nil map 和 nil slice 行为完全不同</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-map-%E6%9F%A5%E4%B8%8D%E5%88%B0%E9%94%AE%E4%B8%BA%E4%BB%80%E4%B9%88%E4%B8%8D%E6%8A%A5%E9%94%99"><span class="nav-number">9.3.</span> <span class="nav-text">3. map 查不到键为什么不报错</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-map-%E9%81%8D%E5%8E%86%E9%A1%BA%E5%BA%8F%E4%B8%BA%E4%BB%80%E4%B9%88%E4%B8%8D%E8%83%BD%E4%BE%9D%E8%B5%96"><span class="nav-number">9.4.</span> <span class="nav-text">4. map 遍历顺序为什么不能依赖</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E4%B8%BA%E4%BB%80%E4%B9%88-m-key-Field-value-%E4%B8%8D%E8%83%BD%E7%9B%B4%E6%8E%A5%E5%86%99"><span class="nav-number">9.5.</span> <span class="nav-text">5. 为什么 m[key].Field &#x3D; value 不能直接写</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E6%95%B0%E7%BB%84%E3%80%81%E5%88%87%E7%89%87%E3%80%81map-%E7%9A%84%E7%9C%9F%E6%AD%A3%E5%85%B3%E7%B3%BB%E5%88%B0%E5%BA%95%E6%98%AF%E4%BB%80%E4%B9%88"><span class="nav-number">10.</span> <span class="nav-text">十、数组、切片、map 的真正关系到底是什么</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%95%B0%E7%BB%84%E5%92%8C%E5%88%87%E7%89%87%E6%98%AF%E2%80%9C%E5%AD%98%E5%82%A8%E5%92%8C%E8%A7%86%E5%9B%BE%E2%80%9D%E7%9A%84%E5%85%B3%E7%B3%BB"><span class="nav-number">10.1.</span> <span class="nav-text">1. 数组和切片是“存储和视图”的关系</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-map-%E5%92%8C%E6%95%B0%E7%BB%84%E3%80%81%E5%88%87%E7%89%87%E4%B8%8D%E6%98%AF%E7%88%B6%E5%AD%90%E5%85%B3%E7%B3%BB%EF%BC%8C%E8%80%8C%E6%98%AF%E2%80%9C%E5%B9%B6%E5%88%97%E5%B7%A5%E5%85%B7%E2%80%9D"><span class="nav-number">10.2.</span> <span class="nav-text">2. map 和数组、切片不是父子关系，而是“并列工具”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%88%87%E7%89%87%E5%92%8C-map-%E9%83%BD%E8%A1%A8%E7%8E%B0%E5%87%BA%E2%80%9C%E5%83%8F%E5%BC%95%E7%94%A8%E2%80%9D%E7%9A%84%E6%95%88%E6%9E%9C%EF%BC%8C%E4%BD%86%E5%8E%9F%E5%9B%A0%E4%B8%8D%E4%B8%80%E6%A0%B7"><span class="nav-number">10.3.</span> <span class="nav-text">3. 切片和 map 都表现出“像引用”的效果，但原因不一样</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-map-%E7%9A%84%E5%80%BC%E5%A6%82%E6%9E%9C%E6%98%AF%E5%88%87%E7%89%87%EF%BC%8C%E4%BC%9A%E5%8F%A0%E5%8A%A0%E4%B8%A4%E5%B1%82%E5%9D%91"><span class="nav-number">10.4.</span> <span class="nav-text">4. map 的值如果是切片，会叠加两层坑</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E6%8A%8A%E5%AE%83%E4%BB%AC%E6%94%BE%E8%BF%9B%E4%B8%80%E4%B8%AA%E7%9C%9F%E5%AE%9E%E7%9A%84%E5%B0%8F%E9%A1%B9%E7%9B%AE%E5%9C%BA%E6%99%AF"><span class="nav-number">11.</span> <span class="nav-text">十一、把它们放进一个真实的小项目场景</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E8%BF%99%E4%B8%AA%E5%B0%8F%E9%A1%B9%E7%9B%AE%E9%87%8C%E6%9C%80%E5%AE%B9%E6%98%93%E5%86%99%E9%94%99%E7%9A%84%E5%9C%B0%E6%96%B9"><span class="nav-number">12.</span> <span class="nav-text">十二、这个小项目里最容易写错的地方</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E9%94%99%E8%AF%AF%E4%B8%80%EF%BC%9A%E5%BF%98%E4%BA%86%E6%8A%8A-append-%E5%90%8E%E7%9A%84%E6%96%B0%E5%88%87%E7%89%87%E5%86%99%E5%9B%9E-map"><span class="nav-number">12.1.</span> <span class="nav-text">1. 错误一：忘了把 append 后的新切片写回 map</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E9%94%99%E8%AF%AF%E4%BA%8C%EF%BC%9A%E6%8A%8A%E6%95%B0%E7%BB%84%E5%BD%93%E5%88%87%E7%89%87%E4%BC%A0%EF%BC%8C%E7%BB%93%E6%9E%9C%E5%87%BD%E6%95%B0%E9%87%8C%E6%94%B9%E4%B8%8D%E5%8A%A8"><span class="nav-number">12.2.</span> <span class="nav-text">2. 错误二：把数组当切片传，结果函数里改不动</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E9%94%99%E8%AF%AF%E4%B8%89%EF%BC%9A%E6%8A%8A%E5%86%85%E9%83%A8%E5%88%87%E7%89%87%E7%9B%B4%E6%8E%A5%E6%9A%B4%E9%9C%B2%E5%87%BA%E5%8E%BB"><span class="nav-number">12.3.</span> <span class="nav-text">3. 错误三：把内部切片直接暴露出去</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E9%94%99%E8%AF%AF%E5%9B%9B%EF%BC%9A%E8%BE%93%E5%87%BA%E6%97%B6%E7%9B%B4%E6%8E%A5-range-map%EF%BC%8C%E6%B5%8B%E8%AF%95%E5%A4%A9%E5%A4%A9%E9%A3%98"><span class="nav-number">12.4.</span> <span class="nav-text">4. 错误四：输出时直接 range map，测试天天飘</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E9%94%99%E8%AF%AF%E4%BA%94%EF%BC%9A%E5%B9%B6%E5%8F%91%E5%8D%8F%E7%A8%8B%E9%87%8C%E7%9B%B4%E6%8E%A5%E8%AF%BB%E5%86%99-map"><span class="nav-number">12.5.</span> <span class="nav-text">5. 错误五：并发协程里直接读写 map</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81%E7%BB%99%E8%BF%99%E4%B8%AA%E5%B0%8F%E9%A1%B9%E7%9B%AE%E8%A1%A5%E6%9C%80%E5%B0%8F%E6%B5%8B%E8%AF%95"><span class="nav-number">13.</span> <span class="nav-text">十三、给这个小项目补最小测试</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81%E6%80%8E%E4%B9%88%E9%AA%8C%E8%AF%81%E8%BF%99%E6%AE%B5%E4%BB%A3%E7%A0%81"><span class="nav-number">14.</span> <span class="nav-text">十四、怎么验证这段代码</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%94%E3%80%81%E7%BA%BF%E4%B8%8A%E6%8E%92%E6%9F%A5%E6%97%B6%E6%80%8E%E4%B9%88%E5%BF%AB%E9%80%9F%E5%88%A4%E6%96%AD%E6%98%AF%E6%95%B0%E7%BB%84%E5%9D%91%E3%80%81%E5%88%87%E7%89%87%E5%9D%91%E8%BF%98%E6%98%AF-map-%E5%9D%91"><span class="nav-number">15.</span> <span class="nav-text">十五、线上排查时怎么快速判断是数组坑、切片坑还是 map 坑</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%8E%B0%E8%B1%A1%EF%BC%9A%E5%87%BD%E6%95%B0%E9%87%8C%E6%94%B9%E4%BA%86%EF%BC%8C%E5%87%BD%E6%95%B0%E5%A4%96%E6%B2%A1%E5%8F%98"><span class="nav-number">15.1.</span> <span class="nav-text">1. 现象：函数里改了，函数外没变</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E7%8E%B0%E8%B1%A1%EF%BC%9A%E6%94%B9%E4%BA%86%E4%B8%80%E4%B8%AA%E5%88%87%E7%89%87%EF%BC%8C%E5%8F%A6%E4%B8%80%E4%B8%AA%E7%BB%93%E6%9E%9C%E4%B9%9F%E5%8F%98%E4%BA%86"><span class="nav-number">15.2.</span> <span class="nav-text">2. 现象：改了一个切片，另一个结果也变了</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%8E%B0%E8%B1%A1%EF%BC%9A%E6%98%8E%E6%98%8E%E6%9C%89-map%EF%BC%8C%E7%BB%93%E6%9E%9C%E5%86%99%E5%85%A5%E7%9B%B4%E6%8E%A5-panic"><span class="nav-number">15.3.</span> <span class="nav-text">3. 现象：明明有 map，结果写入直接 panic</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E7%8E%B0%E8%B1%A1%EF%BC%9A%E6%B5%8B%E8%AF%95%E5%81%B6%E5%B0%94%E8%BF%87%E3%80%81%E5%81%B6%E5%B0%94%E4%B8%8D%E8%BF%87"><span class="nav-number">15.4.</span> <span class="nav-text">4. 现象：测试偶尔过、偶尔不过</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E7%8E%B0%E8%B1%A1%EF%BC%9A%E5%86%85%E5%AD%98%E5%8D%A0%E7%94%A8%E5%BC%82%E5%B8%B8%E9%AB%98"><span class="nav-number">15.5.</span> <span class="nav-text">5. 现象：内存占用异常高</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AD%E3%80%81%E8%BF%99%E4%BA%9B%E7%BB%93%E6%9E%84%E5%90%84%E8%87%AA%E7%9A%84%E4%BD%BF%E7%94%A8%E8%BE%B9%E7%95%8C%E6%98%AF%E4%BB%80%E4%B9%88"><span class="nav-number">16.</span> <span class="nav-text">十六、这些结构各自的使用边界是什么</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E4%BC%98%E5%85%88%E7%94%A8%E6%95%B0%E7%BB%84"><span class="nav-number">16.1.</span> <span class="nav-text">1. 什么时候优先用数组</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E4%BC%98%E5%85%88%E7%94%A8%E5%88%87%E7%89%87"><span class="nav-number">16.2.</span> <span class="nav-text">2. 什么时候优先用切片</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E4%BC%98%E5%85%88%E7%94%A8-map"><span class="nav-number">16.3.</span> <span class="nav-text">3. 什么时候优先用 map</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E4%B8%89%E8%80%85%E8%A6%81%E7%BB%84%E5%90%88%E4%BD%BF%E7%94%A8"><span class="nav-number">16.4.</span> <span class="nav-text">4. 什么时候三者要组合使用</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%83%E3%80%81%E7%BB%83%E4%B9%A0%E9%A2%98"><span class="nav-number">17.</span> <span class="nav-text">十七、练习题</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BB%83%E4%B9%A0-1"><span class="nav-number">17.1.</span> <span class="nav-text">练习 1</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BB%83%E4%B9%A0-2"><span class="nav-number">17.2.</span> <span class="nav-text">练习 2</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BB%83%E4%B9%A0-3"><span class="nav-number">17.3.</span> <span class="nav-text">练习 3</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BB%83%E4%B9%A0-4"><span class="nav-number">17.4.</span> <span class="nav-text">练习 4</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AB%E3%80%81%E7%BB%93%E8%AE%BA"><span class="nav-number">18.</span> <span class="nav-text">十八、结论</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2018/05/02/Go-03-Go%E7%9A%84%E6%95%B0%E7%BB%84%E5%88%87%E7%89%87map%E5%88%B0%E5%BA%95%E6%98%AF%E4%BB%80%E4%B9%88%E5%85%B3%E7%B3%BB%E4%B8%BA%E4%BB%80%E4%B9%88%E8%BF%99%E4%B9%88%E5%AE%B9%E6%98%93%E8%B8%A9%E5%9D%91/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="Go：数组、切片、map 到底是什么关系，为什么这么容易踩坑 | 大道至简">
+      <meta itemprop="description" content="围绕一个接口日志聚合器，把 Go 里的数组、切片、map 放进真实代码里讲清楚：谁是真正的底层存储，谁只是视图，谁是哈希索引；为什么传参、append、共享底层数组、map 写入和并发访问总让人踩坑。">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Go：数组、切片、map 到底是什么关系，为什么这么容易踩坑
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2018-05-02 20:30:00" itemprop="dateCreated datePublished" datetime="2018-05-02T20:30:00+08:00">2018-05-02</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>7k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>26 分钟</span>
+    </span>
+</div>
+
+            <div class="post-description">围绕一个接口日志聚合器，把 Go 里的数组、切片、map 放进真实代码里讲清楚：谁是真正的底层存储，谁只是视图，谁是哈希索引；为什么传参、append、共享底层数组、map 写入和并发访问总让人踩坑。</div>
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>学 Go 时，数组、切片、map 都是很早碰到的内容，但也是最容易留下模糊印象的内容。</p>
+<p>最典型的状态就是“都写过，但一进项目就开始乱”：</p>
+<ul>
+<li>以为切片和数组只是语法写法不同，结果传参后数据莫名其妙被改了</li>
+<li>以为 <code>append</code> 一定会改到原切片，结果函数里追加完，外面看不到</li>
+<li>以为两个切片互不影响，结果改了一个，另一个也跟着变</li>
+<li>以为 <code>map</code> 像 Python 字典那样随便写，结果遇到 <code>assignment to entry in nil map</code></li>
+<li>以为 <code>for range map</code> 顺序稳定，结果线上统计输出顺序每次都不一样</li>
+<li>以为 <code>m[key].Field = value</code> 可以直接改，结果编译不过</li>
+<li>以为 <code>slice</code> 和 <code>map</code> 都是“引用类型”，所以行为完全一样，结果排查半天发现根本不是一回事</li>
+</ul>
+<p>这篇文章不按语法手册背定义，而是围绕一个真实的小场景来讲：<strong>写一个接口日志聚合器</strong>。</p>
+<p>这个聚合器要做几件事：</p>
+<ol>
+<li>读取一批接口调用记录</li>
+<li>统计每个接口的调用次数</li>
+<li>记录每个接口出现过哪些状态码</li>
+<li>保存最近 3 次严重错误状态码，方便快速排障</li>
+<li>给这段逻辑补最小测试，确保后面改代码不把底层行为改坏</li>
+</ol>
+<p>这个场景不大，但足够把数组、切片、map 的关系和坑点一次串起来。</p>
+<h2 id="一、这篇文章要解决什么问题"><a href="#一、这篇文章要解决什么问题" class="headerlink" title="一、这篇文章要解决什么问题"></a>一、这篇文章要解决什么问题</h2><p>读完这一篇，应该能独立处理下面这些问题：</p>
+<ul>
+<li>说清楚数组、切片、map 各自到底是什么</li>
+<li>说清楚数组和切片的真正关系，而不是停留在“切片更常用”</li>
+<li>知道为什么切片修改会互相影响，<code>append</code> 又为什么有时影响、有时不影响</li>
+<li>知道 <code>map</code> 为什么不能直接改元素字段、为什么遍历顺序不能依赖</li>
+<li>知道 <code>nil slice</code> 和 <code>nil map</code> 的行为差异</li>
+<li>能把数组、切片、map 组合到一个实际 Go 小项目里</li>
+<li>能给这类代码补最小测试，而不是只靠打印输出猜</li>
+</ul>
+<p>如果这些动作都能独立完成，后面再写接口工具、任务执行器、测试平台后端、数据处理服务，代码会稳很多。</p>
+<h2 id="二、先看这篇文章里的实际场景"><a href="#二、先看这篇文章里的实际场景" class="headerlink" title="二、先看这篇文章里的实际场景"></a>二、先看这篇文章里的实际场景</h2><p>假设现在有一批接口访问记录，每一条包含：</p>
+<ul>
+<li>路由</li>
+<li>状态码</li>
+<li>耗时</li>
+</ul>
+<p>原始输入可以先简化成一组字符串：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">/login,200,18</span><br><span class="line">/login,500,31</span><br><span class="line">/orders,200,25</span><br><span class="line">/orders,200,21</span><br><span class="line">/orders,502,40</span><br></pre></td></tr></table></figure>
+
+<p>目标是输出一份最小聚合结果：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">接口调用次数:</span><br><span class="line">/login -&gt; 2</span><br><span class="line">/orders -&gt; 3</span><br><span class="line"></span><br><span class="line">接口状态码明细:</span><br><span class="line">/login -&gt; [200 500]</span><br><span class="line">/orders -&gt; [200 200 502]</span><br><span class="line"></span><br><span class="line">最近 3 次严重错误:</span><br><span class="line">[500 502 0]</span><br></pre></td></tr></table></figure>
+
+<p>这个需求里三种结构的角色非常清晰：</p>
+<ul>
+<li><strong>数组</strong>：保存固定长度的“最近 3 次严重错误”</li>
+<li><strong>切片</strong>：承接一批动态长度的日志记录和解析结果</li>
+<li><strong>map</strong>：按路由建立统计索引</li>
+</ul>
+<p>后面所有概念都围绕这条链展开。</p>
+<h2 id="三、先给一个最小可运行示例"><a href="#三、先给一个最小可运行示例" class="headerlink" title="三、先给一个最小可运行示例"></a>三、先给一个最小可运行示例</h2><p>先不要急着讲底层，先把最小版本跑通。</p>
+<p>新建 <code>main.go</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">	<span class="string">&quot;fmt&quot;</span></span><br><span class="line">	<span class="string">&quot;strconv&quot;</span></span><br><span class="line">	<span class="string">&quot;strings&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	lines := []<span class="type">string</span>&#123;</span><br><span class="line">		<span class="string">&quot;/login,200,18&quot;</span>,</span><br><span class="line">		<span class="string">&quot;/login,500,31&quot;</span>,</span><br><span class="line">		<span class="string">&quot;/orders,200,25&quot;</span>,</span><br><span class="line">		<span class="string">&quot;/orders,502,40&quot;</span>,</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	countByRoute := <span class="built_in">make</span>(<span class="keyword">map</span>[<span class="type">string</span>]<span class="type">int</span>)</span><br><span class="line">	statusByRoute := <span class="built_in">make</span>(<span class="keyword">map</span>[<span class="type">string</span>][]<span class="type">int</span>)</span><br><span class="line">	<span class="keyword">var</span> last3Severe [<span class="number">3</span>]<span class="type">int</span></span><br><span class="line">	severeIndex := <span class="number">0</span></span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> _, line := <span class="keyword">range</span> lines &#123;</span><br><span class="line">		parts := strings.Split(line, <span class="string">&quot;,&quot;</span>)</span><br><span class="line">		<span class="keyword">if</span> <span class="built_in">len</span>(parts) != <span class="number">3</span> &#123;</span><br><span class="line">			<span class="built_in">panic</span>(<span class="string">&quot;bad line: &quot;</span> + line)</span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		route := parts[<span class="number">0</span>]</span><br><span class="line">		status, err := strconv.Atoi(parts[<span class="number">1</span>])</span><br><span class="line">		<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">			<span class="built_in">panic</span>(err)</span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		countByRoute[route]++</span><br><span class="line">		statusByRoute[route] = <span class="built_in">append</span>(statusByRoute[route], status)</span><br><span class="line"></span><br><span class="line">		<span class="keyword">if</span> status &gt;= <span class="number">500</span> &#123;</span><br><span class="line">			last3Severe[severeIndex%<span class="built_in">len</span>(last3Severe)] = status</span><br><span class="line">			severeIndex++</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	fmt.Println(countByRoute)</span><br><span class="line">	fmt.Println(statusByRoute)</span><br><span class="line">	fmt.Println(last3Severe)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这一段代码先不要纠结是否最优，先注意它已经把三种结构同时带出来了：</p>
+<ul>
+<li><code>lines</code> 是切片，因为输入条数不固定</li>
+<li><code>statusByRoute</code> 是 <code>map[string][]int</code>，说明 map 的值本身还可以是切片</li>
+<li><code>last3Severe</code> 是数组，因为长度固定，而且就是要表达“固定 3 个槽位”</li>
+</ul>
+<p>后面会把这里面最容易误解的部分一层一层拆开。</p>
+<h2 id="四、先把一句话结论说清楚"><a href="#四、先把一句话结论说清楚" class="headerlink" title="四、先把一句话结论说清楚"></a>四、先把一句话结论说清楚</h2><p>如果只记一句话，先记这个：</p>
+<ul>
+<li><strong>数组是值类型的固定长度连续存储</strong></li>
+<li><strong>切片是对底层数组的一层视图描述</strong></li>
+<li><strong>map 是哈希表结构，不是切片，也不是数组的别名</strong></li>
+</ul>
+<p>也就是说：</p>
+<ol>
+<li>切片和数组关系很近，因为切片底层依附数组</li>
+<li>map 和数组、切片不是同一种结构，但在项目里经常和它们组合使用</li>
+<li>真正让人反复踩坑的，不是语法，而是<strong>底层共享、复制、扩容、寻址和可变性</strong></li>
+</ol>
+<p>下面开始拆。</p>
+<h2 id="五、数组到底是什么"><a href="#五、数组到底是什么" class="headerlink" title="五、数组到底是什么"></a>五、数组到底是什么</h2><h3 id="1-数组不是“很少用所以可以不学”"><a href="#1-数组不是“很少用所以可以不学”" class="headerlink" title="1. 数组不是“很少用所以可以不学”"></a>1. 数组不是“很少用所以可以不学”</h3><p>学切片前直接跳过数组时，往往会觉得反正日常都用切片。</p>
+<p>这会埋下两个问题：</p>
+<ul>
+<li>不知道切片到底在切什么</li>
+<li>看不懂为什么数组传参和切片传参行为完全不同</li>
+</ul>
+<p>数组的定义非常明确：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> codes [<span class="number">3</span>]<span class="type">int</span></span><br></pre></td></tr></table></figure>
+
+<p>这里的 <code>[3]int</code> 不是“元素类型是 int 的容器”这么简单，它还把<strong>长度 3</strong>写进了类型本身。</p>
+<p>所以这两个类型不是一个东西：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">[<span class="number">3</span>]<span class="type">int</span></span><br><span class="line">[<span class="number">4</span>]<span class="type">int</span></span><br></pre></td></tr></table></figure>
+
+<p>长度不同，类型就不同。</p>
+<h3 id="2-数组是值类型"><a href="#2-数组是值类型" class="headerlink" title="2. 数组是值类型"></a>2. 数组是值类型</h3><p>这是第一个必须牢牢记住的点。</p>
+<p>看例子：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> <span class="string">&quot;fmt&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	a := [<span class="number">3</span>]<span class="type">int</span>&#123;<span class="number">200</span>, <span class="number">500</span>, <span class="number">200</span>&#125;</span><br><span class="line">	b := a</span><br><span class="line">	b[<span class="number">1</span>] = <span class="number">404</span></span><br><span class="line"></span><br><span class="line">	fmt.Println(<span class="string">&quot;a:&quot;</span>, a)</span><br><span class="line">	fmt.Println(<span class="string">&quot;b:&quot;</span>, b)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">a: [200 500 200]</span><br><span class="line">b: [200 404 200]</span><br></pre></td></tr></table></figure>
+
+<p><code>b := a</code> 这里发生的是整份复制。</p>
+<p>这和切片完全不同。<br>所以只要参数类型是数组：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">reset</span><span class="params">(arr [3]<span class="type">int</span>)</span></span> &#123;</span><br><span class="line">	arr[<span class="number">0</span>] = <span class="number">0</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>函数里改的是副本，不是外面的原值。</p>
+<h3 id="3-数组适合什么场景"><a href="#3-数组适合什么场景" class="headerlink" title="3. 数组适合什么场景"></a>3. 数组适合什么场景</h3><p>数组不是要被完全淘汰，而是适合这些场景：</p>
+<ul>
+<li>长度天然固定</li>
+<li>就是想表达“固定 N 个槽位”</li>
+<li>希望值语义明确，不想共享底层数据</li>
+<li>需要可比较</li>
+</ul>
+<p>比如：</p>
+<ul>
+<li>最近 7 天数据窗口</li>
+<li>固定 16 字节标识</li>
+<li>3 次重试结果</li>
+<li>4 个象限统计桶</li>
+</ul>
+<p>在这类地方，数组反而比切片更清晰。</p>
+<h3 id="4-数组还能做什么切片做不了的事"><a href="#4-数组还能做什么切片做不了的事" class="headerlink" title="4. 数组还能做什么切片做不了的事"></a>4. 数组还能做什么切片做不了的事</h3><p>数组在元素可比较时，本身也是可比较的：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">fmt.Println([<span class="number">2</span>]<span class="type">int</span>&#123;<span class="number">1</span>, <span class="number">2</span>&#125; == [<span class="number">2</span>]<span class="type">int</span>&#123;<span class="number">1</span>, <span class="number">2</span>&#125;)</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">true</span><br></pre></td></tr></table></figure>
+
+<p>而切片不行，map 也不行。</p>
+<p>这也是为什么有些场景会拿数组当 map 的键，比如固定长度摘要值：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">cache := <span class="keyword">map</span>[[<span class="number">2</span>]<span class="type">int</span>]<span class="type">string</span>&#123;</span><br><span class="line">	[<span class="number">2</span>]<span class="type">int</span>&#123;<span class="number">2</span>, <span class="number">0</span>&#125;: <span class="string">&quot;success&quot;</span>,</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这个能力来自数组是值语义、固定长度、可比较。</p>
+<h2 id="六、切片到底是什么"><a href="#六、切片到底是什么" class="headerlink" title="六、切片到底是什么"></a>六、切片到底是什么</h2><h3 id="1-切片不是数组，只是“看向数组的一张说明书”"><a href="#1-切片不是数组，只是“看向数组的一张说明书”" class="headerlink" title="1. 切片不是数组，只是“看向数组的一张说明书”"></a>1. 切片不是数组，只是“看向数组的一张说明书”</h3><p>切片最容易被误解成“动态数组”。<br>这个说法不算完全错，但太容易让人忽略关键细节。</p>
+<p>更准确一点，切片可以理解成一张小说明书，里面至少记录三件事：</p>
+<ul>
+<li>指向底层数组某个位置</li>
+<li>当前长度 <code>len</code></li>
+<li>当前容量 <code>cap</code></li>
+</ul>
+<p>先看例子：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">arr := [<span class="number">5</span>]<span class="type">int</span>&#123;<span class="number">10</span>, <span class="number">20</span>, <span class="number">30</span>, <span class="number">40</span>, <span class="number">50</span>&#125;</span><br><span class="line">part := arr[<span class="number">1</span>:<span class="number">4</span>]</span><br><span class="line"></span><br><span class="line">fmt.Println(part)      <span class="comment">// [20 30 40]</span></span><br><span class="line">fmt.Println(<span class="built_in">len</span>(part)) <span class="comment">// 3</span></span><br><span class="line">fmt.Println(<span class="built_in">cap</span>(part)) <span class="comment">// 4</span></span><br></pre></td></tr></table></figure>
+
+<p>这里的 <code>part</code> 本身不是数组数据本体，它只是指向了 <code>arr</code> 里的一个区间。</p>
+<h3 id="2-切片修改为什么会影响原数组"><a href="#2-切片修改为什么会影响原数组" class="headerlink" title="2. 切片修改为什么会影响原数组"></a>2. 切片修改为什么会影响原数组</h3><p>看这个例子：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> <span class="string">&quot;fmt&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	arr := [<span class="number">4</span>]<span class="type">int</span>&#123;<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>&#125;</span><br><span class="line">	s := arr[<span class="number">1</span>:<span class="number">3</span>]</span><br><span class="line"></span><br><span class="line">	s[<span class="number">0</span>] = <span class="number">99</span></span><br><span class="line"></span><br><span class="line">	fmt.Println(<span class="string">&quot;arr:&quot;</span>, arr)</span><br><span class="line">	fmt.Println(<span class="string">&quot;s:&quot;</span>, s)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">arr: [1 99 3 4]</span><br><span class="line">s: [99 3]</span><br></pre></td></tr></table></figure>
+
+<p>原因很简单：</p>
+<ul>
+<li><code>s</code> 指向的是 <code>arr[1]</code> 开始的那段底层存储</li>
+<li><code>s[0]</code> 实际就是 <code>arr[1]</code></li>
+</ul>
+<p>所以切片修改元素，本质上是在改它所引用的底层数组。</p>
+<h3 id="3-两个切片为什么会互相影响"><a href="#3-两个切片为什么会互相影响" class="headerlink" title="3. 两个切片为什么会互相影响"></a>3. 两个切片为什么会互相影响</h3><p>再看一个更常见的坑：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> <span class="string">&quot;fmt&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	base := []<span class="type">int</span>&#123;<span class="number">10</span>, <span class="number">20</span>, <span class="number">30</span>, <span class="number">40</span>&#125;</span><br><span class="line">	left := base[:<span class="number">2</span>]</span><br><span class="line">	right := base[<span class="number">1</span>:<span class="number">3</span>]</span><br><span class="line"></span><br><span class="line">	left[<span class="number">1</span>] = <span class="number">99</span></span><br><span class="line"></span><br><span class="line">	fmt.Println(<span class="string">&quot;base:&quot;</span>, base)</span><br><span class="line">	fmt.Println(<span class="string">&quot;left:&quot;</span>, left)</span><br><span class="line">	fmt.Println(<span class="string">&quot;right:&quot;</span>, right)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">base: [10 99 30 40]</span><br><span class="line">left: [10 99]</span><br><span class="line">right: [99 30]</span><br></pre></td></tr></table></figure>
+
+<p>这不是切片之间有魔法关系，而是它们都落在同一块底层数组上，发生了重叠。</p>
+<p>这类问题在项目里尤其高频：</p>
+<ul>
+<li>你切了一段日志窗口出来做清洗</li>
+<li>同事又把原切片拿去复用</li>
+<li>其中一边改值，另一边结果一起变</li>
+</ul>
+<p>如果不理解“切片共享底层数组”这个事实，这类 bug 非常难排查。</p>
+<h2 id="七、append-为什么是切片最容易踩坑的地方"><a href="#七、append-为什么是切片最容易踩坑的地方" class="headerlink" title="七、append 为什么是切片最容易踩坑的地方"></a>七、<code>append</code> 为什么是切片最容易踩坑的地方</h2><h3 id="1-append-不是简单地“往后加一个元素”"><a href="#1-append-不是简单地“往后加一个元素”" class="headerlink" title="1. append 不是简单地“往后加一个元素”"></a>1. <code>append</code> 不是简单地“往后加一个元素”</h3><p><code>append</code> 做的事情取决于当前切片是否还有剩余容量。</p>
+<p>先看第一种情况：<strong>容量够，直接写到原底层数组后面</strong>。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> <span class="string">&quot;fmt&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	arr := [<span class="number">5</span>]<span class="type">int</span>&#123;<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">0</span>, <span class="number">0</span>&#125;</span><br><span class="line">	s := arr[:<span class="number">2</span>]</span><br><span class="line"></span><br><span class="line">	s = <span class="built_in">append</span>(s, <span class="number">9</span>)</span><br><span class="line"></span><br><span class="line">	fmt.Println(<span class="string">&quot;arr:&quot;</span>, arr)</span><br><span class="line">	fmt.Println(<span class="string">&quot;s:&quot;</span>, s)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">arr: [1 2 9 0 0]</span><br><span class="line">s: [1 2 9]</span><br></pre></td></tr></table></figure>
+
+<p>这里 <code>s</code> 还有容量，所以 <code>append</code> 直接改到了原数组。</p>
+<p>再看第二种情况：<strong>容量不够，重新分配新底层数组</strong>。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> <span class="string">&quot;fmt&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	s1 := []<span class="type">int</span>&#123;<span class="number">1</span>, <span class="number">2</span>&#125;</span><br><span class="line">	s2 := s1</span><br><span class="line"></span><br><span class="line">	s1 = <span class="built_in">append</span>(s1, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>)</span><br><span class="line">	s1[<span class="number">0</span>] = <span class="number">99</span></span><br><span class="line"></span><br><span class="line">	fmt.Println(<span class="string">&quot;s1:&quot;</span>, s1)</span><br><span class="line">	fmt.Println(<span class="string">&quot;s2:&quot;</span>, s2)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>一种常见输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">s1: [99 2 3 4 5]</span><br><span class="line">s2: [1 2]</span><br></pre></td></tr></table></figure>
+
+<p>这说明：</p>
+<ul>
+<li><code>append</code> 之前，<code>s1</code> 和 <code>s2</code> 共享底层数组</li>
+<li><code>append</code> 过程中，<code>s1</code> 可能拿到一块新的底层数组</li>
+<li>从那之后，<code>s1</code> 和 <code>s2</code> 就分家了</li>
+</ul>
+<p>这就是为什么切片行为经常显得“有时像引用，有时又不像”。</p>
+<h3 id="2-函数里-append，外面为什么有时看得到，有时看不到"><a href="#2-函数里-append，外面为什么有时看得到，有时看不到" class="headerlink" title="2. 函数里 append，外面为什么有时看得到，有时看不到"></a>2. 函数里 <code>append</code>，外面为什么有时看得到，有时看不到</h3><p>这是最常见的项目级坑之一。</p>
+<p>错误直觉通常是：</p>
+<ul>
+<li>“切片不是引用吗”</li>
+<li>“我在函数里 <code>append</code> 了，外面应该自动变长”</li>
+</ul>
+<p>看代码：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> <span class="string">&quot;fmt&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">addStatus</span><span class="params">(items []<span class="type">int</span>)</span></span> &#123;</span><br><span class="line">	items = <span class="built_in">append</span>(items, <span class="number">500</span>)</span><br><span class="line">	fmt.Println(<span class="string">&quot;inside:&quot;</span>, items)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	items := []<span class="type">int</span>&#123;<span class="number">200</span>, <span class="number">201</span>&#125;</span><br><span class="line">	addStatus(items)</span><br><span class="line">	fmt.Println(<span class="string">&quot;outside:&quot;</span>, items)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>可能输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">inside: [200 201 500]</span><br><span class="line">outside: [200 201]</span><br></pre></td></tr></table></figure>
+
+<p>为什么？</p>
+<ul>
+<li>传参时，复制的是切片头部描述信息</li>
+<li>函数里 <code>items = append(...)</code> 改的是函数内这个切片变量</li>
+<li>即使 <code>append</code> 还复用了原底层数组，外层切片的 <code>len</code> 也没自动跟着变</li>
+<li>如果 <code>append</code> 触发扩容，那函数内外更是直接分开</li>
+</ul>
+<p>正确做法是返回新切片：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">addStatus</span><span class="params">(items []<span class="type">int</span>)</span></span> []<span class="type">int</span> &#123;</span><br><span class="line">	<span class="keyword">return</span> <span class="built_in">append</span>(items, <span class="number">500</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>然后由调用方接住：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">items = addStatus(items)</span><br></pre></td></tr></table></figure>
+
+<h3 id="3-append-还会带来“隐藏共享”"><a href="#3-append-还会带来“隐藏共享”" class="headerlink" title="3. append 还会带来“隐藏共享”"></a>3. <code>append</code> 还会带来“隐藏共享”</h3><p>看这个例子：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> <span class="string">&quot;fmt&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	base := []<span class="type">int</span>&#123;<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>&#125;</span><br><span class="line">	a := base[:<span class="number">2</span>]</span><br><span class="line">	b := <span class="built_in">append</span>(a, <span class="number">99</span>)</span><br><span class="line"></span><br><span class="line">	fmt.Println(<span class="string">&quot;base:&quot;</span>, base)</span><br><span class="line">	fmt.Println(<span class="string">&quot;a:&quot;</span>, a)</span><br><span class="line">	fmt.Println(<span class="string">&quot;b:&quot;</span>, b)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>一种常见输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">base: [1 2 99 4]</span><br><span class="line">a: [1 2]</span><br><span class="line">b: [1 2 99]</span><br></pre></td></tr></table></figure>
+
+<p>为什么 <code>base[2]</code> 被改了？</p>
+<p>因为 <code>a</code> 还有容量，<code>append(a, 99)</code> 直接把第三个槽位写到了原底层数组里。</p>
+<p>如果你原本以为 <code>b</code> 是一个完全独立的新切片，这里就会直接出事故。</p>
+<h3 id="4-项目里怎么降低这类风险"><a href="#4-项目里怎么降低这类风险" class="headerlink" title="4. 项目里怎么降低这类风险"></a>4. 项目里怎么降低这类风险</h3><p>几条很实用的经验：</p>
+<ul>
+<li>函数里只要可能 <code>append</code>，就让函数返回新切片</li>
+<li>不确定是否共享底层数组时，主动复制一份</li>
+<li>对外暴露的切片，避免把内部缓冲区直接原样返回</li>
+<li>做窗口截取后如果要长期持有，先 <code>copy</code></li>
+</ul>
+<p>复制切片的常用方式：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">copied := <span class="built_in">append</span>([]<span class="type">int</span>(<span class="literal">nil</span>), original...)</span><br></pre></td></tr></table></figure>
+
+<p>或者：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">copied := <span class="built_in">make</span>([]<span class="type">int</span>, <span class="built_in">len</span>(original))</span><br><span class="line"><span class="built_in">copy</span>(copied, original)</span><br></pre></td></tr></table></figure>
+
+<h2 id="八、切片还有两个高频坑：内存保留和-range"><a href="#八、切片还有两个高频坑：内存保留和-range" class="headerlink" title="八、切片还有两个高频坑：内存保留和 range"></a>八、切片还有两个高频坑：内存保留和 <code>range</code></h2><h3 id="1-小切片可能把大数组一直留在内存里"><a href="#1-小切片可能把大数组一直留在内存里" class="headerlink" title="1. 小切片可能把大数组一直留在内存里"></a>1. 小切片可能把大数组一直留在内存里</h3><p>看一个很典型的例子：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">keepHeader</span><span class="params">(data []<span class="type">byte</span>)</span></span> []<span class="type">byte</span> &#123;</span><br><span class="line">	<span class="keyword">return</span> data[:<span class="number">10</span>]</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>如果 <code>data</code> 原来是一个 10MB 的缓冲区，而你只保留前 10 个字节的切片返回，那这 10 个字节背后仍然引用着整个 10MB 的底层数组。</p>
+<p>结果就是：</p>
+<ul>
+<li>逻辑上你只想留 10 字节</li>
+<li>实际上整块大内存都还活着</li>
+</ul>
+<p>正确做法通常是复制：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">keepHeader</span><span class="params">(data []<span class="type">byte</span>)</span></span> []<span class="type">byte</span> &#123;</span><br><span class="line">	header := <span class="built_in">make</span>([]<span class="type">byte</span>, <span class="number">10</span>)</span><br><span class="line">	<span class="built_in">copy</span>(header, data[:<span class="number">10</span>])</span><br><span class="line">	<span class="keyword">return</span> header</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这个问题在日志裁剪、网络包头提取、文件前缀解析里很常见。</p>
+<h3 id="2-range-拿到的是元素副本"><a href="#2-range-拿到的是元素副本" class="headerlink" title="2. range 拿到的是元素副本"></a>2. <code>range</code> 拿到的是元素副本</h3><p>看例子：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> <span class="string">&quot;fmt&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> routeStat <span class="keyword">struct</span> &#123;</span><br><span class="line">	Count <span class="type">int</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	stats := []routeStat&#123;&#123;Count: <span class="number">1</span>&#125;, &#123;Count: <span class="number">2</span>&#125;&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> _, item := <span class="keyword">range</span> stats &#123;</span><br><span class="line">		item.Count++</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	fmt.Println(stats)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">[&#123;1&#125; &#123;2&#125;]</span><br></pre></td></tr></table></figure>
+
+<p>因为 <code>item</code> 是副本，不是原切片元素本体。</p>
+<p>正确写法一般是按下标改：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">for</span> i := <span class="keyword">range</span> stats &#123;</span><br><span class="line">	stats[i].Count++</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这个问题虽然表面上是 <code>range</code> 语义，但本质上仍然和“值复制”有关。</p>
+<h2 id="九、map-到底是什么"><a href="#九、map-到底是什么" class="headerlink" title="九、map 到底是什么"></a>九、map 到底是什么</h2><h3 id="1-map-不是数组，也不是切片的升级版"><a href="#1-map-不是数组，也不是切片的升级版" class="headerlink" title="1. map 不是数组，也不是切片的升级版"></a>1. map 不是数组，也不是切片的升级版</h3><p>Go 的 map 是哈希表结构，用来做：</p>
+<ul>
+<li>按键查找</li>
+<li>计数</li>
+<li>分组</li>
+<li>去重</li>
+</ul>
+<p>典型定义：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">countByRoute := <span class="keyword">map</span>[<span class="type">string</span>]<span class="type">int</span>&#123;</span><br><span class="line">	<span class="string">&quot;/login&quot;</span>: <span class="number">2</span>,</span><br><span class="line">	<span class="string">&quot;/orders&quot;</span>: <span class="number">3</span>,</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>它和数组、切片最大的差异在于：</p>
+<ul>
+<li>数组和切片按位置访问</li>
+<li>map 按键访问</li>
+</ul>
+<p>所以三者不是一条平行替代链，而是解决不同问题的工具。</p>
+<h3 id="2-nil-map-和-nil-slice-行为完全不同"><a href="#2-nil-map-和-nil-slice-行为完全不同" class="headerlink" title="2. nil map 和 nil slice 行为完全不同"></a>2. <code>nil map</code> 和 <code>nil slice</code> 行为完全不同</h3><p>这是非常容易混的一点。</p>
+<p>先看切片：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> items []<span class="type">int</span></span><br><span class="line">items = <span class="built_in">append</span>(items, <span class="number">1</span>)</span><br><span class="line">fmt.Println(items)</span><br></pre></td></tr></table></figure>
+
+<p>这是合法的。</p>
+<p>再看 map：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> counter <span class="keyword">map</span>[<span class="type">string</span>]<span class="type">int</span></span><br><span class="line">counter[<span class="string">&quot;/login&quot;</span>]++</span><br></pre></td></tr></table></figure>
+
+<p>这里会直接 panic：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">panic: assignment to entry in nil map</span><br></pre></td></tr></table></figure>
+
+<p>原因是：</p>
+<ul>
+<li><code>nil slice</code> 可以通过 <code>append</code> 延迟分配</li>
+<li><code>nil map</code> 不能直接写，必须先 <code>make</code></li>
+</ul>
+<p>正确写法：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">counter := <span class="built_in">make</span>(<span class="keyword">map</span>[<span class="type">string</span>]<span class="type">int</span>)</span><br><span class="line">counter[<span class="string">&quot;/login&quot;</span>]++</span><br></pre></td></tr></table></figure>
+
+<h3 id="3-map-查不到键为什么不报错"><a href="#3-map-查不到键为什么不报错" class="headerlink" title="3. map 查不到键为什么不报错"></a>3. map 查不到键为什么不报错</h3><p>看例子：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">counter := <span class="keyword">map</span>[<span class="type">string</span>]<span class="type">int</span>&#123;</span><br><span class="line">	<span class="string">&quot;/login&quot;</span>: <span class="number">2</span>,</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">fmt.Println(counter[<span class="string">&quot;/orders&quot;</span>])</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">0</span><br></pre></td></tr></table></figure>
+
+<p>因为 map 查不到键时，返回的是值类型的零值。</p>
+<p>这非常方便，但也会埋坑。<br>比如你要区分：</p>
+<ul>
+<li>这个键真的存在，值就是 0</li>
+<li>这个键根本不存在</li>
+</ul>
+<p>那就必须用 <code>comma ok</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">value, ok := counter[<span class="string">&quot;/orders&quot;</span>]</span><br><span class="line">fmt.Println(value, ok)</span><br></pre></td></tr></table></figure>
+
+<h3 id="4-map-遍历顺序为什么不能依赖"><a href="#4-map-遍历顺序为什么不能依赖" class="headerlink" title="4. map 遍历顺序为什么不能依赖"></a>4. map 遍历顺序为什么不能依赖</h3><p>看例子：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">for</span> route, count := <span class="keyword">range</span> counter &#123;</span><br><span class="line">	fmt.Println(route, count)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>你不能假设这里每次都是同样顺序。</p>
+<p>这不是偶然现象，而是语言层面就不保证顺序稳定。</p>
+<p>所以：</p>
+<ul>
+<li>要输出稳定结果，就先取键再排序</li>
+<li>要做测试断言，也不要直接断言 map 遍历顺序</li>
+</ul>
+<p>这一点在测试报告生成、JSON 组装、日志对比里经常出问题。</p>
+<h3 id="5-为什么-m-key-Field-value-不能直接写"><a href="#5-为什么-m-key-Field-value-不能直接写" class="headerlink" title="5. 为什么 m[key].Field = value 不能直接写"></a>5. 为什么 <code>m[key].Field = value</code> 不能直接写</h3><p>这是 map 最让人困惑的一个编译错误之一。</p>
+<p>看代码：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> routeStat <span class="keyword">struct</span> &#123;</span><br><span class="line">	Count <span class="type">int</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	stats := <span class="keyword">map</span>[<span class="type">string</span>]routeStat&#123;</span><br><span class="line">		<span class="string">&quot;/login&quot;</span>: &#123;Count: <span class="number">1</span>&#125;,</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	stats[<span class="string">&quot;/login&quot;</span>].Count++</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这段代码编译不过。</p>
+<p>原因不是语法奇怪，而是：</p>
+<ul>
+<li>map 取值拿到的是值副本</li>
+<li>map 内部在扩容、搬迁时元素位置不稳定</li>
+<li>语言不允许你直接对 map 元素内部字段取地址并修改</li>
+</ul>
+<p>正确写法有两种。</p>
+<p>第一种，取出来改完再放回去：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">item := stats[<span class="string">&quot;/login&quot;</span>]</span><br><span class="line">item.Count++</span><br><span class="line">stats[<span class="string">&quot;/login&quot;</span>] = item</span><br></pre></td></tr></table></figure>
+
+<p>第二种，map 里直接放指针：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">stats := <span class="keyword">map</span>[<span class="type">string</span>]*routeStat&#123;</span><br><span class="line">	<span class="string">&quot;/login&quot;</span>: &amp;routeStat&#123;Count: <span class="number">1</span>&#125;,</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">stats[<span class="string">&quot;/login&quot;</span>].Count++</span><br></pre></td></tr></table></figure>
+
+<p>项目里怎么选，要看：</p>
+<ul>
+<li>你是想保留值语义</li>
+<li>还是想原地修改同一份对象</li>
+</ul>
+<h2 id="十、数组、切片、map-的真正关系到底是什么"><a href="#十、数组、切片、map-的真正关系到底是什么" class="headerlink" title="十、数组、切片、map 的真正关系到底是什么"></a>十、数组、切片、map 的真正关系到底是什么</h2><p>这一节把最核心的关系彻底捋顺。</p>
+<h3 id="1-数组和切片是“存储和视图”的关系"><a href="#1-数组和切片是“存储和视图”的关系" class="headerlink" title="1. 数组和切片是“存储和视图”的关系"></a>1. 数组和切片是“存储和视图”的关系</h3><p>数组负责底层连续存储，切片负责描述其中一段。</p>
+<p>可以理解成：</p>
+<ul>
+<li>数组是仓库货架</li>
+<li>切片是“从第几个货位开始、看几格、最多还能扩到几格”的说明卡</li>
+</ul>
+<p>所以切片离不开底层数组。</p>
+<h3 id="2-map-和数组、切片不是父子关系，而是“并列工具”"><a href="#2-map-和数组、切片不是父子关系，而是“并列工具”" class="headerlink" title="2. map 和数组、切片不是父子关系，而是“并列工具”"></a>2. map 和数组、切片不是父子关系，而是“并列工具”</h3><p>map 并不是“另一种切片”，也不是“可变长度数组”。</p>
+<p>它解决的是按键索引问题。</p>
+<p>但在项目里，map 很经常和数组、切片组合：</p>
+<ul>
+<li><code>map[string][]int</code></li>
+<li><code>map[string][3]int</code></li>
+<li><code>[]map[string]string</code></li>
+</ul>
+<p>其中最常见的是 <code>map[string][]T</code>，因为它同时具备：</p>
+<ul>
+<li>map 的按键分组能力</li>
+<li>slice 的动态追加能力</li>
+</ul>
+<h3 id="3-切片和-map-都表现出“像引用”的效果，但原因不一样"><a href="#3-切片和-map-都表现出“像引用”的效果，但原因不一样" class="headerlink" title="3. 切片和 map 都表现出“像引用”的效果，但原因不一样"></a>3. 切片和 map 都表现出“像引用”的效果，但原因不一样</h3><p>这是第二个最关键的认知点。</p>
+<p>常见说法是：</p>
+<ul>
+<li>slice 是引用类型</li>
+<li>map 也是引用类型</li>
+</ul>
+<p>这个说法拿来帮助入门可以，但非常容易把人带偏。</p>
+<p>更准确的理解应该是：</p>
+<ul>
+<li>变量赋值、函数传参时，复制的都是它们各自的描述信息</li>
+<li>这些描述信息又指向了可共享的底层数据结构</li>
+</ul>
+<p>所以它们常常表现出“改了一处，另一处也受影响”。</p>
+<p>但两者行为并不对称：</p>
+<ul>
+<li>切片复制的是切片头部，元素存储在底层数组里，<code>append</code> 可能换底层数组</li>
+<li>map 复制的是 map 描述信息，多份 map 变量仍指向同一个底层哈希表，普通写入会作用到同一份表上</li>
+</ul>
+<p>也正因为如此：</p>
+<ul>
+<li>切片最常见的坑是共享底层数组和 <code>append</code> 扩容</li>
+<li>map 最常见的坑是 <code>nil map</code>、元素不可寻址、遍历无序、并发不安全</li>
+</ul>
+<h3 id="4-map-的值如果是切片，会叠加两层坑"><a href="#4-map-的值如果是切片，会叠加两层坑" class="headerlink" title="4. map 的值如果是切片，会叠加两层坑"></a>4. map 的值如果是切片，会叠加两层坑</h3><p>这就是项目里特别容易出 bug 的组合。</p>
+<p>看代码：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">statusByRoute := <span class="built_in">make</span>(<span class="keyword">map</span>[<span class="type">string</span>][]<span class="type">int</span>)</span><br><span class="line">route := <span class="string">&quot;/login&quot;</span></span><br><span class="line"></span><br><span class="line">list := statusByRoute[route]</span><br><span class="line">list = <span class="built_in">append</span>(list, <span class="number">200</span>)</span><br><span class="line">fmt.Println(statusByRoute[route])</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">[]</span><br></pre></td></tr></table></figure>
+
+<p>第一次看到这里时，通常会有违和感。<br>原因是：</p>
+<ul>
+<li><code>statusByRoute[route]</code> 取出来的是切片头部副本</li>
+<li><code>append</code> 之后，<code>list</code> 变长了</li>
+<li>但你没有把这个新切片写回 map</li>
+</ul>
+<p>正确写法是：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">statusByRoute[route] = <span class="built_in">append</span>(statusByRoute[route], <span class="number">200</span>)</span><br></pre></td></tr></table></figure>
+
+<p>这句代码非常关键，因为它同时处理了两件事：</p>
+<ul>
+<li>从 map 里取出当前切片</li>
+<li><code>append</code> 后把新切片头部重新放回 map</li>
+</ul>
+<p>如果底层发生扩容，没这一步就直接丢数据。</p>
+<h2 id="十一、把它们放进一个真实的小项目场景"><a href="#十一、把它们放进一个真实的小项目场景" class="headerlink" title="十一、把它们放进一个真实的小项目场景"></a>十一、把它们放进一个真实的小项目场景</h2><p>下面用一个更完整的例子，把三种结构串进一个可测试的小场景。</p>
+<p>场景：<strong>接口日志聚合器</strong></p>
+<p>需求：</p>
+<ol>
+<li>输入一批日志行</li>
+<li>解析成结构化记录</li>
+<li>统计每个接口的调用次数</li>
+<li>汇总每个接口出现过的状态码</li>
+<li>保存最近 3 次严重错误状态码</li>
+<li>输出稳定结果，便于测试和报告生成</li>
+</ol>
+<p>目录可以先长这样：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">route_report/</span><br><span class="line">├── go.mod</span><br><span class="line">├── report.go</span><br><span class="line">└── report_test.go</span><br></pre></td></tr></table></figure>
+
+<p><code>report.go</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> report</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">	<span class="string">&quot;fmt&quot;</span></span><br><span class="line">	<span class="string">&quot;sort&quot;</span></span><br><span class="line">	<span class="string">&quot;strconv&quot;</span></span><br><span class="line">	<span class="string">&quot;strings&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Record <span class="keyword">struct</span> &#123;</span><br><span class="line">	Route     <span class="type">string</span></span><br><span class="line">	Status    <span class="type">int</span></span><br><span class="line">	LatencyMS <span class="type">int</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> RouteSummary <span class="keyword">struct</span> &#123;</span><br><span class="line">	Route    <span class="type">string</span></span><br><span class="line">	Count    <span class="type">int</span></span><br><span class="line">	Statuses []<span class="type">int</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Summary <span class="keyword">struct</span> &#123;</span><br><span class="line">	Routes      []RouteSummary</span><br><span class="line">	Last3Severe [<span class="number">3</span>]<span class="type">int</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">ParseLine</span><span class="params">(line <span class="type">string</span>)</span></span> (Record, <span class="type">error</span>) &#123;</span><br><span class="line">	parts := strings.Split(strings.TrimSpace(line), <span class="string">&quot;,&quot;</span>)</span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(parts) != <span class="number">3</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> Record&#123;&#125;, fmt.Errorf(<span class="string">&quot;parse line %q: bad field count&quot;</span>, line)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	status, err := strconv.Atoi(parts[<span class="number">1</span>])</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> Record&#123;&#125;, fmt.Errorf(<span class="string">&quot;parse status from %q: %w&quot;</span>, line, err)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	latency, err := strconv.Atoi(parts[<span class="number">2</span>])</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> Record&#123;&#125;, fmt.Errorf(<span class="string">&quot;parse latency from %q: %w&quot;</span>, line, err)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	record := Record&#123;</span><br><span class="line">		Route:     parts[<span class="number">0</span>],</span><br><span class="line">		Status:    status,</span><br><span class="line">		LatencyMS: latency,</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> record.Route == <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> Record&#123;&#125;, fmt.Errorf(<span class="string">&quot;empty route&quot;</span>)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> record, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">BuildSummary</span><span class="params">(lines []<span class="type">string</span>)</span></span> (Summary, <span class="type">error</span>) &#123;</span><br><span class="line">	records := <span class="built_in">make</span>([]Record, <span class="number">0</span>, <span class="built_in">len</span>(lines))</span><br><span class="line">	countByRoute := <span class="built_in">make</span>(<span class="keyword">map</span>[<span class="type">string</span>]<span class="type">int</span>)</span><br><span class="line">	statusByRoute := <span class="built_in">make</span>(<span class="keyword">map</span>[<span class="type">string</span>][]<span class="type">int</span>)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">var</span> last3Severe [<span class="number">3</span>]<span class="type">int</span></span><br><span class="line">	severeCount := <span class="number">0</span></span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> _, line := <span class="keyword">range</span> lines &#123;</span><br><span class="line">		record, err := ParseLine(line)</span><br><span class="line">		<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">			<span class="keyword">return</span> Summary&#123;&#125;, err</span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		records = <span class="built_in">append</span>(records, record)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> _, record := <span class="keyword">range</span> records &#123;</span><br><span class="line">		countByRoute[record.Route]++</span><br><span class="line">		statusByRoute[record.Route] = <span class="built_in">append</span>(statusByRoute[record.Route], record.Status)</span><br><span class="line"></span><br><span class="line">		<span class="keyword">if</span> record.Status &gt;= <span class="number">500</span> &#123;</span><br><span class="line">			last3Severe[severeCount%<span class="built_in">len</span>(last3Severe)] = record.Status</span><br><span class="line">			severeCount++</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	routes := <span class="built_in">make</span>([]<span class="type">string</span>, <span class="number">0</span>, <span class="built_in">len</span>(countByRoute))</span><br><span class="line">	<span class="keyword">for</span> route := <span class="keyword">range</span> countByRoute &#123;</span><br><span class="line">		routes = <span class="built_in">append</span>(routes, route)</span><br><span class="line">	&#125;</span><br><span class="line">	sort.Strings(routes)</span><br><span class="line"></span><br><span class="line">	summaries := <span class="built_in">make</span>([]RouteSummary, <span class="number">0</span>, <span class="built_in">len</span>(routes))</span><br><span class="line">	<span class="keyword">for</span> _, route := <span class="keyword">range</span> routes &#123;</span><br><span class="line">		statuses := <span class="built_in">append</span>([]<span class="type">int</span>(<span class="literal">nil</span>), statusByRoute[route]...)</span><br><span class="line">		summaries = <span class="built_in">append</span>(summaries, RouteSummary&#123;</span><br><span class="line">			Route:    route,</span><br><span class="line">			Count:    countByRoute[route],</span><br><span class="line">			Statuses: statuses,</span><br><span class="line">		&#125;)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> Summary&#123;</span><br><span class="line">		Routes:      summaries,</span><br><span class="line">		Last3Severe: last3Severe,</span><br><span class="line">	&#125;, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这段代码里三种结构各司其职：</p>
+<ul>
+<li><code>records</code> 是切片：承接动态长度输入</li>
+<li><code>countByRoute</code> 是 map：做按路由计数</li>
+<li><code>statusByRoute</code> 是 <code>map[string][]int</code>：做按路由分组</li>
+<li><code>last3Severe</code> 是数组：保存固定长度窗口</li>
+</ul>
+<p>这个设计在真实项目里是很常见的。</p>
+<h2 id="十二、这个小项目里最容易写错的地方"><a href="#十二、这个小项目里最容易写错的地方" class="headerlink" title="十二、这个小项目里最容易写错的地方"></a>十二、这个小项目里最容易写错的地方</h2><h3 id="1-错误一：忘了把-append-后的新切片写回-map"><a href="#1-错误一：忘了把-append-后的新切片写回-map" class="headerlink" title="1. 错误一：忘了把 append 后的新切片写回 map"></a>1. 错误一：忘了把 <code>append</code> 后的新切片写回 map</h3><p>错误写法：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">list := statusByRoute[record.Route]</span><br><span class="line">list = <span class="built_in">append</span>(list, record.Status)</span><br></pre></td></tr></table></figure>
+
+<p>这段代码只改了局部变量 <code>list</code>，没有把结果放回 <code>statusByRoute</code>。</p>
+<p>正确写法：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">statusByRoute[record.Route] = <span class="built_in">append</span>(statusByRoute[record.Route], record.Status)</span><br></pre></td></tr></table></figure>
+
+<h3 id="2-错误二：把数组当切片传，结果函数里改不动"><a href="#2-错误二：把数组当切片传，结果函数里改不动" class="headerlink" title="2. 错误二：把数组当切片传，结果函数里改不动"></a>2. 错误二：把数组当切片传，结果函数里改不动</h3><p>错误直觉：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">clearLast3</span><span class="params">(items [3]<span class="type">int</span>)</span></span> &#123;</span><br><span class="line">	items[<span class="number">0</span>] = <span class="number">0</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>调用后外面的数组不会变。</p>
+<p>如果你就是想原地改固定长度数组，要么传指针：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">clearLast3</span><span class="params">(items *[3]<span class="type">int</span>)</span></span> &#123;</span><br><span class="line">	items[<span class="number">0</span>] = <span class="number">0</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>要么改成切片参数：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">clearLast3</span><span class="params">(items []<span class="type">int</span>)</span></span> &#123;</span><br><span class="line">	items[<span class="number">0</span>] = <span class="number">0</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>但这两个语义不同，不能随手互换。</p>
+<h3 id="3-错误三：把内部切片直接暴露出去"><a href="#3-错误三：把内部切片直接暴露出去" class="headerlink" title="3. 错误三：把内部切片直接暴露出去"></a>3. 错误三：把内部切片直接暴露出去</h3><p>如果 <code>Summary</code> 直接把内部的 <code>statusByRoute[route]</code> 原样塞出去，而后续调用方又改了这个切片，就会反向污染内部状态。</p>
+<p>所以这里做了一步复制：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">statuses := <span class="built_in">append</span>([]<span class="type">int</span>(<span class="literal">nil</span>), statusByRoute[route]...)</span><br></pre></td></tr></table></figure>
+
+<p>这一步在需要隔离内部状态时很重要。</p>
+<h3 id="4-错误四：输出时直接-range-map，测试天天飘"><a href="#4-错误四：输出时直接-range-map，测试天天飘" class="headerlink" title="4. 错误四：输出时直接 range map，测试天天飘"></a>4. 错误四：输出时直接 <code>range map</code>，测试天天飘</h3><p>错误写法：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">for</span> route, count := <span class="keyword">range</span> countByRoute &#123;</span><br><span class="line">	fmt.Println(route, count)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这样写可能本地看着没问题，但测试断言顺序很快就不稳定。</p>
+<p>正确做法是：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">routes := <span class="built_in">make</span>([]<span class="type">string</span>, <span class="number">0</span>, <span class="built_in">len</span>(countByRoute))</span><br><span class="line"><span class="keyword">for</span> route := <span class="keyword">range</span> countByRoute &#123;</span><br><span class="line">	routes = <span class="built_in">append</span>(routes, route)</span><br><span class="line">&#125;</span><br><span class="line">sort.Strings(routes)</span><br></pre></td></tr></table></figure>
+
+<h3 id="5-错误五：并发协程里直接读写-map"><a href="#5-错误五：并发协程里直接读写-map" class="headerlink" title="5. 错误五：并发协程里直接读写 map"></a>5. 错误五：并发协程里直接读写 map</h3><p>如果多个 goroutine 同时写同一个 map，轻则数据竞争，重则直接 panic。</p>
+<p>比如这种写法就有风险：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">	countByRoute[<span class="string">&quot;/login&quot;</span>]++</span><br><span class="line">&#125;()</span><br></pre></td></tr></table></figure>
+
+<p>在并发场景里要么：</p>
+<ul>
+<li>加 <code>sync.Mutex</code></li>
+<li>用分片聚合后单线程合并</li>
+<li>或者针对特定场景用 <code>sync.Map</code></li>
+</ul>
+<p>但不要把普通 map 当成天然线程安全结构。</p>
+<h2 id="十三、给这个小项目补最小测试"><a href="#十三、给这个小项目补最小测试" class="headerlink" title="十三、给这个小项目补最小测试"></a>十三、给这个小项目补最小测试</h2><p>文章里只讲概念不够，至少要补几组最小测试，保证以后重构时不会把行为改坏。</p>
+<p><code>report_test.go</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> report</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> <span class="string">&quot;testing&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestBuildSummary</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">	lines := []<span class="type">string</span>&#123;</span><br><span class="line">		<span class="string">&quot;/login,200,18&quot;</span>,</span><br><span class="line">		<span class="string">&quot;/login,500,31&quot;</span>,</span><br><span class="line">		<span class="string">&quot;/orders,200,25&quot;</span>,</span><br><span class="line">		<span class="string">&quot;/orders,502,40&quot;</span>,</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	summary, err := BuildSummary(lines)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;BuildSummary returned error: %v&quot;</span>, err)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(summary.Routes) != <span class="number">2</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;expected 2 routes, got %d&quot;</span>, <span class="built_in">len</span>(summary.Routes))</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> summary.Routes[<span class="number">0</span>].Route != <span class="string">&quot;/login&quot;</span> || summary.Routes[<span class="number">0</span>].Count != <span class="number">2</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;unexpected first route summary: %+v&quot;</span>, summary.Routes[<span class="number">0</span>])</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> got := <span class="built_in">len</span>(summary.Routes[<span class="number">0</span>].Statuses); got != <span class="number">2</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;expected 2 statuses for /login, got %d&quot;</span>, got)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> summary.Last3Severe[<span class="number">0</span>] != <span class="number">500</span> || summary.Last3Severe[<span class="number">1</span>] != <span class="number">502</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;unexpected severe window: %+v&quot;</span>, summary.Last3Severe)</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestSliceAppendNeedsAssignment</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">	m := <span class="built_in">make</span>(<span class="keyword">map</span>[<span class="type">string</span>][]<span class="type">int</span>)</span><br><span class="line">	key := <span class="string">&quot;/login&quot;</span></span><br><span class="line"></span><br><span class="line">	list := m[key]</span><br><span class="line">	list = <span class="built_in">append</span>(list, <span class="number">200</span>)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(m[key]) != <span class="number">0</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;expected map entry to remain empty, got %v&quot;</span>, m[key])</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	m[key] = <span class="built_in">append</span>(m[key], <span class="number">200</span>)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(m[key]) != <span class="number">1</span> || m[key][<span class="number">0</span>] != <span class="number">200</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;unexpected map slice after append: %v&quot;</span>, m[key])</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestSliceSharesUnderlyingArray</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">	base := []<span class="type">int</span>&#123;<span class="number">10</span>, <span class="number">20</span>, <span class="number">30</span>&#125;</span><br><span class="line">	part := base[:<span class="number">2</span>]</span><br><span class="line">	part[<span class="number">1</span>] = <span class="number">99</span></span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> base[<span class="number">1</span>] != <span class="number">99</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;expected base to be updated, got %v&quot;</span>, base)</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这里三组测试各自验证一类高频行为：</p>
+<ul>
+<li>聚合器功能本身正确</li>
+<li><code>map[string][]T</code> 必须接住 <code>append</code> 返回值</li>
+<li>切片修改会影响共享底层数组</li>
+</ul>
+<h2 id="十四、怎么验证这段代码"><a href="#十四、怎么验证这段代码" class="headerlink" title="十四、怎么验证这段代码"></a>十四、怎么验证这段代码</h2><p>最小验证步骤：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">go <span class="built_in">test</span> ./...</span><br></pre></td></tr></table></figure>
+
+<p>预期：</p>
+<ul>
+<li>所有测试通过</li>
+<li>改坏 <code>append</code> 回写逻辑时，<code>TestSliceAppendNeedsAssignment</code> 会先炸</li>
+<li>改坏排序逻辑时，<code>TestBuildSummary</code> 里的断言很容易不稳定</li>
+</ul>
+<p>如果你还想额外观察切片容量变化，可以补一段调试输出：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">t.Logf(<span class="string">&quot;len=%d cap=%d&quot;</span>, <span class="built_in">len</span>(part), <span class="built_in">cap</span>(part))</span><br></pre></td></tr></table></figure>
+
+<p>或者在临时代码里打印：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">fmt.Printf(<span class="string">&quot;ptr=%p len=%d cap=%d\n&quot;</span>, s, <span class="built_in">len</span>(s), <span class="built_in">cap</span>(s))</span><br></pre></td></tr></table></figure>
+
+<p>不过注意，切片打印地址时看到的是首元素地址，不是完整“切片头部结构”。</p>
+<h2 id="十五、线上排查时怎么快速判断是数组坑、切片坑还是-map-坑"><a href="#十五、线上排查时怎么快速判断是数组坑、切片坑还是-map-坑" class="headerlink" title="十五、线上排查时怎么快速判断是数组坑、切片坑还是 map 坑"></a>十五、线上排查时怎么快速判断是数组坑、切片坑还是 map 坑</h2><p>下面给一个很实用的排错思路。</p>
+<h3 id="1-现象：函数里改了，函数外没变"><a href="#1-现象：函数里改了，函数外没变" class="headerlink" title="1. 现象：函数里改了，函数外没变"></a>1. 现象：函数里改了，函数外没变</h3><p>优先检查：</p>
+<ul>
+<li>参数是不是数组，导致整份复制</li>
+<li>参数是不是切片，但函数里做了 <code>append</code> 却没返回</li>
+<li><code>range</code> 里改的是不是副本</li>
+</ul>
+<h3 id="2-现象：改了一个切片，另一个结果也变了"><a href="#2-现象：改了一个切片，另一个结果也变了" class="headerlink" title="2. 现象：改了一个切片，另一个结果也变了"></a>2. 现象：改了一个切片，另一个结果也变了</h3><p>优先检查：</p>
+<ul>
+<li>两个切片是不是来自同一个底层数组</li>
+<li>是否存在重叠切片区间</li>
+<li>是否做过在容量范围内的 <code>append</code></li>
+</ul>
+<h3 id="3-现象：明明有-map，结果写入直接-panic"><a href="#3-现象：明明有-map，结果写入直接-panic" class="headerlink" title="3. 现象：明明有 map，结果写入直接 panic"></a>3. 现象：明明有 map，结果写入直接 panic</h3><p>优先检查：</p>
+<ul>
+<li>map 是否只声明未初始化</li>
+<li>是否是结构体字段里的 map 没有 <code>make</code></li>
+</ul>
+<p>比如：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Counter <span class="keyword">struct</span> &#123;</span><br><span class="line">	ByRoute <span class="keyword">map</span>[<span class="type">string</span>]<span class="type">int</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>如果只写：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> c Counter</span><br><span class="line">c.ByRoute[<span class="string">&quot;/login&quot;</span>]++</span><br></pre></td></tr></table></figure>
+
+<p>一样会 panic。</p>
+<h3 id="4-现象：测试偶尔过、偶尔不过"><a href="#4-现象：测试偶尔过、偶尔不过" class="headerlink" title="4. 现象：测试偶尔过、偶尔不过"></a>4. 现象：测试偶尔过、偶尔不过</h3><p>优先检查：</p>
+<ul>
+<li>是否依赖了 map 遍历顺序</li>
+<li>是否把切片共享底层数组当成了独立副本</li>
+<li>是否存在并发读写 map</li>
+</ul>
+<h3 id="5-现象：内存占用异常高"><a href="#5-现象：内存占用异常高" class="headerlink" title="5. 现象：内存占用异常高"></a>5. 现象：内存占用异常高</h3><p>优先检查：</p>
+<ul>
+<li>是否从大缓冲区切了一小段长期持有</li>
+<li>是否把临时大切片挂进了长生命周期结构</li>
+<li>是否忘了在需要隔离时做复制</li>
+</ul>
+<h2 id="十六、这些结构各自的使用边界是什么"><a href="#十六、这些结构各自的使用边界是什么" class="headerlink" title="十六、这些结构各自的使用边界是什么"></a>十六、这些结构各自的使用边界是什么</h2><p>这部分非常重要，因为很多 bug 不是“不会用”，而是“用错了位置”。</p>
+<h3 id="1-什么时候优先用数组"><a href="#1-什么时候优先用数组" class="headerlink" title="1. 什么时候优先用数组"></a>1. 什么时候优先用数组</h3><ul>
+<li>长度天然固定</li>
+<li>值语义更重要</li>
+<li>想明确表达固定槽位</li>
+<li>需要可比较</li>
+</ul>
+<p>比如最近 3 次错误码、固定长度摘要值、4 个维度统计桶。</p>
+<h3 id="2-什么时候优先用切片"><a href="#2-什么时候优先用切片" class="headerlink" title="2. 什么时候优先用切片"></a>2. 什么时候优先用切片</h3><ul>
+<li>数据量动态变化</li>
+<li>需要遍历、过滤、拼接、分页</li>
+<li>需要和 <code>append</code>、<code>copy</code>、排序等操作结合</li>
+</ul>
+<p>大多数业务数据集合都更适合切片。</p>
+<h3 id="3-什么时候优先用-map"><a href="#3-什么时候优先用-map" class="headerlink" title="3. 什么时候优先用 map"></a>3. 什么时候优先用 map</h3><ul>
+<li>需要按键查找</li>
+<li>需要计数、分组、去重</li>
+<li>需要从 ID&#x2F;名称快速定位对象</li>
+</ul>
+<p>但要同时记住：</p>
+<ul>
+<li>map 无序</li>
+<li>map 元素不可直接取地址修改</li>
+<li>普通 map 并发不安全</li>
+</ul>
+<h3 id="4-什么时候三者要组合使用"><a href="#4-什么时候三者要组合使用" class="headerlink" title="4. 什么时候三者要组合使用"></a>4. 什么时候三者要组合使用</h3><p>项目里最常见的不是三选一，而是组合：</p>
+<ul>
+<li>一批原始记录用 <code>[]Record</code></li>
+<li>按路由聚合用 <code>map[string][]Record</code></li>
+<li>固定窗口用 <code>[3]int</code></li>
+</ul>
+<p>真正重要的是角色分工，而不是只追求“全都用切片”。</p>
+<h2 id="十七、练习题"><a href="#十七、练习题" class="headerlink" title="十七、练习题"></a>十七、练习题</h2><p>如果想确认自己是不是真的理解了，建议把下面几个练习自己敲一遍。</p>
+<h3 id="练习-1"><a href="#练习-1" class="headerlink" title="练习 1"></a>练习 1</h3><p>写一个函数：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TrimToLastN</span><span class="params">(items []<span class="type">int</span>, n <span class="type">int</span>)</span></span> []<span class="type">int</span></span><br></pre></td></tr></table></figure>
+
+<p>要求：</p>
+<ul>
+<li>只保留最后 <code>n</code> 个元素</li>
+<li>返回结果不能和原切片共享底层数组</li>
+</ul>
+<p>这个练习的重点是验证你是否真的理解“切一段出来”和“复制一份出来”的差异。</p>
+<h3 id="练习-2"><a href="#练习-2" class="headerlink" title="练习 2"></a>练习 2</h3><p>写一个函数：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">CountRoutes</span><span class="params">(lines []<span class="type">string</span>)</span></span> (<span class="keyword">map</span>[<span class="type">string</span>]<span class="type">int</span>, <span class="type">error</span>)</span><br></pre></td></tr></table></figure>
+
+<p>要求：</p>
+<ul>
+<li>输入是 <code>route,status,latency</code></li>
+<li>统计每个 <code>route</code> 出现次数</li>
+<li>遇到坏数据返回错误</li>
+</ul>
+<p>这个练习的重点是 map 初始化、零值和错误处理。</p>
+<h3 id="练习-3"><a href="#练习-3" class="headerlink" title="练习 3"></a>练习 3</h3><p>写一个函数：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">RecordLast3Severe</span><span class="params">(codes []<span class="type">int</span>)</span></span> [<span class="number">3</span>]<span class="type">int</span></span><br></pre></td></tr></table></figure>
+
+<p>要求：</p>
+<ul>
+<li>只记录 <code>&gt;= 500</code> 的状态码</li>
+<li>超过 3 个时覆盖最早位置</li>
+</ul>
+<p>这个练习的重点是：什么时候固定长度数组比切片更合适。</p>
+<h3 id="练习-4"><a href="#练习-4" class="headerlink" title="练习 4"></a>练习 4</h3><p>把文章里的 <code>BuildSummary</code> 改成并发版：</p>
+<ul>
+<li>一个 goroutine 解析日志</li>
+<li>一个 goroutine 统计结果</li>
+</ul>
+<p>然后思考：</p>
+<ul>
+<li>哪些地方可以并发</li>
+<li>哪些 map 不能直接共享写</li>
+<li>是加锁好，还是分片后合并好</li>
+</ul>
+<p>这个练习的重点是把“数据结构行为”放回真实工程约束里。</p>
+<h2 id="十八、结论"><a href="#十八、结论" class="headerlink" title="十八、结论"></a>十八、结论</h2><p>数组、切片、map 之所以这么容易把人绕晕，不是因为 Go 故意设计得复杂，而是因为这三者分别卡在了三个不同层面：</p>
+<ul>
+<li>数组强调固定长度和值语义</li>
+<li>切片强调对底层数组的共享视图和动态扩展</li>
+<li>map 强调按键索引和哈希存储</li>
+</ul>
+<p>真正的主线其实很简单：</p>
+<ol>
+<li><strong>数组是底层固定存储</strong></li>
+<li><strong>切片是数组上的窗口</strong></li>
+<li><strong>map 是独立的键值索引结构</strong></li>
+</ol>
+<p>一旦把这条主线记住，再去看那些高频坑，逻辑就会清楚很多：</p>
+<ul>
+<li>数组传参为什么改不动外面，因为它是值复制</li>
+<li>切片为什么会互相影响，因为它们可能共享底层数组</li>
+<li><code>append</code> 为什么有时生效有时不生效，因为它可能复用旧数组，也可能换新数组</li>
+<li>map 为什么不能直接改元素字段，因为 map 元素不可寻址</li>
+<li>map 为什么遍历顺序不能依赖，因为它本来就不保证顺序</li>
+</ul>
+<p>写 Go 项目时，最稳的做法从来不是死记规则，而是先问清楚三件事：</p>
+<ol>
+<li>这份数据是固定长度还是动态长度</li>
+<li>我现在要的是按位置处理，还是按键查找</li>
+<li>我是要共享底层数据，还是要主动隔离副本</li>
+</ol>
+<p>这三件事想清楚，数组、切片、map 基本就不会再混成一团。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Go/" rel="tag"># Go</a>
+              <a href="/tags/Go%E4%B8%93%E9%A2%98/" rel="tag"># Go专题</a>
+              <a href="/tags/%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80/" rel="tag"># 编程语言</a>
+              <a href="/tags/%E5%88%87%E7%89%87/" rel="tag"># 切片</a>
+              <a href="/tags/map/" rel="tag"># map</a>
+              <a href="/tags/%E6%95%B0%E7%BB%84/" rel="tag"># 数组</a>
+              <a href="/tags/%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84/" rel="tag"># 数据结构</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2018/05/02/Python-03-Python%E7%9A%84%E5%88%97%E8%A1%A8%E5%85%83%E7%BB%84%E5%AD%97%E5%85%B8%E9%9B%86%E5%90%88%E4%B8%BA%E4%BB%80%E4%B9%88%E4%B8%8D%E5%8F%AA%E6%98%AF%E4%BC%9A%E7%94%A8%E8%BF%99%E4%B9%88%E7%AE%80%E5%8D%95/" rel="prev" title="Python：列表、元组、字典、集合为什么不只是会用这么简单">
+                  <i class="fa fa-angle-left"></i> Python：列表、元组、字典、集合为什么不只是会用这么简单
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2018/05/09/Python-04-Python%E5%87%BD%E6%95%B0%E5%8F%82%E6%95%B0%E5%8F%AF%E5%8F%98%E5%AF%B9%E8%B1%A1%E4%BD%9C%E7%94%A8%E5%9F%9F%E5%92%8C%E9%97%AD%E5%8C%85%E4%B8%BA%E4%BB%80%E4%B9%88%E6%80%BB%E8%AE%A9%E6%96%B0%E6%89%8B%E7%8A%AF%E9%94%99/" rel="next" title="Python：函数参数、可变对象、作用域和闭包为什么总让新手犯错">
+                  Python：函数参数、可变对象、作用域和闭包为什么总让新手犯错 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

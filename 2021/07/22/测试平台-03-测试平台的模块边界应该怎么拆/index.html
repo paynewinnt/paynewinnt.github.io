@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="测试平台做到一定阶段后，最容易冒出来的一类问题不是：  技术栈不对 页面不好看 接口不够多  而是更底层的一件事： 模块边界开始混了。 一旦边界混掉，后面通常会出现这些症状：  一个功能改动牵动很多模块 新需求一来，需求归属很快就说不清该落在哪一层 执行、环境、报告、权限互相引用 某些公共逻辑到处复制 平台明明还能跑，但越来越没人敢动  所以测试平台做大之后，真正决定它能不能继续长的，往往不是框架">
+<meta property="og:type" content="article">
+<meta property="og:title" content="测试平台-03-测试平台的模块边界应该怎么拆">
+<meta property="og:url" content="https://paynewinnt.github.io/2021/07/22/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-03-%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E7%9A%84%E6%A8%A1%E5%9D%97%E8%BE%B9%E7%95%8C%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E6%8B%86/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="测试平台做到一定阶段后，最容易冒出来的一类问题不是：  技术栈不对 页面不好看 接口不够多  而是更底层的一件事： 模块边界开始混了。 一旦边界混掉，后面通常会出现这些症状：  一个功能改动牵动很多模块 新需求一来，需求归属很快就说不清该落在哪一层 执行、环境、报告、权限互相引用 某些公共逻辑到处复制 平台明明还能跑，但越来越没人敢动  所以测试平台做大之后，真正决定它能不能继续长的，往往不是框架">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2021-07-22T12:30:00.000Z">
+<meta property="article:modified_time" content="2021-07-22T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="测试平台">
+<meta property="article:tag" content="工程化">
+<meta property="article:tag" content="实战">
+<meta property="article:tag" content="架构设计">
+<meta property="article:tag" content="平台化">
+<meta property="article:tag" content="测试平台开发">
+<meta property="article:tag" content="模块设计">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2021/07/22/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-03-%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E7%9A%84%E6%A8%A1%E5%9D%97%E8%BE%B9%E7%95%8C%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E6%8B%86/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2021/07/22/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-03-%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E7%9A%84%E6%A8%A1%E5%9D%97%E8%BE%B9%E7%95%8C%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E6%8B%86/","path":"2021/07/22/测试平台-03-测试平台的模块边界应该怎么拆/","title":"测试平台-03-测试平台的模块边界应该怎么拆"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>测试平台-03-测试平台的模块边界应该怎么拆 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E6%A8%A1%E5%9D%97%E6%8B%86%E5%88%86%E6%9C%80%E5%85%88%E8%A6%81%E5%9B%9E%E7%AD%94%E7%9A%84%EF%BC%8C%E4%B8%8D%E6%98%AF%E2%80%9C%E6%8C%89%E9%A1%B5%E9%9D%A2%E6%8B%86%E2%80%9D%E8%BF%98%E6%98%AF%E2%80%9C%E6%8C%89%E8%A1%A8%E6%8B%86%E2%80%9D%EF%BC%8C%E8%80%8C%E6%98%AF%E2%80%9C%E6%8C%89%E8%B4%A3%E4%BB%BB%E6%8B%86%E2%80%9D"><span class="nav-number">1.</span> <span class="nav-text">一、模块拆分最先要回答的，不是“按页面拆”还是“按表拆”，而是“按责任拆”</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%8C%89%E9%A1%B5%E9%9D%A2%E6%8B%86"><span class="nav-number">1.1.</span> <span class="nav-text">1. 按页面拆</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%8C%89%E8%A1%A8%E6%8B%86"><span class="nav-number">1.2.</span> <span class="nav-text">2. 按表拆</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E6%9B%B4%E5%B8%B8%E7%94%A8%E7%9A%84%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E6%A0%B8%E5%BF%83%E8%BE%B9%E7%95%8C"><span class="nav-number">2.</span> <span class="nav-text">二、更常用的测试平台核心边界</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%BB%BB%E5%8A%A1%E5%AE%9A%E4%B9%89%E8%BE%B9%E7%95%8C"><span class="nav-number">2.1.</span> <span class="nav-text">1. 任务定义边界</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%89%A7%E8%A1%8C%E8%BE%B9%E7%95%8C"><span class="nav-number">2.2.</span> <span class="nav-text">2. 执行边界</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%8E%AF%E5%A2%83%E8%BE%B9%E7%95%8C"><span class="nav-number">2.3.</span> <span class="nav-text">3. 环境边界</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%8A%A5%E5%91%8A%E8%BE%B9%E7%95%8C"><span class="nav-number">2.4.</span> <span class="nav-text">4. 报告边界</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%9D%83%E9%99%90%E8%BE%B9%E7%95%8C"><span class="nav-number">2.5.</span> <span class="nav-text">5. 权限边界</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E6%8E%A5%E5%85%A5%E8%BE%B9%E7%95%8C"><span class="nav-number">2.6.</span> <span class="nav-text">6. 接入边界</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E6%9C%80%E5%AE%B9%E6%98%93%E6%8B%86%E9%94%99%E7%9A%84-4-%E7%BB%84%E8%BE%B9%E7%95%8C"><span class="nav-number">3.</span> <span class="nav-text">三、最容易拆错的 4 组边界</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%BB%BB%E5%8A%A1%E5%AE%9A%E4%B9%89%E5%92%8C%E4%BB%BB%E5%8A%A1%E6%89%A7%E8%A1%8C%E6%B7%B7%E5%9C%A8%E4%B8%80%E8%B5%B7"><span class="nav-number">3.1.</span> <span class="nav-text">1. 任务定义和任务执行混在一起</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E7%8E%AF%E5%A2%83%E5%92%8C%E4%BB%BB%E5%8A%A1%E5%8F%82%E6%95%B0%E6%B7%B7%E5%9C%A8%E4%B8%80%E8%B5%B7"><span class="nav-number">3.2.</span> <span class="nav-text">2. 环境和任务参数混在一起</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%8A%A5%E5%91%8A%E5%92%8C%E6%89%A7%E8%A1%8C%E8%BF%87%E7%A8%8B%E6%B7%B7%E5%9C%A8%E4%B8%80%E8%B5%B7"><span class="nav-number">3.3.</span> <span class="nav-text">3. 报告和执行过程混在一起</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%9D%83%E9%99%90%E6%8E%A7%E5%88%B6%E6%95%A3%E8%90%BD%E5%9C%A8%E5%90%84%E6%A8%A1%E5%9D%97"><span class="nav-number">3.4.</span> <span class="nav-text">4. 权限控制散落在各模块</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E6%9B%B4%E6%8E%A8%E8%8D%90%E7%9A%84%E6%8B%86%E6%B3%95%EF%BC%9A%E5%AF%B9%E8%B1%A1%E8%BE%B9%E7%95%8C%E5%85%88%E4%BA%8E%E9%A1%B5%E9%9D%A2%E8%BE%B9%E7%95%8C"><span class="nav-number">4.</span> <span class="nav-text">四、更推荐的拆法：对象边界先于页面边界</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E4%B8%80%E5%A5%97%E6%9B%B4%E5%AE%9E%E7%94%A8%E7%9A%84%E6%9C%80%E5%B0%8F%E6%A8%A1%E5%9D%97%E5%88%92%E5%88%86"><span class="nav-number">5.</span> <span class="nav-text">五、一套更实用的最小模块划分</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%BB%BB%E5%8A%A1%E4%B8%AD%E5%BF%83"><span class="nav-number">5.1.</span> <span class="nav-text">1. 任务中心</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%89%A7%E8%A1%8C%E4%B8%AD%E5%BF%83"><span class="nav-number">5.2.</span> <span class="nav-text">2. 执行中心</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%8E%AF%E5%A2%83%E4%B8%AD%E5%BF%83"><span class="nav-number">5.3.</span> <span class="nav-text">3. 环境中心</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%8A%A5%E5%91%8A%E4%B8%AD%E5%BF%83"><span class="nav-number">5.4.</span> <span class="nav-text">4. 报告中心</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%9D%83%E9%99%90%E4%B8%AD%E5%BF%83"><span class="nav-number">5.5.</span> <span class="nav-text">5. 权限中心</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E6%8E%A5%E5%85%A5%E4%B8%AD%E5%BF%83"><span class="nav-number">5.6.</span> <span class="nav-text">6. 接入中心</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E6%A8%A1%E5%9D%97%E4%B9%8B%E9%97%B4%E6%9C%80%E9%87%8D%E8%A6%81%E7%9A%84%E4%B8%8D%E6%98%AF%E2%80%9C%E6%9C%89%E6%B2%A1%E6%9C%89%E5%85%B3%E7%B3%BB%E2%80%9D%EF%BC%8C%E8%80%8C%E6%98%AF%E2%80%9C%E5%85%B3%E7%B3%BB%E6%98%AF%E5%90%A6%E5%8F%AF%E6%8E%A7%E2%80%9D"><span class="nav-number">6.</span> <span class="nav-text">六、模块之间最重要的不是“有没有关系”，而是“关系是否可控”</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%BB%BB%E5%8A%A1%E5%AE%9A%E4%B9%89%E4%B8%8D%E7%9B%B4%E6%8E%A5%E6%93%8D%E5%BF%83%E6%8A%A5%E5%91%8A%E5%B1%95%E7%A4%BA"><span class="nav-number">6.1.</span> <span class="nav-text">1. 任务定义不直接操心报告展示</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%89%A7%E8%A1%8C%E4%B8%AD%E5%BF%83%E4%B8%8D%E6%8C%81%E6%9C%89%E7%8E%AF%E5%A2%83%E7%BB%86%E8%8A%82"><span class="nav-number">6.2.</span> <span class="nav-text">2. 执行中心不持有环境细节</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%9D%83%E9%99%90%E4%B8%AD%E5%BF%83%E5%B0%BD%E9%87%8F%E6%94%B6%E5%8F%A3"><span class="nav-number">6.3.</span> <span class="nav-text">3. 权限中心尽量收口</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%8E%A5%E5%85%A5%E4%B8%AD%E5%BF%83%E4%B8%8D%E8%A6%81%E5%8F%8D%E5%90%91%E6%B1%A1%E6%9F%93%E6%A0%B8%E5%BF%83%E4%B8%9A%E5%8A%A1"><span class="nav-number">6.4.</span> <span class="nav-text">4. 接入中心不要反向污染核心业务</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E6%9B%B4%E6%8E%A8%E8%8D%90%E7%9A%84%E4%B8%80%E4%B8%AA%E6%A3%80%E6%9F%A5%E9%97%AE%E9%A2%98%EF%BC%9A%E5%A6%82%E6%9E%9C%E5%88%A0%E6%8E%89%E6%9F%90%E4%B8%AA%E9%A1%B5%E9%9D%A2%EF%BC%8C%E8%BF%99%E4%B8%AA%E6%A8%A1%E5%9D%97%E8%BF%98%E6%88%90%E7%AB%8B%E5%90%97"><span class="nav-number">7.</span> <span class="nav-text">七、更推荐的一个检查问题：如果删掉某个页面，这个模块还成立吗</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E6%9C%80%E5%AE%B9%E6%98%93%E8%B8%A9%E7%9A%84%E5%87%A0%E4%B8%AA%E5%9D%91"><span class="nav-number">8.</span> <span class="nav-text">八、最容易踩的几个坑</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%97%A9%E6%9C%9F%E4%B8%BA%E4%BA%86%E5%BF%AB%EF%BC%8C%E6%8A%8A%E6%89%80%E6%9C%89%E9%80%BB%E8%BE%91%E5%85%88%E5%86%99%E4%B8%80%E8%B5%B7"><span class="nav-number">8.1.</span> <span class="nav-text">1. 早期为了快，把所有逻辑先写一起</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%85%AC%E5%85%B1%E8%83%BD%E5%8A%9B%E6%B2%A1%E6%9C%89%E6%98%8E%E7%A1%AE%E5%BD%92%E5%B1%9E"><span class="nav-number">8.2.</span> <span class="nav-text">2. 公共能力没有明确归属</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E9%A1%B5%E9%9D%A2%E6%94%B9%E7%89%88%E7%89%B5%E5%8A%A8%E5%90%8E%E7%AB%AF%E8%BE%B9%E7%95%8C"><span class="nav-number">8.3.</span> <span class="nav-text">3. 页面改版牵动后端边界</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%9D%83%E9%99%90%E4%BD%9C%E4%B8%BA%E2%80%9C%E9%99%84%E5%8A%A0%E5%8A%9F%E8%83%BD%E2%80%9D%E5%90%8E%E8%A1%A5"><span class="nav-number">8.4.</span> <span class="nav-text">4. 权限作为“附加功能”后补</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E7%9C%9F%E5%AE%9E%E6%A1%88%E4%BE%8B%EF%BC%9A%E4%B8%BA%E4%BB%80%E4%B9%88%E4%B8%80%E4%B8%AA%E2%80%9C%E6%89%A7%E8%A1%8C%E4%BB%BB%E5%8A%A1%E2%80%9D%E9%9C%80%E6%B1%82%EF%BC%8C%E6%9C%80%E5%90%8E%E6%8A%8A%E4%BB%BB%E5%8A%A1%E3%80%81%E7%8E%AF%E5%A2%83%E3%80%81%E6%8A%A5%E5%91%8A%E5%85%A8%E6%94%B9%E4%B9%B1%E4%BA%86"><span class="nav-number">9.</span> <span class="nav-text">九、真实案例：为什么一个“执行任务”需求，最后把任务、环境、报告全改乱了</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9C%BA%E6%99%AF"><span class="nav-number">9.1.</span> <span class="nav-text">场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%89%A7%E8%A1%8C"><span class="nav-number">9.2.</span> <span class="nav-text">执行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8E%B0%E8%B1%A1"><span class="nav-number">9.3.</span> <span class="nav-text">现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%92%E6%9F%A5"><span class="nav-number">9.4.</span> <span class="nav-text">排查</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BF%AE%E5%A4%8D"><span class="nav-number">9.5.</span> <span class="nav-text">修复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E5%86%99%E5%9C%A8%E6%9C%80%E5%90%8E"><span class="nav-number">10.</span> <span class="nav-text">十、写在最后</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2021/07/22/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-03-%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E7%9A%84%E6%A8%A1%E5%9D%97%E8%BE%B9%E7%95%8C%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E6%8B%86/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="测试平台-03-测试平台的模块边界应该怎么拆 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          测试平台-03-测试平台的模块边界应该怎么拆
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2021-07-22 20:30:00" itemprop="dateCreated datePublished" datetime="2021-07-22T20:30:00+08:00">2021-07-22</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0/" itemprop="url" rel="index"><span itemprop="name">测试平台</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>2.5k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>9 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>测试平台做到一定阶段后，最容易冒出来的一类问题不是：</p>
+<ul>
+<li>技术栈不对</li>
+<li>页面不好看</li>
+<li>接口不够多</li>
+</ul>
+<p>而是更底层的一件事：</p>
+<p><strong>模块边界开始混了。</strong></p>
+<p>一旦边界混掉，后面通常会出现这些症状：</p>
+<ul>
+<li>一个功能改动牵动很多模块</li>
+<li>新需求一来，需求归属很快就说不清该落在哪一层</li>
+<li>执行、环境、报告、权限互相引用</li>
+<li>某些公共逻辑到处复制</li>
+<li>平台明明还能跑，但越来越没人敢动</li>
+</ul>
+<p>所以测试平台做大之后，真正决定它能不能继续长的，往往不是框架，而是边界。</p>
+<p>这篇文章就只讲这个问题：</p>
+<p><strong>测试平台的模块到底该怎么拆，才不至于越做越乱。</strong></p>
+<h2 id="一、模块拆分最先要回答的，不是“按页面拆”还是“按表拆”，而是“按责任拆”"><a href="#一、模块拆分最先要回答的，不是“按页面拆”还是“按表拆”，而是“按责任拆”" class="headerlink" title="一、模块拆分最先要回答的，不是“按页面拆”还是“按表拆”，而是“按责任拆”"></a>一、模块拆分最先要回答的，不是“按页面拆”还是“按表拆”，而是“按责任拆”</h2><p>很多平台一开始拆模块，最容易走两条偏路：</p>
+<h3 id="1-按页面拆"><a href="#1-按页面拆" class="headerlink" title="1. 按页面拆"></a>1. 按页面拆</h3><p>例如：</p>
+<ul>
+<li>首页模块</li>
+<li>列表模块</li>
+<li>执行页模块</li>
+<li>报告页模块</li>
+</ul>
+<p>这种拆法早期写页面很顺，但后面业务逻辑会被页面结构牵着走。</p>
+<h3 id="2-按表拆"><a href="#2-按表拆" class="headerlink" title="2. 按表拆"></a>2. 按表拆</h3><p>例如：</p>
+<ul>
+<li>任务表模块</li>
+<li>报告表模块</li>
+<li>用户表模块</li>
+</ul>
+<p>这种拆法看起来整齐，但很容易把“数据结构”误当成“业务边界”。</p>
+<p>更偏向的一条原则是：</p>
+<p><strong>平台模块先按责任边界拆，再落到表和页面。</strong></p>
+<h2 id="二、更常用的测试平台核心边界"><a href="#二、更常用的测试平台核心边界" class="headerlink" title="二、更常用的测试平台核心边界"></a>二、更常用的测试平台核心边界</h2><p>如果是自动化测试平台，通常先把边界收在下面几块。</p>
+<h3 id="1-任务定义边界"><a href="#1-任务定义边界" class="headerlink" title="1. 任务定义边界"></a>1. 任务定义边界</h3><p>它回答的是：</p>
+<ul>
+<li>平台里到底有哪些任务</li>
+<li>每种任务需要什么参数</li>
+<li>谁能触发</li>
+<li>它应该怎么被执行</li>
+</ul>
+<p>注意，这里只是“定义”，不是“执行”。</p>
+<h3 id="2-执行边界"><a href="#2-执行边界" class="headerlink" title="2. 执行边界"></a>2. 执行边界</h3><p>它回答的是：</p>
+<ul>
+<li>任务怎么被真正跑起来</li>
+<li>执行状态怎么流转</li>
+<li>执行中日志和产物怎么收集</li>
+</ul>
+<p>很多平台最容易出问题，就是把任务定义和执行边界混到一起。</p>
+<h3 id="3-环境边界"><a href="#3-环境边界" class="headerlink" title="3. 环境边界"></a>3. 环境边界</h3><p>它回答的是：</p>
+<ul>
+<li>任务运行依赖哪些环境</li>
+<li>地址、账号、设备、数据、密钥放在哪里</li>
+<li>不同环境如何隔离</li>
+</ul>
+<p>环境边界如果没单独拉出来，后面几乎一定会污染任务逻辑。</p>
+<h3 id="4-报告边界"><a href="#4-报告边界" class="headerlink" title="4. 报告边界"></a>4. 报告边界</h3><p>它回答的是：</p>
+<ul>
+<li>一次执行的结果如何被沉淀</li>
+<li>日志、截图、断言、指标如何组织</li>
+<li>什么叫成功、失败、部分成功</li>
+</ul>
+<p>报告边界不等于“前端展示页”，它本质上是结果资产层。</p>
+<h3 id="5-权限边界"><a href="#5-权限边界" class="headerlink" title="5. 权限边界"></a>5. 权限边界</h3><p>它回答的是：</p>
+<ul>
+<li>谁能看到什么</li>
+<li>谁能执行什么</li>
+<li>谁能改环境和配置</li>
+<li>哪些动作属于高风险动作</li>
+</ul>
+<h3 id="6-接入边界"><a href="#6-接入边界" class="headerlink" title="6. 接入边界"></a>6. 接入边界</h3><p>它回答的是：</p>
+<ul>
+<li>Jenkins 怎么接</li>
+<li>告警怎么接</li>
+<li>外部系统怎么接</li>
+</ul>
+<p>这层边界如果不单独处理，平台内部逻辑很容易被外围系统拖乱。</p>
+<h2 id="三、最容易拆错的-4-组边界"><a href="#三、最容易拆错的-4-组边界" class="headerlink" title="三、最容易拆错的 4 组边界"></a>三、最容易拆错的 4 组边界</h2><h3 id="1-任务定义和任务执行混在一起"><a href="#1-任务定义和任务执行混在一起" class="headerlink" title="1. 任务定义和任务执行混在一起"></a>1. 任务定义和任务执行混在一起</h3><p>这是最常见的一种。</p>
+<p>表现通常是：</p>
+<ul>
+<li>任务对象里既有定义字段，又有运行态字段</li>
+<li>代码里一个模块既负责配置任务，又负责调度任务</li>
+</ul>
+<p>后果是：</p>
+<ul>
+<li>一次运行把任务定义污染掉</li>
+<li>执行逻辑难复用</li>
+<li>状态管理变得很乱</li>
+</ul>
+<h3 id="2-环境和任务参数混在一起"><a href="#2-环境和任务参数混在一起" class="headerlink" title="2. 环境和任务参数混在一起"></a>2. 环境和任务参数混在一起</h3><p>很多平台早期会把：</p>
+<ul>
+<li>环境地址</li>
+<li>账号信息</li>
+<li>特定任务参数</li>
+</ul>
+<p>全塞进一套大表单。</p>
+<p>短期看方便，长期会导致：</p>
+<ul>
+<li>同类环境配置重复很多份</li>
+<li>敏感信息和普通参数混着流动</li>
+<li>换环境时任务定义被迫跟着改</li>
+</ul>
+<h3 id="3-报告和执行过程混在一起"><a href="#3-报告和执行过程混在一起" class="headerlink" title="3. 报告和执行过程混在一起"></a>3. 报告和执行过程混在一起</h3><p>例如：</p>
+<ul>
+<li>执行器直接决定页面报告怎么展示</li>
+<li>报告字段和运行时状态强耦合</li>
+</ul>
+<p>后面只要报告结构一变，执行链路也容易跟着动。</p>
+<h3 id="4-权限控制散落在各模块"><a href="#4-权限控制散落在各模块" class="headerlink" title="4. 权限控制散落在各模块"></a>4. 权限控制散落在各模块</h3><p>这会导致：</p>
+<ul>
+<li>这里做一层判断</li>
+<li>那里又做一层判断</li>
+<li>不同入口规则不一致</li>
+</ul>
+<p>最后最容易出现的不是没权限，而是权限规则互相打架。</p>
+<h2 id="四、更推荐的拆法：对象边界先于页面边界"><a href="#四、更推荐的拆法：对象边界先于页面边界" class="headerlink" title="四、更推荐的拆法：对象边界先于页面边界"></a>四、更推荐的拆法：对象边界先于页面边界</h2><p>如果现在让我从 0 到 1 设计一个测试平台，先按对象边界想，再映射到页面和接口。</p>
+<p>例如：</p>
+<ul>
+<li><code>TaskDefinition</code></li>
+<li><code>TaskExecution</code></li>
+<li><code>Environment</code></li>
+<li><code>ExecutionReport</code></li>
+<li><code>UserRole</code></li>
+<li><code>ExternalIntegration</code></li>
+</ul>
+<p>然后再问：</p>
+<ul>
+<li>这些对象谁拥有谁</li>
+<li>谁依赖谁</li>
+<li>哪些变化应该互不影响</li>
+</ul>
+<p>这一步想清楚后，再去设计：</p>
+<ul>
+<li>页面入口</li>
+<li>API 路由</li>
+<li>数据表结构</li>
+</ul>
+<p>会稳很多。</p>
+<h2 id="五、一套更实用的最小模块划分"><a href="#五、一套更实用的最小模块划分" class="headerlink" title="五、一套更实用的最小模块划分"></a>五、一套更实用的最小模块划分</h2><p>如果只看第一版平台，更推荐至少先切成下面这几块。</p>
+<h3 id="1-任务中心"><a href="#1-任务中心" class="headerlink" title="1. 任务中心"></a>1. 任务中心</h3><p>职责：</p>
+<ul>
+<li>维护任务定义</li>
+<li>维护参数模板</li>
+<li>管理触发入口</li>
+</ul>
+<p>不要在这里直接写执行细节。</p>
+<h3 id="2-执行中心"><a href="#2-执行中心" class="headerlink" title="2. 执行中心"></a>2. 执行中心</h3><p>职责：</p>
+<ul>
+<li>创建执行记录</li>
+<li>驱动执行器</li>
+<li>更新状态机</li>
+</ul>
+<p>不要把环境配置和报告展示塞进这里。</p>
+<h3 id="3-环境中心"><a href="#3-环境中心" class="headerlink" title="3. 环境中心"></a>3. 环境中心</h3><p>职责：</p>
+<ul>
+<li>管理环境信息</li>
+<li>管理账号、地址、依赖资源</li>
+<li>提供执行所需的运行配置</li>
+</ul>
+<h3 id="4-报告中心"><a href="#4-报告中心" class="headerlink" title="4. 报告中心"></a>4. 报告中心</h3><p>职责：</p>
+<ul>
+<li>汇总执行结果</li>
+<li>管理日志、截图、附件</li>
+<li>提供统一查看入口</li>
+</ul>
+<h3 id="5-权限中心"><a href="#5-权限中心" class="headerlink" title="5. 权限中心"></a>5. 权限中心</h3><p>职责：</p>
+<ul>
+<li>用户、角色、资源授权</li>
+<li>高风险动作控制</li>
+</ul>
+<h3 id="6-接入中心"><a href="#6-接入中心" class="headerlink" title="6. 接入中心"></a>6. 接入中心</h3><p>职责：</p>
+<ul>
+<li>Jenkins 集成</li>
+<li>告警集成</li>
+<li>Webhook &#x2F; 外部系统接入</li>
+</ul>
+<p>这套划分不一定是最终形态，但足够帮助平台早期不乱成一锅。</p>
+<h2 id="六、模块之间最重要的不是“有没有关系”，而是“关系是否可控”"><a href="#六、模块之间最重要的不是“有没有关系”，而是“关系是否可控”" class="headerlink" title="六、模块之间最重要的不是“有没有关系”，而是“关系是否可控”"></a>六、模块之间最重要的不是“有没有关系”，而是“关系是否可控”</h2><p>平台模块不是不能互相调用，而是不能无边界互相渗透。</p>
+<p>更在意几条基本规则：</p>
+<h3 id="1-任务定义不直接操心报告展示"><a href="#1-任务定义不直接操心报告展示" class="headerlink" title="1. 任务定义不直接操心报告展示"></a>1. 任务定义不直接操心报告展示</h3><p>否则任务一改，报告一起抖。</p>
+<h3 id="2-执行中心不持有环境细节"><a href="#2-执行中心不持有环境细节" class="headerlink" title="2. 执行中心不持有环境细节"></a>2. 执行中心不持有环境细节</h3><p>执行中心应该消费环境，而不是把环境逻辑写死在自己内部。</p>
+<h3 id="3-权限中心尽量收口"><a href="#3-权限中心尽量收口" class="headerlink" title="3. 权限中心尽量收口"></a>3. 权限中心尽量收口</h3><p>权限判断最好有统一入口，不要到处散。</p>
+<h3 id="4-接入中心不要反向污染核心业务"><a href="#4-接入中心不要反向污染核心业务" class="headerlink" title="4. 接入中心不要反向污染核心业务"></a>4. 接入中心不要反向污染核心业务</h3><p>Jenkins、Webhook、告警这些外部接入，只应该影响触发方式，不该把核心领域对象拖得很碎。</p>
+<h2 id="七、更推荐的一个检查问题：如果删掉某个页面，这个模块还成立吗"><a href="#七、更推荐的一个检查问题：如果删掉某个页面，这个模块还成立吗" class="headerlink" title="七、更推荐的一个检查问题：如果删掉某个页面，这个模块还成立吗"></a>七、更推荐的一个检查问题：如果删掉某个页面，这个模块还成立吗</h2><p>这是我很常用的一个判断方式。</p>
+<p>如果删掉某个页面或某个前端入口后，这个“模块”就完全失去意义，那它大概率不是模块，只是页面切片。</p>
+<p>真正稳定的模块应该是：</p>
+<ul>
+<li>即使页面改版</li>
+<li>即使 API 改路由</li>
+</ul>
+<p>它的核心责任仍然成立。</p>
+<h2 id="八、最容易踩的几个坑"><a href="#八、最容易踩的几个坑" class="headerlink" title="八、最容易踩的几个坑"></a>八、最容易踩的几个坑</h2><h3 id="1-早期为了快，把所有逻辑先写一起"><a href="#1-早期为了快，把所有逻辑先写一起" class="headerlink" title="1. 早期为了快，把所有逻辑先写一起"></a>1. 早期为了快，把所有逻辑先写一起</h3><p>这在第一个月通常很爽，但到了第二阶段会特别痛。</p>
+<h3 id="2-公共能力没有明确归属"><a href="#2-公共能力没有明确归属" class="headerlink" title="2. 公共能力没有明确归属"></a>2. 公共能力没有明确归属</h3><p>例如：</p>
+<ul>
+<li>日志收集谁负责</li>
+<li>产物存储谁负责</li>
+<li>任务状态流转谁负责</li>
+</ul>
+<p>如果归属不清，后面一定会重复实现。</p>
+<h3 id="3-页面改版牵动后端边界"><a href="#3-页面改版牵动后端边界" class="headerlink" title="3. 页面改版牵动后端边界"></a>3. 页面改版牵动后端边界</h3><p>这通常说明后端模块其实是按页面切出来的，而不是按责任切的。</p>
+<h3 id="4-权限作为“附加功能”后补"><a href="#4-权限作为“附加功能”后补" class="headerlink" title="4. 权限作为“附加功能”后补"></a>4. 权限作为“附加功能”后补</h3><p>后补权限通常意味着：</p>
+<ul>
+<li>各模块都已经暴露了很多入口</li>
+<li>再补统一规则会很费劲</li>
+</ul>
+<h2 id="九、真实案例：为什么一个“执行任务”需求，最后把任务、环境、报告全改乱了"><a href="#九、真实案例：为什么一个“执行任务”需求，最后把任务、环境、报告全改乱了" class="headerlink" title="九、真实案例：为什么一个“执行任务”需求，最后把任务、环境、报告全改乱了"></a>九、真实案例：为什么一个“执行任务”需求，最后把任务、环境、报告全改乱了</h2><h3 id="场景"><a href="#场景" class="headerlink" title="场景"></a>场景</h3><p>一个测试平台早期只有少量任务类型，所有逻辑基本都放在一个任务模块里：</p>
+<ul>
+<li>任务定义</li>
+<li>任务执行</li>
+<li>环境选择</li>
+<li>报告查询</li>
+</ul>
+<p>一开始功能不多，这种写法看起来还能撑住。</p>
+<h3 id="执行"><a href="#执行" class="headerlink" title="执行"></a>执行</h3><p>后来平台新增一个需求：</p>
+<ul>
+<li>同一任务支持按不同环境、不同账号、不同参数模板触发</li>
+</ul>
+<p>看起来只是“执行入口更灵活一点”，但改动一开始就很痛：</p>
+<ul>
+<li>任务模块要改</li>
+<li>环境模块要改</li>
+<li>报告展示要改</li>
+<li>权限也要跟着改</li>
+</ul>
+<h3 id="现象"><a href="#现象" class="headerlink" title="现象"></a>现象</h3><p>问题的根因并不是需求复杂，而是边界早就混了：</p>
+<ul>
+<li>任务定义直接持有环境细节</li>
+<li>执行记录和任务定义没拉开</li>
+<li>报告直接依赖任务表中的运行字段</li>
+</ul>
+<p>于是一个执行需求，变成整个平台都在震。</p>
+<h3 id="排查"><a href="#排查" class="headerlink" title="排查"></a>排查</h3><p>后面把边界重新拆开后，问题就清楚了：</p>
+<ul>
+<li>任务定义应该只描述“是什么任务”</li>
+<li>环境中心应该描述“在哪跑”</li>
+<li>执行中心应该描述“这次怎么跑”</li>
+<li>报告中心应该描述“跑完产出了什么”</li>
+</ul>
+<h3 id="修复"><a href="#修复" class="headerlink" title="修复"></a>修复</h3><p>真正有效的修复不是再补几个字段，而是重构边界：</p>
+<ol>
+<li>任务定义和执行记录拆表</li>
+<li>环境能力抽成独立中心</li>
+<li>报告只依赖执行结果，不反向依赖任务运行态</li>
+</ol>
+<p>这个案例很典型地说明：</p>
+<p><strong>模块边界拆错时，后续每个需求都会看起来比实际更重。</strong></p>
+<h2 id="十、写在最后"><a href="#十、写在最后" class="headerlink" title="十、写在最后"></a>十、写在最后</h2><p>测试平台的模块边界设计，真正要解决的不是“好不好看”，而是平台后面还能不能安全演进。</p>
+<p>如果把这件事压缩成一句最实用的话，可以概括为：</p>
+<p><strong>先按责任切边界，再让页面、接口、表结构去映射这些边界。</strong></p>
+<p>只要这一步做对，平台后面即使继续长，也更容易保持清晰，而不是慢慢变成谁都不敢碰的大泥球。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0/" rel="tag"># 测试平台</a>
+              <a href="/tags/%E5%B7%A5%E7%A8%8B%E5%8C%96/" rel="tag"># 工程化</a>
+              <a href="/tags/%E5%AE%9E%E6%88%98/" rel="tag"># 实战</a>
+              <a href="/tags/%E6%9E%B6%E6%9E%84%E8%AE%BE%E8%AE%A1/" rel="tag"># 架构设计</a>
+              <a href="/tags/%E5%B9%B3%E5%8F%B0%E5%8C%96/" rel="tag"># 平台化</a>
+              <a href="/tags/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E5%BC%80%E5%8F%91/" rel="tag"># 测试平台开发</a>
+              <a href="/tags/%E6%A8%A1%E5%9D%97%E8%AE%BE%E8%AE%A1/" rel="tag"># 模块设计</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2021/07/15/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-02-Go+Gin%E5%A6%82%E4%BD%95%E6%90%AD%E4%B8%80%E4%B8%AA%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E5%90%8E%E7%AB%AF/" rel="prev" title="测试平台-02-Go + Gin 如何搭一个测试平台后端">
+                  <i class="fa fa-angle-left"></i> 测试平台-02-Go + Gin 如何搭一个测试平台后端
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2021/07/29/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-04-%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E7%9A%84%E6%9D%83%E9%99%90%E6%A8%A1%E5%9E%8B%E8%AE%BE%E8%AE%A1/" rel="next" title="测试平台-04-测试平台的权限模型设计">
+                  测试平台-04-测试平台的权限模型设计 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

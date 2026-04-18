@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="测试平台做到一定阶段后，权限模型几乎一定会变成一个绕不过去的问题。 最开始，权限往往会被理解得比较简单：  谁能登录 谁能看页面 谁能点按钮  但只要平台真的开始承载真实任务，很快就会遇到更复杂的场景：  谁能执行哪个任务 谁能看哪个项目的报告 谁能改环境配置 谁能操作生产巡检或高风险任务 谁能接 Jenkins、改告警、动密钥  到这个阶段，权限就不再是“加几个角色枚举”的问题，而是平台边界的一">
+<meta property="og:type" content="article">
+<meta property="og:title" content="测试平台-04-测试平台的权限模型设计">
+<meta property="og:url" content="https://paynewinnt.github.io/2021/07/29/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-04-%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E7%9A%84%E6%9D%83%E9%99%90%E6%A8%A1%E5%9E%8B%E8%AE%BE%E8%AE%A1/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="测试平台做到一定阶段后，权限模型几乎一定会变成一个绕不过去的问题。 最开始，权限往往会被理解得比较简单：  谁能登录 谁能看页面 谁能点按钮  但只要平台真的开始承载真实任务，很快就会遇到更复杂的场景：  谁能执行哪个任务 谁能看哪个项目的报告 谁能改环境配置 谁能操作生产巡检或高风险任务 谁能接 Jenkins、改告警、动密钥  到这个阶段，权限就不再是“加几个角色枚举”的问题，而是平台边界的一">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2021-07-29T12:30:00.000Z">
+<meta property="article:modified_time" content="2021-07-29T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="测试平台">
+<meta property="article:tag" content="工程化">
+<meta property="article:tag" content="实战">
+<meta property="article:tag" content="权限模型">
+<meta property="article:tag" content="架构设计">
+<meta property="article:tag" content="测试平台开发">
+<meta property="article:tag" content="安全设计">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2021/07/29/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-04-%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E7%9A%84%E6%9D%83%E9%99%90%E6%A8%A1%E5%9E%8B%E8%AE%BE%E8%AE%A1/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2021/07/29/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-04-%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E7%9A%84%E6%9D%83%E9%99%90%E6%A8%A1%E5%9E%8B%E8%AE%BE%E8%AE%A1/","path":"2021/07/29/测试平台-04-测试平台的权限模型设计/","title":"测试平台-04-测试平台的权限模型设计"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>测试平台-04-测试平台的权限模型设计 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E6%9D%83%E9%99%90%E6%9C%80%E5%AE%B9%E6%98%93%E8%A2%AB%E4%BD%8E%E4%BC%B0%E7%9A%84%EF%BC%8C%E4%B8%8D%E6%98%AF%E7%99%BB%E5%BD%95%EF%BC%8C%E8%80%8C%E6%98%AF%E2%80%9C%E5%8A%A8%E4%BD%9C%E9%A3%8E%E9%99%A9%E2%80%9D"><span class="nav-number">1.</span> <span class="nav-text">一、测试平台权限最容易被低估的，不是登录，而是“动作风险”</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E6%9B%B4%E5%B8%B8%E7%94%A8%E7%9A%84%E4%B8%80%E5%A5%97%E6%9D%83%E9%99%90%E6%8B%86%E5%88%86%E6%96%B9%E5%BC%8F"><span class="nav-number">2.</span> <span class="nav-text">二、更常用的一套权限拆分方式</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%BA%AB%E4%BB%BD%E5%B1%82"><span class="nav-number">2.1.</span> <span class="nav-text">1. 身份层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%A7%92%E8%89%B2%E5%B1%82"><span class="nav-number">2.2.</span> <span class="nav-text">2. 角色层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%B5%84%E6%BA%90%E5%B1%82"><span class="nav-number">2.3.</span> <span class="nav-text">3. 资源层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%8A%A8%E4%BD%9C%E5%B1%82"><span class="nav-number">2.4.</span> <span class="nav-text">4. 动作层</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E9%87%8C%E6%9C%80%E5%80%BC%E5%BE%97%E9%87%8D%E7%82%B9%E6%8E%A7%E7%9A%84-5-%E7%B1%BB%E8%B5%84%E6%BA%90"><span class="nav-number">3.</span> <span class="nav-text">三、测试平台里最值得重点控的 5 类资源</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%BB%BB%E5%8A%A1%E8%B5%84%E6%BA%90"><span class="nav-number">3.1.</span> <span class="nav-text">1. 任务资源</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E7%8E%AF%E5%A2%83%E8%B5%84%E6%BA%90"><span class="nav-number">3.2.</span> <span class="nav-text">2. 环境资源</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%89%A7%E8%A1%8C%E7%BB%93%E6%9E%9C%E5%92%8C%E6%8A%A5%E5%91%8A%E8%B5%84%E6%BA%90"><span class="nav-number">3.3.</span> <span class="nav-text">3. 执行结果和报告资源</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E7%B3%BB%E7%BB%9F%E9%85%8D%E7%BD%AE%E8%B5%84%E6%BA%90"><span class="nav-number">3.4.</span> <span class="nav-text">4. 系统配置资源</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E9%AB%98%E9%A3%8E%E9%99%A9%E5%8A%A8%E4%BD%9C%E8%B5%84%E6%BA%90"><span class="nav-number">3.5.</span> <span class="nav-text">5. 高风险动作资源</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E4%B8%BA%E4%BB%80%E4%B9%88%E4%B8%8D%E5%BB%BA%E8%AE%AE%E5%8F%AA%E5%81%9A%E2%80%9C%E8%A7%92%E8%89%B2%E6%9D%83%E9%99%90%E8%A1%A8%E2%80%9D"><span class="nav-number">4.</span> <span class="nav-text">四、为什么不建议只做“角色权限表”</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%90%8C%E4%B8%80%E8%A7%92%E8%89%B2%E4%B8%8D%E4%B8%80%E5%AE%9A%E6%8B%A5%E6%9C%89%E5%90%8C%E4%B8%80%E8%B5%84%E6%BA%90%E8%8C%83%E5%9B%B4"><span class="nav-number">4.1.</span> <span class="nav-text">1. 同一角色不一定拥有同一资源范围</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%90%8C%E4%B8%80%E8%B5%84%E6%BA%90%E4%B8%8A%E7%9A%84%E5%8A%A8%E4%BD%9C%E9%A3%8E%E9%99%A9%E4%B8%8D%E5%90%8C"><span class="nav-number">4.2.</span> <span class="nav-text">2. 同一资源上的动作风险不同</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%8E%AF%E5%A2%83%E5%92%8C%E5%8A%A8%E4%BD%9C%E5%8F%A0%E5%8A%A0%E5%90%8E%EF%BC%8C%E8%A7%92%E8%89%B2%E5%BE%88%E5%BF%AB%E7%88%86%E7%82%B8"><span class="nav-number">4.3.</span> <span class="nav-text">3. 环境和动作叠加后，角色很快爆炸</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E6%9B%B4%E6%8E%A8%E8%8D%90%E7%9A%84%E6%9D%83%E9%99%90%E5%88%A4%E6%96%AD%E6%A8%A1%E5%9E%8B"><span class="nav-number">5.</span> <span class="nav-text">五、更推荐的权限判断模型</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E5%87%A0%E4%B8%AA%E7%89%B9%E5%88%AB%E9%AB%98%E9%A2%91%E7%9A%84%E6%9D%83%E9%99%90%E5%88%A4%E6%96%AD%E5%9C%BA%E6%99%AF"><span class="nav-number">6.</span> <span class="nav-text">六、几个特别高频的权限判断场景</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%B0%81%E8%83%BD%E6%89%A7%E8%A1%8C%E4%BB%BB%E5%8A%A1"><span class="nav-number">6.1.</span> <span class="nav-text">1. 谁能执行任务</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%B0%81%E8%83%BD%E6%94%B9%E7%8E%AF%E5%A2%83%E9%85%8D%E7%BD%AE"><span class="nav-number">6.2.</span> <span class="nav-text">2. 谁能改环境配置</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%B0%81%E8%83%BD%E7%9C%8B%E6%8A%A5%E5%91%8A%E5%92%8C%E6%97%A5%E5%BF%97"><span class="nav-number">6.3.</span> <span class="nav-text">3. 谁能看报告和日志</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E8%B0%81%E8%83%BD%E5%81%9A%E7%B3%BB%E7%BB%9F%E7%BA%A7%E6%93%8D%E4%BD%9C"><span class="nav-number">6.4.</span> <span class="nav-text">4. 谁能做系统级操作</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E4%B8%80%E5%A5%97%E6%9B%B4%E5%AE%9E%E7%94%A8%E7%9A%84%E6%9C%80%E5%B0%8F%E6%9D%83%E9%99%90%E9%AA%A8%E6%9E%B6"><span class="nav-number">7.</span> <span class="nav-text">七、一套更实用的最小权限骨架</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%B9%B3%E5%8F%B0%E7%BA%A7%E8%A7%92%E8%89%B2"><span class="nav-number">7.1.</span> <span class="nav-text">1. 平台级角色</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E9%A1%B9%E7%9B%AE%E7%BA%A7%E8%B5%84%E6%BA%90%E8%8C%83%E5%9B%B4"><span class="nav-number">7.2.</span> <span class="nav-text">2. 项目级资源范围</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%8A%A8%E4%BD%9C%E7%BA%A7%E6%9D%83%E9%99%90"><span class="nav-number">7.3.</span> <span class="nav-text">3. 动作级权限</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E7%8E%AF%E5%A2%83%E7%BA%A7%E9%99%90%E5%88%B6"><span class="nav-number">7.4.</span> <span class="nav-text">4. 环境级限制</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E6%9B%B4%E6%8E%A8%E8%8D%90%E7%9A%84%E5%B9%B3%E5%8F%B0%E6%9D%83%E9%99%90%E6%A3%80%E6%9F%A5%E7%82%B9"><span class="nav-number">8.</span> <span class="nav-text">八、更推荐的平台权限检查点</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%99%BB%E5%BD%95%E5%92%8C%E8%BA%AB%E4%BB%BD%E5%8A%A0%E8%BD%BD"><span class="nav-number">8.1.</span> <span class="nav-text">1. 登录和身份加载</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%AF%B7%E6%B1%82%E5%85%A5%E5%8F%A3%E7%BB%9F%E4%B8%80%E9%89%B4%E6%9D%83"><span class="nav-number">8.2.</span> <span class="nav-text">2. 请求入口统一鉴权</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%A0%B8%E5%BF%83%E4%B8%9A%E5%8A%A1%E5%8A%A8%E4%BD%9C%E7%BB%9F%E4%B8%80%E6%8E%88%E6%9D%83%E5%88%A4%E6%96%AD"><span class="nav-number">8.3.</span> <span class="nav-text">3. 核心业务动作统一授权判断</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E9%AB%98%E9%A3%8E%E9%99%A9%E5%8A%A8%E4%BD%9C%E4%BA%8C%E6%AC%A1%E7%A1%AE%E8%AE%A4"><span class="nav-number">8.4.</span> <span class="nav-text">4. 高风险动作二次确认</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E6%9C%80%E5%AE%B9%E6%98%93%E8%B8%A9%E7%9A%84%E5%87%A0%E4%B8%AA%E5%9D%91"><span class="nav-number">9.</span> <span class="nav-text">九、最容易踩的几个坑</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%8F%AA%E5%81%9A%E5%89%8D%E7%AB%AF%E8%8F%9C%E5%8D%95%E6%9D%83%E9%99%90"><span class="nav-number">9.1.</span> <span class="nav-text">1. 只做前端菜单权限</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%9D%83%E9%99%90%E6%95%A3%E5%9C%A8%E5%90%84%E4%B8%AA%E6%A8%A1%E5%9D%97%E9%87%8C"><span class="nav-number">9.2.</span> <span class="nav-text">2. 权限散在各个模块里</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%B9%B3%E5%8F%B0%E7%AE%A1%E7%90%86%E5%91%98%E7%9B%B4%E6%8E%A5%E5%85%A8%E5%BC%80%EF%BC%8C%E9%95%BF%E6%9C%9F%E4%B8%8D%E6%94%B6%E5%8F%A3"><span class="nav-number">9.3.</span> <span class="nav-text">3. 平台管理员直接全开，长期不收口</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%B8%8D%E5%8C%BA%E5%88%86%E8%B5%84%E6%BA%90%E6%9D%83%E9%99%90%E5%92%8C%E5%8A%A8%E4%BD%9C%E6%9D%83%E9%99%90"><span class="nav-number">9.4.</span> <span class="nav-text">4. 不区分资源权限和动作权限</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E7%9C%9F%E5%AE%9E%E6%A1%88%E4%BE%8B%EF%BC%9A%E4%B8%BA%E4%BB%80%E4%B9%88%E2%80%9C%E7%BB%9F%E4%B8%80%E6%8C%82%E5%9C%A8%E6%B5%8B%E8%AF%95%E8%A7%92%E8%89%B2%E4%B8%8B%E2%80%9D%EF%BC%8C%E6%9C%80%E5%90%8E%E8%BF%98%E6%98%AF%E5%87%BA%E4%BA%86%E9%AB%98%E9%A3%8E%E9%99%A9%E8%AF%AF%E6%93%8D%E4%BD%9C"><span class="nav-number">10.</span> <span class="nav-text">十、真实案例：为什么“统一挂在测试角色下”，最后还是出了高风险误操作</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9C%BA%E6%99%AF"><span class="nav-number">10.1.</span> <span class="nav-text">场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%89%A7%E8%A1%8C"><span class="nav-number">10.2.</span> <span class="nav-text">执行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8E%B0%E8%B1%A1"><span class="nav-number">10.3.</span> <span class="nav-text">现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%92%E6%9F%A5"><span class="nav-number">10.4.</span> <span class="nav-text">排查</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BF%AE%E5%A4%8D"><span class="nav-number">10.5.</span> <span class="nav-text">修复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E6%80%8E%E4%B9%88%E6%8A%8A%E6%9D%83%E9%99%90%E6%A8%A1%E5%9E%8B%E6%B2%89%E6%B7%80%E6%88%90%E9%95%BF%E6%9C%9F%E8%83%BD%E5%8A%9B"><span class="nav-number">11.</span> <span class="nav-text">十一、怎么把权限模型沉淀成长期能力</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E5%86%99%E5%9C%A8%E6%9C%80%E5%90%8E"><span class="nav-number">12.</span> <span class="nav-text">十二、写在最后</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2021/07/29/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-04-%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E7%9A%84%E6%9D%83%E9%99%90%E6%A8%A1%E5%9E%8B%E8%AE%BE%E8%AE%A1/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="测试平台-04-测试平台的权限模型设计 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          测试平台-04-测试平台的权限模型设计
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2021-07-29 20:30:00" itemprop="dateCreated datePublished" datetime="2021-07-29T20:30:00+08:00">2021-07-29</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0/" itemprop="url" rel="index"><span itemprop="name">测试平台</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>2.6k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>9 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>测试平台做到一定阶段后，权限模型几乎一定会变成一个绕不过去的问题。</p>
+<p>最开始，权限往往会被理解得比较简单：</p>
+<ul>
+<li>谁能登录</li>
+<li>谁能看页面</li>
+<li>谁能点按钮</li>
+</ul>
+<p>但只要平台真的开始承载真实任务，很快就会遇到更复杂的场景：</p>
+<ul>
+<li>谁能执行哪个任务</li>
+<li>谁能看哪个项目的报告</li>
+<li>谁能改环境配置</li>
+<li>谁能操作生产巡检或高风险任务</li>
+<li>谁能接 Jenkins、改告警、动密钥</li>
+</ul>
+<p>到这个阶段，权限就不再是“加几个角色枚举”的问题，而是平台边界的一部分。</p>
+<p>这篇文章就只讲这个问题：</p>
+<p><strong>测试平台的权限模型到底该怎么设计，才不至于后面越补越乱。</strong></p>
+<h2 id="一、测试平台权限最容易被低估的，不是登录，而是“动作风险”"><a href="#一、测试平台权限最容易被低估的，不是登录，而是“动作风险”" class="headerlink" title="一、测试平台权限最容易被低估的，不是登录，而是“动作风险”"></a>一、测试平台权限最容易被低估的，不是登录，而是“动作风险”</h2><p>很多平台早期做权限，最先想到的是菜单和页面：</p>
+<ul>
+<li>管理员能看所有菜单</li>
+<li>普通用户只能看部分菜单</li>
+</ul>
+<p>这一步当然要做，但它远远不够。</p>
+<p>因为平台真正危险的不是“看到某个页面”，而是下面这些动作：</p>
+<ul>
+<li>执行任务</li>
+<li>修改环境</li>
+<li>切换配置</li>
+<li>查看敏感日志</li>
+<li>下载报告或数据</li>
+<li>触发生产巡检</li>
+</ul>
+<p>所以更关注的权限问题通常是：</p>
+<ul>
+<li>谁能对什么资源做什么动作</li>
+</ul>
+<p>而不是单纯：</p>
+<ul>
+<li>谁能看到哪个页面</li>
+</ul>
+<h2 id="二、更常用的一套权限拆分方式"><a href="#二、更常用的一套权限拆分方式" class="headerlink" title="二、更常用的一套权限拆分方式"></a>二、更常用的一套权限拆分方式</h2><p>如果是测试平台，通常会把权限拆成 4 层来看。</p>
+<h3 id="1-身份层"><a href="#1-身份层" class="headerlink" title="1. 身份层"></a>1. 身份层</h3><p>这层回答的是：</p>
+<ul>
+<li>你是谁</li>
+<li>属于哪个团队、项目、组织</li>
+</ul>
+<p>这一层通常和：</p>
+<ul>
+<li>用户系统</li>
+<li>SSO</li>
+<li>组织架构</li>
+</ul>
+<p>关联更紧。</p>
+<h3 id="2-角色层"><a href="#2-角色层" class="headerlink" title="2. 角色层"></a>2. 角色层</h3><p>这层回答的是：</p>
+<ul>
+<li>你在平台里属于什么角色</li>
+</ul>
+<p>例如：</p>
+<ul>
+<li>平台管理员</li>
+<li>项目管理员</li>
+<li>普通使用者</li>
+<li>只读用户</li>
+<li>巡检操作者</li>
+</ul>
+<p>但角色通常不适合设计得过细，因为角色只是中间层，不是全部。</p>
+<h3 id="3-资源层"><a href="#3-资源层" class="headerlink" title="3. 资源层"></a>3. 资源层</h3><p>这层回答的是：</p>
+<ul>
+<li>你能接触哪些对象</li>
+</ul>
+<p>例如：</p>
+<ul>
+<li>哪个项目</li>
+<li>哪个任务</li>
+<li>哪个环境</li>
+<li>哪份报告</li>
+</ul>
+<h3 id="4-动作层"><a href="#4-动作层" class="headerlink" title="4. 动作层"></a>4. 动作层</h3><p>这层回答的是：</p>
+<ul>
+<li>你对这些资源能做什么</li>
+</ul>
+<p>例如：</p>
+<ul>
+<li>查看</li>
+<li>编辑</li>
+<li>执行</li>
+<li>删除</li>
+<li>导出</li>
+<li>审批</li>
+</ul>
+<p>这 4 层叠在一起，权限模型才会比较完整。</p>
+<h2 id="三、测试平台里最值得重点控的-5-类资源"><a href="#三、测试平台里最值得重点控的-5-类资源" class="headerlink" title="三、测试平台里最值得重点控的 5 类资源"></a>三、测试平台里最值得重点控的 5 类资源</h2><p>如果从风险角度看，最优先要考虑这几类资源。</p>
+<h3 id="1-任务资源"><a href="#1-任务资源" class="headerlink" title="1. 任务资源"></a>1. 任务资源</h3><p>这里不仅是“能不能看任务”，更重要的是：</p>
+<ul>
+<li>能不能执行</li>
+<li>能不能改执行参数</li>
+<li>能不能删除或停用</li>
+</ul>
+<h3 id="2-环境资源"><a href="#2-环境资源" class="headerlink" title="2. 环境资源"></a>2. 环境资源</h3><p>环境通常是平台权限里风险很高的一块。</p>
+<p>因为环境一旦被误改，后面任务可能会：</p>
+<ul>
+<li>打错系统</li>
+<li>跑错环境</li>
+<li>使用错误账号</li>
+</ul>
+<h3 id="3-执行结果和报告资源"><a href="#3-执行结果和报告资源" class="headerlink" title="3. 执行结果和报告资源"></a>3. 执行结果和报告资源</h3><p>会低估这块，但报告里经常会包含：</p>
+<ul>
+<li>日志</li>
+<li>截图</li>
+<li>接口返回</li>
+<li>环境信息</li>
+</ul>
+<p>其中可能有敏感数据。</p>
+<h3 id="4-系统配置资源"><a href="#4-系统配置资源" class="headerlink" title="4. 系统配置资源"></a>4. 系统配置资源</h3><p>例如：</p>
+<ul>
+<li>Jenkins 配置</li>
+<li>告警配置</li>
+<li>密钥配置</li>
+<li>外部系统接入配置</li>
+</ul>
+<p>这类资源通常不应该开放给所有平台使用者。</p>
+<h3 id="5-高风险动作资源"><a href="#5-高风险动作资源" class="headerlink" title="5. 高风险动作资源"></a>5. 高风险动作资源</h3><p>这里更准确地说，不只是资源，而是动作本身需要单独控。</p>
+<p>例如：</p>
+<ul>
+<li>生产巡检触发</li>
+<li>生产环境回归</li>
+<li>批量删除</li>
+<li>批量导出</li>
+</ul>
+<h2 id="四、为什么不建议只做“角色权限表”"><a href="#四、为什么不建议只做“角色权限表”" class="headerlink" title="四、为什么不建议只做“角色权限表”"></a>四、为什么不建议只做“角色权限表”</h2><p>很多平台最容易写成这样：</p>
+<ul>
+<li>管理员：全权限</li>
+<li>开发：部分权限</li>
+<li>测试：部分权限</li>
+<li>游客：只读</li>
+</ul>
+<p>这种方式在最早期能用，但很快会遇到几个问题：</p>
+<h3 id="1-同一角色不一定拥有同一资源范围"><a href="#1-同一角色不一定拥有同一资源范围" class="headerlink" title="1. 同一角色不一定拥有同一资源范围"></a>1. 同一角色不一定拥有同一资源范围</h3><p>例如两个测试同学：</p>
+<ul>
+<li>都是“测试角色”</li>
+<li>但未必都能看同一个项目或同一套环境</li>
+</ul>
+<h3 id="2-同一资源上的动作风险不同"><a href="#2-同一资源上的动作风险不同" class="headerlink" title="2. 同一资源上的动作风险不同"></a>2. 同一资源上的动作风险不同</h3><p>例如：</p>
+<ul>
+<li>看任务定义</li>
+<li>执行任务</li>
+<li>改任务参数</li>
+</ul>
+<p>风险完全不是一个量级。</p>
+<h3 id="3-环境和动作叠加后，角色很快爆炸"><a href="#3-环境和动作叠加后，角色很快爆炸" class="headerlink" title="3. 环境和动作叠加后，角色很快爆炸"></a>3. 环境和动作叠加后，角色很快爆炸</h3><p>如果平台里有：</p>
+<ul>
+<li>测试环境</li>
+<li>预发环境</li>
+<li>生产环境</li>
+</ul>
+<p>再加动作差异，纯角色法很快就会变得非常难维护。</p>
+<p>所以更推荐：</p>
+<ul>
+<li>角色只做粗粒度身份</li>
+<li>资源范围和动作权限单独建模</li>
+</ul>
+<h2 id="五、更推荐的权限判断模型"><a href="#五、更推荐的权限判断模型" class="headerlink" title="五、更推荐的权限判断模型"></a>五、更推荐的权限判断模型</h2><p>如果压缩成一句话，更推荐的平台权限模型是：</p>
+<p><strong>用户 + 角色 + 资源范围 + 动作权限 + 环境等级</strong></p>
+<p>例如判断一条执行请求时，不只是看：</p>
+<ul>
+<li>你是不是测试角色</li>
+</ul>
+<p>还要看：</p>
+<ul>
+<li>你有没有这个项目的访问范围</li>
+<li>你能不能执行这类任务</li>
+<li>这个任务是不是生产级高风险任务</li>
+</ul>
+<p>只有这几层一起看，结论才更稳。</p>
+<h2 id="六、几个特别高频的权限判断场景"><a href="#六、几个特别高频的权限判断场景" class="headerlink" title="六、几个特别高频的权限判断场景"></a>六、几个特别高频的权限判断场景</h2><h3 id="1-谁能执行任务"><a href="#1-谁能执行任务" class="headerlink" title="1. 谁能执行任务"></a>1. 谁能执行任务</h3><p>这通常要看三件事：</p>
+<ul>
+<li>是否有项目访问权限</li>
+<li>是否有任务执行权限</li>
+<li>当前任务对应环境是否在允许范围内</li>
+</ul>
+<h3 id="2-谁能改环境配置"><a href="#2-谁能改环境配置" class="headerlink" title="2. 谁能改环境配置"></a>2. 谁能改环境配置</h3><p>这通常比执行任务风险更高。</p>
+<p>因为一旦环境配置被改坏，影响会扩散到一整批任务。</p>
+<h3 id="3-谁能看报告和日志"><a href="#3-谁能看报告和日志" class="headerlink" title="3. 谁能看报告和日志"></a>3. 谁能看报告和日志</h3><p>不要默认“能跑的人都能看所有结果”。<br>某些报告可能包含：</p>
+<ul>
+<li>敏感返回</li>
+<li>业务数据</li>
+<li>账号信息</li>
+</ul>
+<h3 id="4-谁能做系统级操作"><a href="#4-谁能做系统级操作" class="headerlink" title="4. 谁能做系统级操作"></a>4. 谁能做系统级操作</h3><p>例如：</p>
+<ul>
+<li>改全局配置</li>
+<li>接第三方系统</li>
+<li>管理密钥</li>
+</ul>
+<p>这类动作通常应被明显收紧。</p>
+<h2 id="七、一套更实用的最小权限骨架"><a href="#七、一套更实用的最小权限骨架" class="headerlink" title="七、一套更实用的最小权限骨架"></a>七、一套更实用的最小权限骨架</h2><p>如果平台从 0 到 1，更推荐至少先做下面几层。</p>
+<h3 id="1-平台级角色"><a href="#1-平台级角色" class="headerlink" title="1. 平台级角色"></a>1. 平台级角色</h3><p>例如：</p>
+<ul>
+<li>平台管理员</li>
+<li>普通用户</li>
+<li>只读用户</li>
+</ul>
+<h3 id="2-项目级资源范围"><a href="#2-项目级资源范围" class="headerlink" title="2. 项目级资源范围"></a>2. 项目级资源范围</h3><p>例如：</p>
+<ul>
+<li>用户属于哪些项目</li>
+<li>用户能看哪些任务集合</li>
+</ul>
+<h3 id="3-动作级权限"><a href="#3-动作级权限" class="headerlink" title="3. 动作级权限"></a>3. 动作级权限</h3><p>至少先区分：</p>
+<ul>
+<li>查看</li>
+<li>编辑</li>
+<li>执行</li>
+<li>删除</li>
+<li>管理</li>
+</ul>
+<h3 id="4-环境级限制"><a href="#4-环境级限制" class="headerlink" title="4. 环境级限制"></a>4. 环境级限制</h3><p>至少先区分：</p>
+<ul>
+<li>测试环境</li>
+<li>预发环境</li>
+<li>生产环境</li>
+</ul>
+<p>生产相关动作最好单独控制，不要跟普通测试环境混为一谈。</p>
+<h2 id="八、更推荐的平台权限检查点"><a href="#八、更推荐的平台权限检查点" class="headerlink" title="八、更推荐的平台权限检查点"></a>八、更推荐的平台权限检查点</h2><p>如果要落实现实系统，通常会把权限判断尽量收在几个关键点。</p>
+<h3 id="1-登录和身份加载"><a href="#1-登录和身份加载" class="headerlink" title="1. 登录和身份加载"></a>1. 登录和身份加载</h3><p>这里解决：</p>
+<ul>
+<li>你是谁</li>
+<li>你属于哪些组织和项目</li>
+</ul>
+<h3 id="2-请求入口统一鉴权"><a href="#2-请求入口统一鉴权" class="headerlink" title="2. 请求入口统一鉴权"></a>2. 请求入口统一鉴权</h3><p>这里解决：</p>
+<ul>
+<li>有没有访问这类接口的基本权限</li>
+</ul>
+<h3 id="3-核心业务动作统一授权判断"><a href="#3-核心业务动作统一授权判断" class="headerlink" title="3. 核心业务动作统一授权判断"></a>3. 核心业务动作统一授权判断</h3><p>这里解决：</p>
+<ul>
+<li>有没有对当前资源做当前动作的权限</li>
+</ul>
+<p>不要把这一步散落在每个控制器细节里。</p>
+<h3 id="4-高风险动作二次确认"><a href="#4-高风险动作二次确认" class="headerlink" title="4. 高风险动作二次确认"></a>4. 高风险动作二次确认</h3><p>这里解决：</p>
+<ul>
+<li>生产环境执行</li>
+<li>批量操作</li>
+<li>系统配置修改</li>
+</ul>
+<p>这类最好不仅做权限判断，还做操作确认和审计。</p>
+<h2 id="九、最容易踩的几个坑"><a href="#九、最容易踩的几个坑" class="headerlink" title="九、最容易踩的几个坑"></a>九、最容易踩的几个坑</h2><h3 id="1-只做前端菜单权限"><a href="#1-只做前端菜单权限" class="headerlink" title="1. 只做前端菜单权限"></a>1. 只做前端菜单权限</h3><p>这类权限很容易给人一种“已经控住了”的错觉，但后端动作如果不控，问题还是会暴露。</p>
+<h3 id="2-权限散在各个模块里"><a href="#2-权限散在各个模块里" class="headerlink" title="2. 权限散在各个模块里"></a>2. 权限散在各个模块里</h3><p>今天这里写一段判断，明天那里再补一段，后面很快会出现规则不一致。</p>
+<h3 id="3-平台管理员直接全开，长期不收口"><a href="#3-平台管理员直接全开，长期不收口" class="headerlink" title="3. 平台管理员直接全开，长期不收口"></a>3. 平台管理员直接全开，长期不收口</h3><p>早期这么做很省事，但后面会变成极大风险源。</p>
+<h3 id="4-不区分资源权限和动作权限"><a href="#4-不区分资源权限和动作权限" class="headerlink" title="4. 不区分资源权限和动作权限"></a>4. 不区分资源权限和动作权限</h3><p>能看到某个对象，不代表就应该能改、能删、能执行。</p>
+<h2 id="十、真实案例：为什么“统一挂在测试角色下”，最后还是出了高风险误操作"><a href="#十、真实案例：为什么“统一挂在测试角色下”，最后还是出了高风险误操作" class="headerlink" title="十、真实案例：为什么“统一挂在测试角色下”，最后还是出了高风险误操作"></a>十、真实案例：为什么“统一挂在测试角色下”，最后还是出了高风险误操作</h2><h3 id="场景"><a href="#场景" class="headerlink" title="场景"></a>场景</h3><p>一个测试平台早期权限设计很粗：</p>
+<ul>
+<li>管理员</li>
+<li>测试</li>
+<li>访客</li>
+</ul>
+<p>当时觉得已经够用了，因为大部分用户都是测试角色。</p>
+<h3 id="执行"><a href="#执行" class="headerlink" title="执行"></a>执行</h3><p>后面平台接入了更多任务，包括：</p>
+<ul>
+<li>普通测试环境回归</li>
+<li>预发巡检</li>
+<li>生产只读巡检</li>
+</ul>
+<p>某次一个测试同学在操作时，误把原本只该在测试环境执行的任务参数带到了更高风险环境。</p>
+<h3 id="现象"><a href="#现象" class="headerlink" title="现象"></a>现象</h3><p>事后复盘会发现：</p>
+<ul>
+<li>这个同学确实是“测试角色”</li>
+<li>也确实有执行权限</li>
+</ul>
+<p>但问题是：</p>
+<ul>
+<li>系统没有把环境等级和动作权限叠加判断</li>
+</ul>
+<p>换句话说，平台只判断了“是不是测试”，没有判断：</p>
+<ul>
+<li>这个测试是否有权限对这个环境执行这个动作</li>
+</ul>
+<h3 id="排查"><a href="#排查" class="headerlink" title="排查"></a>排查</h3><p>后面把权限逻辑拆开看，问题就很清楚：</p>
+<ul>
+<li>角色太粗</li>
+<li>环境边界没进权限模型</li>
+<li>高风险动作没有单独控制</li>
+</ul>
+<h3 id="修复"><a href="#修复" class="headerlink" title="修复"></a>修复</h3><p>最后的修复不是简单多加一个角色，而是把模型升级成：</p>
+<ol>
+<li>项目范围控制</li>
+<li>动作权限控制</li>
+<li>环境等级控制</li>
+<li>高风险动作二次确认与审计</li>
+</ol>
+<p>这个案例很典型地说明：</p>
+<p><strong>测试平台权限模型如果只做到“谁是谁”，迟早会在“谁能对什么做什么”这里出问题。</strong></p>
+<h2 id="十一、怎么把权限模型沉淀成长期能力"><a href="#十一、怎么把权限模型沉淀成长期能力" class="headerlink" title="十一、怎么把权限模型沉淀成长期能力"></a>十一、怎么把权限模型沉淀成长期能力</h2><p>更合适的做法是从一开始就固定几个原则：</p>
+<ul>
+<li>页面权限不等于动作权限</li>
+<li>角色权限不等于资源权限</li>
+<li>高风险环境必须独立控制</li>
+<li>高风险动作必须留审计</li>
+</ul>
+<p>只要这几个原则能被平台坚持下来，后面即使继续接更多任务类型，权限模型也不至于完全失控。</p>
+<h2 id="十二、写在最后"><a href="#十二、写在最后" class="headerlink" title="十二、写在最后"></a>十二、写在最后</h2><p>测试平台的权限设计，说到底要回答的不是“用户是什么角色”，而是：</p>
+<ul>
+<li>他能接触哪些资源</li>
+<li>他能对这些资源做什么</li>
+<li>在什么环境下能做</li>
+</ul>
+<p>如果把这件事压缩成一句最实用的话，可以概括为：</p>
+<p><strong>平台权限更稳的做法，是从“角色判断”升级到“资源 + 动作 + 环境”的联合判断。</strong></p>
+<p>只有这样，平台才不会在能力越来越多之后，慢慢变成一个高风险入口。 </p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0/" rel="tag"># 测试平台</a>
+              <a href="/tags/%E5%B7%A5%E7%A8%8B%E5%8C%96/" rel="tag"># 工程化</a>
+              <a href="/tags/%E5%AE%9E%E6%88%98/" rel="tag"># 实战</a>
+              <a href="/tags/%E6%9D%83%E9%99%90%E6%A8%A1%E5%9E%8B/" rel="tag"># 权限模型</a>
+              <a href="/tags/%E6%9E%B6%E6%9E%84%E8%AE%BE%E8%AE%A1/" rel="tag"># 架构设计</a>
+              <a href="/tags/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E5%BC%80%E5%8F%91/" rel="tag"># 测试平台开发</a>
+              <a href="/tags/%E5%AE%89%E5%85%A8%E8%AE%BE%E8%AE%A1/" rel="tag"># 安全设计</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2021/07/22/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-03-%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E7%9A%84%E6%A8%A1%E5%9D%97%E8%BE%B9%E7%95%8C%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E6%8B%86/" rel="prev" title="测试平台-03-测试平台的模块边界应该怎么拆">
+                  <i class="fa fa-angle-left"></i> 测试平台-03-测试平台的模块边界应该怎么拆
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2021/08/05/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-05-%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E7%9A%84%E4%BB%BB%E5%8A%A1%E8%B0%83%E5%BA%A6%E4%B8%8E%E6%89%A7%E8%A1%8C%E5%BC%95%E6%93%8E/" rel="next" title="测试平台-05-测试平台的任务调度与执行引擎">
+                  测试平台-05-测试平台的任务调度与执行引擎 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

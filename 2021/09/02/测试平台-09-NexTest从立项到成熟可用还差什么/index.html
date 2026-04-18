@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="第九章前面几篇，已经分别把测试平台真正难的几块拆开了：  后端骨架 模块边界 权限模型 调度与执行引擎 环境管理 报告系统 Jenkins 与告警  写完这些之后，再回头看一个具体项目，会更容易判断它现在到底处在什么阶段。 这篇就不写抽象的平台方法论了，而是直接回到一个具体项目： NexTest。 这次分析不只是参考之前那篇老的设计文，也把仓库本体拉下来过了一遍。从仓库状态看，它现在更准确的判断不">
+<meta property="og:type" content="article">
+<meta property="og:title" content="测试平台-09-NexTest从立项到成熟可用还差什么">
+<meta property="og:url" content="https://paynewinnt.github.io/2021/09/02/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-09-NexTest%E4%BB%8E%E7%AB%8B%E9%A1%B9%E5%88%B0%E6%88%90%E7%86%9F%E5%8F%AF%E7%94%A8%E8%BF%98%E5%B7%AE%E4%BB%80%E4%B9%88/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="第九章前面几篇，已经分别把测试平台真正难的几块拆开了：  后端骨架 模块边界 权限模型 调度与执行引擎 环境管理 报告系统 Jenkins 与告警  写完这些之后，再回头看一个具体项目，会更容易判断它现在到底处在什么阶段。 这篇就不写抽象的平台方法论了，而是直接回到一个具体项目： NexTest。 这次分析不只是参考之前那篇老的设计文，也把仓库本体拉下来过了一遍。从仓库状态看，它现在更准确的判断不">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2021-09-02T12:30:00.000Z">
+<meta property="article:modified_time" content="2021-09-02T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="测试平台">
+<meta property="article:tag" content="工程化">
+<meta property="article:tag" content="复盘">
+<meta property="article:tag" content="架构设计">
+<meta property="article:tag" content="测试平台开发">
+<meta property="article:tag" content="NexTest">
+<meta property="article:tag" content="自动化测试平台">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2021/09/02/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-09-NexTest%E4%BB%8E%E7%AB%8B%E9%A1%B9%E5%88%B0%E6%88%90%E7%86%9F%E5%8F%AF%E7%94%A8%E8%BF%98%E5%B7%AE%E4%BB%80%E4%B9%88/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2021/09/02/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-09-NexTest%E4%BB%8E%E7%AB%8B%E9%A1%B9%E5%88%B0%E6%88%90%E7%86%9F%E5%8F%AF%E7%94%A8%E8%BF%98%E5%B7%AE%E4%BB%80%E4%B9%88/","path":"2021/09/02/测试平台-09-NexTest从立项到成熟可用还差什么/","title":"测试平台-09-NexTest从立项到成熟可用还差什么"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>测试平台-09-NexTest从立项到成熟可用还差什么 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E5%85%88%E8%AF%B4%E7%BB%93%E8%AE%BA%EF%BC%9A%E5%AE%83%E7%8E%B0%E5%9C%A8%E6%9B%B4%E5%83%8F%E2%80%9C%E8%AE%BE%E8%AE%A1%E8%8D%89%E5%9B%BE%E4%BB%93%E5%BA%93%E2%80%9D%EF%BC%8C%E8%BF%98%E4%B8%8D%E6%98%AF%E2%80%9C%E5%B9%B3%E5%8F%B0%E4%BA%A7%E5%93%81%E4%BB%93%E5%BA%93%E2%80%9D"><span class="nav-number">1.</span> <span class="nav-text">一、先说结论：它现在更像“设计草图仓库”，还不是“平台产品仓库”</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E7%8E%B0%E5%9C%A8%E6%9C%80%E6%98%8E%E6%98%BE%E7%9A%84%E4%BF%A1%E5%8F%B7%EF%BC%9A%E8%8C%83%E5%9B%B4%E5%BE%88%E5%A4%A7%EF%BC%8C%E4%BD%86%E7%9C%9F%E6%AD%A3%E9%97%AD%E5%90%88%E7%9A%84%E9%93%BE%E8%B7%AF%E5%BE%88%E5%B0%91"><span class="nav-number">2.</span> <span class="nav-text">二、现在最明显的信号：范围很大，但真正闭合的链路很少</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E4%BB%8E%E4%BB%93%E5%BA%93%E7%8E%B0%E7%8A%B6%E7%9C%8B%EF%BC%8C%E8%87%B3%E5%B0%91%E6%9C%89-5-%E4%B8%AA%E6%88%90%E7%86%9F%E5%BA%A6%E7%BC%BA%E5%8F%A3%E5%B7%B2%E7%BB%8F%E9%9D%9E%E5%B8%B8%E6%98%8E%E6%98%BE"><span class="nav-number">3.</span> <span class="nav-text">三、从仓库现状看，至少有 5 个成熟度缺口已经非常明显</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%8E%A7%E5%88%B6%E9%9D%A2%E5%85%A5%E5%8F%A3%E8%BF%98%E6%B2%A1%E6%9C%89%E5%BD%A2%E6%88%90%E7%9C%9F%E6%AD%A3%E7%9A%84%E5%B9%B3%E5%8F%B0%E5%85%A5%E5%8F%A3"><span class="nav-number">3.1.</span> <span class="nav-text">1. 控制面入口还没有形成真正的平台入口</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Handler-%E5%92%8C-Service-%E7%9A%84%E8%AF%AD%E4%B9%89%E5%B7%B2%E7%BB%8F%E5%BC%80%E5%A7%8B%E5%87%BA%E7%8E%B0%E2%80%9C%E5%86%99%E4%BA%86%E9%AA%A8%E6%9E%B6%EF%BC%8C%E4%BD%86%E8%BF%98%E6%B2%A1%E5%AF%B9%E9%BD%90%E2%80%9D"><span class="nav-number">3.2.</span> <span class="nav-text">2. Handler 和 Service 的语义已经开始出现“写了骨架，但还没对齐”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%89%A7%E8%A1%8C%E5%BC%95%E6%93%8E%E8%BF%98%E4%B8%8D%E6%98%AF%E6%89%A7%E8%A1%8C%E5%BC%95%E6%93%8E%EF%BC%8C%E5%8F%AA%E6%98%AF-worker-%E9%9B%8F%E5%BD%A2"><span class="nav-number">3.3.</span> <span class="nav-text">3. 执行引擎还不是执行引擎，只是 worker 雏形</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%8A%A5%E5%91%8A%E3%80%81%E9%A1%B9%E7%9B%AE%E3%80%81%E9%85%8D%E7%BD%AE%E7%AD%89%E6%A8%A1%E5%9D%97%E6%9C%89%E7%9B%AE%E5%BD%95%EF%BC%8C%E4%BD%86%E5%BE%88%E5%A4%9A%E6%96%87%E4%BB%B6%E8%BF%98%E5%A4%84%E5%9C%A8%E7%A9%BA%E5%A3%B3%E6%88%96%E8%BD%BB%E5%AE%9E%E7%8E%B0%E9%98%B6%E6%AE%B5"><span class="nav-number">3.4.</span> <span class="nav-text">4. 报告、项目、配置等模块有目录，但很多文件还处在空壳或轻实现阶段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%89%8D%E7%AB%AF%E7%8E%B0%E5%9C%A8%E5%87%A0%E4%B9%8E%E8%BF%98%E6%B2%A1%E6%9C%89%E5%BD%A2%E6%88%90%E7%9C%9F%E6%AD%A3%E5%8F%AF%E6%93%8D%E4%BD%9C%E7%9A%84%E6%8E%A7%E5%88%B6%E5%8F%B0"><span class="nav-number">3.5.</span> <span class="nav-text">5. 前端现在几乎还没有形成真正可操作的控制台</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81NexTest-%E7%8E%B0%E5%9C%A8%E6%9C%80%E9%9C%80%E8%A6%81%E7%9A%84%EF%BC%8C%E4%B8%8D%E6%98%AF%E7%BB%A7%E7%BB%AD%E6%89%A9%E5%8A%9F%E8%83%BD%EF%BC%8C%E8%80%8C%E6%98%AF%E5%85%88%E5%AE%9A%E4%B9%89%E2%80%9C%E6%88%90%E7%86%9F%E5%8F%AF%E7%94%A8%E2%80%9D%E7%9A%84%E6%A0%87%E5%87%86"><span class="nav-number">4.</span> <span class="nav-text">四、NexTest 现在最需要的，不是继续扩功能，而是先定义“成熟可用”的标准</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%B8%80%E4%B8%AA%E6%96%B0%E4%BB%BB%E5%8A%A1%E8%83%BD%E5%AE%8C%E6%95%B4%E8%B5%B0%E5%AE%8C%E5%AE%9A%E4%B9%89%E5%88%B0%E6%8A%A5%E5%91%8A%E7%9A%84%E9%93%BE%E8%B7%AF"><span class="nav-number">4.1.</span> <span class="nav-text">1. 一个新任务能完整走完定义到报告的链路</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%B9%B3%E5%8F%B0%E7%8A%B6%E6%80%81%E5%92%8C%E6%89%A7%E8%A1%8C%E7%8E%B0%E5%9C%BA%E8%A6%81%E4%B8%80%E8%87%B4"><span class="nav-number">4.2.</span> <span class="nav-text">2. 平台状态和执行现场要一致</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%8E%AF%E5%A2%83%E5%92%8C%E6%9D%83%E9%99%90%E4%B8%8D%E8%83%BD%E5%8F%AA%E6%98%AF%E2%80%9C%E6%9C%89%E6%A8%A1%E5%9E%8B%E2%80%9D%EF%BC%8C%E8%80%8C%E8%A6%81%E7%9C%9F%E6%AD%A3%E8%BF%9B%E5%85%A5%E6%89%A7%E8%A1%8C%E9%93%BE%E8%B7%AF"><span class="nav-number">4.3.</span> <span class="nav-text">3. 环境和权限不能只是“有模型”，而要真正进入执行链路</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E8%87%B3%E5%B0%91%E8%A6%81%E6%9C%89%E4%B8%80%E4%B8%AA%E5%9B%A2%E9%98%9F%E8%83%BD%E8%BF%9E%E7%BB%AD%E4%BD%BF%E7%94%A8%EF%BC%8C%E8%80%8C%E4%B8%8D%E6%98%AF%E5%8F%AA%E8%83%BD%E6%BC%94%E7%A4%BA"><span class="nav-number">4.4.</span> <span class="nav-text">4. 至少要有一个团队能连续使用，而不是只能演示</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E5%A6%82%E6%9E%9C%E8%A6%81%E6%8A%8A-NexTest-%E6%8B%89%E5%88%B0%E2%80%9C%E6%88%90%E7%86%9F%E5%8F%AF%E7%94%A8%E2%80%9D%EF%BC%8C%E6%9B%B4%E5%90%88%E9%80%82%E7%9A%84%E5%81%9A%E6%B3%95%E6%98%AF%E6%8C%89-4-%E4%B8%AA%E9%98%B6%E6%AE%B5%E6%8E%A8%E8%BF%9B"><span class="nav-number">5.</span> <span class="nav-text">五、如果要把 NexTest 拉到“成熟可用”，更合适的做法是按 4 个阶段推进</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%B8%80%E9%98%B6%E6%AE%B5%EF%BC%9A%E5%85%88%E6%94%B6-MVP%EF%BC%8C%E5%8F%AA%E5%81%9A-API-%E4%BB%BB%E5%8A%A1%E9%97%AD%E7%8E%AF"><span class="nav-number">5.1.</span> <span class="nav-text">第一阶段：先收 MVP，只做 API 任务闭环</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%BA%8C%E9%98%B6%E6%AE%B5%EF%BC%9A%E6%8A%8A%E6%89%A7%E8%A1%8C%E5%BC%95%E6%93%8E%E8%A1%A5%E6%88%90%E7%9C%9F%E6%AD%A3%E7%9A%84%E5%B9%B3%E5%8F%B0%E5%BC%95%E6%93%8E"><span class="nav-number">5.2.</span> <span class="nav-text">第二阶段：把执行引擎补成真正的平台引擎</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%B8%89%E9%98%B6%E6%AE%B5%EF%BC%9A%E6%8A%8A%E6%8A%A5%E5%91%8A%E3%80%81Jenkins%E3%80%81%E5%91%8A%E8%AD%A6%E6%8E%A5%E6%88%90%E7%9C%9F%E6%AD%A3%E5%8F%AF%E5%8D%8F%E4%BD%9C%E7%9A%84%E6%8E%A7%E5%88%B6%E9%9D%A2"><span class="nav-number">5.3.</span> <span class="nav-text">第三阶段：把报告、Jenkins、告警接成真正可协作的控制面</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E5%9B%9B%E9%98%B6%E6%AE%B5%EF%BC%9A%E5%86%8D%E6%89%A9-Web-App-%E5%A4%8D%E6%9D%82%E8%B0%83%E5%BA%A6"><span class="nav-number">5.4.</span> <span class="nav-text">第四阶段：再扩 Web &#x2F; App &#x2F; 复杂调度</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E6%9C%80%E5%B0%8F%E5%8F%AF%E6%89%A7%E8%A1%8C%E5%AE%9E%E8%B7%B5%EF%BC%9A%E5%A6%82%E6%9E%9C%E7%8E%B0%E5%9C%A8%E6%8E%A5%E6%89%8B-NexTest%EF%BC%8C%E5%85%88%E6%94%B9%E4%BB%80%E4%B9%88"><span class="nav-number">6.</span> <span class="nav-text">六、最小可执行实践：如果现在接手 NexTest，先改什么</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%85%88%E6%94%B6%E7%BC%A9%E8%8C%83%E5%9B%B4%EF%BC%8C%E5%8F%AA%E4%BF%9D%E7%95%99-API-%E4%BB%BB%E5%8A%A1"><span class="nav-number">6.1.</span> <span class="nav-text">1. 先收缩范围，只保留 API 任务</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E9%87%8D%E5%86%99%E5%85%A5%E5%8F%A3%E5%B1%82%EF%BC%8C%E6%8A%8A%E6%AD%A3%E5%BC%8F%E8%B7%AF%E7%94%B1%E5%92%8C%E5%8C%BF%E5%90%8D%E8%B7%AF%E7%94%B1%E5%88%86%E5%BC%80"><span class="nav-number">6.2.</span> <span class="nav-text">2. 重写入口层，把正式路由和匿名路由分开</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%AE%9A%E4%B9%89%E6%89%A7%E8%A1%8C%E5%AE%9E%E4%BE%8B%E7%8A%B6%E6%80%81%E6%9C%BA"><span class="nav-number">6.3.</span> <span class="nav-text">3. 定义执行实例状态机</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%81%9A%E4%B8%80%E4%B8%AA%E7%9C%9F%E6%AD%A3%E5%8F%AF%E7%94%A8%E7%9A%84-worker-%E5%8D%8F%E8%AE%AE"><span class="nav-number">6.4.</span> <span class="nav-text">4. 做一个真正可用的 worker 协议</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%8A%A5%E5%91%8A%E5%85%88%E5%81%9A%E7%BB%93%E6%9E%84%E5%8C%96-JSON-%E5%92%8C%E6%9C%80%E5%B0%8F%E9%A1%B5%E9%9D%A2"><span class="nav-number">6.5.</span> <span class="nav-text">5. 报告先做结构化 JSON 和最小页面</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E5%89%8D%E7%AB%AF%E5%85%88%E5%8F%AA%E5%81%9A-3-%E4%B8%AA%E9%A1%B5%E9%9D%A2"><span class="nav-number">6.6.</span> <span class="nav-text">6. 前端先只做 3 个页面</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E7%9C%9F%E5%AE%9E%E6%A1%88%E4%BE%8B%E5%9E%8B%E6%AE%B5%E8%90%BD%EF%BC%9A%E4%B8%80%E6%AC%A1%E2%80%9C%E7%9C%8B%E8%B5%B7%E6%9D%A5%E5%B7%B2%E7%BB%8F%E6%9C%89%E5%B9%B3%E5%8F%B0%E9%AA%A8%E6%9E%B6%E2%80%9D%E7%9A%84%E9%A1%B9%E7%9B%AE%EF%BC%8C%E6%9C%80%E5%90%8E%E7%9C%9F%E6%AD%A3%E5%8D%A1%E4%BD%8F%E7%9A%84%E4%B8%8D%E6%98%AF%E4%BB%A3%E7%A0%81%E9%87%8F"><span class="nav-number">7.</span> <span class="nav-text">七、真实案例型段落：一次“看起来已经有平台骨架”的项目，最后真正卡住的不是代码量</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9C%BA%E6%99%AF"><span class="nav-number">7.1.</span> <span class="nav-text">场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%89%A7%E8%A1%8C"><span class="nav-number">7.2.</span> <span class="nav-text">执行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8E%B0%E8%B1%A1"><span class="nav-number">7.3.</span> <span class="nav-text">现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%92%E6%9F%A5"><span class="nav-number">7.4.</span> <span class="nav-text">排查</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BF%AE%E5%A4%8D"><span class="nav-number">7.5.</span> <span class="nav-text">修复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E5%AF%B9-NexTest-%E5%BD%93%E5%89%8D%E9%98%B6%E6%AE%B5%E7%9A%84%E5%88%A4%E6%96%AD"><span class="nav-number">8.</span> <span class="nav-text">八、对 NexTest 当前阶段的判断</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2021/09/02/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-09-NexTest%E4%BB%8E%E7%AB%8B%E9%A1%B9%E5%88%B0%E6%88%90%E7%86%9F%E5%8F%AF%E7%94%A8%E8%BF%98%E5%B7%AE%E4%BB%80%E4%B9%88/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="测试平台-09-NexTest从立项到成熟可用还差什么 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          测试平台-09-NexTest从立项到成熟可用还差什么
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2021-09-02 20:30:00" itemprop="dateCreated datePublished" datetime="2021-09-02T20:30:00+08:00">2021-09-02</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0/" itemprop="url" rel="index"><span itemprop="name">测试平台</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>3.5k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>13 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>第九章前面几篇，已经分别把测试平台真正难的几块拆开了：</p>
+<ul>
+<li>后端骨架</li>
+<li>模块边界</li>
+<li>权限模型</li>
+<li>调度与执行引擎</li>
+<li>环境管理</li>
+<li>报告系统</li>
+<li>Jenkins 与告警</li>
+</ul>
+<p>写完这些之后，再回头看一个具体项目，会更容易判断它现在到底处在什么阶段。</p>
+<p>这篇就不写抽象的平台方法论了，而是直接回到一个具体项目：</p>
+<p><strong>NexTest。</strong></p>
+<p>这次分析不只是参考之前那篇老的设计文，也把仓库本体拉下来过了一遍。<br>从仓库状态看，它现在更准确的判断不是“已经有一个待打磨的平台”，而是：</p>
+<p><strong>还处在立项和骨架铺设阶段，离成熟可用还有一段明显距离。</strong></p>
+<p>这篇文章就只讲这个问题：</p>
+<p><strong>NexTest 现在离成熟可用到底差什么，应该先补哪条最小可用链路，而不是继续把目录和概念往外铺。</strong></p>
+<h2 id="一、先说结论：它现在更像“设计草图仓库”，还不是“平台产品仓库”"><a href="#一、先说结论：它现在更像“设计草图仓库”，还不是“平台产品仓库”" class="headerlink" title="一、先说结论：它现在更像“设计草图仓库”，还不是“平台产品仓库”"></a>一、先说结论：它现在更像“设计草图仓库”，还不是“平台产品仓库”</h2><p>为什么会这样判断？</p>
+<p>因为一个成熟可用的测试平台，至少要满足下面一条最小闭环：</p>
+<ul>
+<li>能定义任务</li>
+<li>能触发执行</li>
+<li>能真正跑起来</li>
+<li>能回传结构化结果</li>
+<li>能形成报告</li>
+<li>能被团队重复使用</li>
+</ul>
+<p>但从 NexTest 当前仓库状态看，很多部分还停留在：</p>
+<ul>
+<li>目录先铺开</li>
+<li>文件先占位</li>
+<li>接口名先写上</li>
+<li>前后端入口先留着</li>
+</ul>
+<p>这对于立项阶段当然有价值，因为它帮你把想做的东西都列出来了。<br>但它和“成熟可用”之间差的，恰恰不是再补几个目录，而是：</p>
+<p><strong>把最小可用链路真正跑通。</strong></p>
+<h2 id="二、现在最明显的信号：范围很大，但真正闭合的链路很少"><a href="#二、现在最明显的信号：范围很大，但真正闭合的链路很少" class="headerlink" title="二、现在最明显的信号：范围很大，但真正闭合的链路很少"></a>二、现在最明显的信号：范围很大，但真正闭合的链路很少</h2><p>先看仓库的第一感觉，它会显得“很完整”：</p>
+<ul>
+<li>有 <code>api</code></li>
+<li>有 <code>internal</code></li>
+<li>有 <code>pkg</code></li>
+<li>有 <code>cmd</code></li>
+<li>有 <code>web</code></li>
+<li>有 <code>model</code></li>
+<li>有 <code>config</code></li>
+</ul>
+<p>README 里也列了大量模块：</p>
+<ul>
+<li>API 测试</li>
+<li>Web 测试</li>
+<li>App 测试</li>
+<li>报告</li>
+<li>调度</li>
+<li>通知</li>
+<li>权限</li>
+<li>环境</li>
+<li>集成</li>
+</ul>
+<p>但问题在于：</p>
+<p><strong>模块被列出来，不等于能力已经闭环。</strong></p>
+<p>当前仓库最明显的状态是：</p>
+<ul>
+<li>概念覆盖面很大</li>
+<li>真实可运行能力很薄</li>
+</ul>
+<p>这类项目最容易给团队造成一种错觉：</p>
+<ul>
+<li>好像框架已经很全了</li>
+<li>再慢慢补实现就行</li>
+</ul>
+<p>但平台类项目最怕的恰恰就是这种“先铺很大，再长期补不上核心路径”的节奏。<br>因为越往后，仓库会越像一个完整产品；但真正能被团队依赖的能力，可能始终只有很小一块。</p>
+<h2 id="三、从仓库现状看，至少有-5-个成熟度缺口已经非常明显"><a href="#三、从仓库现状看，至少有-5-个成熟度缺口已经非常明显" class="headerlink" title="三、从仓库现状看，至少有 5 个成熟度缺口已经非常明显"></a>三、从仓库现状看，至少有 5 个成熟度缺口已经非常明显</h2><h3 id="1-控制面入口还没有形成真正的平台入口"><a href="#1-控制面入口还没有形成真正的平台入口" class="headerlink" title="1. 控制面入口还没有形成真正的平台入口"></a>1. 控制面入口还没有形成真正的平台入口</h3><p>从 <code>cmd/api/main.go</code> 看，当前服务入口很轻，真正注册出来的路由基本只有：</p>
+<ul>
+<li><code>/</code></li>
+<li><code>/login</code></li>
+<li><code>/protected</code></li>
+<li><code>/logout</code></li>
+</ul>
+<p>这里有两个很直接的问题。</p>
+<p>第一，平台能力本身并没有真正挂出正式 API 路由。<br>README 里列了很多 handler，但路由层并没有把这些能力组织成真实接口入口。</p>
+<p>第二，认证中间件被全局挂载在 router 上，而登录路由本身也在这条链路里。<br>这意味着从当前代码结构判断，登录入口本身就可能先被 token 校验拦住。</p>
+<p>这类问题说明什么？</p>
+<p>说明系统现在还不是“一个已形成平台控制面”的状态，而更像：</p>
+<ul>
+<li>Gin 服务先起起来</li>
+<li>安全和中间件先挂一遍</li>
+<li>真正的业务入口还没完成闭环</li>
+</ul>
+<h3 id="2-Handler-和-Service-的语义已经开始出现“写了骨架，但还没对齐”"><a href="#2-Handler-和-Service-的语义已经开始出现“写了骨架，但还没对齐”" class="headerlink" title="2. Handler 和 Service 的语义已经开始出现“写了骨架，但还没对齐”"></a>2. Handler 和 Service 的语义已经开始出现“写了骨架，但还没对齐”</h3><p>例如 <code>api/handlers/api_testing.go</code> 这个文件里，方法名和返回内容明显还是偏占位状态：</p>
+<ul>
+<li><code>CreateAppTest</code></li>
+<li><code>UpdateAppTest</code></li>
+<li><code>DeleteAppTest</code></li>
+<li><code>ListAppTests</code></li>
+</ul>
+<p>但文件本身讲的是 API 测试。</p>
+<p>这类现象在平台初期很常见，它暴露出来的不是命名小问题，而是更底层的一件事：</p>
+<p><strong>对象边界和执行路径还没有真正收稳。</strong></p>
+<p>因为一旦任务对象、接口对象、运行对象还没被想清楚，代码里就会出现：</p>
+<ul>
+<li>名字借来借去</li>
+<li>逻辑先占坑</li>
+<li>返回先写成功</li>
+</ul>
+<p>短期看没什么，长期就会很危险。<br>因为平台类项目一旦边界不稳，后面调度、报告、权限、环境都会被一起带歪。</p>
+<h3 id="3-执行引擎还不是执行引擎，只是-worker-雏形"><a href="#3-执行引擎还不是执行引擎，只是-worker-雏形" class="headerlink" title="3. 执行引擎还不是执行引擎，只是 worker 雏形"></a>3. 执行引擎还不是执行引擎，只是 worker 雏形</h3><p>从 <code>cmd/worker/main.go</code> 看，当前 worker 更像一个示意性进程：</p>
+<ul>
+<li>收信号</li>
+<li>起 goroutine</li>
+<li>循环打印</li>
+<li>睡眠</li>
+</ul>
+<p>这距离真正的平台执行引擎还有非常大的差距。</p>
+<p>一个成熟可用的执行引擎，至少要回答：</p>
+<ul>
+<li>任务从哪来</li>
+<li>资源怎么分配</li>
+<li>状态怎么回传</li>
+<li>日志怎么流式采集</li>
+<li>超时和失联怎么回收</li>
+<li>失败是否允许重试</li>
+</ul>
+<p>而当前仓库里，这条链路还没有形成：</p>
+<ul>
+<li>执行协议</li>
+<li>心跳机制</li>
+<li>任务租约</li>
+<li>结果回调</li>
+<li>超时收敛</li>
+</ul>
+<p>这意味着 NexTest 现在还没有最关键的一条平台生命线：</p>
+<p><strong>不是“能描述任务”，而是“能可信地跑任务”。</strong></p>
+<h3 id="4-报告、项目、配置等模块有目录，但很多文件还处在空壳或轻实现阶段"><a href="#4-报告、项目、配置等模块有目录，但很多文件还处在空壳或轻实现阶段" class="headerlink" title="4. 报告、项目、配置等模块有目录，但很多文件还处在空壳或轻实现阶段"></a>4. 报告、项目、配置等模块有目录，但很多文件还处在空壳或轻实现阶段</h3><p>这次看仓库时，一个很强的信号是：</p>
+<ul>
+<li>部分文件已经有名有位</li>
+<li>但内容仍然是空文件或明显占位实现</li>
+</ul>
+<p>例如：</p>
+<ul>
+<li><code>web/src/App.vue</code> 是空的</li>
+<li><code>web/src/views/Home.vue</code>、<code>About.vue</code> 等也是空的</li>
+<li><code>web/package.json</code> 是空的</li>
+<li><code>pkg/config/config_loader.go</code> 是空的</li>
+<li><code>api/handlers/project.go</code> 是空的</li>
+<li><code>internal/reporting/generator.go</code> 是空的</li>
+</ul>
+<p>这类信号说明，项目现在更像是在做：</p>
+<ul>
+<li>模块地图铺设</li>
+</ul>
+<p>而不是在做：</p>
+<ul>
+<li>功能闭环收敛</li>
+</ul>
+<p>平台项目最怕这种节奏。<br>因为当目录很大、文件很多时，团队会天然产生一种“进展很多”的感觉；但从可用性视角看，它可能还没有跨过第一道门槛。</p>
+<h3 id="5-前端现在几乎还没有形成真正可操作的控制台"><a href="#5-前端现在几乎还没有形成真正可操作的控制台" class="headerlink" title="5. 前端现在几乎还没有形成真正可操作的控制台"></a>5. 前端现在几乎还没有形成真正可操作的控制台</h3><p>测试平台和普通后端服务不一样。<br>它最终会面对这几个实际问题：</p>
+<ul>
+<li>用户怎么创建任务</li>
+<li>怎么选环境</li>
+<li>怎么看执行过程</li>
+<li>怎么看报告和趋势</li>
+<li>怎么处理失败和重试</li>
+</ul>
+<p>如果前端控制台没有形成基本页面，平台在团队里的真实使用方式就会退化成：</p>
+<ul>
+<li>直接调接口</li>
+<li>直接进 Jenkins</li>
+<li>直接查数据库</li>
+<li>直接翻日志目录</li>
+</ul>
+<p>而这恰恰是平台最不该回去的状态。</p>
+<p>从当前仓库情况看，NexTest 前端还明显处在“占位准备阶段”，还谈不上可操作的控制台产品。</p>
+<h2 id="四、NexTest-现在最需要的，不是继续扩功能，而是先定义“成熟可用”的标准"><a href="#四、NexTest-现在最需要的，不是继续扩功能，而是先定义“成熟可用”的标准" class="headerlink" title="四、NexTest 现在最需要的，不是继续扩功能，而是先定义“成熟可用”的标准"></a>四、NexTest 现在最需要的，不是继续扩功能，而是先定义“成熟可用”的标准</h2><p>很多平台项目做不成熟，不是因为人不努力，而是因为“成熟可用”这个目标太模糊。</p>
+<p>如果没有一个更硬的判断标准，团队就很容易一直在做下面这些事：</p>
+<ul>
+<li>再补一个模块</li>
+<li>再补一组模型</li>
+<li>再补一个目录</li>
+<li>再补一个文档</li>
+</ul>
+<p>但真正的成熟可用，至少要满足下面这些条件。</p>
+<h3 id="1-一个新任务能完整走完定义到报告的链路"><a href="#1-一个新任务能完整走完定义到报告的链路" class="headerlink" title="1. 一个新任务能完整走完定义到报告的链路"></a>1. 一个新任务能完整走完定义到报告的链路</h3><p>例如 API 回归任务至少要能做到：</p>
+<ul>
+<li>在平台里创建</li>
+<li>选择环境和参数</li>
+<li>真正触发执行</li>
+<li>收到结构化结果</li>
+<li>生成可追溯报告</li>
+</ul>
+<h3 id="2-平台状态和执行现场要一致"><a href="#2-平台状态和执行现场要一致" class="headerlink" title="2. 平台状态和执行现场要一致"></a>2. 平台状态和执行现场要一致</h3><p>不能出现：</p>
+<ul>
+<li>平台显示运行中</li>
+<li>实际任务已经死掉</li>
+</ul>
+<p>也不能出现：</p>
+<ul>
+<li>Jenkins 结束了</li>
+<li>平台没有收回结果</li>
+</ul>
+<h3 id="3-环境和权限不能只是“有模型”，而要真正进入执行链路"><a href="#3-环境和权限不能只是“有模型”，而要真正进入执行链路" class="headerlink" title="3. 环境和权限不能只是“有模型”，而要真正进入执行链路"></a>3. 环境和权限不能只是“有模型”，而要真正进入执行链路</h3><p>否则平台再大，也只是把脚本入口放到页面上。</p>
+<h3 id="4-至少要有一个团队能连续使用，而不是只能演示"><a href="#4-至少要有一个团队能连续使用，而不是只能演示" class="headerlink" title="4. 至少要有一个团队能连续使用，而不是只能演示"></a>4. 至少要有一个团队能连续使用，而不是只能演示</h3><p>平台真正成熟的标准不是：</p>
+<ul>
+<li>demo 能通</li>
+</ul>
+<p>而是：</p>
+<ul>
+<li>一个团队愿意连续三周都用它，而不绕回手工流程</li>
+</ul>
+<h2 id="五、如果要把-NexTest-拉到“成熟可用”，更合适的做法是按-4-个阶段推进"><a href="#五、如果要把-NexTest-拉到“成熟可用”，更合适的做法是按-4-个阶段推进" class="headerlink" title="五、如果要把 NexTest 拉到“成熟可用”，更合适的做法是按 4 个阶段推进"></a>五、如果要把 NexTest 拉到“成熟可用”，更合适的做法是按 4 个阶段推进</h2><h3 id="第一阶段：先收-MVP，只做-API-任务闭环"><a href="#第一阶段：先收-MVP，只做-API-任务闭环" class="headerlink" title="第一阶段：先收 MVP，只做 API 任务闭环"></a>第一阶段：先收 MVP，只做 API 任务闭环</h3><p>这一步最重要。</p>
+<p>不建议上来同时做：</p>
+<ul>
+<li>API</li>
+<li>Web</li>
+<li>App</li>
+<li>调度</li>
+<li>报告</li>
+<li>通知</li>
+<li>大前端控制台</li>
+</ul>
+<p>这样很容易全面铺开、全面不闭环。</p>
+<p>更合理的第一阶段应该只收一条最小链路：</p>
+<ul>
+<li>任务定义</li>
+<li>环境选择</li>
+<li>执行下发</li>
+<li>结果回调</li>
+<li>报告沉淀</li>
+</ul>
+<p>并且先只支持一种任务类型，例如：</p>
+<ul>
+<li>API 回归任务</li>
+</ul>
+<p>因为如果连最简单的 API 闭环都没形成，后面引入 Web、App 只会把不成熟的结构进一步放大。</p>
+<h3 id="第二阶段：把执行引擎补成真正的平台引擎"><a href="#第二阶段：把执行引擎补成真正的平台引擎" class="headerlink" title="第二阶段：把执行引擎补成真正的平台引擎"></a>第二阶段：把执行引擎补成真正的平台引擎</h3><p>这一步要补的不是更多 handler，而是下面这些基础能力：</p>
+<ul>
+<li>执行实例状态机</li>
+<li>worker 心跳</li>
+<li>超时回收</li>
+<li>资源租约</li>
+<li>结构化日志和产物回传</li>
+</ul>
+<p>只有这一步补上，平台才会从“服务骨架”开始变成“执行系统”。</p>
+<h3 id="第三阶段：把报告、Jenkins、告警接成真正可协作的控制面"><a href="#第三阶段：把报告、Jenkins、告警接成真正可协作的控制面" class="headerlink" title="第三阶段：把报告、Jenkins、告警接成真正可协作的控制面"></a>第三阶段：把报告、Jenkins、告警接成真正可协作的控制面</h3><p>这一步不是简单接 webhook，而是要让团队能在平台里完成下面这些动作：</p>
+<ul>
+<li>发起任务</li>
+<li>看实时进度</li>
+<li>看失败证据</li>
+<li>区分环境失败和业务失败</li>
+<li>收到少而准的告警</li>
+</ul>
+<p>这一步做成之后，平台才开始真正有“协作价值”。</p>
+<h3 id="第四阶段：再扩-Web-App-复杂调度"><a href="#第四阶段：再扩-Web-App-复杂调度" class="headerlink" title="第四阶段：再扩 Web &#x2F; App &#x2F; 复杂调度"></a>第四阶段：再扩 Web &#x2F; App &#x2F; 复杂调度</h3><p>这是最后一步，不是最前一步。</p>
+<p>因为：</p>
+<ul>
+<li>Web 自动化会引入浏览器资源和稳定性问题</li>
+<li>App 自动化会引入设备池、录屏、采证、回收问题</li>
+</ul>
+<p>如果底层执行链路还不成熟，这两类能力只会把平台拖进更复杂的状态。</p>
+<h2 id="六、最小可执行实践：如果现在接手-NexTest，先改什么"><a href="#六、最小可执行实践：如果现在接手-NexTest，先改什么" class="headerlink" title="六、最小可执行实践：如果现在接手 NexTest，先改什么"></a>六、最小可执行实践：如果现在接手 NexTest，先改什么</h2><p>如果只给一个迭代周期，优先级通常不会落在补 README，也不会先把前端页面全部搭出来。<br>更适合优先做下面 6 件事。</p>
+<h3 id="1-先收缩范围，只保留-API-任务"><a href="#1-先收缩范围，只保留-API-任务" class="headerlink" title="1. 先收缩范围，只保留 API 任务"></a>1. 先收缩范围，只保留 API 任务</h3><p>把第一阶段目标写死：</p>
+<ul>
+<li>只做 API 自动化任务闭环</li>
+</ul>
+<p>其他能力先不做产品承诺。</p>
+<h3 id="2-重写入口层，把正式路由和匿名路由分开"><a href="#2-重写入口层，把正式路由和匿名路由分开" class="headerlink" title="2. 重写入口层，把正式路由和匿名路由分开"></a>2. 重写入口层，把正式路由和匿名路由分开</h3><p>先把：</p>
+<ul>
+<li>登录</li>
+<li>健康检查</li>
+<li>正式业务接口</li>
+</ul>
+<p>三类入口分开，别让全局中间件先把登录自己拦死。</p>
+<h3 id="3-定义执行实例状态机"><a href="#3-定义执行实例状态机" class="headerlink" title="3. 定义执行实例状态机"></a>3. 定义执行实例状态机</h3><p>至少先明确：</p>
+<ul>
+<li>pending</li>
+<li>queued</li>
+<li>running</li>
+<li>success</li>
+<li>failed</li>
+<li>timeout</li>
+<li>lost</li>
+</ul>
+<h3 id="4-做一个真正可用的-worker-协议"><a href="#4-做一个真正可用的-worker-协议" class="headerlink" title="4. 做一个真正可用的 worker 协议"></a>4. 做一个真正可用的 worker 协议</h3><p>先别做复杂调度，先让 worker 支持：</p>
+<ul>
+<li>拉任务</li>
+<li>回心跳</li>
+<li>回日志</li>
+<li>回结果</li>
+</ul>
+<h3 id="5-报告先做结构化-JSON-和最小页面"><a href="#5-报告先做结构化-JSON-和最小页面" class="headerlink" title="5. 报告先做结构化 JSON 和最小页面"></a>5. 报告先做结构化 JSON 和最小页面</h3><p>不用一开始追求很强的前端展示，但至少要保证：</p>
+<ul>
+<li>结果能落盘</li>
+<li>结果能查询</li>
+<li>失败能看到证据</li>
+</ul>
+<h3 id="6-前端先只做-3-个页面"><a href="#6-前端先只做-3-个页面" class="headerlink" title="6. 前端先只做 3 个页面"></a>6. 前端先只做 3 个页面</h3><ul>
+<li>任务列表</li>
+<li>执行详情</li>
+<li>报告详情</li>
+</ul>
+<p>这 3 个页面打通之后，再谈完整平台 UI。</p>
+<h2 id="七、真实案例型段落：一次“看起来已经有平台骨架”的项目，最后真正卡住的不是代码量"><a href="#七、真实案例型段落：一次“看起来已经有平台骨架”的项目，最后真正卡住的不是代码量" class="headerlink" title="七、真实案例型段落：一次“看起来已经有平台骨架”的项目，最后真正卡住的不是代码量"></a>七、真实案例型段落：一次“看起来已经有平台骨架”的项目，最后真正卡住的不是代码量</h2><h3 id="场景"><a href="#场景" class="headerlink" title="场景"></a>场景</h3><p>在很多平台立项初期，团队都会很快把仓库铺得很完整：</p>
+<ul>
+<li>有后端目录</li>
+<li>有前端目录</li>
+<li>有模型</li>
+<li>有中间件</li>
+<li>有 worker</li>
+<li>有配置</li>
+</ul>
+<p>看到这里时，一个自然的判断是：</p>
+<ul>
+<li>已经起了一个很不错的平台底子</li>
+</ul>
+<h3 id="执行"><a href="#执行" class="headerlink" title="执行"></a>执行</h3><p>但一旦真的往“让一个测试团队开始用”这个目标推进，现场马上会暴露几组问题：</p>
+<ul>
+<li>任务入口还不完整</li>
+<li>执行链路还没闭合</li>
+<li>状态和结果对不上</li>
+<li>前端没有形成最低可用页面</li>
+<li>报告没有沉淀成结构化资产</li>
+</ul>
+<h3 id="现象"><a href="#现象" class="headerlink" title="现象"></a>现象</h3><p>这时候最典型的现象是：</p>
+<ul>
+<li>仓库看起来很大</li>
+<li>模块名称很多</li>
+<li>但真正能演示和能长期使用的能力很少</li>
+</ul>
+<p>团队会越来越频繁地回到：</p>
+<ul>
+<li>手工触发</li>
+<li>Jenkins 直接跑</li>
+<li>查日志目录</li>
+<li>群里补说明</li>
+</ul>
+<h3 id="排查"><a href="#排查" class="headerlink" title="排查"></a>排查</h3><p>继续往下排，最后通常会发现问题不在于“写得不够多”，而在于：</p>
+<ul>
+<li>最小闭环没有先成立</li>
+<li>范围控制失败</li>
+<li>用目录替代了执行链路</li>
+</ul>
+<p>也就是说，项目不是缺更多模块，而是缺：</p>
+<p><strong>一个能被反复使用的核心路径。</strong></p>
+<h3 id="修复"><a href="#修复" class="headerlink" title="修复"></a>修复</h3><p>真正有效的修法通常不是继续扩，而是先收：</p>
+<ul>
+<li>收任务类型</li>
+<li>收前端页面</li>
+<li>收执行模式</li>
+<li>收状态机</li>
+<li>收结果模型</li>
+</ul>
+<p>等最小可用链路成立后，再逐步扩 Web、App、调度、告警和趋势分析。</p>
+<h2 id="八、对-NexTest-当前阶段的判断"><a href="#八、对-NexTest-当前阶段的判断" class="headerlink" title="八、对 NexTest 当前阶段的判断"></a>八、对 NexTest 当前阶段的判断</h2><p>如果只给一句判断，可以概括为：</p>
+<p><strong>NexTest 现在是一个有明确方向的立项仓库，但还不是一个成熟可用的测试平台。</strong></p>
+<p>它的问题不是没有想法，而是：</p>
+<ul>
+<li>想覆盖的范围已经很大</li>
+<li>但真正成熟的平台生命线还没有补齐</li>
+</ul>
+<p>所以当前最重要的，不是继续证明它“未来可以做很多事”，而是尽快证明一件更关键的事：</p>
+<p><strong>它能不能先把一条最小平台闭环做成，让团队愿意真的用起来。</strong></p>
+<p>如果这一点做成了，后面再扩 Web、App、调度、告警、趋势，都是顺着长。<br>如果这一点做不成，目录再完整，最后也很容易停留在：</p>
+<p><strong>一个看起来很像平台、但团队还是绕开使用的仓库。</strong></p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0/" rel="tag"># 测试平台</a>
+              <a href="/tags/%E5%B7%A5%E7%A8%8B%E5%8C%96/" rel="tag"># 工程化</a>
+              <a href="/tags/%E5%A4%8D%E7%9B%98/" rel="tag"># 复盘</a>
+              <a href="/tags/%E6%9E%B6%E6%9E%84%E8%AE%BE%E8%AE%A1/" rel="tag"># 架构设计</a>
+              <a href="/tags/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E5%BC%80%E5%8F%91/" rel="tag"># 测试平台开发</a>
+              <a href="/tags/NexTest/" rel="tag"># NexTest</a>
+              <a href="/tags/%E8%87%AA%E5%8A%A8%E5%8C%96%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0/" rel="tag"># 自动化测试平台</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2021/08/26/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-08-%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E5%A6%82%E4%BD%95%E6%8E%A5%E5%85%A5Jenkins%E4%B8%8E%E5%91%8A%E8%AD%A6/" rel="prev" title="测试平台-08-测试平台如何接入Jenkins与告警">
+                  <i class="fa fa-angle-left"></i> 测试平台-08-测试平台如何接入Jenkins与告警
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2021/09/09/%E8%B4%A8%E9%87%8F%E5%B7%A5%E7%A8%8B-01-%E7%89%88%E6%9C%AC%E6%8F%90%E6%B5%8B%E5%90%8E%E8%B4%A8%E9%87%8F%E6%A0%A1%E9%AA%8C%E9%93%BE%E8%B7%AF%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E8%AE%BE%E8%AE%A1/" rel="next" title="质量工程-01-版本提测后质量校验链路应该怎么设计">
+                  质量工程-01-版本提测后质量校验链路应该怎么设计 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

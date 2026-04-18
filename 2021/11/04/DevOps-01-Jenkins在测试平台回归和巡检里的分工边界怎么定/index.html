@@ -1,0 +1,1015 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="在把自动化测试、定时巡检和发布回归逐步接起来之后，最容易出现的一种局面是：  Jenkins 既负责触发，又负责参数输入 Jenkins 既负责跑任务，又负责展示结果 Jenkins 既负责定时，又负责权限判断 Jenkins 既负责流水线，又负责告警通知  短期看，这种方案很顺。 因为只要把 Job 配起来，接口自动化、UI 回归、巡检脚本、发布前校验都能很快跑起来。 但只要任务类型开始变多，问">
+<meta property="og:type" content="article">
+<meta property="og:title" content="DevOps-01-Jenkins在测试平台回归和巡检里的分工边界怎么定">
+<meta property="og:url" content="https://paynewinnt.github.io/2021/11/04/DevOps-01-Jenkins%E5%9C%A8%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E5%9B%9E%E5%BD%92%E5%92%8C%E5%B7%A1%E6%A3%80%E9%87%8C%E7%9A%84%E5%88%86%E5%B7%A5%E8%BE%B9%E7%95%8C%E6%80%8E%E4%B9%88%E5%AE%9A/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="在把自动化测试、定时巡检和发布回归逐步接起来之后，最容易出现的一种局面是：  Jenkins 既负责触发，又负责参数输入 Jenkins 既负责跑任务，又负责展示结果 Jenkins 既负责定时，又负责权限判断 Jenkins 既负责流水线，又负责告警通知  短期看，这种方案很顺。 因为只要把 Job 配起来，接口自动化、UI 回归、巡检脚本、发布前校验都能很快跑起来。 但只要任务类型开始变多，问">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2021-11-04T12:30:00.000Z">
+<meta property="article:modified_time" content="2021-11-04T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="测试平台">
+<meta property="article:tag" content="工程实践">
+<meta property="article:tag" content="DevOps">
+<meta property="article:tag" content="Jenkins">
+<meta property="article:tag" content="CI-CD">
+<meta property="article:tag" content="回归测试">
+<meta property="article:tag" content="巡检治理">
+<meta property="article:tag" content="DevOps &#x2F; CI&#x2F;CD">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2021/11/04/DevOps-01-Jenkins%E5%9C%A8%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E5%9B%9E%E5%BD%92%E5%92%8C%E5%B7%A1%E6%A3%80%E9%87%8C%E7%9A%84%E5%88%86%E5%B7%A5%E8%BE%B9%E7%95%8C%E6%80%8E%E4%B9%88%E5%AE%9A/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2021/11/04/DevOps-01-Jenkins%E5%9C%A8%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E5%9B%9E%E5%BD%92%E5%92%8C%E5%B7%A1%E6%A3%80%E9%87%8C%E7%9A%84%E5%88%86%E5%B7%A5%E8%BE%B9%E7%95%8C%E6%80%8E%E4%B9%88%E5%AE%9A/","path":"2021/11/04/DevOps-01-Jenkins在测试平台回归和巡检里的分工边界怎么定/","title":"DevOps-01-Jenkins在测试平台回归和巡检里的分工边界怎么定"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>DevOps-01-Jenkins在测试平台回归和巡检里的分工边界怎么定 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E5%85%88%E6%8A%8A%E4%B8%89%E4%B8%AA%E5%AF%B9%E8%B1%A1%E6%8B%86%E5%BC%80%EF%BC%9A%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E3%80%81%E5%9B%9E%E5%BD%92%E4%BB%BB%E5%8A%A1%E3%80%81%E5%B7%A1%E6%A3%80%E4%BB%BB%E5%8A%A1"><span class="nav-number">1.</span> <span class="nav-text">一、先把三个对象拆开：测试平台、回归任务、巡检任务</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E6%98%AF%E6%8E%A7%E5%88%B6%E9%9D%A2"><span class="nav-number">1.1.</span> <span class="nav-text">1. 测试平台是控制面</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%9B%9E%E5%BD%92%E4%BB%BB%E5%8A%A1%E6%98%AF%E4%B8%9A%E5%8A%A1%E6%A0%A1%E9%AA%8C%E5%AF%B9%E8%B1%A1"><span class="nav-number">1.2.</span> <span class="nav-text">2. 回归任务是业务校验对象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%B7%A1%E6%A3%80%E4%BB%BB%E5%8A%A1%E6%98%AF%E9%95%BF%E6%9C%9F%E8%BF%90%E8%A1%8C%E5%AF%B9%E8%B1%A1"><span class="nav-number">1.3.</span> <span class="nav-text">3. 巡检任务是长期运行对象</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81Jenkins-%E6%9C%80%E9%80%82%E5%90%88%E6%89%BF%E6%8B%85%E7%9A%84%E8%81%8C%E8%B4%A3%E6%98%AF%E4%BB%80%E4%B9%88"><span class="nav-number">2.</span> <span class="nav-text">二、Jenkins 最适合承担的职责是什么</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E5%BA%94%E8%AF%A5%E6%94%BE-Jenkins-%E7%9A%84%E8%83%BD%E5%8A%9B"><span class="nav-number">3.</span> <span class="nav-text">三、应该放 Jenkins 的能力</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%89%A7%E8%A1%8C%E7%BC%96%E6%8E%92"><span class="nav-number">3.1.</span> <span class="nav-text">1. 执行编排</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%89%A7%E8%A1%8C%E8%B5%84%E6%BA%90%E8%B0%83%E5%BA%A6"><span class="nav-number">3.2.</span> <span class="nav-text">2. 执行资源调度</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%A0%87%E5%87%86%E5%8C%96%E6%B5%81%E6%B0%B4%E7%BA%BF%E5%A4%8D%E7%94%A8"><span class="nav-number">3.3.</span> <span class="nav-text">3. 标准化流水线复用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%9E%84%E5%BB%BA%E7%8E%B0%E5%9C%BA%E4%BA%A7%E7%89%A9%E5%BD%92%E6%A1%A3"><span class="nav-number">3.4.</span> <span class="nav-text">4. 构建现场产物归档</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E5%BF%85%E9%A1%BB%E7%95%99%E5%9C%A8%E5%B9%B3%E5%8F%B0%E7%9A%84%E8%83%BD%E5%8A%9B"><span class="nav-number">4.</span> <span class="nav-text">四、必须留在平台的能力</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%BB%BB%E5%8A%A1%E5%AE%9A%E4%B9%89%E5%92%8C%E4%BB%BB%E5%8A%A1%E8%AF%AD%E4%B9%89"><span class="nav-number">4.1.</span> <span class="nav-text">1. 任务定义和任务语义</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%9D%83%E9%99%90%E6%A8%A1%E5%9E%8B"><span class="nav-number">4.2.</span> <span class="nav-text">2. 权限模型</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%8E%AF%E5%A2%83%E5%92%8C%E8%B5%84%E6%BA%90%E5%86%B3%E7%AD%96"><span class="nav-number">4.3.</span> <span class="nav-text">3. 环境和资源决策</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%BB%BB%E5%8A%A1%E7%8A%B6%E6%80%81%E5%92%8C%E7%BB%93%E6%9E%9C%E5%BD%92%E6%A1%A3"><span class="nav-number">4.4.</span> <span class="nav-text">4. 任务状态和结果归档</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%8A%A5%E5%91%8A%E3%80%81%E8%AF%81%E6%8D%AE%E5%92%8C%E8%B6%8B%E5%8A%BF%E5%88%86%E6%9E%90"><span class="nav-number">4.5.</span> <span class="nav-text">5. 报告、证据和趋势分析</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E5%91%8A%E8%AD%A6%E8%B7%AF%E7%94%B1%E5%92%8C%E9%97%AD%E7%8E%AF%E6%B2%BB%E7%90%86"><span class="nav-number">4.6.</span> <span class="nav-text">6. 告警路由和闭环治理</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E4%B8%80%E5%BC%A0%E6%9B%B4%E5%AE%9E%E7%94%A8%E7%9A%84%E5%88%86%E5%B7%A5%E8%BE%B9%E7%95%8C%E8%A1%A8"><span class="nav-number">5.</span> <span class="nav-text">五、一张更实用的分工边界表</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E4%B8%80%E4%B8%AA%E8%83%BD%E8%90%BD%E5%9C%B0%E7%9A%84%E6%89%A7%E8%A1%8C%E9%AA%A8%E6%9E%B6"><span class="nav-number">6.</span> <span class="nav-text">六、一个能落地的执行骨架</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%B8%80%E6%AD%A5%EF%BC%9A%E5%B9%B3%E5%8F%B0%E5%88%9B%E5%BB%BA%E4%BB%BB%E5%8A%A1%E5%AE%9E%E4%BE%8B"><span class="nav-number">6.1.</span> <span class="nav-text">第一步：平台创建任务实例</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%BA%8C%E6%AD%A5%EF%BC%9A%E5%B9%B3%E5%8F%B0%E6%8A%8A%E6%A0%87%E5%87%86%E5%8C%96%E4%B8%8A%E4%B8%8B%E6%96%87%E5%8F%91%E7%BB%99-Jenkins"><span class="nav-number">6.2.</span> <span class="nav-text">第二步：平台把标准化上下文发给 Jenkins</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%B8%89%E6%AD%A5%EF%BC%9AJenkins-%E8%B4%9F%E8%B4%A3%E6%89%A7%E8%A1%8C%E6%B5%81%E6%B0%B4%E7%BA%BF"><span class="nav-number">6.3.</span> <span class="nav-text">第三步：Jenkins 负责执行流水线</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E5%9B%9B%E6%AD%A5%EF%BC%9A%E5%B9%B3%E5%8F%B0%E7%BB%9F%E4%B8%80%E6%8E%A5%E6%94%B6%E7%8A%B6%E6%80%81%E5%92%8C%E7%BB%93%E6%9E%9C"><span class="nav-number">6.4.</span> <span class="nav-text">第四步：平台统一接收状态和结果</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%BA%94%E6%AD%A5%EF%BC%9A%E5%B9%B3%E5%8F%B0%E7%BB%9F%E4%B8%80%E5%81%9A%E6%8A%A5%E5%91%8A%E5%92%8C%E9%97%AD%E7%8E%AF%E5%8A%A8%E4%BD%9C"><span class="nav-number">6.5.</span> <span class="nav-text">第五步：平台统一做报告和闭环动作</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E5%9B%9E%E5%BD%92%E4%BB%BB%E5%8A%A1%E5%92%8C%E5%B7%A1%E6%A3%80%E4%BB%BB%E5%8A%A1%EF%BC%8C%E8%BE%B9%E7%95%8C%E5%B0%A4%E5%85%B6%E5%AE%B9%E6%98%93%E6%B7%B7"><span class="nav-number">7.</span> <span class="nav-text">七、回归任务和巡检任务，边界尤其容易混</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%9B%9E%E5%BD%92%E4%BB%BB%E5%8A%A1%E6%9B%B4%E5%85%B3%E6%B3%A8%E7%89%88%E6%9C%AC%E5%92%8C%E5%8F%98%E6%9B%B4"><span class="nav-number">7.1.</span> <span class="nav-text">1. 回归任务更关注版本和变更</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%B7%A1%E6%A3%80%E4%BB%BB%E5%8A%A1%E6%9B%B4%E5%85%B3%E6%B3%A8%E6%8C%81%E7%BB%AD%E6%80%A7%E5%92%8C%E5%91%8A%E8%AD%A6%E9%97%AD%E7%8E%AF"><span class="nav-number">7.2.</span> <span class="nav-text">2. 巡检任务更关注持续性和告警闭环</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E5%88%86%E5%B7%A5%E8%BE%B9%E7%95%8C%E6%B8%85%E5%8D%95%EF%BC%9A%E8%AE%BE%E8%AE%A1%E5%89%8D%E5%85%88%E9%97%AE%E7%9A%84-12-%E4%B8%AA%E9%97%AE%E9%A2%98"><span class="nav-number">8.</span> <span class="nav-text">八、分工边界清单：设计前先问的 12 个问题</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B9%B3%E5%8F%B0%E4%BE%A7%E6%A3%80%E6%9F%A5%E6%B8%85%E5%8D%95"><span class="nav-number">8.1.</span> <span class="nav-text">平台侧检查清单</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Jenkins-%E4%BE%A7%E6%A3%80%E6%9F%A5%E6%B8%85%E5%8D%95"><span class="nav-number">8.2.</span> <span class="nav-text">Jenkins 侧检查清单</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E6%9C%80%E5%B8%B8%E8%A7%81%E7%9A%84-7-%E4%B8%AA%E5%9D%91"><span class="nav-number">9.</span> <span class="nav-text">九、最常见的 7 个坑</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%94%A8-Jenkins-%E5%8F%82%E6%95%B0%E9%A1%B5%E4%BB%A3%E6%9B%BF%E4%BB%BB%E5%8A%A1%E6%A8%A1%E5%9E%8B"><span class="nav-number">9.1.</span> <span class="nav-text">1. 用 Jenkins 参数页代替任务模型</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%AE%A9-Jenkins-%E6%88%90%E4%B8%BA%E5%94%AF%E4%B8%80%E5%85%A5%E5%8F%A3"><span class="nav-number">9.2.</span> <span class="nav-text">2. 让 Jenkins 成为唯一入口</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%8A%8A%E6%9E%84%E5%BB%BA%E7%BB%93%E6%9E%9C%E7%9B%B4%E6%8E%A5%E5%BD%93%E4%B8%9A%E5%8A%A1%E7%BB%93%E6%9E%9C"><span class="nav-number">9.3.</span> <span class="nav-text">3. 把构建结果直接当业务结果</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%8A%8A%E5%91%8A%E8%AD%A6%E9%80%BB%E8%BE%91%E5%86%99%E6%AD%BB%E5%9C%A8-Jenkins"><span class="nav-number">9.4.</span> <span class="nav-text">4. 把告警逻辑写死在 Jenkins</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%8A%8A%E7%8E%AF%E5%A2%83%E9%80%89%E6%8B%A9%E4%BA%A4%E7%BB%99%E6%89%8B%E5%B7%A5%E5%8F%82%E6%95%B0"><span class="nav-number">9.5.</span> <span class="nav-text">5. 把环境选择交给手工参数</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E5%B9%B3%E5%8F%B0%E4%B8%8D%E6%8E%8C%E6%8F%A1%E7%8A%B6%E6%80%81%E6%9C%BA"><span class="nav-number">9.6.</span> <span class="nav-text">6. 平台不掌握状态机</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-%E5%8E%9F%E5%A7%8B%E4%BA%A7%E7%89%A9%E5%92%8C%E4%B8%9A%E5%8A%A1%E6%8A%A5%E5%91%8A%E6%B7%B7%E5%AD%98"><span class="nav-number">9.7.</span> <span class="nav-text">7. 原始产物和业务报告混存</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E7%9C%9F%E5%AE%9E%E6%A1%88%E4%BE%8B%EF%BC%9A%E4%B8%80%E6%AC%A1%E2%80%9CJenkins-%E5%85%A8%E5%8C%85%E2%80%9D%E5%AF%BC%E8%87%B4%E7%9A%84%E5%9B%9E%E5%BD%92%E4%B8%8E%E5%B7%A1%E6%A3%80%E5%A4%B1%E6%8E%A7"><span class="nav-number">10.</span> <span class="nav-text">十、真实案例：一次“Jenkins 全包”导致的回归与巡检失控</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9C%BA%E6%99%AF"><span class="nav-number">10.1.</span> <span class="nav-text">场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%89%A7%E8%A1%8C"><span class="nav-number">10.2.</span> <span class="nav-text">执行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8E%B0%E8%B1%A1"><span class="nav-number">10.3.</span> <span class="nav-text">现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%92%E6%9F%A5"><span class="nav-number">10.4.</span> <span class="nav-text">排查</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BF%AE%E5%A4%8D"><span class="nav-number">10.5.</span> <span class="nav-text">修复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E7%BB%93%E8%AE%BA%EF%BC%9A%E4%B8%8D%E8%A6%81%E8%AE%A9-Jenkins-%E6%9B%BF%E5%B9%B3%E5%8F%B0%E6%89%BF%E6%8B%85%E5%B9%B3%E5%8F%B0%E8%81%8C%E8%B4%A3"><span class="nav-number">11.</span> <span class="nav-text">十一、结论：不要让 Jenkins 替平台承担平台职责</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2021/11/04/DevOps-01-Jenkins%E5%9C%A8%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E5%9B%9E%E5%BD%92%E5%92%8C%E5%B7%A1%E6%A3%80%E9%87%8C%E7%9A%84%E5%88%86%E5%B7%A5%E8%BE%B9%E7%95%8C%E6%80%8E%E4%B9%88%E5%AE%9A/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="DevOps-01-Jenkins在测试平台回归和巡检里的分工边界怎么定 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          DevOps-01-Jenkins在测试平台回归和巡检里的分工边界怎么定
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2021-11-04 20:30:00" itemprop="dateCreated datePublished" datetime="2021-11-04T20:30:00+08:00">2021-11-04</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/DevOps/" itemprop="url" rel="index"><span itemprop="name">DevOps</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>4.9k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>18 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>在把自动化测试、定时巡检和发布回归逐步接起来之后，最容易出现的一种局面是：</p>
+<ul>
+<li>Jenkins 既负责触发，又负责参数输入</li>
+<li>Jenkins 既负责跑任务，又负责展示结果</li>
+<li>Jenkins 既负责定时，又负责权限判断</li>
+<li>Jenkins 既负责流水线，又负责告警通知</li>
+</ul>
+<p>短期看，这种方案很顺。</p>
+<p>因为只要把 Job 配起来，接口自动化、UI 回归、巡检脚本、发布前校验都能很快跑起来。</p>
+<p>但只要任务类型开始变多，问题会迅速积累：</p>
+<ul>
+<li>平台里看到的是一次“回归任务”，Jenkins 里却拆成了三四个 Job，状态很难对齐</li>
+<li>巡检任务需要按环境、业务线、时段切换策略，Jenkins 参数页越堆越长</li>
+<li>同一套流水线既跑人工触发回归，又跑定时巡检，失败后没人说得清优先级</li>
+<li>平台已经有任务记录、报告归档和权限控制，Jenkins 又重复做了一套，最终两边口径打架</li>
+<li>环境失败、脚本失败、构建机失败、回调失败全部混在 Jenkins 的一次 build failure 里，结果没有决策价值</li>
+</ul>
+<p>这类混乱的根因，通常不是 Jenkins 不好用，而是：</p>
+<p><strong>Jenkins 的职责被放大了，平台的职责被做薄了。</strong></p>
+<p>这篇文章只讨论一个问题：</p>
+<p><strong>在测试平台、回归和巡检逐步平台化之后，Jenkins 的分工边界应该怎么定，哪些能力适合放 Jenkins，哪些能力必须留在平台。</strong></p>
+<h2 id="一、先把三个对象拆开：测试平台、回归任务、巡检任务"><a href="#一、先把三个对象拆开：测试平台、回归任务、巡检任务" class="headerlink" title="一、先把三个对象拆开：测试平台、回归任务、巡检任务"></a>一、先把三个对象拆开：测试平台、回归任务、巡检任务</h2><p>如果一开始就把这三类对象混成“自动化任务”，后面边界一定会乱。</p>
+<p>它们虽然都可能最终落到 Jenkins 执行，但本质并不是同一个层级的东西。</p>
+<h3 id="1-测试平台是控制面"><a href="#1-测试平台是控制面" class="headerlink" title="1. 测试平台是控制面"></a>1. 测试平台是控制面</h3><p>测试平台更适合承担下面这些职责：</p>
+<ul>
+<li>任务定义和任务编排</li>
+<li>权限控制和角色隔离</li>
+<li>环境选择和资源决策</li>
+<li>任务实例生成</li>
+<li>执行上下文归档</li>
+<li>报告、证据和趋势沉淀</li>
+<li>告警分级和通知策略</li>
+</ul>
+<p>也就是说，平台更像“任务的控制中心”和“结果的归档中心”。</p>
+<h3 id="2-回归任务是业务校验对象"><a href="#2-回归任务是业务校验对象" class="headerlink" title="2. 回归任务是业务校验对象"></a>2. 回归任务是业务校验对象</h3><p>回归任务关注的是：</p>
+<ul>
+<li>某个版本、某次提测、某次变更到底要验证什么</li>
+<li>验证范围是冒烟、主链路还是专项回归</li>
+<li>失败后是否阻塞发布或阻塞提测流转</li>
+<li>结果应该进入哪条质量链路</li>
+</ul>
+<p>它的核心是业务语义，而不是执行器本身。</p>
+<h3 id="3-巡检任务是长期运行对象"><a href="#3-巡检任务是长期运行对象" class="headerlink" title="3. 巡检任务是长期运行对象"></a>3. 巡检任务是长期运行对象</h3><p>巡检任务关注的是：</p>
+<ul>
+<li>在什么时间、什么频率、什么环境下持续执行</li>
+<li>一旦失败，是告警、降级还是观察</li>
+<li>连续失败、波动失败、已知失败如何分级</li>
+<li>巡检结果是否需要直接关联故障事件或值班流程</li>
+</ul>
+<p>它更像一条长期运行的质量防线，而不是一次性的测试执行。</p>
+<p>把这三类对象拆开之后，边界就会清楚很多：</p>
+<ul>
+<li>平台负责定义和管理对象</li>
+<li>Jenkins 负责执行对象背后的流水线</li>
+</ul>
+<h2 id="二、Jenkins-最适合承担的职责是什么"><a href="#二、Jenkins-最适合承担的职责是什么" class="headerlink" title="二、Jenkins 最适合承担的职责是什么"></a>二、Jenkins 最适合承担的职责是什么</h2><p>Jenkins 适合被放在执行面，而不是控制面。</p>
+<p>如果让 Jenkins 负责控制面，最终几乎一定会出现：</p>
+<ul>
+<li>Job 数量过多</li>
+<li>参数爆炸</li>
+<li>权限零散</li>
+<li>任务语义丢失</li>
+<li>报告碎片化</li>
+</ul>
+<p>更适合收给 Jenkins 的职责通常只有下面几类。</p>
+<h2 id="三、应该放-Jenkins-的能力"><a href="#三、应该放-Jenkins-的能力" class="headerlink" title="三、应该放 Jenkins 的能力"></a>三、应该放 Jenkins 的能力</h2><h3 id="1-执行编排"><a href="#1-执行编排" class="headerlink" title="1. 执行编排"></a>1. 执行编排</h3><p>Jenkins 最擅长的能力之一，是把一组构建步骤稳定地串起来，例如：</p>
+<ul>
+<li>拉代码</li>
+<li>准备依赖</li>
+<li>下发配置</li>
+<li>调执行命令</li>
+<li>收集产物</li>
+<li>归档日志</li>
+<li>回调状态</li>
+</ul>
+<p>这类执行编排能力放在 Jenkins 很合适，因为它天然支持：</p>
+<ul>
+<li>节点选择</li>
+<li>并发控制</li>
+<li>阶段划分</li>
+<li>失败终止</li>
+<li>重试策略</li>
+<li>构建产物归档</li>
+</ul>
+<h3 id="2-执行资源调度"><a href="#2-执行资源调度" class="headerlink" title="2. 执行资源调度"></a>2. 执行资源调度</h3><p>如果团队已经有稳定的 Jenkins 节点池，那么下面这些事情放 Jenkins 通常是合适的：</p>
+<ul>
+<li>哪个 agent 执行任务</li>
+<li>构建节点标签选择</li>
+<li>同类任务并发上限</li>
+<li>工作目录隔离</li>
+<li>执行超时控制</li>
+</ul>
+<p>这部分更偏执行基础设施，而不是业务管理逻辑。</p>
+<h3 id="3-标准化流水线复用"><a href="#3-标准化流水线复用" class="headerlink" title="3. 标准化流水线复用"></a>3. 标准化流水线复用</h3><p>很多回归和巡检任务，本质上共享同一类执行模板：</p>
+<ul>
+<li>拉取脚本</li>
+<li>注入环境参数</li>
+<li>运行测试命令</li>
+<li>上传结果和证据</li>
+</ul>
+<p>如果完全不借助 Jenkins 的 pipeline 能力，而都在平台里重新写一套执行器，成本通常并不低。</p>
+<p>所以：</p>
+<p><strong>标准化执行模板和节点调度，适合放 Jenkins。</strong></p>
+<h3 id="4-构建现场产物归档"><a href="#4-构建现场产物归档" class="headerlink" title="4. 构建现场产物归档"></a>4. 构建现场产物归档</h3><p>例如：</p>
+<ul>
+<li>控制台输出</li>
+<li>构建日志</li>
+<li>临时截图</li>
+<li>原始报告文件</li>
+<li>脚本执行产物</li>
+</ul>
+<p>Jenkins 归档这些原始产物很方便，但这里要注意一个关键边界：</p>
+<p><strong>Jenkins 归档的是执行现场，平台沉淀的是业务结果。</strong></p>
+<p>这两者不能混。</p>
+<h2 id="四、必须留在平台的能力"><a href="#四、必须留在平台的能力" class="headerlink" title="四、必须留在平台的能力"></a>四、必须留在平台的能力</h2><p>失败的关键，不是 Jenkins 接入不成功，而是把本该留在平台的能力也扔给了 Jenkins。</p>
+<p>下面这些能力，长期看更适合留在平台。</p>
+<h3 id="1-任务定义和任务语义"><a href="#1-任务定义和任务语义" class="headerlink" title="1. 任务定义和任务语义"></a>1. 任务定义和任务语义</h3><p>例如：</p>
+<ul>
+<li>这是一条提测回归任务，还是一条生产巡检任务</li>
+<li>它属于哪个业务线、哪个系统、哪个质量等级</li>
+<li>这次执行为什么发起，是提测、发布、人工补跑还是定时巡检</li>
+</ul>
+<p>这些都是任务语义，不是构建参数。</p>
+<p>如果把这部分直接揉进 Jenkins 参数页，后面会出现两个后果：</p>
+<ul>
+<li>参数越来越长，但语义越来越不清楚</li>
+<li>同一类任务在不同 Job 里重复定义，平台无法统一治理</li>
+</ul>
+<h3 id="2-权限模型"><a href="#2-权限模型" class="headerlink" title="2. 权限模型"></a>2. 权限模型</h3><p>权限控制长期看必须由平台主导。</p>
+<p>因为权限判断不是“能不能点这个 Job”，而是：</p>
+<ul>
+<li>谁能执行哪个业务的回归</li>
+<li>谁能对生产巡检做停用和静默</li>
+<li>谁能跳过某类阻塞项</li>
+<li>谁能查看带敏感信息的报告和日志</li>
+</ul>
+<p>如果把这些能力直接交给 Jenkins：</p>
+<ul>
+<li>角色会和业务组织严重耦合</li>
+<li>权限调整会落到大量 Job 和 Folder 上</li>
+<li>审计链路很难收</li>
+</ul>
+<h3 id="3-环境和资源决策"><a href="#3-环境和资源决策" class="headerlink" title="3. 环境和资源决策"></a>3. 环境和资源决策</h3><p>环境解析不应该完全交给 Jenkins 参数。</p>
+<p>因为环境不是一个简单字符串，而是一个上下文对象，通常至少包括：</p>
+<ul>
+<li>环境类型</li>
+<li>配置快照</li>
+<li>服务版本</li>
+<li>依赖状态</li>
+<li>账号池</li>
+<li>设备池或执行资源</li>
+</ul>
+<p>平台应该先完成环境决策，再把一个标准化执行上下文交给 Jenkins。</p>
+<p>否则最常见的问题就是：</p>
+<ul>
+<li>Jenkins 页面上让人手工选环境</li>
+<li>选错环境后结果写进错误的报告</li>
+<li>巡检任务在夜间跑到调试环境</li>
+</ul>
+<h3 id="4-任务状态和结果归档"><a href="#4-任务状态和结果归档" class="headerlink" title="4. 任务状态和结果归档"></a>4. 任务状态和结果归档</h3><p>Jenkins 可以提供执行状态，但平台必须掌握业务状态。</p>
+<p>例如平台更应该统一维护：</p>
+<ul>
+<li>任务实例 ID</li>
+<li>任务类型</li>
+<li>触发来源</li>
+<li>业务归属</li>
+<li>环境快照</li>
+<li>结果分类</li>
+<li>是否阻塞流转</li>
+<li>是否需要告警</li>
+<li>是否进入趋势统计</li>
+</ul>
+<p>Jenkins 的 <code>SUCCESS / FAILURE / ABORTED</code> 只能描述构建结果，不能直接描述业务结果。</p>
+<h3 id="5-报告、证据和趋势分析"><a href="#5-报告、证据和趋势分析" class="headerlink" title="5. 报告、证据和趋势分析"></a>5. 报告、证据和趋势分析</h3><p>把 Jenkins 构建页当成报告页，这几乎一定会走到瓶颈。</p>
+<p>因为构建页更适合看：</p>
+<ul>
+<li>本次执行日志</li>
+<li>原始产物</li>
+<li>阶段状态</li>
+</ul>
+<p>而平台报告更应该看：</p>
+<ul>
+<li>用例结果和步骤结果</li>
+<li>环境信息</li>
+<li>失败归因</li>
+<li>历史趋势</li>
+<li>连续失败</li>
+<li>已知问题命中</li>
+<li>巡检分级</li>
+</ul>
+<h3 id="6-告警路由和闭环治理"><a href="#6-告警路由和闭环治理" class="headerlink" title="6. 告警路由和闭环治理"></a>6. 告警路由和闭环治理</h3><p>Jenkins 适合在构建失败时发一个基础通知。</p>
+<p>但如果团队已经有平台，真正的告警策略更应该留在平台：</p>
+<ul>
+<li>谁需要被通知</li>
+<li>哪种失败才需要通知</li>
+<li>是否需要抑制</li>
+<li>是否需要合并同类失败</li>
+<li>是否需要转故障事件</li>
+<li>是否需要自动补挂回归</li>
+</ul>
+<p>否则最终会出现：</p>
+<ul>
+<li>Jenkins 负责发构建失败</li>
+<li>平台负责发任务失败</li>
+<li>巡检系统负责发告警失败</li>
+</ul>
+<p>三个系统都在发消息，但没有一个系统真正负责闭环。</p>
+<h2 id="五、一张更实用的分工边界表"><a href="#五、一张更实用的分工边界表" class="headerlink" title="五、一张更实用的分工边界表"></a>五、一张更实用的分工边界表</h2><p>下面这张表，更适合拿来和团队内部对齐边界。</p>
+<table>
+<thead>
+<tr>
+<th>能力项</th>
+<th>更适合放 Jenkins</th>
+<th>更适合放平台</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>执行节点调度</td>
+<td>是</td>
+<td>否</td>
+</tr>
+<tr>
+<td>Pipeline 阶段编排</td>
+<td>是</td>
+<td>否</td>
+</tr>
+<tr>
+<td>构建日志归档</td>
+<td>是</td>
+<td>否</td>
+</tr>
+<tr>
+<td>原始执行产物归档</td>
+<td>是</td>
+<td>否</td>
+</tr>
+<tr>
+<td>任务定义</td>
+<td>否</td>
+<td>是</td>
+</tr>
+<tr>
+<td>任务类型语义</td>
+<td>否</td>
+<td>是</td>
+</tr>
+<tr>
+<td>环境快照与资源决策</td>
+<td>否</td>
+<td>是</td>
+</tr>
+<tr>
+<td>权限模型与审计</td>
+<td>否</td>
+<td>是</td>
+</tr>
+<tr>
+<td>任务实例状态机</td>
+<td>部分同步</td>
+<td>是</td>
+</tr>
+<tr>
+<td>报告展示和趋势统计</td>
+<td>否</td>
+<td>是</td>
+</tr>
+<tr>
+<td>告警分级和路由</td>
+<td>否</td>
+<td>是</td>
+</tr>
+<tr>
+<td>已知问题过滤和失败归因</td>
+<td>否</td>
+<td>是</td>
+</tr>
+<tr>
+<td>发布阻塞判断</td>
+<td>否</td>
+<td>是</td>
+</tr>
+<tr>
+<td>巡检静默与值班闭环</td>
+<td>否</td>
+<td>是</td>
+</tr>
+</tbody></table>
+<p>可以把它收成一句更容易记住的话：</p>
+<p><strong>Jenkins 负责把事情跑起来，平台负责定义跑什么、为什么跑、跑完怎么算、失败后怎么办。</strong></p>
+<h2 id="六、一个能落地的执行骨架"><a href="#六、一个能落地的执行骨架" class="headerlink" title="六、一个能落地的执行骨架"></a>六、一个能落地的执行骨架</h2><p>如果现在要从 0 到 1 设计这套边界，更适合采用下面这条执行骨架。</p>
+<h3 id="第一步：平台创建任务实例"><a href="#第一步：平台创建任务实例" class="headerlink" title="第一步：平台创建任务实例"></a>第一步：平台创建任务实例</h3><p>平台先做：</p>
+<ul>
+<li>校验任务定义是否合法</li>
+<li>判断触发来源</li>
+<li>解析环境与资源</li>
+<li>生成唯一 <code>execution_id</code></li>
+<li>确定是否需要阻塞流转</li>
+</ul>
+<p>这一层做完之后，平台已经知道这次执行“是什么任务”。</p>
+<h3 id="第二步：平台把标准化上下文发给-Jenkins"><a href="#第二步：平台把标准化上下文发给-Jenkins" class="headerlink" title="第二步：平台把标准化上下文发给 Jenkins"></a>第二步：平台把标准化上下文发给 Jenkins</h3><p>发送给 Jenkins 的不应该是一堆零散参数，更适合是一份标准化上下文，至少包括：</p>
+<ul>
+<li><code>execution_id</code></li>
+<li><code>task_code</code></li>
+<li><code>task_type</code></li>
+<li><code>trigger_type</code></li>
+<li><code>env_snapshot_id</code></li>
+<li><code>resource_plan</code></li>
+<li><code>report_callback_token</code></li>
+<li><code>artifact_upload_token</code></li>
+</ul>
+<p>这样 Jenkins 看到的是一份执行上下文，而不是一堆缺乏语义的字符串参数。</p>
+<h3 id="第三步：Jenkins-负责执行流水线"><a href="#第三步：Jenkins-负责执行流水线" class="headerlink" title="第三步：Jenkins 负责执行流水线"></a>第三步：Jenkins 负责执行流水线</h3><p>Jenkins 只做执行面上的事情：</p>
+<ul>
+<li>分配 agent</li>
+<li>拉取代码</li>
+<li>准备注入参数</li>
+<li>执行脚本</li>
+<li>归档原始产物</li>
+<li>按阶段回传状态</li>
+</ul>
+<h3 id="第四步：平台统一接收状态和结果"><a href="#第四步：平台统一接收状态和结果" class="headerlink" title="第四步：平台统一接收状态和结果"></a>第四步：平台统一接收状态和结果</h3><p>平台接收回传后，需要做的不是简单标记成功失败，而是：</p>
+<ul>
+<li>把 Jenkins 状态映射到平台状态机</li>
+<li>识别环境失败、构建失败、业务失败</li>
+<li>生成报告入口</li>
+<li>决定是否触发告警</li>
+<li>决定是否阻塞提测或发布流程</li>
+</ul>
+<h3 id="第五步：平台统一做报告和闭环动作"><a href="#第五步：平台统一做报告和闭环动作" class="headerlink" title="第五步：平台统一做报告和闭环动作"></a>第五步：平台统一做报告和闭环动作</h3><p>报告和后续动作放在平台：</p>
+<ul>
+<li>对测试平台任务沉淀完整报告</li>
+<li>对回归任务计算阻塞结论</li>
+<li>对巡检任务计算告警等级、连续失败次数和静默状态</li>
+<li>对异常结果挂接提单、事件、值班人或二次复验</li>
+</ul>
+<h2 id="七、回归任务和巡检任务，边界尤其容易混"><a href="#七、回归任务和巡检任务，边界尤其容易混" class="headerlink" title="七、回归任务和巡检任务，边界尤其容易混"></a>七、回归任务和巡检任务，边界尤其容易混</h2><p>同样是 Jenkins 跑出来的任务，回归和巡检不能按同一套治理方式处理。</p>
+<h3 id="1-回归任务更关注版本和变更"><a href="#1-回归任务更关注版本和变更" class="headerlink" title="1. 回归任务更关注版本和变更"></a>1. 回归任务更关注版本和变更</h3><p>回归任务通常需要平台提供：</p>
+<ul>
+<li>版本号或提测单号</li>
+<li>变更范围</li>
+<li>冒烟还是全量回归</li>
+<li>阻塞规则</li>
+<li>对应报告归档</li>
+</ul>
+<p>Jenkins 在这里更适合扮演：</p>
+<ul>
+<li>一个标准化执行器</li>
+<li>一个构建现场保留器</li>
+</ul>
+<h3 id="2-巡检任务更关注持续性和告警闭环"><a href="#2-巡检任务更关注持续性和告警闭环" class="headerlink" title="2. 巡检任务更关注持续性和告警闭环"></a>2. 巡检任务更关注持续性和告警闭环</h3><p>巡检任务通常需要平台提供：</p>
+<ul>
+<li>巡检频率</li>
+<li>生效时间窗</li>
+<li>失败分级</li>
+<li>静默策略</li>
+<li>连续失败阈值</li>
+<li>告警接收人</li>
+</ul>
+<p>如果把这些也全部写进 Jenkins 定时 Job：</p>
+<ul>
+<li>配置会越来越散</li>
+<li>治理会越来越依赖人工记忆</li>
+<li>一旦要批量调整策略，改动面会非常大</li>
+</ul>
+<p>所以巡检的时段、静默、告警等级和闭环动作，更适合留在平台；Jenkins 只负责按平台下发的计划执行。</p>
+<h2 id="八、分工边界清单：设计前先问的-12-个问题"><a href="#八、分工边界清单：设计前先问的-12-个问题" class="headerlink" title="八、分工边界清单：设计前先问的 12 个问题"></a>八、分工边界清单：设计前先问的 12 个问题</h2><p>在开始落地之前，可以先用这份清单判断边界有没有跑偏。</p>
+<h3 id="平台侧检查清单"><a href="#平台侧检查清单" class="headerlink" title="平台侧检查清单"></a>平台侧检查清单</h3><ul>
+<li>任务是否有统一任务定义，而不是散落在多个 Jenkins Job 中</li>
+<li>是否有统一的任务实例 ID</li>
+<li>是否能区分提测回归、发布回归、人工补跑、定时巡检</li>
+<li>是否由平台统一决定环境和资源</li>
+<li>是否由平台统一管理权限和审计</li>
+<li>是否由平台统一生成报告和趋势</li>
+<li>是否由平台统一计算告警等级和闭环动作</li>
+</ul>
+<h3 id="Jenkins-侧检查清单"><a href="#Jenkins-侧检查清单" class="headerlink" title="Jenkins 侧检查清单"></a>Jenkins 侧检查清单</h3><ul>
+<li>是否只承接标准化执行上下文</li>
+<li>是否只负责执行编排和节点调度</li>
+<li>是否保留原始执行日志和构建产物</li>
+<li>是否能回传阶段状态和构建标识</li>
+<li>是否避免承载复杂业务语义和长期治理策略</li>
+</ul>
+<p>如果这两组问题里有一半以上答不上来，后面基本一定会出现边界漂移。</p>
+<h2 id="九、最常见的-7-个坑"><a href="#九、最常见的-7-个坑" class="headerlink" title="九、最常见的 7 个坑"></a>九、最常见的 7 个坑</h2><h3 id="1-用-Jenkins-参数页代替任务模型"><a href="#1-用-Jenkins-参数页代替任务模型" class="headerlink" title="1. 用 Jenkins 参数页代替任务模型"></a>1. 用 Jenkins 参数页代替任务模型</h3><p>短期很快，长期最乱。</p>
+<p>任务模型一旦缺失，后面就很难做统一治理、趋势分析和权限收敛。</p>
+<h3 id="2-让-Jenkins-成为唯一入口"><a href="#2-让-Jenkins-成为唯一入口" class="headerlink" title="2. 让 Jenkins 成为唯一入口"></a>2. 让 Jenkins 成为唯一入口</h3><p>这样做的后果通常是：</p>
+<ul>
+<li>人工补跑从 Jenkins 进</li>
+<li>平台触发从平台进</li>
+<li>定时巡检从另一个 Job 进</li>
+</ul>
+<p>最终入口很多，状态不一致。</p>
+<h3 id="3-把构建结果直接当业务结果"><a href="#3-把构建结果直接当业务结果" class="headerlink" title="3. 把构建结果直接当业务结果"></a>3. 把构建结果直接当业务结果</h3><p>Jenkins build success 不代表业务验证成功。</p>
+<p>例如脚本执行成功但断言失败被吞、巡检通过但告警阈值未判定、结果上传失败但 Jenkins 仍然成功，这些都很常见。</p>
+<h3 id="4-把告警逻辑写死在-Jenkins"><a href="#4-把告警逻辑写死在-Jenkins" class="headerlink" title="4. 把告警逻辑写死在 Jenkins"></a>4. 把告警逻辑写死在 Jenkins</h3><p>例如：</p>
+<ul>
+<li>一失败就发群消息</li>
+<li>不区分环境失败和业务失败</li>
+<li>不做已知问题过滤</li>
+</ul>
+<p>最后消息很多，责任不清。</p>
+<h3 id="5-把环境选择交给手工参数"><a href="#5-把环境选择交给手工参数" class="headerlink" title="5. 把环境选择交给手工参数"></a>5. 把环境选择交给手工参数</h3><p>一旦环境和资源依赖复杂，Jenkins 参数页就很难承载：</p>
+<ul>
+<li>测试环境快照</li>
+<li>设备池</li>
+<li>账号池</li>
+<li>限流配额</li>
+</ul>
+<p>这部分应该由平台先决策。</p>
+<h3 id="6-平台不掌握状态机"><a href="#6-平台不掌握状态机" class="headerlink" title="6. 平台不掌握状态机"></a>6. 平台不掌握状态机</h3><p>如果平台只记录“已触发”和“已结束”，而不掌握：</p>
+<ul>
+<li>排队中</li>
+<li>构建中</li>
+<li>结果上传中</li>
+<li>回调失败</li>
+<li>失联超时</li>
+</ul>
+<p>后续问题会很难排查。</p>
+<h3 id="7-原始产物和业务报告混存"><a href="#7-原始产物和业务报告混存" class="headerlink" title="7. 原始产物和业务报告混存"></a>7. 原始产物和业务报告混存</h3><p>原始产物适合放 Jenkins，业务报告适合放平台。</p>
+<p>如果两边都想做报告，最后一定会出现：</p>
+<ul>
+<li>平台结果和 Jenkins 页面不一致</li>
+<li>群里发的链接有人看平台，有人看 Jenkins</li>
+<li>问题复盘时没人知道哪份是最终结论</li>
+</ul>
+<h2 id="十、真实案例：一次“Jenkins-全包”导致的回归与巡检失控"><a href="#十、真实案例：一次“Jenkins-全包”导致的回归与巡检失控" class="headerlink" title="十、真实案例：一次“Jenkins 全包”导致的回归与巡检失控"></a>十、真实案例：一次“Jenkins 全包”导致的回归与巡检失控</h2><p>下面这类场景很典型。</p>
+<h3 id="场景"><a href="#场景" class="headerlink" title="场景"></a>场景</h3><p>某团队最初只有几条接口回归和一条生产巡检，全部直接建在 Jenkins 里：</p>
+<ul>
+<li>一个 Folder 放回归 Job</li>
+<li>一个 Folder 放巡检 Job</li>
+<li>通过参数切环境、切业务线、切执行范围</li>
+<li>失败后由 Jenkins 直接发企业微信</li>
+</ul>
+<p>前期任务少，这种方式还能撑住。</p>
+<p>随着平台开始接提测、发版前回归、定时巡检和人工补跑，问题逐渐集中暴露。</p>
+<h3 id="执行"><a href="#执行" class="headerlink" title="执行"></a>执行</h3><p>团队继续沿用原模式扩张：</p>
+<ul>
+<li>平台触发 Jenkins Job</li>
+<li>Jenkins 继续承载环境选择和执行范围判断</li>
+<li>巡检和回归共用部分 pipeline</li>
+<li>失败后 Jenkins 根据 Job 名直接发送消息</li>
+</ul>
+<p>看上去是统一了执行入口，实际只是把更多业务语义继续堆进了 Jenkins。</p>
+<h3 id="现象"><a href="#现象" class="headerlink" title="现象"></a>现象</h3><p>很快出现了几类问题：</p>
+<ul>
+<li>平台显示巡检失败，但 Jenkins 里对应 Job 实际是人工补跑成功</li>
+<li>同一环境故障触发了三条回归失败消息和两条巡检失败消息</li>
+<li>值班人只看到 Jenkins build failure，不知道是环境挂了还是业务断言失败</li>
+<li>发布前回归因为巡检静默策略被误判成普通失败，没有阻塞发布</li>
+<li>平台报告和 Jenkins 页面记录的执行范围不一致</li>
+</ul>
+<p>最严重的一次，是夜间巡检误跑到了预发布环境，产生了一批错误告警，值班人先按业务故障处理，后来才确认是环境选错。</p>
+<h3 id="排查"><a href="#排查" class="headerlink" title="排查"></a>排查</h3><p>排查顺序最后收敛成了下面几步：</p>
+<ol>
+<li>先对齐平台任务实例和 Jenkins build 的映射关系，确认哪些记录其实不是同一次执行。</li>
+<li>再检查 Job 参数来源，发现平台虽然有环境字段，但 Jenkins pipeline 里又做了一次默认值覆盖。</li>
+<li>继续检查告警链路，发现 Jenkins 告警和平台告警并行存在，且没有统一去重。</li>
+<li>再看巡检和回归的任务定义，发现两类任务共用了同一套 pipeline 分支判断，任务语义被 Job 参数挤压得很模糊。</li>
+<li>最后回看报告归档，确认平台和 Jenkins 分别保留了一套结果，口径已经发生漂移。</li>
+</ol>
+<h3 id="修复"><a href="#修复" class="headerlink" title="修复"></a>修复</h3><p>修复动作没有从“再改几个 Job 参数”开始，而是先重收边界：</p>
+<ul>
+<li>平台统一管理任务定义、任务实例、环境决策和告警策略</li>
+<li>Jenkins 只接收标准化执行上下文，不再承担环境默认值决策</li>
+<li>巡检与回归拆成两类任务模型，统一由平台决定后续闭环动作</li>
+<li>Jenkins 只归档原始产物，平台统一沉淀业务报告</li>
+<li>所有通知改为平台统一发出，Jenkins 只保留调试级构建通知</li>
+</ul>
+<p>边界收回来之后，最直接的变化有三点：</p>
+<ul>
+<li>平台报告和 Jenkins 构建页不再互相打架</li>
+<li>巡检和回归的失败能够按不同等级进入不同闭环</li>
+<li>值班排障时可以先看平台结论，再根据 <code>build_url</code> 回到 Jenkins 看执行现场</li>
+</ul>
+<p>这类案例说明一个非常直接的问题：</p>
+<p><strong>Jenkins 全包的方案并不是不能跑，而是只能在任务很少、语义很轻的时候勉强成立。</strong></p>
+<p>一旦进入平台化、规模化和长期治理阶段，边界不收清，最终一定会反过来拖垮平台。</p>
+<h2 id="十一、结论：不要让-Jenkins-替平台承担平台职责"><a href="#十一、结论：不要让-Jenkins-替平台承担平台职责" class="headerlink" title="十一、结论：不要让 Jenkins 替平台承担平台职责"></a>十一、结论：不要让 Jenkins 替平台承担平台职责</h2><p>Jenkins 依然非常重要。</p>
+<p>并不需要急着把 Jenkins 替换掉，真正需要先做的是：</p>
+<p><strong>把 Jenkins 放回它擅长的位置。</strong></p>
+<p>更合适的分工方式是：</p>
+<ul>
+<li>Jenkins 负责执行编排、节点调度、构建现场和原始产物</li>
+<li>平台负责任务模型、环境决策、状态机、报告、告警和闭环治理</li>
+</ul>
+<p>只要这个边界收住，后面无论接更多回归、巡检还是发布前校验，系统都还能继续长。</p>
+<p>如果这个边界不清，Job 越多、任务越多、环境越复杂，最终得到的通常不会是一套 DevOps 能力，而是一堆靠 Jenkins 参数和人工记忆勉强维持的“半平台系统”。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0/" rel="tag"># 测试平台</a>
+              <a href="/tags/%E5%B7%A5%E7%A8%8B%E5%AE%9E%E8%B7%B5/" rel="tag"># 工程实践</a>
+              <a href="/tags/DevOps/" rel="tag"># DevOps</a>
+              <a href="/tags/Jenkins/" rel="tag"># Jenkins</a>
+              <a href="/tags/CI-CD/" rel="tag"># CI-CD</a>
+              <a href="/tags/%E5%9B%9E%E5%BD%92%E6%B5%8B%E8%AF%95/" rel="tag"># 回归测试</a>
+              <a href="/tags/%E5%B7%A1%E6%A3%80%E6%B2%BB%E7%90%86/" rel="tag"># 巡检治理</a>
+              <a href="/tags/DevOps-CI-CD/" rel="tag"># DevOps / CI/CD</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2021/10/28/%E8%B4%A8%E9%87%8F%E5%B7%A5%E7%A8%8B-07-%E6%B5%8B%E8%AF%95%E8%B4%9F%E8%B4%A3%E4%BA%BA%E5%A6%82%E4%BD%95%E6%8E%A8%E5%8A%A8%E8%B4%A8%E9%87%8F%E9%97%AE%E9%A2%98%E7%9C%9F%E6%AD%A3%E6%94%B6%E6%95%9B/" rel="prev" title="质量工程-07-测试负责人如何推动质量问题真正收敛">
+                  <i class="fa fa-angle-left"></i> 质量工程-07-测试负责人如何推动质量问题真正收敛
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2021/11/11/DevOps-02-%E8%87%AA%E5%8A%A8%E5%8C%96%E6%B5%8B%E8%AF%95%E6%8E%A5%E5%85%A5CI-CD%E6%97%B6%E6%9C%80%E5%AE%B9%E6%98%93%E8%B8%A9%E7%9A%848%E4%B8%AA%E5%9D%91/" rel="next" title="DevOps-02-自动化测试接入CI-CD时最容易踩的8个坑">
+                  DevOps-02-自动化测试接入CI-CD时最容易踩的8个坑 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="使用 Barrier 实现 Rocky Linux 与 Windows 之间共享键盘鼠标，最终采用 USB 网卡直连、静态 IP 和 systemd 用户服务方式稳定运行。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Barrier：Rocky Linux + Windows 双机 KVM 部署">
+<meta property="og:url" content="https://paynewinnt.github.io/2026/04/16/Linux%E8%BF%90%E7%BB%B4-09-Barrier%20KVM%20%E9%83%A8%E7%BD%B2/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="使用 Barrier 实现 Rocky Linux 与 Windows 之间共享键盘鼠标，最终采用 USB 网卡直连、静态 IP 和 systemd 用户服务方式稳定运行。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-04-16T10:21:08.000Z">
+<meta property="article:modified_time" content="2026-04-16T10:21:15.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="Linux">
+<meta property="article:tag" content="Linux运维">
+<meta property="article:tag" content="Rocky Linux">
+<meta property="article:tag" content="Windows">
+<meta property="article:tag" content="Barrier">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2026/04/16/Linux%E8%BF%90%E7%BB%B4-09-Barrier%20KVM%20%E9%83%A8%E7%BD%B2/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2026/04/16/Linux%E8%BF%90%E7%BB%B4-09-Barrier%20KVM%20%E9%83%A8%E7%BD%B2/","path":"2026/04/16/Linux运维-09-Barrier KVM 部署/","title":"Barrier：Rocky Linux + Windows 双机 KVM 部署"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>Barrier：Rocky Linux + Windows 双机 KVM 部署 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%A6%82%E8%BF%B0"><span class="nav-number">1.</span> <span class="nav-text">概述</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%9C%AC%E6%AC%A1%E6%9C%80%E7%BB%88%E8%90%BD%E5%9C%B0%E6%80%BB%E7%BB%93"><span class="nav-number">2.</span> <span class="nav-text">本次最终落地总结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%8E%AF%E5%A2%83%E4%BF%A1%E6%81%AF"><span class="nav-number">3.</span> <span class="nav-text">环境信息</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B1%8F%E5%B9%95%E5%B8%83%E5%B1%80"><span class="nav-number">4.</span> <span class="nav-text">屏幕布局</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%9C%8D%E5%8A%A1%E7%AB%AF%E9%83%A8%E7%BD%B2%EF%BC%88Rocky-Linux%EF%BC%89"><span class="nav-number">5.</span> <span class="nav-text">服务端部署（Rocky Linux）</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%AE%89%E8%A3%85-Barrier"><span class="nav-number">5.1.</span> <span class="nav-text">1. 安装 Barrier</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%88%9B%E5%BB%BA%E9%85%8D%E7%BD%AE%E6%96%87%E4%BB%B6"><span class="nav-number">5.2.</span> <span class="nav-text">2. 创建配置文件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%AE%A9-USB-%E7%9B%B4%E8%BF%9E%E5%8F%A3%E6%8C%81%E4%B9%85%E5%8C%96"><span class="nav-number">5.3.</span> <span class="nav-text">3. 让 USB 直连口持久化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%88%9B%E5%BB%BA-systemd-%E7%94%A8%E6%88%B7%E6%9C%8D%E5%8A%A1"><span class="nav-number">5.4.</span> <span class="nav-text">4. 创建 systemd 用户服务</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%90%AF%E7%94%A8%E6%9C%8D%E5%8A%A1"><span class="nav-number">5.5.</span> <span class="nav-text">5. 启用服务</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E7%AE%A1%E7%90%86%E5%91%BD%E4%BB%A4"><span class="nav-number">5.6.</span> <span class="nav-text">6. 管理命令</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-%E8%BE%85%E5%8A%A9%E8%84%9A%E6%9C%AC"><span class="nav-number">5.7.</span> <span class="nav-text">7. 辅助脚本</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%AE%A2%E6%88%B7%E7%AB%AF%E9%83%A8%E7%BD%B2%EF%BC%88Windows%EF%BC%89"><span class="nav-number">6.</span> <span class="nav-text">客户端部署（Windows）</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%AE%89%E8%A3%85-Barrier-1"><span class="nav-number">6.1.</span> <span class="nav-text">1. 安装 Barrier</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%88%9B%E5%BB%BA%E9%9A%90%E8%97%8F%E5%90%AF%E5%8A%A8%E8%84%9A%E6%9C%AC"><span class="nav-number">6.2.</span> <span class="nav-text">2. 创建隐藏启动脚本</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E9%85%8D%E7%BD%AE-Windows-%E7%9B%B4%E8%BF%9E%E7%BD%91%E5%8F%A3"><span class="nav-number">6.3.</span> <span class="nav-text">3. 配置 Windows 直连网口</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%88%9B%E5%BB%BA%E7%99%BB%E5%BD%95%E8%87%AA%E5%90%AF%E8%AE%A1%E5%88%92%E4%BB%BB%E5%8A%A1"><span class="nav-number">6.4.</span> <span class="nav-text">4. 创建登录自启计划任务</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%88%9B%E5%BB%BA%E5%BC%80%E6%9C%BA%E6%9C%89%E7%BA%BF%E7%BD%91%E5%8D%A1%E8%87%AA%E6%84%88%E4%BB%BB%E5%8A%A1"><span class="nav-number">6.5.</span> <span class="nav-text">5. 创建开机有线网卡自愈任务</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E7%AE%A1%E7%90%86%E5%91%BD%E4%BB%A4-1"><span class="nav-number">6.6.</span> <span class="nav-text">6. 管理命令</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%B3%E9%94%AE%E9%85%8D%E7%BD%AE%E8%AF%B4%E6%98%8E"><span class="nav-number">7.</span> <span class="nav-text">关键配置说明</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%95%85%E9%9A%9C%E6%8E%92%E6%9F%A5"><span class="nav-number">8.</span> <span class="nav-text">故障排查</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%BC%A0%E6%A0%87%E9%94%AE%E7%9B%98%E6%97%A0%E6%B3%95%E5%88%87%E6%8D%A2"><span class="nav-number">8.1.</span> <span class="nav-text">鼠标键盘无法切换</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Screen-Name-%E4%B8%8D%E5%8C%B9%E9%85%8D"><span class="nav-number">8.2.</span> <span class="nav-text">Screen Name 不匹配</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Windows-%E7%AB%AF-UAC-%E5%BC%B9%E7%AA%97%E5%AF%BC%E8%87%B4%E9%94%AE%E9%BC%A0%E5%A4%B1%E6%95%88"><span class="nav-number">8.3.</span> <span class="nav-text">Windows 端 UAC 弹窗导致键鼠失效</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BD%91%E7%BB%9C%E4%B8%8D%E9%80%9A"><span class="nav-number">8.4.</span> <span class="nav-text">网络不通</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8F%AA%E8%83%BD%E5%8D%95%E5%90%91%E5%88%87%E6%8D%A2"><span class="nav-number">8.5.</span> <span class="nav-text">只能单向切换</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%96%87%E4%BB%B6%E6%B8%85%E5%8D%95"><span class="nav-number">9.</span> <span class="nav-text">文件清单</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2026/04/16/Linux%E8%BF%90%E7%BB%B4-09-Barrier%20KVM%20%E9%83%A8%E7%BD%B2/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="Barrier：Rocky Linux + Windows 双机 KVM 部署 | 大道至简">
+      <meta itemprop="description" content="使用 Barrier 实现 Rocky Linux 与 Windows 之间共享键盘鼠标，最终采用 USB 网卡直连、静态 IP 和 systemd 用户服务方式稳定运行。">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Barrier：Rocky Linux + Windows 双机 KVM 部署
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+      
+
+      <time title="创建时间：2026-04-16 18:21:08 / 修改时间：18:21:15" itemprop="dateCreated datePublished" datetime="2026-04-16T18:21:08+08:00">2026-04-16</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/Linux%E8%BF%90%E7%BB%B4/" itemprop="url" rel="index"><span itemprop="name">Linux运维</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>1.8k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>7 分钟</span>
+    </span>
+</div>
+
+            <div class="post-description">使用 Barrier 实现 Rocky Linux 与 Windows 之间共享键盘鼠标，最终采用 USB 网卡直连、静态 IP 和 systemd 用户服务方式稳定运行。</div>
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><h2 id="概述"><a href="#概述" class="headerlink" title="概述"></a>概述</h2><p>使用 Barrier 实现 Rocky Linux（服务端）与 Windows（客户端）之间共享键盘鼠标。最终采用 <code>USB 网卡 + 直连网线 + 静态 IP</code>，不再依赖热点。鼠标移动到屏幕边缘时自动切换到另一台电脑。</p>
+<h2 id="本次最终落地总结"><a href="#本次最终落地总结" class="headerlink" title="本次最终落地总结"></a>本次最终落地总结</h2><p>本次已经完成的实际变更如下：</p>
+<ol>
+<li>放弃热点方案，改为 Rocky Linux 上的 USB 网卡 <code>enp0s20f0u7u4c2</code> 直连 Windows 有线网卡。</li>
+<li>Rocky Linux 直连口固定为 <code>192.168.77.1/24</code>，Windows 直连口固定为 <code>192.168.77.2/24</code>。</li>
+<li>Rocky Linux 侧由 NetworkManager 持久管理直连口，连接名为 <code>barrier-direct-link</code>，并启用 <code>autoconnect=yes</code>。</li>
+<li>Rocky Linux 侧 Barrier 服务端继续由 <code>systemd --user</code> 托管。</li>
+<li>Windows 侧保留 <code>BarrierClient</code> 登录自启任务，并新增 <code>BarrierEthernetBoot</code> 开机任务，用于自动启用有线网卡。</li>
+<li>Windows 侧 Barrier 客户端连接地址已从旧热点地址 <code>10.42.0.1</code> 切换为 <code>192.168.77.1</code>。</li>
+<li>Barrier 屏幕边界配置已调整为显式百分比映射，降低多显示器高度不一致导致的边界命中问题。</li>
+</ol>
+<h2 id="环境信息"><a href="#环境信息" class="headerlink" title="环境信息"></a>环境信息</h2><table>
+<thead>
+<tr>
+<th>项目</th>
+<th>服务端 (Rocky Linux)</th>
+<th>客户端 (Windows)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>系统</td>
+<td>Rocky Linux 9.7</td>
+<td>Windows 11</td>
+</tr>
+<tr>
+<td>主机名</td>
+<td>RockyM</td>
+<td>G</td>
+</tr>
+<tr>
+<td>直连 IP 地址</td>
+<td>192.168.77.1 (<code>enp0s20f0u7u4c2</code>)</td>
+<td>192.168.77.2</td>
+</tr>
+<tr>
+<td>Barrier 版本</td>
+<td>2.4.0</td>
+<td>2.4.0</td>
+</tr>
+<tr>
+<td>角色</td>
+<td>Server</td>
+<td>Client</td>
+</tr>
+<tr>
+<td>端口</td>
+<td>24800</td>
+<td>-</td>
+</tr>
+</tbody></table>
+<h2 id="屏幕布局"><a href="#屏幕布局" class="headerlink" title="屏幕布局"></a>屏幕布局</h2><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">+---+   +--------+</span><br><span class="line">| G | ← | RockyM |</span><br><span class="line">+---+   +--------+</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li><code>G</code>（Windows）在左侧</li>
+<li><code>RockyM</code>（Rocky Linux）在右侧</li>
+<li>从 RockyM 向左移动鼠标切换到 G，反之亦然</li>
+</ul>
+<h2 id="服务端部署（Rocky-Linux）"><a href="#服务端部署（Rocky-Linux）" class="headerlink" title="服务端部署（Rocky Linux）"></a>服务端部署（Rocky Linux）</h2><h3 id="1-安装-Barrier"><a href="#1-安装-Barrier" class="headerlink" title="1. 安装 Barrier"></a>1. 安装 Barrier</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">sudo</span> dnf install barrier</span><br></pre></td></tr></table></figure>
+
+<h3 id="2-创建配置文件"><a href="#2-创建配置文件" class="headerlink" title="2. 创建配置文件"></a>2. 创建配置文件</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">mkdir</span> -p ~/.config/barrier</span><br></pre></td></tr></table></figure>
+
+<p>编辑 <code>~/.config/barrier/barrier.conf</code>：</p>
+<figure class="highlight ini"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br></pre></td><td class="code"><pre><span class="line">section: screens</span><br><span class="line">    G:</span><br><span class="line">        <span class="attr">halfDuplexCapsLock</span> = <span class="literal">false</span></span><br><span class="line">        <span class="attr">halfDuplexNumLock</span> = <span class="literal">false</span></span><br><span class="line">        <span class="attr">halfDuplexScrollLock</span> = <span class="literal">false</span></span><br><span class="line">        <span class="attr">xtestIsXineramaUnaware</span> = <span class="literal">false</span></span><br><span class="line">        <span class="attr">preserveFocus</span> = <span class="literal">false</span></span><br><span class="line">        <span class="attr">switchCorners</span> = none</span><br><span class="line">        <span class="attr">switchCornerSize</span> = <span class="number">0</span></span><br><span class="line">    RockyM:</span><br><span class="line">        <span class="attr">halfDuplexCapsLock</span> = <span class="literal">false</span></span><br><span class="line">        <span class="attr">halfDuplexNumLock</span> = <span class="literal">false</span></span><br><span class="line">        <span class="attr">halfDuplexScrollLock</span> = <span class="literal">false</span></span><br><span class="line">        <span class="attr">xtestIsXineramaUnaware</span> = <span class="literal">false</span></span><br><span class="line">        <span class="attr">preserveFocus</span> = <span class="literal">false</span></span><br><span class="line">        <span class="attr">switchCorners</span> = none</span><br><span class="line">        <span class="attr">switchCornerSize</span> = <span class="number">0</span></span><br><span class="line">end</span><br><span class="line"></span><br><span class="line">section: aliases</span><br><span class="line">end</span><br><span class="line"></span><br><span class="line">section: links</span><br><span class="line">    G:</span><br><span class="line">        right(0,100) = RockyM(0,100)</span><br><span class="line">    RockyM:</span><br><span class="line">        left(0,100) = G(0,100)</span><br><span class="line">end</span><br><span class="line"></span><br><span class="line">section: options</span><br><span class="line">    <span class="attr">relativeMouseMoves</span> = <span class="literal">false</span></span><br><span class="line">    <span class="attr">screenSaverSync</span> = <span class="literal">true</span></span><br><span class="line">    <span class="attr">win32KeepForeground</span> = <span class="literal">false</span></span><br><span class="line">    <span class="attr">clipboardSharing</span> = <span class="literal">true</span></span><br><span class="line">    <span class="attr">switchCorners</span> = none</span><br><span class="line">    <span class="attr">switchCornerSize</span> = <span class="number">0</span></span><br><span class="line">end</span><br></pre></td></tr></table></figure>
+
+<blockquote>
+<p>当前实际布局是 <code>Windows(G) 在左，RockyM 在右</code>。<br>使用 <code>right(0,100)</code> &#x2F; <code>left(0,100)</code> 是为了在双机多显示器高度不完全一致时，仍按整条边界切换。</p>
+</blockquote>
+<h3 id="3-让-USB-直连口持久化"><a href="#3-让-USB-直连口持久化" class="headerlink" title="3. 让 USB 直连口持久化"></a>3. 让 USB 直连口持久化</h3><p>实际环境中，Rocky Linux 不再依赖热点或 Wi-Fi 侧地址，而是通过 NetworkManager 管理 USB 网卡静态地址：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">nmcli connection add <span class="built_in">type</span> ethernet \</span><br><span class="line">  ifname enp0s20f0u7u4c2 \</span><br><span class="line">  con-name barrier-direct-link \</span><br><span class="line">  ipv4.method manual \</span><br><span class="line">  ipv4.addresses 192.168.77.1/24 \</span><br><span class="line">  ipv4.never-default <span class="built_in">yes</span> \</span><br><span class="line">  connection.autoconnect <span class="built_in">yes</span> \</span><br><span class="line">  ipv6.method ignore</span><br><span class="line"></span><br><span class="line">nmcli connection up barrier-direct-link</span><br></pre></td></tr></table></figure>
+
+<p>检查状态：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">nmcli -g GENERAL.NAME,GENERAL.DEVICES,GENERAL.STATE,connection.autoconnect,ipv4.addresses connection show barrier-direct-link</span><br></pre></td></tr></table></figure>
+
+<h3 id="4-创建-systemd-用户服务"><a href="#4-创建-systemd-用户服务" class="headerlink" title="4. 创建 systemd 用户服务"></a>4. 创建 systemd 用户服务</h3><p>编辑 <code>~/.config/systemd/user/barrier-server.service</code>：</p>
+<figure class="highlight ini"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="section">[Unit]</span></span><br><span class="line"><span class="attr">Description</span>=Barrier KVM Server</span><br><span class="line"><span class="attr">After</span>=graphical-session.target</span><br><span class="line"></span><br><span class="line"><span class="section">[Service]</span></span><br><span class="line"><span class="attr">Type</span>=simple</span><br><span class="line"><span class="attr">ExecStart</span>=/usr/bin/barriers -f --<span class="literal">no</span>-tray --name RockyM --disable-crypto --disable-client-cert-checking -c %h/.config/barrier/barrier.conf --address [<span class="number">0.0</span>.<span class="number">0.0</span>]:<span class="number">24800</span></span><br><span class="line"><span class="attr">Restart</span>=<span class="literal">on</span>-failure</span><br><span class="line"><span class="attr">RestartSec</span>=<span class="number">5</span></span><br><span class="line"></span><br><span class="line"><span class="section">[Install]</span></span><br><span class="line"><span class="attr">WantedBy</span>=graphical-session.target</span><br></pre></td></tr></table></figure>
+
+<h3 id="5-启用服务"><a href="#5-启用服务" class="headerlink" title="5. 启用服务"></a>5. 启用服务</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 重载 systemd 配置</span></span><br><span class="line">systemctl --user daemon-reload</span><br><span class="line"></span><br><span class="line"><span class="comment"># 启用开机自启</span></span><br><span class="line">systemctl --user <span class="built_in">enable</span> barrier-server.service</span><br><span class="line"></span><br><span class="line"><span class="comment"># 立即启动</span></span><br><span class="line">systemctl --user start barrier-server.service</span><br></pre></td></tr></table></figure>
+
+<blockquote>
+<p>当前实际验证使用的是 <code>graphical-session.target</code> 下的用户服务。<br>Barrier 需要依附图形会话，不建议在没有桌面会话的情况下强行改成系统级服务。</p>
+</blockquote>
+<h3 id="6-管理命令"><a href="#6-管理命令" class="headerlink" title="6. 管理命令"></a>6. 管理命令</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 查看状态</span></span><br><span class="line">systemctl --user status barrier-server.service</span><br><span class="line"></span><br><span class="line"><span class="comment"># 重启服务</span></span><br><span class="line">systemctl --user restart barrier-server.service</span><br><span class="line"></span><br><span class="line"><span class="comment"># 停止服务</span></span><br><span class="line">systemctl --user stop barrier-server.service</span><br><span class="line"></span><br><span class="line"><span class="comment"># 查看日志</span></span><br><span class="line">journalctl --user -u barrier-server.service -f</span><br></pre></td></tr></table></figure>
+
+<h3 id="7-辅助脚本"><a href="#7-辅助脚本" class="headerlink" title="7. 辅助脚本"></a>7. 辅助脚本</h3><p>本机还保留了一个辅助脚本，用于手工恢复直连链路和输出 Windows 参数：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">~/barrier-direct-link.sh start</span><br><span class="line">~/barrier-direct-link.sh status</span><br><span class="line">~/barrier-direct-link.sh <span class="built_in">print</span></span><br></pre></td></tr></table></figure>
+
+<h2 id="客户端部署（Windows）"><a href="#客户端部署（Windows）" class="headerlink" title="客户端部署（Windows）"></a>客户端部署（Windows）</h2><h3 id="1-安装-Barrier-1"><a href="#1-安装-Barrier-1" class="headerlink" title="1. 安装 Barrier"></a>1. 安装 Barrier</h3><p>下载并安装 Barrier：<a target="_blank" rel="noopener" href="https://github.com/debauchee/barrier/releases">https://github.com/debauchee/barrier/releases</a></p>
+<p>安装路径：<code>C:\Program Files\Barrier\</code></p>
+<h3 id="2-创建隐藏启动脚本"><a href="#2-创建隐藏启动脚本" class="headerlink" title="2. 创建隐藏启动脚本"></a>2. 创建隐藏启动脚本</h3><p>创建 <code>C:\Program Files\Barrier\start-barrier.vbs</code>：</p>
+<figure class="highlight vbs"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">Set</span> ws = <span class="built_in">CreateObject</span>(<span class="string">&quot;WScript.Shell&quot;</span>) : ws.Run <span class="string">&quot;&quot;&quot;C:\Program Files\Barrier\barrierc.exe&quot;&quot; --name G --disable-crypto --enable-drag-drop [192.168.77.1]:24800&quot;</span>, <span class="number">0</span>, <span class="literal">False</span></span><br></pre></td></tr></table></figure>
+
+<blockquote>
+<p>使用 VBS 包装是因为 <code>barrierc.exe</code> 是控制台程序，直接运行会显示 CMD 黑窗口。<code>ws.Run</code> 的第二个参数 <code>0</code> 表示隐藏窗口。</p>
+</blockquote>
+<h3 id="3-配置-Windows-直连网口"><a href="#3-配置-Windows-直连网口" class="headerlink" title="3. 配置 Windows 直连网口"></a>3. 配置 Windows 直连网口</h3><p>Windows 有线直连口固定为 <code>192.168.77.2/24</code>，默认网关和 DNS 留空。</p>
+<p>管理员 CMD：</p>
+<figure class="highlight cmd"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">netsh interface ip <span class="built_in">set</span> address name=&quot;以太网&quot; static <span class="number">192</span>.<span class="number">168</span>.<span class="number">77</span>.<span class="number">2</span> <span class="number">255</span>.<span class="number">255</span>.<span class="number">255</span>.<span class="number">0</span></span><br></pre></td></tr></table></figure>
+
+<p>如果网卡名称不是“以太网”，先执行：</p>
+<figure class="highlight cmd"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">netsh interface show interface</span><br></pre></td></tr></table></figure>
+
+<h3 id="4-创建登录自启计划任务"><a href="#4-创建登录自启计划任务" class="headerlink" title="4. 创建登录自启计划任务"></a>4. 创建登录自启计划任务</h3><p>以管理员身份打开 CMD，执行：</p>
+<figure class="highlight cmd"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">schtasks /create /tn &quot;BarrierClient&quot; /tr &quot;wscript.exe \&quot;C:\Program Files\Barrier\<span class="built_in">start</span>-barrier.vbs\&quot;&quot; /sc onlogon /rl highest /ru Administrator /rp &quot;&lt;密码&gt;&quot; /f /it</span><br></pre></td></tr></table></figure>
+
+<p>参数说明：</p>
+<ul>
+<li><code>/tn &quot;BarrierClient&quot;</code>: 任务名称</li>
+<li><code>/sc onlogon</code>: 触发器，用户登录时</li>
+<li><code>/rl highest</code>: 最高权限运行，确保能注入键鼠事件到所有窗口</li>
+<li><code>/it</code>: 仅在用户交互式登录时运行</li>
+</ul>
+<h3 id="5-创建开机有线网卡自愈任务"><a href="#5-创建开机有线网卡自愈任务" class="headerlink" title="5. 创建开机有线网卡自愈任务"></a>5. 创建开机有线网卡自愈任务</h3><p>为避免 Windows 重启后有线网卡被禁用，额外创建一个开机任务：</p>
+<figure class="highlight cmd"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">schtasks /create /tn &quot;BarrierEthernetBoot&quot; /tr &quot;powershell.exe -NoProfile -WindowStyle Hidden -Command \&quot;Enable-NetAdapter -InterfaceDescription &#x27;Realtek PCIe GbE Family Controller&#x27; -Confirm:$false\&quot;&quot; /sc onstart /ru SYSTEM /rl HIGHEST /f</span><br></pre></td></tr></table></figure>
+
+<h3 id="6-管理命令-1"><a href="#6-管理命令-1" class="headerlink" title="6. 管理命令"></a>6. 管理命令</h3><figure class="highlight cmd"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">:: 手动运行</span><br><span class="line">schtasks /run /tn &quot;BarrierClient&quot;</span><br><span class="line"></span><br><span class="line">:: 查看任务状态</span><br><span class="line">schtasks /query /tn &quot;BarrierClient&quot; /v</span><br><span class="line"></span><br><span class="line">:: 停止客户端</span><br><span class="line"><span class="built_in">taskkill</span> /F /IM barrierc.exe</span><br><span class="line"></span><br><span class="line">:: 删除计划任务</span><br><span class="line">schtasks /delete /tn &quot;BarrierClient&quot; /f</span><br><span class="line"></span><br><span class="line">:: 查看开机网卡任务</span><br><span class="line">schtasks /query /tn &quot;BarrierEthernetBoot&quot; /v</span><br></pre></td></tr></table></figure>
+
+<h2 id="关键配置说明"><a href="#关键配置说明" class="headerlink" title="关键配置说明"></a>关键配置说明</h2><table>
+<thead>
+<tr>
+<th>配置项</th>
+<th>值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>--disable-crypto</code></td>
+<td>两端均设置</td>
+<td>禁用 SSL 加密，两端必须一致</td>
+</tr>
+<tr>
+<td><code>--disable-client-cert-checking</code></td>
+<td>服务端</td>
+<td>不验证客户端证书</td>
+</tr>
+<tr>
+<td><code>--enable-drag-drop</code></td>
+<td>客户端</td>
+<td>启用跨机器拖拽文件</td>
+</tr>
+<tr>
+<td><code>--name</code></td>
+<td>对应主机名</td>
+<td>必须与配置文件中 <code>screens</code> 段的名称完全一致，区分大小写</td>
+</tr>
+<tr>
+<td><code>clipboardSharing</code></td>
+<td>true</td>
+<td>启用剪贴板共享</td>
+</tr>
+</tbody></table>
+<h2 id="故障排查"><a href="#故障排查" class="headerlink" title="故障排查"></a>故障排查</h2><h3 id="鼠标键盘无法切换"><a href="#鼠标键盘无法切换" class="headerlink" title="鼠标键盘无法切换"></a>鼠标键盘无法切换</h3><ol>
+<li>检查连接状态</li>
+</ol>
+<p>服务端：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">ss -tnp | grep 24800</span><br></pre></td></tr></table></figure>
+
+<p>应看到 <code>ESTAB</code> 状态的连接。如果看到 <code>FIN-WAIT</code> 或无连接，说明连接已断。</p>
+<p>客户端：</p>
+<figure class="highlight cmd"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">netstat -an | <span class="built_in">findstr</span> <span class="number">24800</span></span><br></pre></td></tr></table></figure>
+
+<p>应看到 <code>ESTABLISHED</code>。如果是 <code>CLOSE_WAIT</code>，说明连接已死。</p>
+<ol start="2">
+<li>重启两端</li>
+</ol>
+<p>服务端：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">systemctl --user restart barrier-server</span><br></pre></td></tr></table></figure>
+
+<p>客户端：</p>
+<figure class="highlight cmd"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">taskkill</span> /F /IM barrierc.exe</span><br><span class="line">schtasks /run /tn &quot;BarrierClient&quot;</span><br></pre></td></tr></table></figure>
+
+<h3 id="Screen-Name-不匹配"><a href="#Screen-Name-不匹配" class="headerlink" title="Screen Name 不匹配"></a>Screen Name 不匹配</h3><p>客户端的 <code>--name</code> 参数必须与服务端配置文件中 <code>section: screens</code> 里定义的名称完全一致，区分大小写。可通过 <code>hostname</code> 命令确认主机名。</p>
+<h3 id="Windows-端-UAC-弹窗导致键鼠失效"><a href="#Windows-端-UAC-弹窗导致键鼠失效" class="headerlink" title="Windows 端 UAC 弹窗导致键鼠失效"></a>Windows 端 UAC 弹窗导致键鼠失效</h3><p>如果 Windows 弹出 UAC 窗口，Barrier 客户端需要以管理员权限运行才能注入键鼠事件。计划任务已配置 <code>/rl highest</code>。</p>
+<h3 id="网络不通"><a href="#网络不通" class="headerlink" title="网络不通"></a>网络不通</h3><p>确认两端在同一子网（<code>192.168.77.0/24</code>），且服务端 24800 端口未被防火墙拦截：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 服务端检查端口监听</span></span><br><span class="line">ss -tlnp | grep 24800</span><br><span class="line"></span><br><span class="line"><span class="comment"># 客户端测试连通性</span></span><br><span class="line">ping 192.168.77.1</span><br></pre></td></tr></table></figure>
+
+<h3 id="只能单向切换"><a href="#只能单向切换" class="headerlink" title="只能单向切换"></a>只能单向切换</h3><p>如果出现“Rocky 到 Windows 正常，但 Windows 只能往左不能往右”，优先检查以下几项：</p>
+<ol>
+<li>Rocky 直连网卡是否仍有地址：</li>
+</ol>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">ip addr show dev enp0s20f0u7u4c2</span><br><span class="line">nmcli -g GENERAL.STATE,ipv4.addresses connection show barrier-direct-link</span><br></pre></td></tr></table></figure>
+
+<ol start="2">
+<li>Windows 侧是否存在多个 <code>barrierc.exe</code> 进程：</li>
+</ol>
+<figure class="highlight cmd"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">tasklist | <span class="built_in">findstr</span> /I barrierc.exe</span><br><span class="line"><span class="built_in">taskkill</span> /F /IM barrierc.exe</span><br><span class="line">schtasks /run /tn &quot;BarrierClient&quot;</span><br></pre></td></tr></table></figure>
+
+<ol start="3">
+<li>Barrier 配置是否仍为全边界映射：</li>
+</ol>
+<figure class="highlight ini"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">G:</span><br><span class="line">    right(0,100) = RockyM(0,100)</span><br><span class="line">RockyM:</span><br><span class="line">    left(0,100) = G(0,100)</span><br></pre></td></tr></table></figure>
+
+<ol start="4">
+<li>Rocky 服务端是否正常运行：</li>
+</ol>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">systemctl --user restart barrier-server.service</span><br><span class="line">ss -tnp | grep 24800</span><br></pre></td></tr></table></figure>
+
+<h2 id="文件清单"><a href="#文件清单" class="headerlink" title="文件清单"></a>文件清单</h2><table>
+<thead>
+<tr>
+<th>路径</th>
+<th>所在机器</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>~/.config/barrier/barrier.conf</code></td>
+<td>Rocky Linux</td>
+<td>Barrier 服务端配置，定义屏幕和布局</td>
+</tr>
+<tr>
+<td><code>~/.config/systemd/user/barrier-server.service</code></td>
+<td>Rocky Linux</td>
+<td>systemd 用户服务单元</td>
+</tr>
+<tr>
+<td><code>NetworkManager</code> 连接 <code>barrier-direct-link</code></td>
+<td>Rocky Linux</td>
+<td>USB 直连网卡静态地址与自启动</td>
+</tr>
+<tr>
+<td><code>~/barrier-direct-link.sh</code></td>
+<td>Rocky Linux</td>
+<td>直连链路辅助恢复脚本</td>
+</tr>
+<tr>
+<td><code>C:\Program Files\Barrier\start-barrier.vbs</code></td>
+<td>Windows</td>
+<td>隐藏窗口启动脚本</td>
+</tr>
+<tr>
+<td>计划任务 <code>BarrierClient</code></td>
+<td>Windows</td>
+<td>登录自启计划任务</td>
+</tr>
+<tr>
+<td>计划任务 <code>BarrierEthernetBoot</code></td>
+<td>Windows</td>
+<td>开机自动启用有线网卡</td>
+</tr>
+</tbody></table>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Linux/" rel="tag"># Linux</a>
+              <a href="/tags/Linux%E8%BF%90%E7%BB%B4/" rel="tag"># Linux运维</a>
+              <a href="/tags/Rocky-Linux/" rel="tag"># Rocky Linux</a>
+              <a href="/tags/Windows/" rel="tag"># Windows</a>
+              <a href="/tags/Barrier/" rel="tag"># Barrier</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2026/03/06/AI%E6%B5%8B%E8%AF%95-09-AI%E6%B5%8B%E8%AF%95%E9%87%8C%E7%9A%84%E8%AF%AF%E5%88%A4%E5%B9%BB%E8%A7%89%E5%92%8C%E8%B6%8A%E6%9D%83%E9%A3%8E%E9%99%A9%E6%80%8E%E4%B9%88%E6%8E%A7%E5%88%B6/" rel="prev" title="AI测试-09-AI测试里的误判幻觉和越权风险怎么控制">
+                  <i class="fa fa-angle-left"></i> AI测试-09-AI测试里的误判幻觉和越权风险怎么控制
+                </a>
+            </div>
+            <div class="post-nav-item">
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

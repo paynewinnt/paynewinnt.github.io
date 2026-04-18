@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="围绕一个轻量任务执行器，把 Go 里最容易混淆的值类型、切片和 map 的引用式表现、指针、函数传参与副作用讲清楚，并给出测试、排障和工程判断。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Go：值类型、引用语义、指针到底应该怎么理解">
+<meta property="og:url" content="https://paynewinnt.github.io/2018/05/09/Go-04-Go%E7%9A%84%E5%80%BC%E7%B1%BB%E5%9E%8B%E5%BC%95%E7%94%A8%E8%AF%AD%E4%B9%89%E6%8C%87%E9%92%88%E5%88%B0%E5%BA%95%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E7%90%86%E8%A7%A3/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="围绕一个轻量任务执行器，把 Go 里最容易混淆的值类型、切片和 map 的引用式表现、指针、函数传参与副作用讲清楚，并给出测试、排障和工程判断。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2018-05-09T12:30:00.000Z">
+<meta property="article:modified_time" content="2018-05-09T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="Go">
+<meta property="article:tag" content="Go专题">
+<meta property="article:tag" content="编程语言">
+<meta property="article:tag" content="值语义">
+<meta property="article:tag" content="指针">
+<meta property="article:tag" content="切片">
+<meta property="article:tag" content="map">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2018/05/09/Go-04-Go%E7%9A%84%E5%80%BC%E7%B1%BB%E5%9E%8B%E5%BC%95%E7%94%A8%E8%AF%AD%E4%B9%89%E6%8C%87%E9%92%88%E5%88%B0%E5%BA%95%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E7%90%86%E8%A7%A3/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2018/05/09/Go-04-Go%E7%9A%84%E5%80%BC%E7%B1%BB%E5%9E%8B%E5%BC%95%E7%94%A8%E8%AF%AD%E4%B9%89%E6%8C%87%E9%92%88%E5%88%B0%E5%BA%95%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E7%90%86%E8%A7%A3/","path":"2018/05/09/Go-04-Go的值类型引用语义指针到底应该怎么理解/","title":"Go：值类型、引用语义、指针到底应该怎么理解"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>Go：值类型、引用语义、指针到底应该怎么理解 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E8%BF%99%E7%AF%87%E6%96%87%E7%AB%A0%E8%A6%81%E8%A7%A3%E5%86%B3%E4%BB%80%E4%B9%88%E9%97%AE%E9%A2%98"><span class="nav-number">1.</span> <span class="nav-text">一、这篇文章要解决什么问题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E5%85%88%E6%8A%8A%E5%9C%BA%E6%99%AF%E8%AF%B4%E6%B8%85%E6%A5%9A"><span class="nav-number">2.</span> <span class="nav-text">二、先把场景说清楚</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E5%85%88%E7%9C%8B%E4%B8%80%E4%B8%AA%E6%9C%80%E5%B0%8F%E4%BE%8B%E5%AD%90%EF%BC%9A%E4%B8%BA%E4%BB%80%E4%B9%88%E8%AF%B4-Go-%E9%87%8C%E9%83%BD%E6%98%AF%E5%80%BC%E4%BC%A0%E9%80%92"><span class="nav-number">3.</span> <span class="nav-text">三、先看一个最小例子：为什么说 Go 里都是值传递</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81Go-%E9%87%8C%E5%88%B0%E5%BA%95%E6%9C%89%E6%B2%A1%E6%9C%89%E2%80%9C%E5%BC%95%E7%94%A8%E7%B1%BB%E5%9E%8B%E2%80%9D"><span class="nav-number">4.</span> <span class="nav-text">四、Go 里到底有没有“引用类型”</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E7%9C%9F%E6%AD%A3%E7%9A%84%E5%80%BC%E6%8B%B7%E8%B4%9D%E5%88%B0%E5%BA%95%E9%95%BF%E4%BB%80%E4%B9%88%E6%A0%B7"><span class="nav-number">5.</span> <span class="nav-text">五、真正的值拷贝到底长什么样</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81struct-%E6%98%AF%E5%80%BC%E7%B1%BB%E5%9E%8B%EF%BC%8C%E4%BD%86%E9%87%8C%E9%9D%A2%E7%9A%84%E5%AD%97%E6%AE%B5%E5%8F%AF%E8%83%BD%E4%B8%8D%E6%98%AF%E2%80%9C%E5%BD%BB%E5%BA%95%E5%80%BC%E5%8C%96%E2%80%9D"><span class="nav-number">6.</span> <span class="nav-text">六、struct 是值类型，但里面的字段可能不是“彻底值化”</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81slice-%E4%B8%BA%E4%BB%80%E4%B9%88%E6%9C%80%E5%AE%B9%E6%98%93%E8%AE%A9%E4%BA%BA%E8%AF%AF%E5%88%A4"><span class="nav-number">7.</span> <span class="nav-text">七、slice 为什么最容易让人误判</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81map-%E4%B8%BA%E4%BB%80%E4%B9%88%E4%B9%9F%E5%83%8F%E5%BC%95%E7%94%A8%EF%BC%8C%E4%BD%86%E5%8F%88%E4%B8%8D%E8%AF%A5%E9%BB%98%E8%AE%A4%E4%BC%A0-map"><span class="nav-number">8.</span> <span class="nav-text">八、map 为什么也像引用，但又不该默认传 *map</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E6%8C%87%E9%92%88%E5%88%B0%E5%BA%95%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%8C%E5%AE%83%E8%A7%A3%E5%86%B3%E4%BA%86%E4%BB%80%E4%B9%88%E9%97%AE%E9%A2%98"><span class="nav-number">9.</span> <span class="nav-text">九、指针到底是什么，它解决了什么问题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E5%87%BD%E6%95%B0%E4%BC%A0%E5%8F%82%E5%88%B0%E5%BA%95%E6%80%8E%E4%B9%88%E9%80%89%EF%BC%8C%E5%85%88%E7%9C%8B%E8%AF%AD%E4%B9%89%EF%BC%8C%E4%B8%8D%E8%A6%81%E5%85%88%E7%9C%8B%E8%AF%AD%E6%B3%95"><span class="nav-number">10.</span> <span class="nav-text">十、函数传参到底怎么选，先看语义，不要先看语法</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%8F%AA%E6%83%B3%E5%9F%BA%E4%BA%8E%E8%BE%93%E5%85%A5%E8%BF%94%E5%9B%9E%E6%96%B0%E7%BB%93%E6%9E%9C%EF%BC%8C%E5%B0%B1%E4%BC%A0%E5%80%BC%E5%B9%B6%E8%BF%94%E5%9B%9E%E5%80%BC"><span class="nav-number">10.1.</span> <span class="nav-text">1. 只想基于输入返回新结果，就传值并返回值</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%98%8E%E7%A1%AE%E8%A6%81%E5%8E%9F%E5%9C%B0%E4%BF%AE%E6%94%B9%EF%BC%8C%E5%B0%B1%E4%BC%A0%E6%8C%87%E9%92%88"><span class="nav-number">10.2.</span> <span class="nav-text">2. 明确要原地修改，就传指针</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-slice-%E5%A6%82%E6%9E%9C%E4%BC%9A%E5%A2%9E%E9%95%BF%EF%BC%8C%E4%BC%98%E5%85%88%E8%BF%94%E5%9B%9E%E6%96%B0-slice"><span class="nav-number">10.3.</span> <span class="nav-text">3. slice 如果会增长，优先返回新 slice</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-map-%E5%A6%82%E6%9E%9C%E5%8F%AA%E6%98%AF%E6%94%B9%E9%94%AE%E5%80%BC%EF%BC%8C%E7%9B%B4%E6%8E%A5%E4%BC%A0-map"><span class="nav-number">10.4.</span> <span class="nav-text">4. map 如果只是改键值，直接传 map</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E5%87%A0%E4%B8%AA%E6%9C%80%E5%B8%B8%E8%A7%81%E7%9A%84%E5%89%AF%E4%BD%9C%E7%94%A8%E5%9D%91"><span class="nav-number">11.</span> <span class="nav-text">十一、几个最常见的副作用坑</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%BB%A5%E4%B8%BA-struct-%E6%8C%89%E5%80%BC%E4%BC%A0%E4%BA%86%EF%BC%8C%E5%B0%B1%E5%BD%BB%E5%BA%95%E9%9A%94%E7%A6%BB%E4%BA%86"><span class="nav-number">11.1.</span> <span class="nav-text">1. 以为 struct 按值传了，就彻底隔离了</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%BB%A5%E4%B8%BA-slice-%E4%BC%A0%E8%BF%9B%E5%8E%BB%E4%B9%8B%E5%90%8E%EF%BC%8Cappend-%E4%B8%80%E5%AE%9A%E8%83%BD%E6%94%B9%E5%88%B0%E5%A4%96%E9%9D%A2"><span class="nav-number">11.2.</span> <span class="nav-text">2. 以为 slice 传进去之后，append 一定能改到外面</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%BB%A5%E4%B8%BA-map-%E5%92%8C%E7%A9%BA-map-%E6%98%AF%E4%B8%80%E5%9B%9E%E4%BA%8B"><span class="nav-number">11.3.</span> <span class="nav-text">3. 以为 map 和空 map 是一回事</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%B8%BA%E4%BA%86%E9%81%BF%E5%85%8D%E6%8B%B7%E8%B4%9D%EF%BC%8C%E6%8A%8A%E6%89%80%E6%9C%89%E5%8F%82%E6%95%B0%E9%83%BD%E6%94%B9%E6%88%90%E6%8C%87%E9%92%88"><span class="nav-number">11.4.</span> <span class="nav-text">4. 为了避免拷贝，把所有参数都改成指针</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E5%85%88%E5%86%99%E5%87%A0%E4%B8%AA%E6%9C%80%E5%B0%8F%E6%B5%8B%E8%AF%95%EF%BC%8C%E6%8A%8A%E7%90%86%E8%A7%A3%E5%9B%BA%E5%AE%9A%E4%B8%8B%E6%9D%A5"><span class="nav-number">12.</span> <span class="nav-text">十二、先写几个最小测试，把理解固定下来</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81%E6%8E%92%E9%9A%9C%E6%97%B6%E6%80%8E%E4%B9%88%E5%88%A4%E6%96%AD%E8%87%AA%E5%B7%B1%E5%88%B0%E5%BA%95%E8%B8%A9%E7%9A%84%E6%98%AF%E5%93%AA%E4%B8%80%E7%B1%BB%E5%9D%91"><span class="nav-number">13.</span> <span class="nav-text">十三、排障时怎么判断自己到底踩的是哪一类坑</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%B8%80%E6%AD%A5%EF%BC%9A%E5%85%88%E7%9C%8B%E5%87%BD%E6%95%B0%E7%AD%BE%E5%90%8D"><span class="nav-number">13.1.</span> <span class="nav-text">第一步：先看函数签名</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%BA%8C%E6%AD%A5%EF%BC%9A%E5%86%8D%E7%9C%8B%E6%93%8D%E4%BD%9C%E7%B1%BB%E5%9E%8B"><span class="nav-number">13.2.</span> <span class="nav-text">第二步：再看操作类型</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%B8%89%E6%AD%A5%EF%BC%9A%E5%BF%85%E8%A6%81%E6%97%B6%E6%89%93%E5%8D%B0%E9%95%BF%E5%BA%A6%E3%80%81%E5%AE%B9%E9%87%8F%E5%92%8C%E5%85%B3%E9%94%AE%E5%9C%B0%E5%9D%80"><span class="nav-number">13.3.</span> <span class="nav-text">第三步：必要时打印长度、容量和关键地址</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E5%9B%9B%E6%AD%A5%EF%BC%9A%E7%A1%AE%E8%AE%A4%E6%98%AF%E4%B8%8D%E6%98%AF-nil-%E9%97%AE%E9%A2%98"><span class="nav-number">13.4.</span> <span class="nav-text">第四步：确认是不是 nil 问题</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81%E4%B8%80%E4%B8%AA%E6%9B%B4%E6%8E%A5%E8%BF%91%E9%A1%B9%E7%9B%AE%E7%8E%B0%E5%9C%BA%E7%9A%84%E5%B0%8F%E6%A1%88%E4%BE%8B"><span class="nav-number">14.</span> <span class="nav-text">十四、一个更接近项目现场的小案例</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%94%E3%80%81%E5%B7%A5%E7%A8%8B%E5%88%A4%E6%96%AD%EF%BC%9A%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E8%AF%A5%E4%BC%A0%E5%80%BC%EF%BC%8C%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E8%AF%A5%E4%BC%A0%E6%8C%87%E9%92%88"><span class="nav-number">15.</span> <span class="nav-text">十五、工程判断：什么时候该传值，什么时候该传指针</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%B0%8F%E8%80%8C%E6%B8%85%E6%99%B0%E7%9A%84%E8%BE%93%E5%85%A5%E5%AF%B9%E8%B1%A1%EF%BC%8C%E4%BC%98%E5%85%88%E5%80%BC%E4%BC%A0%E9%80%92"><span class="nav-number">15.1.</span> <span class="nav-text">1. 小而清晰的输入对象，优先值传递</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%98%8E%E7%A1%AE%E6%9C%89%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F%E6%8E%A8%E8%BF%9B%E7%9A%84%E5%AE%9E%E4%BD%93%EF%BC%8C%E9%80%82%E5%90%88%E6%8C%87%E9%92%88"><span class="nav-number">15.2.</span> <span class="nav-text">2. 明确有生命周期推进的实体，适合指针</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%AF%B9-slice%EF%BC%8C%E9%87%8D%E7%82%B9%E4%B8%8D%E6%98%AF%E2%80%9C%E8%A6%81%E4%B8%8D%E8%A6%81%E6%8C%87%E9%92%88%E2%80%9D%EF%BC%8C%E8%80%8C%E6%98%AF%E2%80%9C%E4%BC%9A%E4%B8%8D%E4%BC%9A%E5%A2%9E%E9%95%BF%E2%80%9D"><span class="nav-number">15.3.</span> <span class="nav-text">3. 对 slice，重点不是“要不要指针”，而是“会不会增长”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%AF%B9-map%EF%BC%8C%E5%A4%A7%E5%A4%9A%E6%95%B0%E6%97%B6%E5%80%99%E4%B8%8D%E8%A6%81%E4%BC%A0-map"><span class="nav-number">15.4.</span> <span class="nav-text">4. 对 map，大多数时候不要传 *map</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E4%B8%8D%E8%A6%81%E4%B8%BA%E4%BA%86%E2%80%9C%E6%80%A7%E8%83%BD%E2%80%9D%E5%85%88%E6%8A%8A%E6%89%80%E6%9C%89-struct-%E9%83%BD%E6%94%B9%E6%88%90%E6%8C%87%E9%92%88"><span class="nav-number">15.5.</span> <span class="nav-text">5. 不要为了“性能”先把所有 struct 都改成指针</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AD%E3%80%81%E8%BE%B9%E7%95%8C%EF%BC%9A%E8%BF%99%E7%AF%87%E5%85%88%E4%B8%8D%E5%B1%95%E5%BC%80%E5%93%AA%E4%BA%9B%E5%86%85%E5%AE%B9"><span class="nav-number">16.</span> <span class="nav-text">十六、边界：这篇先不展开哪些内容</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%83%E3%80%81%E4%B8%80%E4%B8%AA%E5%AE%9E%E9%99%85%E7%BB%83%E4%B9%A0"><span class="nav-number">17.</span> <span class="nav-text">十七、一个实际练习</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AB%E3%80%81%E7%BB%93%E8%AF%AD"><span class="nav-number">18.</span> <span class="nav-text">十八、结语</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2018/05/09/Go-04-Go%E7%9A%84%E5%80%BC%E7%B1%BB%E5%9E%8B%E5%BC%95%E7%94%A8%E8%AF%AD%E4%B9%89%E6%8C%87%E9%92%88%E5%88%B0%E5%BA%95%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E7%90%86%E8%A7%A3/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="Go：值类型、引用语义、指针到底应该怎么理解 | 大道至简">
+      <meta itemprop="description" content="围绕一个轻量任务执行器，把 Go 里最容易混淆的值类型、切片和 map 的引用式表现、指针、函数传参与副作用讲清楚，并给出测试、排障和工程判断。">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Go：值类型、引用语义、指针到底应该怎么理解
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2018-05-09 20:30:00" itemprop="dateCreated datePublished" datetime="2018-05-09T20:30:00+08:00">2018-05-09</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>5.2k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>19 分钟</span>
+    </span>
+</div>
+
+            <div class="post-description">围绕一个轻量任务执行器，把 Go 里最容易混淆的值类型、切片和 map 的引用式表现、指针、函数传参与副作用讲清楚，并给出测试、排障和工程判断。</div>
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>学到这里时，往往会同时冒出几种互相打架的说法：</p>
+<ul>
+<li>Go 里一切都是值传递</li>
+<li>slice 和 map 明明又像“引用类型”</li>
+<li>struct 说是值类型，里面放个 slice 又会串改</li>
+<li>该不该用指针，最后很容易变成“全都加 <code>*</code>”</li>
+</ul>
+<p>这几句话单看都像对，拼在一起就很容易把人绕晕。</p>
+<p>真正的问题通常不是语法，而是<strong>对象边界和副作用边界没建立起来</strong>。<br>一旦这层没搞清楚，真实项目里很快就会出现这些情况：</p>
+<ul>
+<li>函数改了参数，调用方的数据也变了</li>
+<li>以为 <code>append</code> 成功了，结果外层长度没变</li>
+<li>以为 struct 复制后已经隔离，结果里面的标签还是串了</li>
+<li>为了“保险”到处传指针，最后代码谁在改谁根本说不清</li>
+</ul>
+<p>这篇文章就围绕一个很实际的小场景来讲：<strong>做一个轻量任务执行器的批次装配逻辑</strong>。<br>这个场景里会自然碰到：</p>
+<ul>
+<li>struct 拷贝</li>
+<li>slice 共享底层数组</li>
+<li>map 的共享修改</li>
+<li>指针带来的原地变更</li>
+<li>函数边界到底该返回新值还是修改原值</li>
+</ul>
+<p>把这条线真正理顺，后面再学 struct、方法集、interface、并发时，脑子会清楚很多。</p>
+<h2 id="一、这篇文章要解决什么问题"><a href="#一、这篇文章要解决什么问题" class="headerlink" title="一、这篇文章要解决什么问题"></a>一、这篇文章要解决什么问题</h2><p>读完这一篇，应该能独立说清这些事：</p>
+<ul>
+<li>Go 为什么说“参数传递永远是值传递”</li>
+<li>为什么 slice、map、chan 看起来又像引用</li>
+<li>struct 复制时，到底哪些字段会真正隔离，哪些不会</li>
+<li>指针参数到底在帮你做什么，又会带来什么风险</li>
+<li>写函数时，什么时候该返回新值，什么时候该传指针</li>
+<li>遇到数据串改时，怎么快速判断是值拷贝问题，还是共享底层数据问题</li>
+</ul>
+<p>如果这些动作能独立做出来，后面再写 HTTP 服务、命令行工具、任务调度器，代码会稳很多。</p>
+<h2 id="二、先把场景说清楚"><a href="#二、先把场景说清楚" class="headerlink" title="二、先把场景说清楚"></a>二、先把场景说清楚</h2><p>假设现在要做一个最小的任务执行器，它负责把一批回归任务装配出来，然后交给后面的 worker 执行。</p>
+<p>先定义两个最小结构：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Job <span class="keyword">struct</span> &#123;</span><br><span class="line">	ID     <span class="type">string</span></span><br><span class="line">	Status <span class="type">string</span></span><br><span class="line">	Labels []<span class="type">string</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Batch <span class="keyword">struct</span> &#123;</span><br><span class="line">	Name     <span class="type">string</span></span><br><span class="line">	Jobs     []Job</span><br><span class="line">	Counters <span class="keyword">map</span>[<span class="type">string</span>]<span class="type">int</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这个小场景里会有四类很典型的操作：</p>
+<ol>
+<li>给批次改名</li>
+<li>把某个任务标记为失败</li>
+<li>追加标签</li>
+<li>更新统计计数</li>
+</ol>
+<p>看起来都很简单，但它们对“值语义”和“共享状态”的要求完全不一样。</p>
+<h2 id="三、先看一个最小例子：为什么说-Go-里都是值传递"><a href="#三、先看一个最小例子：为什么说-Go-里都是值传递" class="headerlink" title="三、先看一个最小例子：为什么说 Go 里都是值传递"></a>三、先看一个最小例子：为什么说 Go 里都是值传递</h2><p>先看最简单的一段代码：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> <span class="string">&quot;fmt&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Job <span class="keyword">struct</span> &#123;</span><br><span class="line">	ID     <span class="type">string</span></span><br><span class="line">	Status <span class="type">string</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">markDone</span><span class="params">(job Job)</span></span> &#123;</span><br><span class="line">	job.Status = <span class="string">&quot;done&quot;</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	job := Job&#123;ID: <span class="string">&quot;case-001&quot;</span>, Status: <span class="string">&quot;pending&quot;</span>&#125;</span><br><span class="line">	markDone(job)</span><br><span class="line">	fmt.Println(job.Status)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">pending</span><br></pre></td></tr></table></figure>
+
+<p>第一次看到这里时，常见结论是：“说明 struct 是值类型。”</p>
+<p>这句话不算错，但还不够。真正更底层的说法是：</p>
+<ul>
+<li>调用 <code>markDone(job)</code> 时</li>
+<li>传进去的是 <code>job</code> 这个值的一份副本</li>
+<li>函数里改的是副本，不是外面的原对象</li>
+</ul>
+<p>Go 里函数传参、赋值、返回值，默认都遵循这个规则：<strong>复制值</strong>。</p>
+<p>这个结论先记住，因为后面所有现象都从这里长出来。</p>
+<h2 id="四、Go-里到底有没有“引用类型”"><a href="#四、Go-里到底有没有“引用类型”" class="headerlink" title="四、Go 里到底有没有“引用类型”"></a>四、Go 里到底有没有“引用类型”</h2><p>严格一点说，Go 学习时最容易把人带偏的一句话就是“某某是引用类型”。</p>
+<p>更稳的理解方式是：</p>
+<ul>
+<li>Go 的赋值和传参都在复制值</li>
+<li>只是有些值本身就包含“指向底层数据的描述信息”</li>
+<li>所以复制之后，多个变量仍然可能共享同一份底层数据</li>
+</ul>
+<p>先做一个实用层面的分类：</p>
+<ul>
+<li>明显按值表现的：<code>bool</code>、<code>int</code>、<code>float64</code>、<code>string</code>、<code>array</code>、大多数纯标量 struct</li>
+<li>带明显引用式行为的：<code>slice</code>、<code>map</code>、<code>chan</code>、函数值里捕获的闭包环境</li>
+<li>指针本身也是值，只不过它保存的是地址</li>
+</ul>
+<p>这也是为什么这篇文章里更适合用“<strong>引用语义</strong>”这个词，而不是简单说“引用类型”：</p>
+<ul>
+<li><code>slice</code> 复制的是切片头</li>
+<li><code>map</code> 复制的是 map 变量内部的运行时描述</li>
+<li><code>*T</code> 复制的是地址值</li>
+</ul>
+<p>它们全都还是在复制值，只是复制后的值还能连到同一块底层数据。</p>
+<h2 id="五、真正的值拷贝到底长什么样"><a href="#五、真正的值拷贝到底长什么样" class="headerlink" title="五、真正的值拷贝到底长什么样"></a>五、真正的值拷贝到底长什么样</h2><p>先看数组。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> <span class="string">&quot;fmt&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	a := [<span class="number">3</span>]<span class="type">int</span>&#123;<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>&#125;</span><br><span class="line">	b := a</span><br><span class="line">	b[<span class="number">0</span>] = <span class="number">99</span></span><br><span class="line"></span><br><span class="line">	fmt.Println(a)</span><br><span class="line">	fmt.Println(b)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">[1 2 3]</span><br><span class="line">[99 2 3]</span><br></pre></td></tr></table></figure>
+
+<p>这里很直观：</p>
+<ul>
+<li><code>b := a</code> 得到的是一份新数组</li>
+<li>改 <code>b</code> 不会影响 <code>a</code></li>
+</ul>
+<p>再看 struct。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Job <span class="keyword">struct</span> &#123;</span><br><span class="line">	ID     <span class="type">string</span></span><br><span class="line">	Status <span class="type">string</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	a := Job&#123;ID: <span class="string">&quot;case-001&quot;</span>, Status: <span class="string">&quot;pending&quot;</span>&#125;</span><br><span class="line">	b := a</span><br><span class="line">	b.Status = <span class="string">&quot;done&quot;</span></span><br><span class="line"></span><br><span class="line">	fmt.Println(a.Status)</span><br><span class="line">	fmt.Println(b.Status)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">pending</span><br><span class="line">done</span><br></pre></td></tr></table></figure>
+
+<p>到这里都没问题。<br>真正让人开始困惑的是：<strong>struct 自己按值复制，但它的字段不一定都是“彻底独立”的。</strong></p>
+<h2 id="六、struct-是值类型，但里面的字段可能不是“彻底值化”"><a href="#六、struct-是值类型，但里面的字段可能不是“彻底值化”" class="headerlink" title="六、struct 是值类型，但里面的字段可能不是“彻底值化”"></a>六、struct 是值类型，但里面的字段可能不是“彻底值化”</h2><p>看下面这个例子：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> <span class="string">&quot;fmt&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Job <span class="keyword">struct</span> &#123;</span><br><span class="line">	ID     <span class="type">string</span></span><br><span class="line">	Labels []<span class="type">string</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	a := Job&#123;</span><br><span class="line">		ID:     <span class="string">&quot;case-001&quot;</span>,</span><br><span class="line">		Labels: []<span class="type">string</span>&#123;<span class="string">&quot;smoke&quot;</span>, <span class="string">&quot;ui&quot;</span>&#125;,</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	b := a</span><br><span class="line">	b.ID = <span class="string">&quot;case-002&quot;</span></span><br><span class="line">	b.Labels[<span class="number">0</span>] = <span class="string">&quot;api&quot;</span></span><br><span class="line"></span><br><span class="line">	fmt.Println(a.ID, a.Labels)</span><br><span class="line">	fmt.Println(b.ID, b.Labels)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">case-001 [api ui]</span><br><span class="line">case-002 [api ui]</span><br></pre></td></tr></table></figure>
+
+<p>为什么 <code>ID</code> 没串，<code>Labels</code> 却串了？</p>
+<p>因为这里发生了两层复制：</p>
+<ol>
+<li><code>b := a</code>，整个 <code>Job</code> struct 被复制了一份</li>
+<li>但 <code>Labels</code> 这个字段本身是一个 slice 值</li>
+<li>slice 值里带着“底层数组指针 + 长度 + 容量”</li>
+<li>复制 struct 时，<code>Labels</code> 这个切片头也被复制了</li>
+<li>两个切片头仍然指向同一个底层数组</li>
+</ol>
+<p>所以结果就是：</p>
+<ul>
+<li><code>ID</code> 这种纯值字段，已经隔离</li>
+<li><code>Labels</code> 这种带共享底层数据的字段，仍然会联动</li>
+</ul>
+<p>这类问题在真实项目里特别高频，因为配置对象、请求对象、任务对象里经常都有 slice 和 map 字段。</p>
+<h2 id="七、slice-为什么最容易让人误判"><a href="#七、slice-为什么最容易让人误判" class="headerlink" title="七、slice 为什么最容易让人误判"></a>七、slice 为什么最容易让人误判</h2><p>Go 的 slice 最容易制造两种错觉：</p>
+<ul>
+<li>错觉一：它像引用，所以怎么改都会影响外面</li>
+<li>错觉二：它是值，所以函数里怎么改都不会影响外面</li>
+</ul>
+<p>这两个判断都不完整。</p>
+<p>先看第一种最常见情况：<strong>改元素会影响调用方</strong>。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> <span class="string">&quot;fmt&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">markFirstFailed</span><span class="params">(statuses []<span class="type">string</span>)</span></span> &#123;</span><br><span class="line">	statuses[<span class="number">0</span>] = <span class="string">&quot;failed&quot;</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	statuses := []<span class="type">string</span>&#123;<span class="string">&quot;pending&quot;</span>, <span class="string">&quot;running&quot;</span>&#125;</span><br><span class="line">	markFirstFailed(statuses)</span><br><span class="line">	fmt.Println(statuses)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">[failed running]</span><br></pre></td></tr></table></figure>
+
+<p>原因是：</p>
+<ul>
+<li>函数拿到的是 slice 头的一份副本</li>
+<li>但副本和原 slice 头指向同一个底层数组</li>
+<li>改元素，本质上是在改共享的底层数组</li>
+</ul>
+<p>再看第二种情况：<strong><code>append</code> 不一定让调用方看到长度变化</strong>。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> <span class="string">&quot;fmt&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">addAuditLine</span><span class="params">(lines []<span class="type">string</span>)</span></span> &#123;</span><br><span class="line">	lines = <span class="built_in">append</span>(lines, <span class="string">&quot;job finished&quot;</span>)</span><br><span class="line">	fmt.Println(<span class="string">&quot;inside:&quot;</span>, <span class="built_in">len</span>(lines), <span class="built_in">cap</span>(lines), lines)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	lines := <span class="built_in">make</span>([]<span class="type">string</span>, <span class="number">1</span>, <span class="number">2</span>)</span><br><span class="line">	lines[<span class="number">0</span>] = <span class="string">&quot;job started&quot;</span></span><br><span class="line"></span><br><span class="line">	addAuditLine(lines)</span><br><span class="line">	fmt.Println(<span class="string">&quot;outside:&quot;</span>, <span class="built_in">len</span>(lines), <span class="built_in">cap</span>(lines), lines)</span><br><span class="line">	fmt.Println(<span class="string">&quot;reslice:&quot;</span>, lines[:<span class="number">2</span>])</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>可能输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">inside: 2 2 [job started job finished]</span><br><span class="line">outside: 1 2 [job started]</span><br><span class="line">reslice: [job started job finished]</span><br></pre></td></tr></table></figure>
+
+<p>这段代码特别值得反复看。</p>
+<p>函数里明明 <code>append</code> 成功了，为什么外面长度还是 <code>1</code>？</p>
+<p>因为：</p>
+<ul>
+<li><code>append</code> 改的是函数内部那份 slice 头副本</li>
+<li>调用方自己的 slice 头长度没有变</li>
+<li>但由于容量够用，新增元素仍然写进了共享底层数组</li>
+</ul>
+<p>所以这类 bug 最麻烦的地方在于：</p>
+<ul>
+<li>外层看长度，好像没成功</li>
+<li>真去 reslice 或复用底层数组时，数据又已经被污染了</li>
+</ul>
+<p>这就是为什么工程里更稳的习惯通常是：</p>
+<ul>
+<li><strong>只要函数里可能 <code>append</code>，就把结果返回给调用方</strong></li>
+</ul>
+<p>例如：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">addAuditLine</span><span class="params">(lines []<span class="type">string</span>, line <span class="type">string</span>)</span></span> []<span class="type">string</span> &#123;</span><br><span class="line">	<span class="keyword">return</span> <span class="built_in">append</span>(lines, line)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>调用方明确接住返回值：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">lines = addAuditLine(lines, <span class="string">&quot;job finished&quot;</span>)</span><br></pre></td></tr></table></figure>
+
+<p>这比单靠记住容量细节稳得多。</p>
+<h2 id="八、map-为什么也像引用，但又不该默认传-map"><a href="#八、map-为什么也像引用，但又不该默认传-map" class="headerlink" title="八、map 为什么也像引用，但又不该默认传 *map"></a>八、map 为什么也像引用，但又不该默认传 <code>*map</code></h2><p>map 的行为和 slice 很像，但又不完全一样。</p>
+<p>先看最常见的例子：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> <span class="string">&quot;fmt&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">increaseFailed</span><span class="params">(stats <span class="keyword">map</span>[<span class="type">string</span>]<span class="type">int</span>)</span></span> &#123;</span><br><span class="line">	stats[<span class="string">&quot;failed&quot;</span>]++</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	stats := <span class="keyword">map</span>[<span class="type">string</span>]<span class="type">int</span>&#123;<span class="string">&quot;failed&quot;</span>: <span class="number">0</span>&#125;</span><br><span class="line">	increaseFailed(stats)</span><br><span class="line">	fmt.Println(stats[<span class="string">&quot;failed&quot;</span>])</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">1</span><br></pre></td></tr></table></figure>
+
+<p>这很容易让人得出结论：“map 是引用类型。”</p>
+<p>更准确的说法是：</p>
+<ul>
+<li><code>stats</code> 这个 map 变量被复制了一份</li>
+<li>但副本和原变量都指向同一张底层哈希表</li>
+<li>所以改键值对时，双方都能看到</li>
+</ul>
+<p>但下面这段又很容易把这件事讲乱：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">reset</span><span class="params">(stats <span class="keyword">map</span>[<span class="type">string</span>]<span class="type">int</span>)</span></span> &#123;</span><br><span class="line">	stats = <span class="built_in">make</span>(<span class="keyword">map</span>[<span class="type">string</span>]<span class="type">int</span>)</span><br><span class="line">	stats[<span class="string">&quot;failed&quot;</span>] = <span class="number">0</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>如果调用：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">stats := <span class="keyword">map</span>[<span class="type">string</span>]<span class="type">int</span>&#123;<span class="string">&quot;failed&quot;</span>: <span class="number">3</span>&#125;</span><br><span class="line">reset(stats)</span><br><span class="line">fmt.Println(stats[<span class="string">&quot;failed&quot;</span>])</span><br></pre></td></tr></table></figure>
+
+<p>输出仍然是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">3</span><br></pre></td></tr></table></figure>
+
+<p>因为这里改的是：</p>
+<ul>
+<li>函数内部那个 map 变量副本</li>
+<li>让它重新指向了一张新表</li>
+<li>外面的原 map 变量根本没变</li>
+</ul>
+<p>所以 map 的工程判断通常是：</p>
+<ul>
+<li>要修改已有 map 里的键值对，直接传 <code>map</code></li>
+<li>要替换成一张新 map，返回新 map</li>
+<li>大多数情况下，不需要 <code>*map</code></li>
+</ul>
+<p>还有一个高频坑不能漏：<strong>nil map 只能读，不能写。</strong></p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> stats <span class="keyword">map</span>[<span class="type">string</span>]<span class="type">int</span></span><br><span class="line">stats[<span class="string">&quot;failed&quot;</span>]++</span><br></pre></td></tr></table></figure>
+
+<p>这会直接 panic：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">panic: assignment to entry in nil map</span><br></pre></td></tr></table></figure>
+
+<p>这类问题很常见，因为零值 map 看起来和空 map 很像，但它根本没初始化。</p>
+<h2 id="九、指针到底是什么，它解决了什么问题"><a href="#九、指针到底是什么，它解决了什么问题" class="headerlink" title="九、指针到底是什么，它解决了什么问题"></a>九、指针到底是什么，它解决了什么问题</h2><p>指针没那么玄，它本质上只是“保存某个对象地址的值”。</p>
+<p>例如：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">markRetrying</span><span class="params">(job *Job)</span></span> &#123;</span><br><span class="line">	job.Status = <span class="string">&quot;retrying&quot;</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>调用：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">job := Job&#123;ID: <span class="string">&quot;case-001&quot;</span>, Status: <span class="string">&quot;pending&quot;</span>&#125;</span><br><span class="line">markRetrying(&amp;job)</span><br><span class="line">fmt.Println(job.Status)</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">retrying</span><br></pre></td></tr></table></figure>
+
+<p>这里发生的事是：</p>
+<ul>
+<li><code>&amp;job</code> 取到了 <code>job</code> 的地址</li>
+<li>函数参数接收的是这个地址值的一份副本</li>
+<li>通过这个地址，函数可以定位并修改原来的 <code>job</code></li>
+</ul>
+<p>所以指针不是“让 Go 改成引用传递”，而是：</p>
+<ul>
+<li>仍然在复制值</li>
+<li>只是复制的值恰好是地址</li>
+</ul>
+<p>这也是最容易讲清楚的一句话：</p>
+<p><strong>Go 没有按引用传参，只有“把地址这个值传进去”。</strong></p>
+<h2 id="十、函数传参到底怎么选，先看语义，不要先看语法"><a href="#十、函数传参到底怎么选，先看语义，不要先看语法" class="headerlink" title="十、函数传参到底怎么选，先看语义，不要先看语法"></a>十、函数传参到底怎么选，先看语义，不要先看语法</h2><p>真实项目里最重要的不是“会不会写 <code>*</code>”，而是先把函数语义说清楚。</p>
+<p>可以先问自己四个问题：</p>
+<ol>
+<li>这个函数是要修改调用方对象，还是只基于输入算结果</li>
+<li>这个类型里有没有 slice、map 这类共享字段</li>
+<li>这个函数会不会 <code>append</code> 或重建内部字段</li>
+<li>调用方能不能从函数签名一眼看出副作用</li>
+</ol>
+<p>下面是几种常见写法。</p>
+<h3 id="1-只想基于输入返回新结果，就传值并返回值"><a href="#1-只想基于输入返回新结果，就传值并返回值" class="headerlink" title="1. 只想基于输入返回新结果，就传值并返回值"></a>1. 只想基于输入返回新结果，就传值并返回值</h3><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">normalizeJob</span><span class="params">(job Job)</span></span> Job &#123;</span><br><span class="line">	job.Status = <span class="string">&quot;pending&quot;</span></span><br><span class="line">	<span class="keyword">return</span> job</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这种写法适合：</p>
+<ul>
+<li>纯计算</li>
+<li>格式整理</li>
+<li>轻量 DTO 转换</li>
+</ul>
+<p>好处是边界清楚：调用方不接返回值，就等于没生效。</p>
+<h3 id="2-明确要原地修改，就传指针"><a href="#2-明确要原地修改，就传指针" class="headerlink" title="2. 明确要原地修改，就传指针"></a>2. 明确要原地修改，就传指针</h3><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">markDone</span><span class="params">(job *Job)</span></span> &#123;</span><br><span class="line">	job.Status = <span class="string">&quot;done&quot;</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这种写法适合：</p>
+<ul>
+<li>状态推进</li>
+<li>计数累加到某个实体上</li>
+<li>生命周期明确的对象修改</li>
+</ul>
+<p>好处是副作用直接写在签名里。</p>
+<h3 id="3-slice-如果会增长，优先返回新-slice"><a href="#3-slice-如果会增长，优先返回新-slice" class="headerlink" title="3. slice 如果会增长，优先返回新 slice"></a>3. slice 如果会增长，优先返回新 slice</h3><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">addLabel</span><span class="params">(labels []<span class="type">string</span>, label <span class="type">string</span>)</span></span> []<span class="type">string</span> &#123;</span><br><span class="line">	<span class="keyword">return</span> <span class="built_in">append</span>(labels, label)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这种写法比 <code>*[]string</code> 更常见，也更符合 Go 项目里的主流风格。</p>
+<h3 id="4-map-如果只是改键值，直接传-map"><a href="#4-map-如果只是改键值，直接传-map" class="headerlink" title="4. map 如果只是改键值，直接传 map"></a>4. map 如果只是改键值，直接传 map</h3><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">recordCount</span><span class="params">(stats <span class="keyword">map</span>[<span class="type">string</span>]<span class="type">int</span>, key <span class="type">string</span>)</span></span> &#123;</span><br><span class="line">	stats[key]++</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>如果要整张替换，就返回新 map：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">resetStats</span><span class="params">()</span></span> <span class="keyword">map</span>[<span class="type">string</span>]<span class="type">int</span> &#123;</span><br><span class="line">	<span class="keyword">return</span> <span class="keyword">map</span>[<span class="type">string</span>]<span class="type">int</span>&#123;<span class="string">&quot;failed&quot;</span>: <span class="number">0</span>, <span class="string">&quot;success&quot;</span>: <span class="number">0</span>&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="十一、几个最常见的副作用坑"><a href="#十一、几个最常见的副作用坑" class="headerlink" title="十一、几个最常见的副作用坑"></a>十一、几个最常见的副作用坑</h2><p>这部分建议直接记成排查清单。</p>
+<h3 id="1-以为-struct-按值传了，就彻底隔离了"><a href="#1-以为-struct-按值传了，就彻底隔离了" class="headerlink" title="1. 以为 struct 按值传了，就彻底隔离了"></a>1. 以为 struct 按值传了，就彻底隔离了</h3><p>错误示例：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Job <span class="keyword">struct</span> &#123;</span><br><span class="line">	ID     <span class="type">string</span></span><br><span class="line">	Labels []<span class="type">string</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">addDefaultLabel</span><span class="params">(job Job)</span></span> Job &#123;</span><br><span class="line">	job.Labels = <span class="built_in">append</span>(job.Labels, <span class="string">&quot;default&quot;</span>)</span><br><span class="line">	<span class="keyword">return</span> job</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>如果调用方原来的 <code>Labels</code> 还有剩余容量，那么这次 <code>append</code> 可能仍然写进共享底层数组。<br>虽然返回了新 <code>job</code>，但原对象底层数组也可能已经被污染。</p>
+<p>更稳的写法是先复制一份：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">addDefaultLabel</span><span class="params">(job Job)</span></span> Job &#123;</span><br><span class="line">	labels := <span class="built_in">append</span>([]<span class="type">string</span>(<span class="literal">nil</span>), job.Labels...)</span><br><span class="line">	labels = <span class="built_in">append</span>(labels, <span class="string">&quot;default&quot;</span>)</span><br><span class="line">	job.Labels = labels</span><br><span class="line">	<span class="keyword">return</span> job</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="2-以为-slice-传进去之后，append-一定能改到外面"><a href="#2-以为-slice-传进去之后，append-一定能改到外面" class="headerlink" title="2. 以为 slice 传进去之后，append 一定能改到外面"></a>2. 以为 slice 传进去之后，<code>append</code> 一定能改到外面</h3><p>错误示例：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">addLine</span><span class="params">(lines []<span class="type">string</span>, line <span class="type">string</span>)</span></span> &#123;</span><br><span class="line">	lines = <span class="built_in">append</span>(lines, line)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>调用方如果没接返回值，长度变化通常看不到。</p>
+<h3 id="3-以为-map-和空-map-是一回事"><a href="#3-以为-map-和空-map-是一回事" class="headerlink" title="3. 以为 map 和空 map 是一回事"></a>3. 以为 map 和空 map 是一回事</h3><p>错误示例：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> stats <span class="keyword">map</span>[<span class="type">string</span>]<span class="type">int</span></span><br><span class="line">stats[<span class="string">&quot;failed&quot;</span>]++</span><br></pre></td></tr></table></figure>
+
+<p>这不是“空”，而是“未初始化”。</p>
+<h3 id="4-为了避免拷贝，把所有参数都改成指针"><a href="#4-为了避免拷贝，把所有参数都改成指针" class="headerlink" title="4. 为了避免拷贝，把所有参数都改成指针"></a>4. 为了避免拷贝，把所有参数都改成指针</h3><p>这是另一种常见过度修复。</p>
+<p>如果一个函数本来只是读取参数、拼结果，却写成：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">buildMessage</span><span class="params">(job *Job)</span></span> <span class="type">string</span></span><br></pre></td></tr></table></figure>
+
+<p>那么调用方会自然怀疑：</p>
+<ul>
+<li>这里是不是会改 <code>job</code></li>
+<li>这个参数会不会是 nil</li>
+<li>以后是不是到处都得防御性判空</li>
+</ul>
+<p>指针不是默认更高级，它只是更明确地引入“共享可变状态”。</p>
+<h2 id="十二、先写几个最小测试，把理解固定下来"><a href="#十二、先写几个最小测试，把理解固定下来" class="headerlink" title="十二、先写几个最小测试，把理解固定下来"></a>十二、先写几个最小测试，把理解固定下来</h2><p>这类知识点最怕只靠眼睛看打印。<br>更稳的方式是补几组最小测试。</p>
+<p>先看一组示例代码：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> batch</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Job <span class="keyword">struct</span> &#123;</span><br><span class="line">	ID     <span class="type">string</span></span><br><span class="line">	Status <span class="type">string</span></span><br><span class="line">	Labels []<span class="type">string</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">MarkDone</span><span class="params">(job Job)</span></span> &#123;</span><br><span class="line">	job.Status = <span class="string">&quot;done&quot;</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">MarkDoneInPlace</span><span class="params">(job *Job)</span></span> &#123;</span><br><span class="line">	job.Status = <span class="string">&quot;done&quot;</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">AddLabel</span><span class="params">(labels []<span class="type">string</span>, label <span class="type">string</span>)</span></span> []<span class="type">string</span> &#123;</span><br><span class="line">	<span class="keyword">return</span> <span class="built_in">append</span>(labels, label)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">CloneAndAddLabel</span><span class="params">(job Job, label <span class="type">string</span>)</span></span> Job &#123;</span><br><span class="line">	copied := <span class="built_in">append</span>([]<span class="type">string</span>(<span class="literal">nil</span>), job.Labels...)</span><br><span class="line">	copied = <span class="built_in">append</span>(copied, label)</span><br><span class="line">	job.Labels = copied</span><br><span class="line">	<span class="keyword">return</span> job</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>测试可以这样写：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> batch</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> <span class="string">&quot;testing&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestMarkDoneValueDoesNotChangeCaller</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">	job := Job&#123;ID: <span class="string">&quot;case-001&quot;</span>, Status: <span class="string">&quot;pending&quot;</span>&#125;</span><br><span class="line"></span><br><span class="line">	MarkDone(job)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> job.Status != <span class="string">&quot;pending&quot;</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;want pending, got %s&quot;</span>, job.Status)</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestMarkDonePointerChangesCaller</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">	job := Job&#123;ID: <span class="string">&quot;case-001&quot;</span>, Status: <span class="string">&quot;pending&quot;</span>&#125;</span><br><span class="line"></span><br><span class="line">	MarkDoneInPlace(&amp;job)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> job.Status != <span class="string">&quot;done&quot;</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;want done, got %s&quot;</span>, job.Status)</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestAddLabelMustUseReturnedSlice</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">	labels := []<span class="type">string</span>&#123;<span class="string">&quot;smoke&quot;</span>&#125;</span><br><span class="line"></span><br><span class="line">	AddLabel(labels, <span class="string">&quot;nightly&quot;</span>)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(labels) != <span class="number">1</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;want len 1, got %d&quot;</span>, <span class="built_in">len</span>(labels))</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	labels = AddLabel(labels, <span class="string">&quot;nightly&quot;</span>)</span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(labels) != <span class="number">2</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;want len 2, got %d&quot;</span>, <span class="built_in">len</span>(labels))</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestCloneAndAddLabelKeepsOriginalUntouched</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">	job := Job&#123;ID: <span class="string">&quot;case-001&quot;</span>, Labels: []<span class="type">string</span>&#123;<span class="string">&quot;smoke&quot;</span>&#125;&#125;</span><br><span class="line"></span><br><span class="line">	newJob := CloneAndAddLabel(job, <span class="string">&quot;nightly&quot;</span>)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(job.Labels) != <span class="number">1</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;original labels changed: %v&quot;</span>, job.Labels)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(newJob.Labels) != <span class="number">2</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;new labels not expanded: %v&quot;</span>, newJob.Labels)</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>运行：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">go <span class="built_in">test</span> ./...</span><br></pre></td></tr></table></figure>
+
+<p>这四个测试覆盖了最核心的四个判断：</p>
+<ul>
+<li>值传递不会改调用方 struct</li>
+<li>指针会改调用方 struct</li>
+<li>slice 增长要接返回值</li>
+<li>struct 里带 slice 时，想隔离必须主动复制底层数据</li>
+</ul>
+<h2 id="十三、排障时怎么判断自己到底踩的是哪一类坑"><a href="#十三、排障时怎么判断自己到底踩的是哪一类坑" class="headerlink" title="十三、排障时怎么判断自己到底踩的是哪一类坑"></a>十三、排障时怎么判断自己到底踩的是哪一类坑</h2><p>项目里看到“数据怎么又串了”，不要先靠感觉猜，先按顺序排。</p>
+<h3 id="第一步：先看函数签名"><a href="#第一步：先看函数签名" class="headerlink" title="第一步：先看函数签名"></a>第一步：先看函数签名</h3><p>重点看三件事：</p>
+<ul>
+<li>参数是 <code>T</code> 还是 <code>*T</code></li>
+<li>参数里有没有 <code>[]T</code>、<code>map[K]V</code></li>
+<li>返回值有没有把新结果显式返回出来</li>
+</ul>
+<p>很多问题其实函数签名已经暴露了。</p>
+<h3 id="第二步：再看操作类型"><a href="#第二步：再看操作类型" class="headerlink" title="第二步：再看操作类型"></a>第二步：再看操作类型</h3><p>问自己到底做的是哪种动作：</p>
+<ul>
+<li>只是改字段值</li>
+<li>改 slice 元素</li>
+<li>给 slice <code>append</code></li>
+<li>给 map 写键值</li>
+<li>把整个字段重新赋值</li>
+</ul>
+<p>不同动作对应的联动方式完全不同。</p>
+<h3 id="第三步：必要时打印长度、容量和关键地址"><a href="#第三步：必要时打印长度、容量和关键地址" class="headerlink" title="第三步：必要时打印长度、容量和关键地址"></a>第三步：必要时打印长度、容量和关键地址</h3><p>比如查 slice 时，可以先打：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">fmt.Println(<span class="built_in">len</span>(labels), <span class="built_in">cap</span>(labels))</span><br></pre></td></tr></table></figure>
+
+<p>如果确认非空，还可以临时打印首元素地址：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">fmt.Printf(<span class="string">&quot;%p\n&quot;</span>, &amp;labels[<span class="number">0</span>])</span><br></pre></td></tr></table></figure>
+
+<p>这能帮助判断两个 slice 当前是不是仍然共用同一块底层数组。</p>
+<h3 id="第四步：确认是不是-nil-问题"><a href="#第四步：确认是不是-nil-问题" class="headerlink" title="第四步：确认是不是 nil 问题"></a>第四步：确认是不是 nil 问题</h3><p>对 map、pointer、slice 都要有这个意识：</p>
+<ul>
+<li>nil map 不能写</li>
+<li>nil pointer 不能解引用</li>
+<li>nil slice 可以 <code>append</code>，但不能直接按下标赋值</li>
+</ul>
+<p>这些错误经常和“值&#x2F;引用理解错误”混在一起出现。</p>
+<h2 id="十四、一个更接近项目现场的小案例"><a href="#十四、一个更接近项目现场的小案例" class="headerlink" title="十四、一个更接近项目现场的小案例"></a>十四、一个更接近项目现场的小案例</h2><p>下面用一个更完整的小案例，把这篇的点串起来。</p>
+<p>场景：现在要装配一个 nightly 批次：</p>
+<ul>
+<li>原始任务模板不能被污染</li>
+<li>失败任务要打上 <code>retry</code> 标签</li>
+<li>统计计数要实时更新</li>
+<li>审计日志要追加</li>
+</ul>
+<p>先定义结构：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Job <span class="keyword">struct</span> &#123;</span><br><span class="line">	ID     <span class="type">string</span></span><br><span class="line">	Status <span class="type">string</span></span><br><span class="line">	Labels []<span class="type">string</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Batch <span class="keyword">struct</span> &#123;</span><br><span class="line">	Name     <span class="type">string</span></span><br><span class="line">	Jobs     []Job</span><br><span class="line">	Counters <span class="keyword">map</span>[<span class="type">string</span>]<span class="type">int</span></span><br><span class="line">	AuditLog []<span class="type">string</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>再定义几类函数：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewBatch</span><span class="params">(name <span class="type">string</span>, jobs []Job)</span></span> Batch &#123;</span><br><span class="line">	clonedJobs := <span class="built_in">make</span>([]Job, <span class="number">0</span>, <span class="built_in">len</span>(jobs))</span><br><span class="line">	<span class="keyword">for</span> _, job := <span class="keyword">range</span> jobs &#123;</span><br><span class="line">		job.Labels = <span class="built_in">append</span>([]<span class="type">string</span>(<span class="literal">nil</span>), job.Labels...)</span><br><span class="line">		clonedJobs = <span class="built_in">append</span>(clonedJobs, job)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> Batch&#123;</span><br><span class="line">		Name: name,</span><br><span class="line">		Jobs: clonedJobs,</span><br><span class="line">		Counters: <span class="keyword">map</span>[<span class="type">string</span>]<span class="type">int</span>&#123;</span><br><span class="line">			<span class="string">&quot;success&quot;</span>: <span class="number">0</span>,</span><br><span class="line">			<span class="string">&quot;failed&quot;</span>:  <span class="number">0</span>,</span><br><span class="line">		&#125;,</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">MarkFailed</span><span class="params">(job *Job)</span></span> &#123;</span><br><span class="line">	job.Status = <span class="string">&quot;failed&quot;</span></span><br><span class="line">	job.Labels = <span class="built_in">append</span>(job.Labels, <span class="string">&quot;retry&quot;</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">RecordCounter</span><span class="params">(stats <span class="keyword">map</span>[<span class="type">string</span>]<span class="type">int</span>, key <span class="type">string</span>)</span></span> &#123;</span><br><span class="line">	stats[key]++</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">AddAudit</span><span class="params">(lines []<span class="type">string</span>, line <span class="type">string</span>)</span></span> []<span class="type">string</span> &#123;</span><br><span class="line">	<span class="keyword">return</span> <span class="built_in">append</span>(lines, line)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>调用方式：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">templates := []Job&#123;</span><br><span class="line">	&#123;ID: <span class="string">&quot;case-001&quot;</span>, Status: <span class="string">&quot;pending&quot;</span>, Labels: []<span class="type">string</span>&#123;<span class="string">&quot;smoke&quot;</span>&#125;&#125;,</span><br><span class="line">	&#123;ID: <span class="string">&quot;case-002&quot;</span>, Status: <span class="string">&quot;pending&quot;</span>, Labels: []<span class="type">string</span>&#123;<span class="string">&quot;api&quot;</span>&#125;&#125;,</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">batch := NewBatch(<span class="string">&quot;nightly-20240509&quot;</span>, templates)</span><br><span class="line"></span><br><span class="line">MarkFailed(&amp;batch.Jobs[<span class="number">0</span>])</span><br><span class="line">RecordCounter(batch.Counters, <span class="string">&quot;failed&quot;</span>)</span><br><span class="line">batch.AuditLog = AddAudit(batch.AuditLog, <span class="string">&quot;case-001 marked as failed&quot;</span>)</span><br></pre></td></tr></table></figure>
+
+<p>这几行里，每种函数边界都不一样：</p>
+<ul>
+<li><code>NewBatch</code> 返回新值，因为它要保证模板不被污染</li>
+<li><code>MarkFailed</code> 传指针，因为它明确要原地改任务状态</li>
+<li><code>RecordCounter</code> 直接收 map，因为只改已有键值</li>
+<li><code>AddAudit</code> 返回新 slice，因为它会增长切片</li>
+</ul>
+<p>这就是工程上更稳的做法：<strong>不要只会一种传参方式，而是根据副作用边界选。</strong></p>
+<h2 id="十五、工程判断：什么时候该传值，什么时候该传指针"><a href="#十五、工程判断：什么时候该传值，什么时候该传指针" class="headerlink" title="十五、工程判断：什么时候该传值，什么时候该传指针"></a>十五、工程判断：什么时候该传值，什么时候该传指针</h2><p>学完语法后最容易走向两个极端：</p>
+<ul>
+<li>极端一：坚持所有东西都按值传，结果改状态特别绕</li>
+<li>极端二：为了性能或省事，全都传指针</li>
+</ul>
+<p>更稳的判断通常是下面这样。</p>
+<h3 id="1-小而清晰的输入对象，优先值传递"><a href="#1-小而清晰的输入对象，优先值传递" class="headerlink" title="1. 小而清晰的输入对象，优先值传递"></a>1. 小而清晰的输入对象，优先值传递</h3><p>例如：</p>
+<ul>
+<li>查询参数</li>
+<li>配置快照</li>
+<li>过滤条件</li>
+<li>时间窗口</li>
+</ul>
+<p>这类对象如果语义上更像“输入快照”，值传递通常更安全。</p>
+<h3 id="2-明确有生命周期推进的实体，适合指针"><a href="#2-明确有生命周期推进的实体，适合指针" class="headerlink" title="2. 明确有生命周期推进的实体，适合指针"></a>2. 明确有生命周期推进的实体，适合指针</h3><p>例如：</p>
+<ul>
+<li>任务状态从 <code>pending</code> 到 <code>running</code></li>
+<li>批次对象持续累积统计</li>
+<li>连接对象、缓冲对象需要原地更新</li>
+</ul>
+<p>这类对象本来就带状态变化，用指针更直接。</p>
+<h3 id="3-对-slice，重点不是“要不要指针”，而是“会不会增长”"><a href="#3-对-slice，重点不是“要不要指针”，而是“会不会增长”" class="headerlink" title="3. 对 slice，重点不是“要不要指针”，而是“会不会增长”"></a>3. 对 slice，重点不是“要不要指针”，而是“会不会增长”</h3><p>默认先记一个工程规则：</p>
+<ul>
+<li>改元素：传 <code>[]T</code> 就够</li>
+<li>会增长：返回 <code>[]T</code></li>
+<li>只有在特别明确的 API 设计里，才考虑 <code>*[]T</code></li>
+</ul>
+<h3 id="4-对-map，大多数时候不要传-map"><a href="#4-对-map，大多数时候不要传-map" class="headerlink" title="4. 对 map，大多数时候不要传 *map"></a>4. 对 map，大多数时候不要传 <code>*map</code></h3><p>因为 map 本身已经能表达“共享一张表”的修改行为。</p>
+<p>只有在很少数场景里，比如：</p>
+<ul>
+<li>需要懒初始化并替换整个 map</li>
+<li>需要把 map 变量本身置为 nil</li>
+</ul>
+<p>这时 <code>*map</code> 才可能有讨论空间。</p>
+<h3 id="5-不要为了“性能”先把所有-struct-都改成指针"><a href="#5-不要为了“性能”先把所有-struct-都改成指针" class="headerlink" title="5. 不要为了“性能”先把所有 struct 都改成指针"></a>5. 不要为了“性能”先把所有 struct 都改成指针</h3><p>因为这会同时引入：</p>
+<ul>
+<li>nil 风险</li>
+<li>共享修改风险</li>
+<li>调用方语义不清</li>
+<li>测试隔离成本变高</li>
+</ul>
+<p>性能优化应该先基于事实，比如基准测试和逃逸分析结果，而不是基于直觉。</p>
+<h2 id="十六、边界：这篇先不展开哪些内容"><a href="#十六、边界：这篇先不展开哪些内容" class="headerlink" title="十六、边界：这篇先不展开哪些内容"></a>十六、边界：这篇先不展开哪些内容</h2><p>这一篇先解决“值语义、共享底层数据、指针、副作用边界”这条主线。<br>下面这些内容会在后续文章里再展开：</p>
+<ul>
+<li>方法的值接收者和指针接收者如何统一设计</li>
+<li>interface 装箱后又会带来哪些复制和动态分派问题</li>
+<li><code>sync.Mutex</code> 为什么不能随便复制</li>
+<li><code>unsafe.Pointer</code> 为什么不适合拿来解释基础语义</li>
+<li>逃逸分析和堆栈分配怎么影响性能判断</li>
+</ul>
+<p>先把这一篇吃透，比一开始把所有底层细节一起塞进来更重要。</p>
+<h2 id="十七、一个实际练习"><a href="#十七、一个实际练习" class="headerlink" title="十七、一个实际练习"></a>十七、一个实际练习</h2><p>可以直接把上面的任务执行器再补一版，要求如下：</p>
+<ol>
+<li>增加 <code>Retry</code> 字段，失败任务最多重试 2 次</li>
+<li>写一个 <code>CloneJob(job Job) Job</code>，要求深拷贝 <code>Labels</code></li>
+<li>写一个 <code>AddJobs(batch Batch, jobs ...Job) Batch</code>，要求返回新批次，不污染原批次</li>
+<li>写一个 <code>ResetCounters(stats map[string]int) map[string]int</code>，要求返回新 map</li>
+<li>补 4 个测试，分别验证 <code>MarkFailed</code> 会改原任务、<code>CloneJob</code> 不会污染原标签、<code>AddJobs</code> 不会把新任务偷偷写进旧批次的底层数组、<code>ResetCounters</code> 不会影响旧统计表</li>
+</ol>
+<p>如果这几个练习能独立写出来，这篇的核心就算真正掌握了。</p>
+<h2 id="十八、结语"><a href="#十八、结语" class="headerlink" title="十八、结语"></a>十八、结语</h2><p>Go 里关于值类型、引用语义、指针，最重要的不是背术语，而是建立下面这条判断链：</p>
+<ul>
+<li>Go 默认一直都在复制值</li>
+<li>有些值复制后仍然共享底层数据，所以会表现出引用式行为</li>
+<li>slice 的关键在底层数组和切片头分离</li>
+<li>map 的关键在共享底层哈希表，但 map 变量本身仍然会被复制</li>
+<li>指针不是“特殊传参机制”，而是“把地址这个值传进去”</li>
+<li>工程上最重要的是把副作用边界写进函数签名</li>
+</ul>
+<p>回头收一下这一篇最该记住的几句话：</p>
+<ul>
+<li>不要把“值传递”和“不会共享数据”画等号</li>
+<li>不要把“看起来像引用”就误解成“Go 支持按引用传参”</li>
+<li>不要为了省事把所有参数都改成指针</li>
+<li>只要函数里可能 <code>append</code>，优先返回新 slice</li>
+<li>struct 里只要有 slice、map 字段，就要主动考虑深浅复制问题</li>
+</ul>
+<p>把这一层写稳，下一篇再看 <code>struct</code>、方法集和组合时，很多“为什么这里能改、那里不能改”的问题就不会再绕住你了。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Go/" rel="tag"># Go</a>
+              <a href="/tags/Go%E4%B8%93%E9%A2%98/" rel="tag"># Go专题</a>
+              <a href="/tags/%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80/" rel="tag"># 编程语言</a>
+              <a href="/tags/%E5%80%BC%E8%AF%AD%E4%B9%89/" rel="tag"># 值语义</a>
+              <a href="/tags/%E6%8C%87%E9%92%88/" rel="tag"># 指针</a>
+              <a href="/tags/%E5%88%87%E7%89%87/" rel="tag"># 切片</a>
+              <a href="/tags/map/" rel="tag"># map</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2018/05/09/Python-04-Python%E5%87%BD%E6%95%B0%E5%8F%82%E6%95%B0%E5%8F%AF%E5%8F%98%E5%AF%B9%E8%B1%A1%E4%BD%9C%E7%94%A8%E5%9F%9F%E5%92%8C%E9%97%AD%E5%8C%85%E4%B8%BA%E4%BB%80%E4%B9%88%E6%80%BB%E8%AE%A9%E6%96%B0%E6%89%8B%E7%8A%AF%E9%94%99/" rel="prev" title="Python：函数参数、可变对象、作用域和闭包为什么总让新手犯错">
+                  <i class="fa fa-angle-left"></i> Python：函数参数、可变对象、作用域和闭包为什么总让新手犯错
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2018/05/16/Python-05-Python%E7%B1%BB%E7%BB%A7%E6%89%BF%E5%8D%8F%E8%AE%AE%E9%AD%94%E6%9C%AF%E6%96%B9%E6%B3%95%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E7%90%86%E8%A7%A3%E6%89%8D%E4%B8%8D%E4%BC%9A%E8%B6%8A%E5%86%99%E8%B6%8A%E4%B9%B1/" rel="next" title="Python：类、继承、协议、魔术方法应该怎么理解才不会越写越乱">
+                  Python：类、继承、协议、魔术方法应该怎么理解才不会越写越乱 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

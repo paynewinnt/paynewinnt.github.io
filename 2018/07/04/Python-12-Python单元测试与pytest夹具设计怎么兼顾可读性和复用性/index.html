@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="pytest 真正难的地方通常不是怎么跑测试，而是夹具怎么设计，才能既不重复又不绕。这篇文章围绕一个优惠券结算模块，把单元测试、fixture 设计和常见坑串起来。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Python：单元测试与 pytest 夹具设计，怎么兼顾可读性和复用性">
+<meta property="og:url" content="https://paynewinnt.github.io/2018/07/04/Python-12-Python%E5%8D%95%E5%85%83%E6%B5%8B%E8%AF%95%E4%B8%8Epytest%E5%A4%B9%E5%85%B7%E8%AE%BE%E8%AE%A1%E6%80%8E%E4%B9%88%E5%85%BC%E9%A1%BE%E5%8F%AF%E8%AF%BB%E6%80%A7%E5%92%8C%E5%A4%8D%E7%94%A8%E6%80%A7/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="pytest 真正难的地方通常不是怎么跑测试，而是夹具怎么设计，才能既不重复又不绕。这篇文章围绕一个优惠券结算模块，把单元测试、fixture 设计和常见坑串起来。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2018-07-04T12:30:00.000Z">
+<meta property="article:modified_time" content="2018-07-04T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="编程语言">
+<meta property="article:tag" content="单元测试">
+<meta property="article:tag" content="Python">
+<meta property="article:tag" content="Python专题">
+<meta property="article:tag" content="pytest">
+<meta property="article:tag" content="fixture">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2018/07/04/Python-12-Python%E5%8D%95%E5%85%83%E6%B5%8B%E8%AF%95%E4%B8%8Epytest%E5%A4%B9%E5%85%B7%E8%AE%BE%E8%AE%A1%E6%80%8E%E4%B9%88%E5%85%BC%E9%A1%BE%E5%8F%AF%E8%AF%BB%E6%80%A7%E5%92%8C%E5%A4%8D%E7%94%A8%E6%80%A7/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2018/07/04/Python-12-Python%E5%8D%95%E5%85%83%E6%B5%8B%E8%AF%95%E4%B8%8Epytest%E5%A4%B9%E5%85%B7%E8%AE%BE%E8%AE%A1%E6%80%8E%E4%B9%88%E5%85%BC%E9%A1%BE%E5%8F%AF%E8%AF%BB%E6%80%A7%E5%92%8C%E5%A4%8D%E7%94%A8%E6%80%A7/","path":"2018/07/04/Python-12-Python单元测试与pytest夹具设计怎么兼顾可读性和复用性/","title":"Python：单元测试与 pytest 夹具设计，怎么兼顾可读性和复用性"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>Python：单元测试与 pytest 夹具设计，怎么兼顾可读性和复用性 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E8%BF%99%E7%AF%87%E6%96%87%E7%AB%A0%E8%A6%81%E8%A7%A3%E5%86%B3%E4%BB%80%E4%B9%88%E9%97%AE%E9%A2%98"><span class="nav-number">1.</span> <span class="nav-text">一、这篇文章要解决什么问题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E5%85%88%E7%9C%8B%E8%A6%81%E6%B5%8B%E8%AF%95%E7%9A%84%E5%AE%9E%E9%99%85%E5%8A%9F%E8%83%BD"><span class="nav-number">2.</span> <span class="nav-text">二、先看要测试的实际功能</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E5%85%88%E5%86%99%E6%9C%80%E5%B0%8F%E5%8D%95%E5%85%83%E6%B5%8B%E8%AF%95%EF%BC%8C%E4%B8%8D%E8%A6%81%E4%B8%80%E4%B8%8A%E6%9D%A5%E5%B0%B1%E6%8A%BD-fixture"><span class="nav-number">3.</span> <span class="nav-text">三、先写最小单元测试，不要一上来就抽 fixture</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E5%80%BC%E5%BE%97%E5%BC%80%E5%A7%8B%E6%8A%BD-fixture"><span class="nav-number">4.</span> <span class="nav-text">四、什么时候值得开始抽 fixture</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%85%88%E6%8A%BD%E6%9C%80%E7%A8%B3%E5%AE%9A%E3%80%81%E6%9C%80%E4%B8%8D%E5%AE%B9%E6%98%93%E5%BC%95%E8%B5%B7%E6%AD%A7%E4%B9%89%E7%9A%84%E5%9B%BA%E5%AE%9A%E6%95%B0%E6%8D%AE"><span class="nav-number">4.1.</span> <span class="nav-text">1. 先抽最稳定、最不容易引起歧义的固定数据</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%86%8D%E6%8A%BD%E5%9F%BA%E7%A1%80-coupon"><span class="nav-number">4.2.</span> <span class="nav-text">2. 再抽基础 coupon</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%B5%8B%E8%AF%95%E7%AB%8B%E5%88%BB%E4%BC%9A%E6%9B%B4%E7%9F%AD"><span class="nav-number">4.3.</span> <span class="nav-text">3. 测试立刻会更短</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81fixture-%E8%AE%BE%E8%AE%A1%E6%9C%80%E5%AE%B9%E6%98%93%E7%8A%AF%E7%9A%84%E9%94%99%E6%98%AF%E4%BB%80%E4%B9%88"><span class="nav-number">5.</span> <span class="nav-text">五、fixture 设计最容易犯的错是什么</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%8A%8A%E6%89%80%E6%9C%89%E4%B8%9C%E8%A5%BF%E9%83%BD%E6%8A%BD%E6%88%90-fixture"><span class="nav-number">5.1.</span> <span class="nav-text">1. 把所有东西都抽成 fixture</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%B8%80%E4%B8%AA%E6%9B%B4%E5%AE%9E%E9%99%85%E7%9A%84%E5%88%A4%E6%96%AD%E6%A0%87%E5%87%86"><span class="nav-number">5.2.</span> <span class="nav-text">2. 一个更实际的判断标准</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81fixture-%E6%80%8E%E4%B9%88%E5%85%BC%E9%A1%BE%E5%A4%8D%E7%94%A8%E5%92%8C%E5%8F%AF%E8%AF%BB%E6%80%A7"><span class="nav-number">6.</span> <span class="nav-text">六、fixture 怎么兼顾复用和可读性</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%94%A8%E2%80%9C%E5%9F%BA%E7%A1%80-fixture-%E6%B5%8B%E8%AF%95%E5%86%85%E5%B1%80%E9%83%A8%E4%BF%AE%E6%94%B9%E2%80%9D%E6%AF%94%E2%80%9C%E4%B8%87%E8%83%BD-fixture%E2%80%9D%E6%9B%B4%E7%A8%B3"><span class="nav-number">6.1.</span> <span class="nav-text">1. 用“基础 fixture + 测试内局部修改”比“万能 fixture”更稳</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%B8%80%E4%B8%AA%E5%AE%9E%E9%99%85%E9%94%99%E8%AF%AF%EF%BC%9A%E7%9B%B4%E6%8E%A5%E4%BF%AE%E6%94%B9-fixture-%E8%BF%94%E5%9B%9E%E5%AF%B9%E8%B1%A1"><span class="nav-number">6.2.</span> <span class="nav-text">2. 一个实际错误：直接修改 fixture 返回对象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%B8%80%E4%B8%AA%E6%9B%B4%E9%9A%90%E8%94%BD%E7%9A%84%E9%94%99%E8%AF%AF%EF%BC%9A%E5%B5%8C%E5%A5%97%E7%BB%93%E6%9E%84%E6%B5%85%E6%8B%B7%E8%B4%9D%E4%B8%8D%E5%A4%9F"><span class="nav-number">6.3.</span> <span class="nav-text">3. 一个更隐蔽的错误：嵌套结构浅拷贝不够</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E8%AF%A5%E7%94%A8-fixture-factory"><span class="nav-number">7.</span> <span class="nav-text">七、什么时候该用 fixture factory</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E6%8A%8A%E6%B5%8B%E8%AF%95%E7%9C%9F%E6%AD%A3%E6%95%B4%E7%90%86%E6%88%90%E5%8F%AF%E7%BB%B4%E6%8A%A4%E7%89%88%E6%9C%AC"><span class="nav-number">8.</span> <span class="nav-text">八、把测试真正整理成可维护版本</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99-fixture-%E5%B7%B2%E7%BB%8F%E8%BF%87%E5%BA%A6%E4%BA%86"><span class="nav-number">9.</span> <span class="nav-text">九、什么时候 fixture 已经过度了</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E4%B8%80%E4%B8%AA%E5%AE%9E%E9%99%85%E6%8E%92%E9%94%99%E5%9C%BA%E6%99%AF"><span class="nav-number">10.</span> <span class="nav-text">十、一个实际排错场景</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E4%B8%80%E4%B8%AA%E5%AE%9E%E9%99%85%E7%BB%83%E4%B9%A0"><span class="nav-number">11.</span> <span class="nav-text">十一、一个实际练习</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E8%BF%99%E7%AF%87%E6%96%87%E7%AB%A0%E5%AD%A6%E5%AE%8C%E4%BB%A5%E5%90%8E%EF%BC%8C%E4%B8%8B%E4%B8%80%E6%AD%A5%E5%BA%94%E8%AF%A5%E8%A1%A5%E4%BB%80%E4%B9%88"><span class="nav-number">12.</span> <span class="nav-text">十二、这篇文章学完以后，下一步应该补什么</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81%E7%BB%93%E8%AF%AD"><span class="nav-number">13.</span> <span class="nav-text">十三、结语</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2018/07/04/Python-12-Python%E5%8D%95%E5%85%83%E6%B5%8B%E8%AF%95%E4%B8%8Epytest%E5%A4%B9%E5%85%B7%E8%AE%BE%E8%AE%A1%E6%80%8E%E4%B9%88%E5%85%BC%E9%A1%BE%E5%8F%AF%E8%AF%BB%E6%80%A7%E5%92%8C%E5%A4%8D%E7%94%A8%E6%80%A7/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="Python：单元测试与 pytest 夹具设计，怎么兼顾可读性和复用性 | 大道至简">
+      <meta itemprop="description" content="pytest 真正难的地方通常不是怎么跑测试，而是夹具怎么设计，才能既不重复又不绕。这篇文章围绕一个优惠券结算模块，把单元测试、fixture 设计和常见坑串起来。">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Python：单元测试与 pytest 夹具设计，怎么兼顾可读性和复用性
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2018-07-04 20:30:00" itemprop="dateCreated datePublished" datetime="2018-07-04T20:30:00+08:00">2018-07-04</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/Python/" itemprop="url" rel="index"><span itemprop="name">Python</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>2.4k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>9 分钟</span>
+    </span>
+</div>
+
+            <div class="post-description">pytest 真正难的地方通常不是怎么跑测试，而是夹具怎么设计，才能既不重复又不绕。这篇文章围绕一个优惠券结算模块，把单元测试、fixture 设计和常见坑串起来。</div>
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>pytest 上手很快，写顺却不一定快。</p>
+<p>最常见的情况通常是：</p>
+<ul>
+<li>第一条测试很好写</li>
+<li>第二条也还行</li>
+<li>到第十条开始，准备数据越来越重复</li>
+<li>后面加 fixture 之后，又开始出现“看不懂数据从哪来”</li>
+</ul>
+<p>这说明问题通常不在 pytest 本身，而在夹具设计没处理好两个方向的平衡：</p>
+<ul>
+<li>可读性</li>
+<li>复用性</li>
+</ul>
+<p>如果太追求“复用”，很容易变成一层套一层的 fixture，读测试像追线索。<br>如果只顾“直观”，每条测试又会复制大量准备代码。</p>
+<p>这一篇直接围绕一个实际功能展开：<strong>做一个优惠券结算模块的单元测试</strong>。</p>
+<p>这个模块要处理这些场景：</p>
+<ol>
+<li>无优惠券时正常结算</li>
+<li>满减券生效</li>
+<li>过期券不生效</li>
+<li>多张券里只允许一张生效</li>
+</ol>
+<p>用这个场景把三件事讲清楚：</p>
+<ol>
+<li>单元测试最小骨架怎么写</li>
+<li>fixture 到底该抽到什么粒度</li>
+<li>怎么避免 fixture 过度封装</li>
+</ol>
+<h2 id="一、这篇文章要解决什么问题"><a href="#一、这篇文章要解决什么问题" class="headerlink" title="一、这篇文章要解决什么问题"></a>一、这篇文章要解决什么问题</h2><p>读完这一篇，应该能独立完成这些动作：</p>
+<ul>
+<li>给一个纯业务函数写最小单元测试</li>
+<li>识别什么数据值得抽成 fixture</li>
+<li>让 fixture 同时保持可读和可复用</li>
+<li>识别几类典型坏味道，例如 fixture 链太深、测试入参不可见、状态被共享</li>
+</ul>
+<p>如果这些动作能独立做出来，pytest 在项目里就不会再只是“会跑”，而是开始能稳定支撑测试代码演进。</p>
+<h2 id="二、先看要测试的实际功能"><a href="#二、先看要测试的实际功能" class="headerlink" title="二、先看要测试的实际功能"></a>二、先看要测试的实际功能</h2><p>先把被测逻辑放出来。</p>
+<p><code>pricing.py</code>：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> datetime <span class="keyword">import</span> datetime</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">calc_final_amount</span>(<span class="params">origin_amount, coupons, now=<span class="literal">None</span></span>):</span><br><span class="line">    <span class="keyword">if</span> now <span class="keyword">is</span> <span class="literal">None</span>:</span><br><span class="line">        now = datetime.now()</span><br><span class="line"></span><br><span class="line">    final_amount = origin_amount</span><br><span class="line">    applied_coupon = <span class="literal">None</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> coupon <span class="keyword">in</span> coupons:</span><br><span class="line">        <span class="keyword">if</span> coupon[<span class="string">&quot;expired_at&quot;</span>] &lt; now:</span><br><span class="line">            <span class="keyword">continue</span></span><br><span class="line">        <span class="keyword">if</span> coupon[<span class="string">&quot;type&quot;</span>] == <span class="string">&quot;minus&quot;</span> <span class="keyword">and</span> origin_amount &gt;= coupon[<span class="string">&quot;threshold&quot;</span>]:</span><br><span class="line">            final_amount = origin_amount - coupon[<span class="string">&quot;value&quot;</span>]</span><br><span class="line">            applied_coupon = coupon[<span class="string">&quot;name&quot;</span>]</span><br><span class="line">            <span class="keyword">break</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> final_amount &lt; <span class="number">0</span>:</span><br><span class="line">        final_amount = <span class="number">0</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> &#123;</span><br><span class="line">        <span class="string">&quot;origin_amount&quot;</span>: origin_amount,</span><br><span class="line">        <span class="string">&quot;final_amount&quot;</span>: final_amount,</span><br><span class="line">        <span class="string">&quot;applied_coupon&quot;</span>: applied_coupon,</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<p>先写一个最小调用：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> datetime <span class="keyword">import</span> datetime</span><br><span class="line"><span class="keyword">from</span> pricing <span class="keyword">import</span> calc_final_amount</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">result = calc_final_amount(</span><br><span class="line">    <span class="number">120</span>,</span><br><span class="line">    [&#123;</span><br><span class="line">        <span class="string">&quot;name&quot;</span>: <span class="string">&quot;满100减20&quot;</span>,</span><br><span class="line">        <span class="string">&quot;type&quot;</span>: <span class="string">&quot;minus&quot;</span>,</span><br><span class="line">        <span class="string">&quot;threshold&quot;</span>: <span class="number">100</span>,</span><br><span class="line">        <span class="string">&quot;value&quot;</span>: <span class="number">20</span>,</span><br><span class="line">        <span class="string">&quot;expired_at&quot;</span>: datetime(<span class="number">2018</span>, <span class="number">8</span>, <span class="number">1</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>),</span><br><span class="line">    &#125;],</span><br><span class="line">    now=datetime(<span class="number">2018</span>, <span class="number">7</span>, <span class="number">1</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>),</span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(result)</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">&#123;&#x27;origin_amount&#x27;: 120, &#x27;final_amount&#x27;: 100, &#x27;applied_coupon&#x27;: &#x27;满100减20&#x27;&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="三、先写最小单元测试，不要一上来就抽-fixture"><a href="#三、先写最小单元测试，不要一上来就抽-fixture" class="headerlink" title="三、先写最小单元测试，不要一上来就抽 fixture"></a>三、先写最小单元测试，不要一上来就抽 fixture</h2><p>一开始如果急着抽 fixture，往往还没看清重复到底在哪。</p>
+<p>先写最小测试更稳：</p>
+<p><code>test_pricing.py</code>：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> datetime <span class="keyword">import</span> datetime</span><br><span class="line"></span><br><span class="line"><span class="keyword">from</span> pricing <span class="keyword">import</span> calc_final_amount</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">test_calc_final_amount_without_coupon</span>():</span><br><span class="line">    result = calc_final_amount(<span class="number">120</span>, [], now=datetime(<span class="number">2018</span>, <span class="number">7</span>, <span class="number">1</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>))</span><br><span class="line"></span><br><span class="line">    <span class="keyword">assert</span> result[<span class="string">&quot;origin_amount&quot;</span>] == <span class="number">120</span></span><br><span class="line">    <span class="keyword">assert</span> result[<span class="string">&quot;final_amount&quot;</span>] == <span class="number">120</span></span><br><span class="line">    <span class="keyword">assert</span> result[<span class="string">&quot;applied_coupon&quot;</span>] <span class="keyword">is</span> <span class="literal">None</span></span><br></pre></td></tr></table></figure>
+
+<p>执行：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">pytest -q</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">.                                                                    [100%]</span><br><span class="line">1 passed in 0.02s</span><br></pre></td></tr></table></figure>
+
+<p>这一步最重要的是先把断言风格定住：</p>
+<ul>
+<li>输入是什么</li>
+<li>输出关键字段是什么</li>
+<li>断言应该落在哪</li>
+</ul>
+<h2 id="四、什么时候值得开始抽-fixture"><a href="#四、什么时候值得开始抽-fixture" class="headerlink" title="四、什么时候值得开始抽 fixture"></a>四、什么时候值得开始抽 fixture</h2><p>如果继续加两三条测试，很快就会看到重复：</p>
+<ul>
+<li>同样的 <code>now</code></li>
+<li>类似结构的 coupon</li>
+<li>相近的 origin amount</li>
+</ul>
+<p>这时 fixture 就值得上场了。</p>
+<h3 id="1-先抽最稳定、最不容易引起歧义的固定数据"><a href="#1-先抽最稳定、最不容易引起歧义的固定数据" class="headerlink" title="1. 先抽最稳定、最不容易引起歧义的固定数据"></a>1. 先抽最稳定、最不容易引起歧义的固定数据</h3><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> pytest</span><br><span class="line"><span class="keyword">from</span> datetime <span class="keyword">import</span> datetime</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@pytest.fixture</span></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">fixed_now</span>():</span><br><span class="line">    <span class="keyword">return</span> datetime(<span class="number">2018</span>, <span class="number">7</span>, <span class="number">1</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>)</span><br></pre></td></tr></table></figure>
+
+<h3 id="2-再抽基础-coupon"><a href="#2-再抽基础-coupon" class="headerlink" title="2. 再抽基础 coupon"></a>2. 再抽基础 coupon</h3><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@pytest.fixture</span></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">valid_minus_coupon</span>():</span><br><span class="line">    <span class="keyword">return</span> &#123;</span><br><span class="line">        <span class="string">&quot;name&quot;</span>: <span class="string">&quot;满100减20&quot;</span>,</span><br><span class="line">        <span class="string">&quot;type&quot;</span>: <span class="string">&quot;minus&quot;</span>,</span><br><span class="line">        <span class="string">&quot;threshold&quot;</span>: <span class="number">100</span>,</span><br><span class="line">        <span class="string">&quot;value&quot;</span>: <span class="number">20</span>,</span><br><span class="line">        <span class="string">&quot;expired_at&quot;</span>: datetime(<span class="number">2018</span>, <span class="number">8</span>, <span class="number">1</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>),</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="3-测试立刻会更短"><a href="#3-测试立刻会更短" class="headerlink" title="3. 测试立刻会更短"></a>3. 测试立刻会更短</h3><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">test_calc_final_amount_with_valid_coupon</span>(<span class="params">fixed_now, valid_minus_coupon</span>):</span><br><span class="line">    result = calc_final_amount(<span class="number">120</span>, [valid_minus_coupon], now=fixed_now)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">assert</span> result[<span class="string">&quot;final_amount&quot;</span>] == <span class="number">100</span></span><br><span class="line">    <span class="keyword">assert</span> result[<span class="string">&quot;applied_coupon&quot;</span>] == <span class="string">&quot;满100减20&quot;</span></span><br></pre></td></tr></table></figure>
+
+<p>fixture 的实际价值这时候就很明确了：</p>
+<ul>
+<li>测试更短</li>
+<li>固定数据集中定义</li>
+<li>场景重点更突出</li>
+</ul>
+<h2 id="五、fixture-设计最容易犯的错是什么"><a href="#五、fixture-设计最容易犯的错是什么" class="headerlink" title="五、fixture 设计最容易犯的错是什么"></a>五、fixture 设计最容易犯的错是什么</h2><h3 id="1-把所有东西都抽成-fixture"><a href="#1-把所有东西都抽成-fixture" class="headerlink" title="1. 把所有东西都抽成 fixture"></a>1. 把所有东西都抽成 fixture</h3><p>错误方向通常像这样：</p>
+<ul>
+<li><code>origin_amount</code> 也是 fixture</li>
+<li><code>coupon_list</code> 也是 fixture</li>
+<li><code>expected_result</code> 也是 fixture</li>
+</ul>
+<p>最后测试长成：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">test_xxx</span>(<span class="params">order_amount, coupon_list, expected_result, fixed_now</span>):</span><br><span class="line">    result = calc_final_amount(order_amount, coupon_list, now=fixed_now)</span><br><span class="line">    <span class="keyword">assert</span> result == expected_result</span><br></pre></td></tr></table></figure>
+
+<p>表面上很“整洁”，实际上阅读成本反而更高，因为：</p>
+<ul>
+<li>看测试本身根本不知道当前输入是什么</li>
+<li>要来回跳 fixture 才能读懂场景</li>
+</ul>
+<h3 id="2-一个更实际的判断标准"><a href="#2-一个更实际的判断标准" class="headerlink" title="2. 一个更实际的判断标准"></a>2. 一个更实际的判断标准</h3><p>更适合抽成 fixture 的通常是：</p>
+<ul>
+<li>多条测试共享的固定上下文</li>
+<li>语义明确的基础数据</li>
+<li>准备过程本身比较啰嗦</li>
+</ul>
+<p>不一定非要抽成 fixture 的通常是：</p>
+<ul>
+<li>一眼能看懂的简单数字</li>
+<li>只在当前用例里出现一次的场景输入</li>
+<li>测试重点本身</li>
+</ul>
+<p>所以 <code>fixed_now</code> 值得抽，<code>origin_amount=120</code> 通常不值得抽。</p>
+<h2 id="六、fixture-怎么兼顾复用和可读性"><a href="#六、fixture-怎么兼顾复用和可读性" class="headerlink" title="六、fixture 怎么兼顾复用和可读性"></a>六、fixture 怎么兼顾复用和可读性</h2><h3 id="1-用“基础-fixture-测试内局部修改”比“万能-fixture”更稳"><a href="#1-用“基础-fixture-测试内局部修改”比“万能-fixture”更稳" class="headerlink" title="1. 用“基础 fixture + 测试内局部修改”比“万能 fixture”更稳"></a>1. 用“基础 fixture + 测试内局部修改”比“万能 fixture”更稳</h3><p>例如：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">test_calc_final_amount_with_expired_coupon</span>(<span class="params">fixed_now, valid_minus_coupon</span>):</span><br><span class="line">    expired_coupon = <span class="built_in">dict</span>(valid_minus_coupon)</span><br><span class="line">    expired_coupon[<span class="string">&quot;expired_at&quot;</span>] = datetime(<span class="number">2018</span>, <span class="number">6</span>, <span class="number">1</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>)</span><br><span class="line"></span><br><span class="line">    result = calc_final_amount(<span class="number">120</span>, [expired_coupon], now=fixed_now)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">assert</span> result[<span class="string">&quot;final_amount&quot;</span>] == <span class="number">120</span></span><br><span class="line">    <span class="keyword">assert</span> result[<span class="string">&quot;applied_coupon&quot;</span>] <span class="keyword">is</span> <span class="literal">None</span></span><br></pre></td></tr></table></figure>
+
+<p>这里的做法很实用：</p>
+<ul>
+<li>fixture 提供基础数据</li>
+<li>当前测试自己把场景变化说清楚</li>
+</ul>
+<p>读起来会比“再额外套一层 expired_coupon fixture”直观很多。</p>
+<h3 id="2-一个实际错误：直接修改-fixture-返回对象"><a href="#2-一个实际错误：直接修改-fixture-返回对象" class="headerlink" title="2. 一个实际错误：直接修改 fixture 返回对象"></a>2. 一个实际错误：直接修改 fixture 返回对象</h3><p>错误写法：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">test_expired_coupon</span>(<span class="params">fixed_now, valid_minus_coupon</span>):</span><br><span class="line">    valid_minus_coupon[<span class="string">&quot;expired_at&quot;</span>] = datetime(<span class="number">2018</span>, <span class="number">6</span>, <span class="number">1</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>)</span><br><span class="line">    result = calc_final_amount(<span class="number">120</span>, [valid_minus_coupon], now=fixed_now)</span><br></pre></td></tr></table></figure>
+
+<p>如果后面别的测试还依赖 <code>valid_minus_coupon</code>，就可能被污染。</p>
+<p>更稳的做法：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">expired_coupon = <span class="built_in">dict</span>(valid_minus_coupon)</span><br><span class="line">expired_coupon[<span class="string">&quot;expired_at&quot;</span>] = datetime(<span class="number">2018</span>, <span class="number">6</span>, <span class="number">1</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>)</span><br></pre></td></tr></table></figure>
+
+<h3 id="3-一个更隐蔽的错误：嵌套结构浅拷贝不够"><a href="#3-一个更隐蔽的错误：嵌套结构浅拷贝不够" class="headerlink" title="3. 一个更隐蔽的错误：嵌套结构浅拷贝不够"></a>3. 一个更隐蔽的错误：嵌套结构浅拷贝不够</h3><p>如果 coupon 里还有嵌套列表或字典，单纯 <code>dict()</code> 也未必够用。</p>
+<p>这时要么：</p>
+<ul>
+<li>手动重新构造当前测试需要的数据</li>
+<li>要么用 <code>copy.deepcopy()</code></li>
+</ul>
+<p>别为了省一行代码，把后面几条测试都变成不稳定状态。</p>
+<h2 id="七、什么时候该用-fixture-factory"><a href="#七、什么时候该用-fixture-factory" class="headerlink" title="七、什么时候该用 fixture factory"></a>七、什么时候该用 fixture factory</h2><p>有时候基础 fixture 还是不够，因为同一类数据只是部分字段不同。</p>
+<p>这时比起写很多固定 fixture，更顺手的做法是让 fixture 返回一个“工厂函数”。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@pytest.fixture</span></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">coupon_factory</span>():</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">_build</span>(<span class="params">**overrides</span>):</span><br><span class="line">        coupon = &#123;</span><br><span class="line">            <span class="string">&quot;name&quot;</span>: <span class="string">&quot;满100减20&quot;</span>,</span><br><span class="line">            <span class="string">&quot;type&quot;</span>: <span class="string">&quot;minus&quot;</span>,</span><br><span class="line">            <span class="string">&quot;threshold&quot;</span>: <span class="number">100</span>,</span><br><span class="line">            <span class="string">&quot;value&quot;</span>: <span class="number">20</span>,</span><br><span class="line">            <span class="string">&quot;expired_at&quot;</span>: datetime(<span class="number">2018</span>, <span class="number">8</span>, <span class="number">1</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>),</span><br><span class="line">        &#125;</span><br><span class="line">        coupon.update(overrides)</span><br><span class="line">        <span class="keyword">return</span> coupon</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> _build</span><br></pre></td></tr></table></figure>
+
+<p>调用：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">test_calc_final_amount_with_factory</span>(<span class="params">fixed_now, coupon_factory</span>):</span><br><span class="line">    coupon = coupon_factory(value=<span class="number">30</span>, name=<span class="string">&quot;满100减30&quot;</span>)</span><br><span class="line">    result = calc_final_amount(<span class="number">120</span>, [coupon], now=fixed_now)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">assert</span> result[<span class="string">&quot;final_amount&quot;</span>] == <span class="number">90</span></span><br><span class="line">    <span class="keyword">assert</span> result[<span class="string">&quot;applied_coupon&quot;</span>] == <span class="string">&quot;满100减30&quot;</span></span><br></pre></td></tr></table></figure>
+
+<p>这种写法在“数据结构相同、场景参数不同”时非常顺手。</p>
+<h2 id="八、把测试真正整理成可维护版本"><a href="#八、把测试真正整理成可维护版本" class="headerlink" title="八、把测试真正整理成可维护版本"></a>八、把测试真正整理成可维护版本</h2><p>现在把前面的 fixture 和测试风格串起来。</p>
+<p><code>test_pricing.py</code>：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> datetime <span class="keyword">import</span> datetime</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> pytest</span><br><span class="line"></span><br><span class="line"><span class="keyword">from</span> pricing <span class="keyword">import</span> calc_final_amount</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@pytest.fixture</span></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">fixed_now</span>():</span><br><span class="line">    <span class="keyword">return</span> datetime(<span class="number">2018</span>, <span class="number">7</span>, <span class="number">1</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@pytest.fixture</span></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">coupon_factory</span>():</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">_build</span>(<span class="params">**overrides</span>):</span><br><span class="line">        coupon = &#123;</span><br><span class="line">            <span class="string">&quot;name&quot;</span>: <span class="string">&quot;满100减20&quot;</span>,</span><br><span class="line">            <span class="string">&quot;type&quot;</span>: <span class="string">&quot;minus&quot;</span>,</span><br><span class="line">            <span class="string">&quot;threshold&quot;</span>: <span class="number">100</span>,</span><br><span class="line">            <span class="string">&quot;value&quot;</span>: <span class="number">20</span>,</span><br><span class="line">            <span class="string">&quot;expired_at&quot;</span>: datetime(<span class="number">2018</span>, <span class="number">8</span>, <span class="number">1</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>),</span><br><span class="line">        &#125;</span><br><span class="line">        coupon.update(overrides)</span><br><span class="line">        <span class="keyword">return</span> coupon</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> _build</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">test_calc_final_amount_without_coupon</span>(<span class="params">fixed_now</span>):</span><br><span class="line">    result = calc_final_amount(<span class="number">120</span>, [], now=fixed_now)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">assert</span> result[<span class="string">&quot;origin_amount&quot;</span>] == <span class="number">120</span></span><br><span class="line">    <span class="keyword">assert</span> result[<span class="string">&quot;final_amount&quot;</span>] == <span class="number">120</span></span><br><span class="line">    <span class="keyword">assert</span> result[<span class="string">&quot;applied_coupon&quot;</span>] <span class="keyword">is</span> <span class="literal">None</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">test_calc_final_amount_with_valid_coupon</span>(<span class="params">fixed_now, coupon_factory</span>):</span><br><span class="line">    coupon = coupon_factory()</span><br><span class="line">    result = calc_final_amount(<span class="number">120</span>, [coupon], now=fixed_now)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">assert</span> result[<span class="string">&quot;final_amount&quot;</span>] == <span class="number">100</span></span><br><span class="line">    <span class="keyword">assert</span> result[<span class="string">&quot;applied_coupon&quot;</span>] == <span class="string">&quot;满100减20&quot;</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">test_calc_final_amount_with_expired_coupon</span>(<span class="params">fixed_now, coupon_factory</span>):</span><br><span class="line">    coupon = coupon_factory(expired_at=datetime(<span class="number">2018</span>, <span class="number">6</span>, <span class="number">1</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>))</span><br><span class="line">    result = calc_final_amount(<span class="number">120</span>, [coupon], now=fixed_now)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">assert</span> result[<span class="string">&quot;final_amount&quot;</span>] == <span class="number">120</span></span><br><span class="line">    <span class="keyword">assert</span> result[<span class="string">&quot;applied_coupon&quot;</span>] <span class="keyword">is</span> <span class="literal">None</span></span><br></pre></td></tr></table></figure>
+
+<p>执行：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">pytest -q</span><br></pre></td></tr></table></figure>
+
+<p>可能输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">...                                                                  [100%]</span><br><span class="line">3 passed in 0.03s</span><br></pre></td></tr></table></figure>
+
+<h2 id="九、什么时候-fixture-已经过度了"><a href="#九、什么时候-fixture-已经过度了" class="headerlink" title="九、什么时候 fixture 已经过度了"></a>九、什么时候 fixture 已经过度了</h2><p>如果一个测试文件出现这种情况，就要警惕：</p>
+<ul>
+<li>fixture 超过 8 到 10 个</li>
+<li>一个测试函数一口气注入 5 个以上 fixture</li>
+<li>阅读测试时必须跳来跳去才能看懂输入</li>
+</ul>
+<p>这通常说明问题不一定在 pytest，而是：</p>
+<ul>
+<li>数据工厂拆得过细</li>
+<li>场景表达被抽象过头</li>
+</ul>
+<p>一个很实用的判断标准是：</p>
+<p><strong>如果不打开 fixture 定义，就看不懂这条测试到底在测什么，那通常已经有点过度封装了。</strong></p>
+<h2 id="十、一个实际排错场景"><a href="#十、一个实际排错场景" class="headerlink" title="十、一个实际排错场景"></a>十、一个实际排错场景</h2><p>这类测试里一个非常常见的实际问题是：单独跑一条测试能过，整文件一起跑时某几条开始互相影响。</p>
+<p>这时排查顺序通常很直接：</p>
+<ol>
+<li>先看 fixture 返回的是不是可变对象</li>
+<li>再看测试里有没有直接修改 fixture 返回值</li>
+<li>再看是不是浅拷贝不够</li>
+</ol>
+<p>如果最后发现测试里写了：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">valid_coupon[<span class="string">&quot;value&quot;</span>] = <span class="number">999</span></span><br></pre></td></tr></table></figure>
+
+<p>而 <code>valid_coupon</code> 又被多条测试共用，那根因通常就不是业务逻辑错了，而是 fixture 数据被污染了。</p>
+<h2 id="十一、一个实际练习"><a href="#十一、一个实际练习" class="headerlink" title="十一、一个实际练习"></a>十一、一个实际练习</h2><p>可以直接把这一篇变成一个完整练习。</p>
+<p>练习目标：给一个“订单运费计算函数”补一套 pytest 单元测试。</p>
+<p>要求：</p>
+<ol>
+<li>至少覆盖 3 个正常场景和 2 个边界场景</li>
+<li>抽一个固定时间或固定配置的 fixture</li>
+<li>抽一个数据工厂 fixture</li>
+<li>不要把所有简单参数都抽成 fixture</li>
+<li>至少补一个可变对象污染的错误场景</li>
+</ol>
+<p>如果这个练习能独立做完，说明 fixture 设计怎么兼顾可读性和复用性，这一层已经开始真正掌握。</p>
+<h2 id="十二、这篇文章学完以后，下一步应该补什么"><a href="#十二、这篇文章学完以后，下一步应该补什么" class="headerlink" title="十二、这篇文章学完以后，下一步应该补什么"></a>十二、这篇文章学完以后，下一步应该补什么</h2><p>如果这一篇已经能跟着做完，下一步最适合继续补的是：</p>
+<ol>
+<li>接口测试、数据校验和测试数据准备怎么组织更顺手</li>
+<li>mock、monkeypatch、fixture 和参数化测试分别适合解决什么问题</li>
+<li>测试目录和测试数据文件怎样继续拆</li>
+</ol>
+<p>因为到这一步，已经开始从“会写测试”走向“测试代码本身也要可维护”的阶段了。</p>
+<h2 id="十三、结语"><a href="#十三、结语" class="headerlink" title="十三、结语"></a>十三、结语</h2><p>pytest 的 fixture 最有价值的地方，不是让测试看起来更高级，而是让重复数据准备开始有秩序。</p>
+<p>真正顺手的 fixture 设计，通常只解决两件事：</p>
+<ul>
+<li>把稳定重复的上下文抽出来</li>
+<li>让每条测试的场景重点依然清楚</li>
+</ul>
+<p>只要这两个目标没丢，单元测试就会越来越稳；一旦过度抽象，测试就会开始变成另一种难读代码。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80/" rel="tag"># 编程语言</a>
+              <a href="/tags/%E5%8D%95%E5%85%83%E6%B5%8B%E8%AF%95/" rel="tag"># 单元测试</a>
+              <a href="/tags/Python/" rel="tag"># Python</a>
+              <a href="/tags/Python%E4%B8%93%E9%A2%98/" rel="tag"># Python专题</a>
+              <a href="/tags/pytest/" rel="tag"># pytest</a>
+              <a href="/tags/fixture/" rel="tag"># fixture</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2018/06/27/Go-11-Go%E6%A0%87%E5%87%86%E5%BA%93%E9%87%8C%E6%9C%80%E5%80%BC%E5%BE%97%E5%85%88%E6%8E%8C%E6%8F%A1%E7%9A%84%E8%83%BD%E5%8A%9Biooscontextnet-httpjson/" rel="prev" title="Go：标准库里最值得先掌握的能力，为什么是 io、os、context、net&#x2F;http、json">
+                  <i class="fa fa-angle-left"></i> Go：标准库里最值得先掌握的能力，为什么是 io、os、context、net/http、json
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2018/07/04/Go-12-Go%E9%A1%B9%E7%9B%AE%E7%9B%AE%E5%BD%95%E6%80%8E%E4%B9%88%E6%8B%86%E6%89%8D%E8%83%BD%E4%BB%8E%E8%84%9A%E6%9C%AC%E8%B5%B0%E5%90%91%E5%8F%AF%E7%BB%B4%E6%8A%A4%E5%B7%A5%E7%A8%8B/" rel="next" title="Go：项目目录怎么拆，才能从脚本走向可维护工程">
+                  Go：项目目录怎么拆，才能从脚本走向可维护工程 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

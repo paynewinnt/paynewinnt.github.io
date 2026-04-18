@@ -1,0 +1,1018 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="一提到 Agent Workflow，最容易先想到的是多步骤规划、自动拆解任务、串联工具调用和减少人工编排。 这些能力当然重要，但只要它开始执行真实测试任务，问题就会立刻从“会不会规划”变成“出了问题怎么收”。 原因很简单。多步骤测试任务通常同时具备下面几种特征：  步骤之间存在顺序依赖 执行动作会改变环境或业务状态 一次失败可能污染后续上下文 工具调用、模型决策和环境异常会交织出现 补跑和恢复如">
+<meta property="og:type" content="article">
+<meta property="og:title" content="AI测试-05-Agent Workflow执行多步骤测试任务时怎么做状态管理和失败恢复">
+<meta property="og:url" content="https://paynewinnt.github.io/2026/02/06/AI%E6%B5%8B%E8%AF%95-05-Agent-Workflow%E6%89%A7%E8%A1%8C%E5%A4%9A%E6%AD%A5%E9%AA%A4%E6%B5%8B%E8%AF%95%E4%BB%BB%E5%8A%A1%E6%97%B6%E6%80%8E%E4%B9%88%E5%81%9A%E7%8A%B6%E6%80%81%E7%AE%A1%E7%90%86%E5%92%8C%E5%A4%B1%E8%B4%A5%E6%81%A2%E5%A4%8D/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="一提到 Agent Workflow，最容易先想到的是多步骤规划、自动拆解任务、串联工具调用和减少人工编排。 这些能力当然重要，但只要它开始执行真实测试任务，问题就会立刻从“会不会规划”变成“出了问题怎么收”。 原因很简单。多步骤测试任务通常同时具备下面几种特征：  步骤之间存在顺序依赖 执行动作会改变环境或业务状态 一次失败可能污染后续上下文 工具调用、模型决策和环境异常会交织出现 补跑和恢复如">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-02-06T12:30:00.000Z">
+<meta property="article:modified_time" content="2026-02-06T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="AI测试">
+<meta property="article:tag" content="测试平台">
+<meta property="article:tag" content="Agent Workflow">
+<meta property="article:tag" content="状态管理">
+<meta property="article:tag" content="工程化">
+<meta property="article:tag" content="失败恢复">
+<meta property="article:tag" content="执行编排">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2026/02/06/AI%E6%B5%8B%E8%AF%95-05-Agent-Workflow%E6%89%A7%E8%A1%8C%E5%A4%9A%E6%AD%A5%E9%AA%A4%E6%B5%8B%E8%AF%95%E4%BB%BB%E5%8A%A1%E6%97%B6%E6%80%8E%E4%B9%88%E5%81%9A%E7%8A%B6%E6%80%81%E7%AE%A1%E7%90%86%E5%92%8C%E5%A4%B1%E8%B4%A5%E6%81%A2%E5%A4%8D/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2026/02/06/AI%E6%B5%8B%E8%AF%95-05-Agent-Workflow%E6%89%A7%E8%A1%8C%E5%A4%9A%E6%AD%A5%E9%AA%A4%E6%B5%8B%E8%AF%95%E4%BB%BB%E5%8A%A1%E6%97%B6%E6%80%8E%E4%B9%88%E5%81%9A%E7%8A%B6%E6%80%81%E7%AE%A1%E7%90%86%E5%92%8C%E5%A4%B1%E8%B4%A5%E6%81%A2%E5%A4%8D/","path":"2026/02/06/AI测试-05-Agent-Workflow执行多步骤测试任务时怎么做状态管理和失败恢复/","title":"AI测试-05-Agent Workflow执行多步骤测试任务时怎么做状态管理和失败恢复"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>AI测试-05-Agent Workflow执行多步骤测试任务时怎么做状态管理和失败恢复 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E5%85%88%E6%8A%8A%E8%BE%B9%E7%95%8C%E8%AF%B4%E6%B8%85%EF%BC%9A%E5%A4%9A%E6%AD%A5%E9%AA%A4%E6%B5%8B%E8%AF%95%E4%BB%BB%E5%8A%A1%E9%87%8C%E7%9A%84%E7%8A%B6%E6%80%81%EF%BC%8C%E4%B8%8D%E6%98%AF%E2%80%9C%E6%88%90%E5%8A%9F%E2%80%9D%E6%88%96%E2%80%9C%E5%A4%B1%E8%B4%A5%E2%80%9D%E4%B8%A4%E4%B8%AA%E5%AD%97"><span class="nav-number">1.</span> <span class="nav-text">一、先把边界说清：多步骤测试任务里的状态，不是“成功”或“失败”两个字</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E7%8A%B6%E6%80%81%E5%88%86%E5%B1%82%EF%BC%9A%E8%87%B3%E5%B0%91%E6%8B%86%E6%88%90-5-%E5%B1%82%EF%BC%8C%E6%89%8D%E8%83%BD%E6%94%AF%E6%92%91%E6%81%A2%E5%A4%8D"><span class="nav-number">2.</span> <span class="nav-text">二、状态分层：至少拆成 5 层，才能支撑恢复</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%BB%BB%E5%8A%A1%E5%B1%82%E7%8A%B6%E6%80%81"><span class="nav-number">2.1.</span> <span class="nav-text">1. 任务层状态</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%AD%A5%E9%AA%A4%E5%B1%82%E7%8A%B6%E6%80%81"><span class="nav-number">2.2.</span> <span class="nav-text">2. 步骤层状态</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%BC%9A%E8%AF%9D%E4%B8%8E%E4%B8%8A%E4%B8%8B%E6%96%87%E5%B1%82%E7%8A%B6%E6%80%81"><span class="nav-number">2.3.</span> <span class="nav-text">3. 会话与上下文层状态</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E7%8E%AF%E5%A2%83%E4%B8%8E%E8%B5%84%E6%BA%90%E5%B1%82%E7%8A%B6%E6%80%81"><span class="nav-number">2.4.</span> <span class="nav-text">4. 环境与资源层状态</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E8%AF%81%E6%8D%AE%E5%B1%82%E7%8A%B6%E6%80%81"><span class="nav-number">2.5.</span> <span class="nav-text">5. 证据层状态</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E5%A4%B1%E8%B4%A5%E5%88%86%E7%B1%BB%EF%BC%9A%E5%85%88%E5%88%A4%E6%96%AD%E5%A4%B1%E8%B4%A5%E7%B1%BB%E5%9E%8B%EF%BC%8C%E5%86%8D%E5%86%B3%E5%AE%9A%E6%81%A2%E5%A4%8D%E6%96%B9%E5%BC%8F"><span class="nav-number">3.</span> <span class="nav-text">三、失败分类：先判断失败类型，再决定恢复方式</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%8F%82%E6%95%B0%E4%B8%8E%E8%A7%84%E5%88%92%E7%B1%BB%E5%A4%B1%E8%B4%A5"><span class="nav-number">3.1.</span> <span class="nav-text">1. 参数与规划类失败</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%B7%A5%E5%85%B7%E6%89%A7%E8%A1%8C%E7%B1%BB%E5%A4%B1%E8%B4%A5"><span class="nav-number">3.2.</span> <span class="nav-text">2. 工具执行类失败</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%8E%AF%E5%A2%83%E4%B8%8E%E4%BE%9D%E8%B5%96%E7%B1%BB%E5%A4%B1%E8%B4%A5"><span class="nav-number">3.3.</span> <span class="nav-text">3. 环境与依赖类失败</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E7%8A%B6%E6%80%81%E6%BC%82%E7%A7%BB%E7%B1%BB%E5%A4%B1%E8%B4%A5"><span class="nav-number">3.4.</span> <span class="nav-text">4. 状态漂移类失败</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E7%BB%93%E6%9E%9C%E4%B8%8D%E7%A1%AE%E5%AE%9A%E7%B1%BB%E5%A4%B1%E8%B4%A5"><span class="nav-number">3.5.</span> <span class="nav-text">5. 结果不确定类失败</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E6%81%A2%E5%A4%8D%E7%AD%96%E7%95%A5%EF%BC%9A%E4%B8%8D%E6%98%AF%E6%89%80%E6%9C%89%E5%A4%B1%E8%B4%A5%E9%83%BD%E8%A6%81%E2%80%9C%E4%BB%8E%E5%A4%B4%E5%86%8D%E6%9D%A5%E2%80%9D"><span class="nav-number">4.</span> <span class="nav-text">四、恢复策略：不是所有失败都要“从头再来”</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%AD%A5%E9%AA%A4%E5%86%85%E9%87%8D%E8%AF%95"><span class="nav-number">4.1.</span> <span class="nav-text">1. 步骤内重试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%AD%A5%E9%AA%A4%E7%BA%A7%E8%A1%A5%E8%B7%91"><span class="nav-number">4.2.</span> <span class="nav-text">2. 步骤级补跑</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%AD%90%E6%B5%81%E7%A8%8B%E7%BA%A7%E6%81%A2%E5%A4%8D"><span class="nav-number">4.3.</span> <span class="nav-text">3. 子流程级恢复</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%BA%BA%E5%B7%A5%E6%8E%A5%E7%AE%A1%E4%B8%8E%E5%AE%89%E5%85%A8%E7%BB%88%E6%AD%A2"><span class="nav-number">4.4.</span> <span class="nav-text">4. 人工接管与安全终止</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E6%9C%80%E5%B0%8F%E6%89%A7%E8%A1%8C%E9%AA%A8%E6%9E%B6%EF%BC%9A%E5%85%88%E6%8A%8A%E6%81%A2%E5%A4%8D%E7%82%B9%E8%AE%BE%E8%AE%A1%E8%BF%9B%E6%B5%81%E7%A8%8B%E9%87%8C%EF%BC%8C%E8%80%8C%E4%B8%8D%E6%98%AF%E5%A4%B1%E8%B4%A5%E5%90%8E%E5%86%8D%E8%A1%A5"><span class="nav-number">5.</span> <span class="nav-text">五、最小执行骨架：先把恢复点设计进流程里，而不是失败后再补</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%BB%BB%E5%8A%A1%E5%88%9D%E5%A7%8B%E5%8C%96"><span class="nav-number">5.1.</span> <span class="nav-text">1. 任务初始化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%A7%84%E5%88%92%E4%B8%8E%E6%AD%A5%E9%AA%A4%E5%86%BB%E7%BB%93"><span class="nav-number">5.2.</span> <span class="nav-text">2. 规划与步骤冻结</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%89%A7%E8%A1%8C%E5%89%8D%E5%BF%AB%E7%85%A7"><span class="nav-number">5.3.</span> <span class="nav-text">3. 执行前快照</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%89%A7%E8%A1%8C%E5%8A%A8%E4%BD%9C%E4%B8%8E%E5%8D%B3%E6%97%B6%E7%A1%AE%E8%AE%A4"><span class="nav-number">5.4.</span> <span class="nav-text">4. 执行动作与即时确认</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%81%A2%E5%A4%8D%E5%86%B3%E7%AD%96%E8%8A%82%E7%82%B9"><span class="nav-number">5.5.</span> <span class="nav-text">5. 恢复决策节点</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E6%94%B6%E5%8F%A3%E4%B8%8E%E6%8A%A5%E5%91%8A"><span class="nav-number">5.6.</span> <span class="nav-text">6. 收口与报告</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E4%B8%80%E4%B8%AA%E6%9B%B4%E5%AE%9E%E7%94%A8%E7%9A%84%E7%8A%B6%E6%80%81%E4%B8%8E%E6%81%A2%E5%A4%8D%E8%AE%B0%E5%BD%95%E8%A1%A8"><span class="nav-number">6.</span> <span class="nav-text">六、一个更实用的状态与恢复记录表</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E5%B8%B8%E8%A7%81%E5%9D%91%EF%BC%9A%E7%8A%B6%E6%80%81%E5%92%8C%E6%81%A2%E5%A4%8D%E6%9C%80%E5%AE%B9%E6%98%93%E5%86%99%E5%9D%8F%E7%9A%84-6-%E4%B8%AA%E5%9C%B0%E6%96%B9"><span class="nav-number">7.</span> <span class="nav-text">七、常见坑：状态和恢复最容易写坏的 6 个地方</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%8F%AA%E8%AE%B0%E5%BD%95%E4%BB%BB%E5%8A%A1%E7%8A%B6%E6%80%81%EF%BC%8C%E4%B8%8D%E8%AE%B0%E5%BD%95%E6%AD%A5%E9%AA%A4%E8%AF%AD%E4%B9%89%E7%8A%B6%E6%80%81"><span class="nav-number">7.1.</span> <span class="nav-text">1. 只记录任务状态，不记录步骤语义状态</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%8A%8A%E2%80%9C%E5%B7%A5%E5%85%B7%E8%BF%94%E5%9B%9E%E6%88%90%E5%8A%9F%E2%80%9D%E5%BD%93%E6%88%90%E2%80%9C%E4%B8%9A%E5%8A%A1%E7%BB%93%E6%9E%9C%E5%B7%B2%E7%A1%AE%E8%AE%A4%E2%80%9D"><span class="nav-number">7.2.</span> <span class="nav-text">2. 把“工具返回成功”当成“业务结果已确认”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%8A%8A%E6%89%80%E6%9C%89%E5%A4%B1%E8%B4%A5%E9%83%BD%E4%BA%A4%E7%BB%99%E7%BB%9F%E4%B8%80%E9%87%8D%E8%AF%95%E5%99%A8"><span class="nav-number">7.3.</span> <span class="nav-text">3. 把所有失败都交给统一重试器</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%81%A2%E5%A4%8D%E6%97%B6%E8%A6%86%E7%9B%96%E9%A6%96%E9%94%99%E8%AF%81%E6%8D%AE"><span class="nav-number">7.4.</span> <span class="nav-text">4. 恢复时覆盖首错证据</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E4%BA%BA%E5%B7%A5%E6%8E%A5%E7%AE%A1%E6%97%B6%E6%B2%A1%E6%9C%89%E6%98%8E%E7%A1%AE%E2%80%9C%E5%B7%B2%E6%89%A7%E8%A1%8C%E8%BE%B9%E7%95%8C%E2%80%9D"><span class="nav-number">7.5.</span> <span class="nav-text">5. 人工接管时没有明确“已执行边界”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E7%8E%AF%E5%A2%83%E5%BC%82%E5%B8%B8%E5%92%8C-Agent-%E5%A4%B1%E8%B4%A5%E6%B2%A1%E6%9C%89%E5%88%86%E6%B5%81"><span class="nav-number">7.6.</span> <span class="nav-text">6. 环境异常和 Agent 失败没有分流</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E7%9C%9F%E5%AE%9E%E6%A1%88%E4%BE%8B%EF%BC%9A%E4%B8%80%E4%B8%AA%E4%B8%8B%E5%8D%95%E5%9B%9E%E5%BD%92%E4%BB%BB%E5%8A%A1%E4%B8%BA%E4%BB%80%E4%B9%88%E8%B6%8A%E6%81%A2%E5%A4%8D%E8%B6%8A%E4%B9%B1"><span class="nav-number">8.</span> <span class="nav-text">八、真实案例：一个下单回归任务为什么越恢复越乱</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%9C%BA%E6%99%AF"><span class="nav-number">8.1.</span> <span class="nav-text">1. 场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%89%A7%E8%A1%8C"><span class="nav-number">8.2.</span> <span class="nav-text">2. 执行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%8E%B0%E8%B1%A1"><span class="nav-number">8.3.</span> <span class="nav-text">3. 现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%8E%92%E6%9F%A5"><span class="nav-number">8.4.</span> <span class="nav-text">4. 排查</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E4%BF%AE%E5%A4%8D"><span class="nav-number">8.5.</span> <span class="nav-text">5. 修复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E7%BB%93%E8%AF%AD%EF%BC%9AAgent-Workflow-%E8%83%BD%E4%B8%8D%E8%83%BD%E7%94%A8%EF%BC%8C%E6%9C%80%E7%BB%88%E7%9C%8B%E6%81%A2%E5%A4%8D%E6%97%B6%E6%98%AF%E4%B8%8D%E6%98%AF%E8%BF%98%E7%9F%A5%E9%81%93%E8%87%AA%E5%B7%B1%E5%9C%A8%E5%B9%B2%E4%BB%80%E4%B9%88"><span class="nav-number">9.</span> <span class="nav-text">九、结语：Agent Workflow 能不能用，最终看恢复时是不是还知道自己在干什么</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2026/02/06/AI%E6%B5%8B%E8%AF%95-05-Agent-Workflow%E6%89%A7%E8%A1%8C%E5%A4%9A%E6%AD%A5%E9%AA%A4%E6%B5%8B%E8%AF%95%E4%BB%BB%E5%8A%A1%E6%97%B6%E6%80%8E%E4%B9%88%E5%81%9A%E7%8A%B6%E6%80%81%E7%AE%A1%E7%90%86%E5%92%8C%E5%A4%B1%E8%B4%A5%E6%81%A2%E5%A4%8D/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="AI测试-05-Agent Workflow执行多步骤测试任务时怎么做状态管理和失败恢复 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          AI测试-05-Agent Workflow执行多步骤测试任务时怎么做状态管理和失败恢复
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2026-02-06 20:30:00" itemprop="dateCreated datePublished" datetime="2026-02-06T20:30:00+08:00">2026-02-06</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/AI%E6%B5%8B%E8%AF%95/" itemprop="url" rel="index"><span itemprop="name">AI测试</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>5.8k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>21 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>一提到 <code>Agent Workflow</code>，最容易先想到的是多步骤规划、自动拆解任务、串联工具调用和减少人工编排。</p>
+<p>这些能力当然重要，但只要它开始执行真实测试任务，问题就会立刻从“会不会规划”变成“出了问题怎么收”。</p>
+<p>原因很简单。多步骤测试任务通常同时具备下面几种特征：</p>
+<ul>
+<li>步骤之间存在顺序依赖</li>
+<li>执行动作会改变环境或业务状态</li>
+<li>一次失败可能污染后续上下文</li>
+<li>工具调用、模型决策和环境异常会交织出现</li>
+<li>补跑和恢复如果没有边界，很容易把现场改得更乱</li>
+</ul>
+<p>这意味着 <code>Agent Workflow</code> 真正难的部分，并不是把任务拆成 5 步还是 10 步，而是要先回答下面这些更工程化的问题：</p>
+<ul>
+<li>当前任务到底执行到了哪一步</li>
+<li>哪一步已经真正生效，哪一步只是模型规划过</li>
+<li>当前失败属于参数错误、工具错误、环境错误，还是状态漂移</li>
+<li>这次失败能不能重试，应该从哪一层恢复</li>
+<li>恢复动作会不会覆盖现场、重复写数据或者误伤后续步骤</li>
+</ul>
+<p>如果这些问题没有先收稳，<code>Agent Workflow</code> 很快就会变成一种看起来很自动、实际上很难治理的执行方式：</p>
+<ul>
+<li>任务失败后只能整条重跑</li>
+<li>重跑后问题更难复现</li>
+<li>人工接管时说不清哪一步已经真正执行过</li>
+<li>报告里只有“失败”，没有失败前的状态变化</li>
+<li>环境问题、模型问题、工具问题被混在一起</li>
+</ul>
+<p>所以这篇文章只聚焦一个更实际的问题：</p>
+<p><strong>Agent Workflow 在执行多步骤测试任务时，状态应该怎么分层记录，失败应该怎么分类，恢复应该怎么设计，才能让整条执行链路真正具备可观察、可补跑、可回放和可收敛的能力。</strong></p>
+<h2 id="一、先把边界说清：多步骤测试任务里的状态，不是“成功”或“失败”两个字"><a href="#一、先把边界说清：多步骤测试任务里的状态，不是“成功”或“失败”两个字" class="headerlink" title="一、先把边界说清：多步骤测试任务里的状态，不是“成功”或“失败”两个字"></a>一、先把边界说清：多步骤测试任务里的状态，不是“成功”或“失败”两个字</h2><p>多步骤任务最常见的错误，是把状态理解成：</p>
+<ul>
+<li>成功</li>
+<li>失败</li>
+<li>运行中</li>
+</ul>
+<p>这类状态在看板上够用，在恢复上完全不够。</p>
+<p>因为多步骤测试任务里的“状态”至少有两个维度：</p>
+<ul>
+<li><strong>生命周期状态</strong>：任务和步骤此刻处于什么阶段</li>
+<li><strong>语义状态</strong>：这个阶段产生了什么真实影响</li>
+</ul>
+<p>例如“下单后校验支付状态”的任务里，某一步可能显示为执行失败，但这一步背后的真实语义可能已经分裂成几种情况：</p>
+<ul>
+<li>接口没发出去，业务状态没有变化</li>
+<li>接口发出去了，结果没拿到，但订单已经创建</li>
+<li>UI 点击成功了，但页面跳转没被记录</li>
+<li>数据已写入，后置校验失败</li>
+<li>工具调用超时，但服务端异步任务仍在继续</li>
+</ul>
+<p>如果平台只记录“步骤失败”，恢复动作就会非常危险，因为系统根本不知道：</p>
+<ul>
+<li>失败前是否已经造成写入</li>
+<li>当前会话还能不能继续</li>
+<li>后续步骤是不是已经失去前提</li>
+<li>环境是否已经进入脏状态</li>
+</ul>
+<p>所以在 <code>Agent Workflow</code> 里，状态管理的第一原则不是“状态枚举多一点”，而是：</p>
+<p><strong>把不同层级、不同语义的状态拆开，避免用一个简单结果覆盖整个执行现场。</strong></p>
+<h2 id="二、状态分层：至少拆成-5-层，才能支撑恢复"><a href="#二、状态分层：至少拆成-5-层，才能支撑恢复" class="headerlink" title="二、状态分层：至少拆成 5 层，才能支撑恢复"></a>二、状态分层：至少拆成 5 层，才能支撑恢复</h2><p>更适合多步骤测试任务的状态模型，通常至少要拆成下面 5 层。</p>
+<h3 id="1-任务层状态"><a href="#1-任务层状态" class="headerlink" title="1. 任务层状态"></a>1. 任务层状态</h3><p>任务层状态回答的是：<strong>这一次任务实例整体进行到了哪里。</strong></p>
+<p>这一层建议至少包含：</p>
+<ul>
+<li><code>PENDING</code>：待执行</li>
+<li><code>PLANNING</code>：规划中</li>
+<li><code>RUNNING</code>：执行中</li>
+<li><code>WAITING_RETRY</code>：等待系统补跑</li>
+<li><code>WAITING_MANUAL</code>：等待人工接管</li>
+<li><code>FAILED</code>：已失败</li>
+<li><code>COMPLETED</code>：已完成</li>
+<li><code>CANCELLED</code>：已取消</li>
+</ul>
+<p>任务层状态的价值不是展示进度，而是给外部系统一个清晰信号：</p>
+<ul>
+<li>调度层知道任务是否还能继续占资源</li>
+<li>报告层知道是否应该封板</li>
+<li>人工接管层知道现在是补跑还是直接终止</li>
+</ul>
+<h3 id="2-步骤层状态"><a href="#2-步骤层状态" class="headerlink" title="2. 步骤层状态"></a>2. 步骤层状态</h3><p>步骤层状态回答的是：<strong>每一个步骤是否真正被规划、执行、确认和收口。</strong></p>
+<p>这一层不能只用“成功&#x2F;失败”，更稳的做法是拆成：</p>
+<ul>
+<li><code>PLANNED</code>：已规划，尚未执行</li>
+<li><code>READY</code>：依赖满足，准备执行</li>
+<li><code>EXECUTING</code>：正在执行</li>
+<li><code>APPLIED</code>：动作已生效，但结果尚未完全确认</li>
+<li><code>VERIFIED</code>：动作结果已确认</li>
+<li><code>FAILED_RETRYABLE</code>：失败但可补跑</li>
+<li><code>FAILED_TERMINAL</code>：失败且应终止链路</li>
+<li><code>SKIPPED</code>：前置条件不满足，被跳过</li>
+<li><code>ROLLED_BACK</code>：已执行回滚</li>
+</ul>
+<p>这里最关键的是 <code>APPLIED</code> 和 <code>VERIFIED</code> 不能混。</p>
+<p>例如：</p>
+<ul>
+<li>页面按钮点下去了，不代表结果页已经正确出现</li>
+<li>调接口返回 <code>200</code>，不代表异步任务已经真正完成</li>
+<li>发起删除动作成功，不代表数据已经在读链路里消失</li>
+</ul>
+<p>这层拆开以后，恢复时才能知道是：</p>
+<ul>
+<li>补确认</li>
+<li>补观察</li>
+<li>重试动作</li>
+<li>还是直接终止</li>
+</ul>
+<h3 id="3-会话与上下文层状态"><a href="#3-会话与上下文层状态" class="headerlink" title="3. 会话与上下文层状态"></a>3. 会话与上下文层状态</h3><p>这一层回答的是：<strong>任务当前依赖的执行上下文是否仍然可信。</strong></p>
+<p>常见内容包括：</p>
+<ul>
+<li>当前登录态是否仍然有效</li>
+<li>当前页面或路由是否仍然正确</li>
+<li>当前测试账号是否已被占用</li>
+<li>当前浏览器、设备、会话 ID 是否发生变化</li>
+<li>当前中间变量是否仍然可用于后续步骤</li>
+</ul>
+<p>这层状态非常容易被忽略，但它决定了“能不能继续在原地恢复”。</p>
+<p>很多恢复失败，不是恢复动作设计错了，而是上下文已经变了：</p>
+<ul>
+<li>页面被强制跳转</li>
+<li>Token 已过期</li>
+<li>会话被别的流程踢掉</li>
+<li>临时数据被后台清理</li>
+<li>设备或 Pod 已经重建</li>
+</ul>
+<p>如果这层状态没有单独记录，平台就会在错误上下文里继续执行，造成更大污染。</p>
+<h3 id="4-环境与资源层状态"><a href="#4-环境与资源层状态" class="headerlink" title="4. 环境与资源层状态"></a>4. 环境与资源层状态</h3><p>这一层回答的是：<strong>任务外部依赖当前是否可用，以及资源是否还被正确占用。</strong></p>
+<p>常见对象包括：</p>
+<ul>
+<li>测试环境实例</li>
+<li>账号池和租约</li>
+<li>浏览器实例或移动设备</li>
+<li>数据库连接、消息队列、存储桶</li>
+<li>依赖服务和第三方接口</li>
+</ul>
+<p>这层状态如果不单独管理，就很容易把环境问题误判成模型或步骤问题。</p>
+<p>例如一次“步骤 4 无法确认订单状态”的失败，真正根因可能是：</p>
+<ul>
+<li>读库延迟</li>
+<li>测试账号被其它任务复用</li>
+<li>环境发布中途滚动</li>
+<li>队列积压导致异步结果未回写</li>
+</ul>
+<p>这时直接从步骤层重试，通常只会重复报错。</p>
+<h3 id="5-证据层状态"><a href="#5-证据层状态" class="headerlink" title="5. 证据层状态"></a>5. 证据层状态</h3><p>这一层回答的是：<strong>当前现场有没有足够证据支撑回放、归因和恢复决策。</strong></p>
+<p>建议至少记录：</p>
+<ul>
+<li>任务级时间线</li>
+<li>步骤输入与输出</li>
+<li>模型规划结果</li>
+<li>工具调用参数</li>
+<li>截图、录屏、DOM 或控件树快照</li>
+<li>关键日志片段</li>
+<li>环境版本、会话 ID、租约 ID</li>
+</ul>
+<p>证据层不是为了写报告更好看，而是为了避免恢复动作建立在猜测上。</p>
+<p>没有证据层，恢复就会变成：</p>
+<ul>
+<li>看起来像没执行过，那就重跑</li>
+<li>看起来像网络问题，那就重试</li>
+<li>看起来像页面问题，那就重开浏览器</li>
+</ul>
+<p>这种恢复方式在短链路里还能勉强工作，放到复杂任务里几乎一定会把现场越修越乱。</p>
+<h2 id="三、失败分类：先判断失败类型，再决定恢复方式"><a href="#三、失败分类：先判断失败类型，再决定恢复方式" class="headerlink" title="三、失败分类：先判断失败类型，再决定恢复方式"></a>三、失败分类：先判断失败类型，再决定恢复方式</h2><p><code>Agent Workflow</code> 最怕的一种实现，是所有失败都走同一条路：</p>
+<ul>
+<li>失败</li>
+<li>重试</li>
+<li>还失败</li>
+<li>整条任务终止</li>
+</ul>
+<p>这类实现通常不是“恢复策略简单”，而是“根本没有失败分类”。</p>
+<p>更适合多步骤测试任务的失败分类，至少应该拆成下面 5 类。</p>
+<h3 id="1-参数与规划类失败"><a href="#1-参数与规划类失败" class="headerlink" title="1. 参数与规划类失败"></a>1. 参数与规划类失败</h3><p>这一类通常发生在动作真正执行之前，例如：</p>
+<ul>
+<li>模型规划了不允许的动作</li>
+<li>参数缺字段</li>
+<li>参数类型错误</li>
+<li>资源 ID、环境 ID 不合法</li>
+<li>本步骤引用了上一步不存在的输出</li>
+</ul>
+<p>这类失败的特点是：</p>
+<ul>
+<li>尚未真正改变业务状态</li>
+<li>适合在工具执行前就被拦住</li>
+<li>恢复重点是重新规划或补参数，不是重启环境</li>
+</ul>
+<p>更合适的做法是：</p>
+<ul>
+<li>标记为 <code>FAILED_RETRYABLE</code></li>
+<li>重新生成该步骤规划</li>
+<li>对参数做二次约束</li>
+<li>保留原始规划供后续审计</li>
+</ul>
+<h3 id="2-工具执行类失败"><a href="#2-工具执行类失败" class="headerlink" title="2. 工具执行类失败"></a>2. 工具执行类失败</h3><p>这一类通常发生在工具层，例如：</p>
+<ul>
+<li>浏览器操作超时</li>
+<li>接口调用失败</li>
+<li>数据查询报错</li>
+<li>设备连接断开</li>
+<li>文件取证动作失败</li>
+</ul>
+<p>这类失败能不能重试，关键看两件事：</p>
+<ul>
+<li>该动作是否幂等</li>
+<li>动作是否可能已经部分生效</li>
+</ul>
+<p>如果没有这两层判断，系统就很容易把“可能已生效的写动作”当成普通失败去重试。</p>
+<h3 id="3-环境与依赖类失败"><a href="#3-环境与依赖类失败" class="headerlink" title="3. 环境与依赖类失败"></a>3. 环境与依赖类失败</h3><p>这一类通常不是单个步骤自身能解决的，例如：</p>
+<ul>
+<li>测试环境发布中</li>
+<li>下游依赖超时</li>
+<li>队列积压</li>
+<li>数据库只读切换</li>
+<li>第三方服务限流</li>
+</ul>
+<p>这类失败最常见的误判，是把它当成步骤执行问题继续重试。</p>
+<p>更合适的处理是：</p>
+<ul>
+<li>暂停任务推进</li>
+<li>冻结当前上下文</li>
+<li>重新探活环境与依赖</li>
+<li>判断是否整体延期、切环境或人工接管</li>
+</ul>
+<h3 id="4-状态漂移类失败"><a href="#4-状态漂移类失败" class="headerlink" title="4. 状态漂移类失败"></a>4. 状态漂移类失败</h3><p>这是 <code>Agent Workflow</code> 最有代表性的一类失败。</p>
+<p>它的典型特征是：</p>
+<ul>
+<li>当前步骤看起来失败了</li>
+<li>但真正原因不是步骤本身</li>
+<li>而是前置上下文已经漂移</li>
+</ul>
+<p>例如：</p>
+<ul>
+<li>当前页面不是预期页面</li>
+<li>登录态失效</li>
+<li>本该引用的订单号来自过期会话</li>
+<li>同一个任务里的中间变量被覆盖</li>
+</ul>
+<p>这类失败如果不单独分类，系统很容易一直在错误上下文上重试，最后把所有步骤都跑脏。</p>
+<h3 id="5-结果不确定类失败"><a href="#5-结果不确定类失败" class="headerlink" title="5. 结果不确定类失败"></a>5. 结果不确定类失败</h3><p>这类失败比普通报错更危险，因为它既不是明确成功，也不是明确失败。</p>
+<p>典型场景包括：</p>
+<ul>
+<li>工具超时，但服务端可能已经处理</li>
+<li>页面没回显，但后台状态可能已经变化</li>
+<li>结果采集失败，但动作本身可能完成</li>
+<li>断言链断在中间，最终状态未知</li>
+</ul>
+<p>这类失败不能直接重试，也不能直接判失败。</p>
+<p>更稳的做法通常是：</p>
+<ul>
+<li>先进入 <code>WAITING_MANUAL</code> 或 <code>WAITING_RETRY</code></li>
+<li>启动补确认动作</li>
+<li>查日志、查库、查接口、查事件链</li>
+<li>确认“是否已生效”之后再决定是否回滚或补跑</li>
+</ul>
+<h2 id="四、恢复策略：不是所有失败都要“从头再来”"><a href="#四、恢复策略：不是所有失败都要“从头再来”" class="headerlink" title="四、恢复策略：不是所有失败都要“从头再来”"></a>四、恢复策略：不是所有失败都要“从头再来”</h2><p>恢复设计真正要解决的，不是“怎么继续跑”，而是：</p>
+<p><strong>在不破坏现场、不重复写入、不丢失证据的前提下，把任务尽量收回到一个可继续、可终止或可人工接管的状态。</strong></p>
+<p>更合适的恢复策略，通常可以分成 4 层。</p>
+<h3 id="1-步骤内重试"><a href="#1-步骤内重试" class="headerlink" title="1. 步骤内重试"></a>1. 步骤内重试</h3><p>适用场景：</p>
+<ul>
+<li>幂等读操作</li>
+<li>纯取证动作</li>
+<li>页面元素瞬时不可见</li>
+<li>网络瞬断但业务未写入</li>
+</ul>
+<p>要求：</p>
+<ul>
+<li>有明确最大次数</li>
+<li>每次重试前重新确认上下文</li>
+<li>重试结果单独记录，不覆盖首错证据</li>
+</ul>
+<p>不适合直接走步骤内重试的场景包括：</p>
+<ul>
+<li>创建、删除、支付、提交这类可能写状态的动作</li>
+<li>会触发异步链路的动作</li>
+<li>已经判断为上下文漂移的动作</li>
+</ul>
+<h3 id="2-步骤级补跑"><a href="#2-步骤级补跑" class="headerlink" title="2. 步骤级补跑"></a>2. 步骤级补跑</h3><p>适用场景：</p>
+<ul>
+<li>当前步骤失败，但前置步骤状态可信</li>
+<li>当前动作可安全重放</li>
+<li>上下文可通过少量动作恢复</li>
+</ul>
+<p>这类补跑的关键不是“重试这个步骤”，而是先做一个小恢复：</p>
+<ul>
+<li>刷新会话</li>
+<li>重新打开正确页面</li>
+<li>重新获取最新资源 ID</li>
+<li>重新确认依赖服务可用</li>
+</ul>
+<p>如果这些上下文恢复动作没有先做，步骤级补跑通常只是重复失败。</p>
+<h3 id="3-子流程级恢复"><a href="#3-子流程级恢复" class="headerlink" title="3. 子流程级恢复"></a>3. 子流程级恢复</h3><p>适用场景：</p>
+<ul>
+<li>中间步骤失败导致后续上下文整体失效</li>
+<li>当前任务可自然拆成多个阶段</li>
+<li>已完成阶段的结果可以冻结</li>
+</ul>
+<p>例如一个长链路任务可以拆成：</p>
+<ul>
+<li>登录与准备阶段</li>
+<li>核心业务执行阶段</li>
+<li>验证与取证阶段</li>
+</ul>
+<p>一旦“核心业务执行阶段”里出现状态漂移，更稳的恢复方式通常不是只重跑单个动作，而是从该阶段入口重新进入，并且复用前一阶段确认过的产物。</p>
+<h3 id="4-人工接管与安全终止"><a href="#4-人工接管与安全终止" class="headerlink" title="4. 人工接管与安全终止"></a>4. 人工接管与安全终止</h3><p>适用场景：</p>
+<ul>
+<li>高风险写操作后状态不确定</li>
+<li>同一类失败连续触发</li>
+<li>环境异常范围过大</li>
+<li>证据不足以支撑自动恢复决策</li>
+</ul>
+<p>这类场景里，自动恢复继续推进的收益通常已经低于风险。</p>
+<p>更合适的做法是：</p>
+<ul>
+<li>冻结任务</li>
+<li>挂起资源租约</li>
+<li>保留全部中间状态和证据</li>
+<li>给出建议的人工排查入口</li>
+<li>明确“哪些动作已经生效，哪些仍未确认”</li>
+</ul>
+<p>这一步看起来像保守处理，但它真正避免的是平台把一次局部失败升级成一次全链路污染事故。</p>
+<h2 id="五、最小执行骨架：先把恢复点设计进流程里，而不是失败后再补"><a href="#五、最小执行骨架：先把恢复点设计进流程里，而不是失败后再补" class="headerlink" title="五、最小执行骨架：先把恢复点设计进流程里，而不是失败后再补"></a>五、最小执行骨架：先把恢复点设计进流程里，而不是失败后再补</h2><p>如果希望 <code>Agent Workflow</code> 真正可恢复，更稳的做法不是“失败后写一堆兜底逻辑”，而是在执行骨架里预留恢复点。</p>
+<p>一套更适合第一阶段落地的最小执行骨架，可以这样设计：</p>
+<h3 id="1-任务初始化"><a href="#1-任务初始化" class="headerlink" title="1. 任务初始化"></a>1. 任务初始化</h3><p>在任务开始前先固定下面这些信息：</p>
+<ul>
+<li>任务模板 ID</li>
+<li>环境 ID</li>
+<li>租约资源 ID</li>
+<li>可用工具白名单</li>
+<li>关键断言点</li>
+<li>恢复策略级别</li>
+<li>是否允许自动补跑</li>
+</ul>
+<p>初始化阶段的目标不是启动执行，而是先把可恢复边界写清楚。</p>
+<h3 id="2-规划与步骤冻结"><a href="#2-规划与步骤冻结" class="headerlink" title="2. 规划与步骤冻结"></a>2. 规划与步骤冻结</h3><p>规划结果不要直接一边生成一边执行。</p>
+<p>更稳的做法是：</p>
+<ul>
+<li>先生成步骤草案</li>
+<li>对每一步标注类型：读、写、取证、确认、恢复</li>
+<li>对每一步标注幂等属性</li>
+<li>对高风险写步骤附带恢复约束</li>
+</ul>
+<p>这样后面一旦失败，平台才能根据步骤属性决定是重试、补确认、子流程恢复，还是人工接管。</p>
+<h3 id="3-执行前快照"><a href="#3-执行前快照" class="headerlink" title="3. 执行前快照"></a>3. 执行前快照</h3><p>每个关键步骤执行前，至少记录：</p>
+<ul>
+<li>当前步骤输入</li>
+<li>当前页面或会话状态</li>
+<li>环境健康探活结果</li>
+<li>上一步关键输出</li>
+<li>当前证据引用点</li>
+</ul>
+<p>执行前快照的价值，是让恢复决策建立在“这个步骤开始前到底是什么样”之上。</p>
+<h3 id="4-执行动作与即时确认"><a href="#4-执行动作与即时确认" class="headerlink" title="4. 执行动作与即时确认"></a>4. 执行动作与即时确认</h3><p>动作执行后，不要只看工具层返回。</p>
+<p>更稳的做法是：</p>
+<ul>
+<li>动作执行</li>
+<li>即时确认动作是否已落地</li>
+<li>判断状态是否不确定</li>
+<li>需要时进入补确认</li>
+<li>再决定是否推进下一步</li>
+</ul>
+<p>这一步能显著减少“把未确认动作当成成功继续推进”的问题。</p>
+<h3 id="5-恢复决策节点"><a href="#5-恢复决策节点" class="headerlink" title="5. 恢复决策节点"></a>5. 恢复决策节点</h3><p>一旦出现失败，不要立即重试。</p>
+<p>先做 4 个判断：</p>
+<ul>
+<li>失败类型是什么</li>
+<li>当前步骤是否可能已生效</li>
+<li>上下文是否仍可信</li>
+<li>证据是否足够支撑自动恢复</li>
+</ul>
+<p>只有这 4 个问题答案清楚，恢复动作才有意义。</p>
+<h3 id="6-收口与报告"><a href="#6-收口与报告" class="headerlink" title="6. 收口与报告"></a>6. 收口与报告</h3><p>任务结束时，报告里至少要明确：</p>
+<ul>
+<li>最终停在第几步</li>
+<li>哪些步骤仅规划未执行</li>
+<li>哪些步骤已执行但结果不确定</li>
+<li>哪些恢复动作被触发过</li>
+<li>哪些资源已回收，哪些仍需人工清理</li>
+</ul>
+<p>如果报告只写“第 6 步失败”，后续接手的人仍然要从头还原现场，平台的恢复能力就没有真正落地。</p>
+<h2 id="六、一个更实用的状态与恢复记录表"><a href="#六、一个更实用的状态与恢复记录表" class="headerlink" title="六、一个更实用的状态与恢复记录表"></a>六、一个更实用的状态与恢复记录表</h2><p>多步骤任务里，建议至少保留一张这种粒度的记录表：</p>
+<table>
+<thead>
+<tr>
+<th>步骤</th>
+<th>动作类型</th>
+<th>当前状态</th>
+<th>是否已生效</th>
+<th>上下文可信</th>
+<th>失败类型</th>
+<th>恢复方式</th>
+<th>证据</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>登录</td>
+<td>VERIFIED</td>
+<td>是</td>
+<td>是</td>
+<td>无</td>
+<td>无</td>
+<td>截图、会话 ID</td>
+</tr>
+<tr>
+<td>2</td>
+<td>创建订单</td>
+<td>APPLIED</td>
+<td>待确认</td>
+<td>是</td>
+<td>结果不确定</td>
+<td>补确认</td>
+<td>接口日志、订单号</td>
+</tr>
+<tr>
+<td>3</td>
+<td>校验回写</td>
+<td>FAILED_RETRYABLE</td>
+<td>否</td>
+<td>否</td>
+<td>状态漂移</td>
+<td>子流程恢复</td>
+<td>截图、DOM、控制台日志</td>
+</tr>
+</tbody></table>
+<p>这张表的价值不是展示，而是支撑：</p>
+<ul>
+<li>自动恢复判断</li>
+<li>人工接管</li>
+<li>报告收口</li>
+<li>同类故障归类</li>
+</ul>
+<h2 id="七、常见坑：状态和恢复最容易写坏的-6-个地方"><a href="#七、常见坑：状态和恢复最容易写坏的-6-个地方" class="headerlink" title="七、常见坑：状态和恢复最容易写坏的 6 个地方"></a>七、常见坑：状态和恢复最容易写坏的 6 个地方</h2><h3 id="1-只记录任务状态，不记录步骤语义状态"><a href="#1-只记录任务状态，不记录步骤语义状态" class="headerlink" title="1. 只记录任务状态，不记录步骤语义状态"></a>1. 只记录任务状态，不记录步骤语义状态</h3><p>结果是任务一失败，系统完全不知道前面哪些写动作已经生效。</p>
+<h3 id="2-把“工具返回成功”当成“业务结果已确认”"><a href="#2-把“工具返回成功”当成“业务结果已确认”" class="headerlink" title="2. 把“工具返回成功”当成“业务结果已确认”"></a>2. 把“工具返回成功”当成“业务结果已确认”</h3><p>接口 <code>200</code>、按钮点击成功、脚本没有报错，都不等于业务状态已经稳定。</p>
+<h3 id="3-把所有失败都交给统一重试器"><a href="#3-把所有失败都交给统一重试器" class="headerlink" title="3. 把所有失败都交给统一重试器"></a>3. 把所有失败都交给统一重试器</h3><p>统一重试器适合瞬时读失败，不适合覆盖写动作、不确定结果和上下文漂移。</p>
+<h3 id="4-恢复时覆盖首错证据"><a href="#4-恢复时覆盖首错证据" class="headerlink" title="4. 恢复时覆盖首错证据"></a>4. 恢复时覆盖首错证据</h3><p>一旦补跑前没有冻结首错现场，后续所有排查都会被污染。</p>
+<h3 id="5-人工接管时没有明确“已执行边界”"><a href="#5-人工接管时没有明确“已执行边界”" class="headerlink" title="5. 人工接管时没有明确“已执行边界”"></a>5. 人工接管时没有明确“已执行边界”</h3><p>最常见的后果是人工又执行了一遍写动作，造成重复创建、重复扣减或重复通知。</p>
+<h3 id="6-环境异常和-Agent-失败没有分流"><a href="#6-环境异常和-Agent-失败没有分流" class="headerlink" title="6. 环境异常和 Agent 失败没有分流"></a>6. 环境异常和 Agent 失败没有分流</h3><p>环境发布、依赖故障、资源租约异常如果都挂在步骤失败下面，报告里看起来像 Agent 不稳定，实际问题根本不在 Agent。</p>
+<h2 id="八、真实案例：一个下单回归任务为什么越恢复越乱"><a href="#八、真实案例：一个下单回归任务为什么越恢复越乱" class="headerlink" title="八、真实案例：一个下单回归任务为什么越恢复越乱"></a>八、真实案例：一个下单回归任务为什么越恢复越乱</h2><h3 id="1-场景"><a href="#1-场景" class="headerlink" title="1. 场景"></a>1. 场景</h3><p>一次 AI 驱动的回归任务需要完成下面这条链路：</p>
+<ul>
+<li>登录后台</li>
+<li>创建测试订单</li>
+<li>调用支付模拟接口</li>
+<li>进入订单详情页校验状态</li>
+<li>拉取日志并生成证据包</li>
+</ul>
+<p>这条链路被编排成一个 <code>Agent Workflow</code>，允许在单步失败时自动补跑 1 次。</p>
+<h3 id="2-执行"><a href="#2-执行" class="headerlink" title="2. 执行"></a>2. 执行</h3><p>任务前 3 步执行正常：</p>
+<ul>
+<li>登录成功</li>
+<li>订单创建成功</li>
+<li>支付模拟接口返回成功</li>
+</ul>
+<p>第 4 步进入订单详情页时，页面长时间未出现“已支付”状态，系统判定为步骤失败，并触发自动补跑。</p>
+<h3 id="3-现象"><a href="#3-现象" class="headerlink" title="3. 现象"></a>3. 现象</h3><p>补跑后问题不但没有消失，反而出现了更多异常：</p>
+<ul>
+<li>第二次进入详情页时跳到了登录页</li>
+<li>自动恢复重新执行了“创建订单”</li>
+<li>报告里出现了两个不同订单号</li>
+<li>最后任务被判为“详情页断言失败”</li>
+</ul>
+<p>表面上看，这是一次普通 UI 断言失败。</p>
+<p>但真正的问题已经不是“第 4 步没断上”，而是恢复过程把原始状态打乱了。</p>
+<h3 id="4-排查"><a href="#4-排查" class="headerlink" title="4. 排查"></a>4. 排查</h3><p>排查按状态层逐层展开：</p>
+<p>先看步骤层。<br>原始执行记录显示第 2 步“创建订单”状态是 <code>APPLIED</code>，但没有被提升到 <code>VERIFIED</code>，因为订单号采集逻辑晚于页面跳转，导致系统没有把订单号冻结到上下文里。</p>
+<p>再看会话层。<br>第 4 步失败前，后台登录态已经接近过期，补跑动作重新打开详情页时被系统重定向到了登录页，但平台没有把“上下文漂移”识别出来。</p>
+<p>再看恢复策略。<br>统一重试器把第 4 步视为“可补跑步骤”，但恢复脚本内部为了拿到订单详情页入口，错误地回调了“创建订单”子流程。</p>
+<p>最后看证据层。<br>首错截图和第一次支付接口回包都在，但第二次恢复把任务主上下文里的订单号覆盖了，导致报告里两个订单号混在一起。</p>
+<p>到这里可以确认根因不是“订单状态没更新”，而是三件事叠加：</p>
+<ul>
+<li>步骤状态没有把 <code>APPLIED</code> 和 <code>VERIFIED</code> 分开收口</li>
+<li>会话漂移没有独立识别</li>
+<li>恢复脚本没有显式声明可重放边界</li>
+</ul>
+<h3 id="5-修复"><a href="#5-修复" class="headerlink" title="5. 修复"></a>5. 修复</h3><p>修复动作分成 4 步：</p>
+<p>第一步，重构步骤状态。<br>创建订单后必须先冻结订单号和接口回包，再把步骤从 <code>APPLIED</code> 提升到 <code>VERIFIED</code>。</p>
+<p>第二步，补上下文探针。<br>每次进入需要登录态的页面前，先检查会话状态和当前路由，一旦发现被重定向到登录页，直接判定为“状态漂移”而不是普通步骤失败。</p>
+<p>第三步，拆恢复策略。<br>详情页校验失败只允许做“上下文恢复 + 补确认”，不允许回跳到写订单子流程。</p>
+<p>第四步，冻结首错证据。<br>一旦触发恢复，首错步骤的截图、接口回包、订单号和日志引用必须写入只读证据区，后续恢复不能覆盖。</p>
+<p>修复之后，同类任务再遇到类似问题时，报告能直接给出更准确的收口：</p>
+<ul>
+<li>订单已创建并支付模拟成功</li>
+<li>当前失败属于会话漂移</li>
+<li>原始订单号已冻结</li>
+<li>建议从“重新登录后进入详情页确认”恢复，而不是重建订单</li>
+</ul>
+<p>这时候恢复动作才真正从“碰运气补跑”，变成“基于状态和证据的受控恢复”。</p>
+<h2 id="九、结语：Agent-Workflow-能不能用，最终看恢复时是不是还知道自己在干什么"><a href="#九、结语：Agent-Workflow-能不能用，最终看恢复时是不是还知道自己在干什么" class="headerlink" title="九、结语：Agent Workflow 能不能用，最终看恢复时是不是还知道自己在干什么"></a>九、结语：Agent Workflow 能不能用，最终看恢复时是不是还知道自己在干什么</h2><p>多步骤测试任务里，<code>Agent Workflow</code> 的价值不只是自动化执行更多步骤，而是把原本依赖人工串起来的计划、执行、确认、取证和恢复收成一条可治理的链路。</p>
+<p>这条链路一旦进入真实平台，最先决定它能不能长期可用的，通常不是模型能拆多少步，而是下面这几件事有没有收稳：</p>
+<ul>
+<li>状态是不是分层记录</li>
+<li>失败是不是先分类再恢复</li>
+<li>恢复是不是有明确边界</li>
+<li>首错现场是不是能被冻结</li>
+<li>任务结束时是不是说得清哪些动作已经真实生效</li>
+</ul>
+<p>如果这些问题没有被认真设计，<code>Agent Workflow</code> 很容易停留在“能跑一遍”的阶段。<br>只有把状态管理和失败恢复真正做成平台能力，它才有机会从演示链路走到长期可用的工程系统。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/AI%E6%B5%8B%E8%AF%95/" rel="tag"># AI测试</a>
+              <a href="/tags/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0/" rel="tag"># 测试平台</a>
+              <a href="/tags/Agent-Workflow/" rel="tag"># Agent Workflow</a>
+              <a href="/tags/%E7%8A%B6%E6%80%81%E7%AE%A1%E7%90%86/" rel="tag"># 状态管理</a>
+              <a href="/tags/%E5%B7%A5%E7%A8%8B%E5%8C%96/" rel="tag"># 工程化</a>
+              <a href="/tags/%E5%A4%B1%E8%B4%A5%E6%81%A2%E5%A4%8D/" rel="tag"># 失败恢复</a>
+              <a href="/tags/%E6%89%A7%E8%A1%8C%E7%BC%96%E6%8E%92/" rel="tag"># 执行编排</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2026/01/30/AI%E6%B5%8B%E8%AF%95-04-LLM-Function-Calling%E5%9C%A8%E6%B5%8B%E8%AF%95%E5%B7%A5%E5%85%B7%E9%87%8C%E6%80%8E%E4%B9%88%E8%AE%BE%E8%AE%A1%E8%BE%93%E5%85%A5%E8%BE%93%E5%87%BA%E5%92%8C%E5%AE%B9%E9%94%99/" rel="prev" title="AI测试-04-LLM Function Calling在测试工具里怎么设计输入输出和容错">
+                  <i class="fa fa-angle-left"></i> AI测试-04-LLM Function Calling在测试工具里怎么设计输入输出和容错
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2026/02/13/AI%E6%B5%8B%E8%AF%95-06-AI%E8%A7%86%E8%A7%89%E8%AF%86%E5%88%AB%E6%8E%A5%E5%85%A5UI%E8%87%AA%E5%8A%A8%E5%8C%96%E5%90%8E%E6%9C%80%E5%B8%B8%E8%A7%81%E7%9A%84%E8%AF%AF%E5%88%A4%E5%9C%BA%E6%99%AF%E6%80%8E%E4%B9%88%E6%B2%BB%E7%90%86/" rel="next" title="AI测试-06-AI视觉识别接入UI自动化后最常见的误判场景怎么治理">
+                  AI测试-06-AI视觉识别接入UI自动化后最常见的误判场景怎么治理 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

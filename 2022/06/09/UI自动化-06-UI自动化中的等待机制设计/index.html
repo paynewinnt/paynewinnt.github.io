@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="如果要只挑一个最容易把 UI 自动化拖垮的问题，更可能选等待机制。因为很多脚本不是不能执行，而是执行结果随机。 最典型的症状是：  本地能过，CI 上偶尔失败 同一条脚本上午过、下午挂 多跑几次又好了  这种问题看起来像“环境抖动”，但真实根因很多时候是：脚本根本没有定义清楚“什么时候页面真的准备好了”。 所以等待机制不是语法细节，而是稳定性设计。 一、我为什么把等待看成状态建模，而不是时间控制把">
+<meta property="og:type" content="article">
+<meta property="og:title" content="UI 自动化：UI 自动化中的等待机制设计">
+<meta property="og:url" content="https://paynewinnt.github.io/2022/06/09/UI%E8%87%AA%E5%8A%A8%E5%8C%96-06-UI%E8%87%AA%E5%8A%A8%E5%8C%96%E4%B8%AD%E7%9A%84%E7%AD%89%E5%BE%85%E6%9C%BA%E5%88%B6%E8%AE%BE%E8%AE%A1/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="如果要只挑一个最容易把 UI 自动化拖垮的问题，更可能选等待机制。因为很多脚本不是不能执行，而是执行结果随机。 最典型的症状是：  本地能过，CI 上偶尔失败 同一条脚本上午过、下午挂 多跑几次又好了  这种问题看起来像“环境抖动”，但真实根因很多时候是：脚本根本没有定义清楚“什么时候页面真的准备好了”。 所以等待机制不是语法细节，而是稳定性设计。 一、我为什么把等待看成状态建模，而不是时间控制把">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2022-06-09T12:25:00.000Z">
+<meta property="article:modified_time" content="2022-06-09T12:25:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="UI自动化">
+<meta property="article:tag" content="自动化测试">
+<meta property="article:tag" content="UI自动化专题">
+<meta property="article:tag" content="UI 自动化测试">
+<meta property="article:tag" content="稳定性">
+<meta property="article:tag" content="等待机制">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2022/06/09/UI%E8%87%AA%E5%8A%A8%E5%8C%96-06-UI%E8%87%AA%E5%8A%A8%E5%8C%96%E4%B8%AD%E7%9A%84%E7%AD%89%E5%BE%85%E6%9C%BA%E5%88%B6%E8%AE%BE%E8%AE%A1/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2022/06/09/UI%E8%87%AA%E5%8A%A8%E5%8C%96-06-UI%E8%87%AA%E5%8A%A8%E5%8C%96%E4%B8%AD%E7%9A%84%E7%AD%89%E5%BE%85%E6%9C%BA%E5%88%B6%E8%AE%BE%E8%AE%A1/","path":"2022/06/09/UI自动化-06-UI自动化中的等待机制设计/","title":"UI 自动化：UI 自动化中的等待机制设计"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>UI 自动化：UI 自动化中的等待机制设计 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E6%88%91%E4%B8%BA%E4%BB%80%E4%B9%88%E6%8A%8A%E7%AD%89%E5%BE%85%E7%9C%8B%E6%88%90%E7%8A%B6%E6%80%81%E5%BB%BA%E6%A8%A1%EF%BC%8C%E8%80%8C%E4%B8%8D%E6%98%AF%E6%97%B6%E9%97%B4%E6%8E%A7%E5%88%B6"><span class="nav-number">1.</span> <span class="nav-text">一、我为什么把等待看成状态建模，而不是时间控制</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E5%9C%A8%E9%A1%B9%E7%9B%AE%E9%87%8C%E6%80%8E%E4%B9%88%E6%8B%86%E7%AD%89%E5%BE%85%E5%B1%82%E6%AC%A1"><span class="nav-number">2.</span> <span class="nav-text">二、在项目里怎么拆等待层次</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-DOM-%E5%B1%82%E7%AD%89%E5%BE%85"><span class="nav-number">2.1.</span> <span class="nav-text">1. DOM 层等待</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E7%BB%84%E4%BB%B6%E5%B1%82%E7%AD%89%E5%BE%85"><span class="nav-number">2.2.</span> <span class="nav-text">2. 组件层等待</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E9%A1%B5%E9%9D%A2%E5%B1%82%E7%AD%89%E5%BE%85"><span class="nav-number">2.3.</span> <span class="nav-text">3. 页面层等待</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%B8%9A%E5%8A%A1%E5%B1%82%E7%AD%89%E5%BE%85"><span class="nav-number">2.4.</span> <span class="nav-text">4. 业务层等待</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E4%B8%8D%E5%90%8C%E5%B7%A5%E5%85%B7%E4%B8%8B%EF%BC%8C%E6%80%8E%E4%B9%88%E5%AE%9E%E7%8E%B0%E7%AD%89%E5%BE%85"><span class="nav-number">3.</span> <span class="nav-text">三、不同工具下，怎么实现等待</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Playwright"><span class="nav-number">3.1.</span> <span class="nav-text">Playwright</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Selenium"><span class="nav-number">3.2.</span> <span class="nav-text">Selenium</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#chromedp"><span class="nav-number">3.3.</span> <span class="nav-text">chromedp</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E4%B8%80%E4%B8%AA%E7%9C%9F%E5%AE%9E%E9%A1%B5%E9%9D%A2%E4%B8%BA%E4%BB%80%E4%B9%88%E4%B8%8D%E8%83%BD%E5%8F%AA%E7%AD%89-loading-%E6%B6%88%E5%A4%B1"><span class="nav-number">4.</span> <span class="nav-text">四、一个真实页面为什么不能只等 loading 消失</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E6%88%91%E5%9C%A8%E7%9C%9F%E5%AE%9E%E9%A1%B9%E7%9B%AE%E9%87%8C%E6%9C%80%E5%B8%B8%E9%81%87%E5%88%B0%E7%9A%84%E7%AD%89%E5%BE%85%E5%9C%BA%E6%99%AF"><span class="nav-number">5.</span> <span class="nav-text">五、我在真实项目里最常遇到的等待场景</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%90%9C%E7%B4%A2%E8%A1%A8%E6%A0%BC%E7%BB%93%E6%9E%9C%E5%88%B7%E6%96%B0"><span class="nav-number">5.1.</span> <span class="nav-text">1. 搜索表格结果刷新</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%8F%90%E4%BA%A4%E8%A1%A8%E5%8D%95%E5%90%8E%E7%9A%84%E7%8A%B6%E6%80%81%E5%88%87%E6%8D%A2"><span class="nav-number">5.2.</span> <span class="nav-text">2. 提交表单后的状态切换</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%BC%82%E6%AD%A5%E4%BB%BB%E5%8A%A1%E8%BD%AE%E8%AF%A2"><span class="nav-number">5.3.</span> <span class="nav-text">3. 异步任务轮询</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E6%80%8E%E4%B9%88%E9%81%BF%E5%85%8D%E7%AD%89%E5%BE%85%E9%80%BB%E8%BE%91%E6%B1%A1%E6%9F%93%E4%B8%9A%E5%8A%A1-case"><span class="nav-number">6.</span> <span class="nav-text">六、怎么避免等待逻辑污染业务 case</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E4%B8%80%E4%B8%AA%E6%9B%B4%E5%83%8F%E5%AE%9E%E6%88%98%E7%9A%84%E5%A4%B1%E8%B4%A5%E4%BE%8B%E5%AD%90"><span class="nav-number">7.</span> <span class="nav-text">七、一个更像实战的失败例子</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E7%AD%89%E5%BE%85%E6%9C%BA%E5%88%B6%E5%92%8C%E6%89%A7%E8%A1%8C%E9%80%9F%E5%BA%A6%E6%80%8E%E4%B9%88%E5%B9%B3%E8%A1%A1"><span class="nav-number">8.</span> <span class="nav-text">八、等待机制和执行速度怎么平衡</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E6%80%8E%E4%B9%88%E5%88%A4%E6%96%AD%E7%AD%89%E5%BE%85%E8%AE%BE%E8%AE%A1%E6%98%AF%E4%B8%8D%E6%98%AF%E5%81%9A%E5%AF%B9%E4%BA%86"><span class="nav-number">9.</span> <span class="nav-text">九、怎么判断等待设计是不是做对了</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E7%BB%93%E8%AF%AD"><span class="nav-number">10.</span> <span class="nav-text">十、结语</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%9C%AC%E7%AB%A0%E5%BB%B6%E4%BC%B8%E9%98%85%E8%AF%BB"><span class="nav-number">11.</span> <span class="nav-text">本章延伸阅读</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2022/06/09/UI%E8%87%AA%E5%8A%A8%E5%8C%96-06-UI%E8%87%AA%E5%8A%A8%E5%8C%96%E4%B8%AD%E7%9A%84%E7%AD%89%E5%BE%85%E6%9C%BA%E5%88%B6%E8%AE%BE%E8%AE%A1/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="UI 自动化：UI 自动化中的等待机制设计 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          UI 自动化：UI 自动化中的等待机制设计
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2022-06-09 20:25:00" itemprop="dateCreated datePublished" datetime="2022-06-09T20:25:00+08:00">2022-06-09</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/UI%E8%87%AA%E5%8A%A8%E5%8C%96/" itemprop="url" rel="index"><span itemprop="name">UI自动化</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>1.8k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>7 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>如果要只挑一个最容易把 UI 自动化拖垮的问题，更可能选等待机制。因为很多脚本不是不能执行，而是执行结果随机。</p>
+<p>最典型的症状是：</p>
+<ul>
+<li>本地能过，CI 上偶尔失败</li>
+<li>同一条脚本上午过、下午挂</li>
+<li>多跑几次又好了</li>
+</ul>
+<p>这种问题看起来像“环境抖动”，但真实根因很多时候是：脚本根本没有定义清楚“什么时候页面真的准备好了”。</p>
+<p>所以等待机制不是语法细节，而是稳定性设计。</p>
+<h2 id="一、我为什么把等待看成状态建模，而不是时间控制"><a href="#一、我为什么把等待看成状态建模，而不是时间控制" class="headerlink" title="一、我为什么把等待看成状态建模，而不是时间控制"></a>一、我为什么把等待看成状态建模，而不是时间控制</h2><p>把等待写成固定时间时，本质上是在赌时间：</p>
+<ul>
+<li>点完按钮，<code>sleep(2)</code></li>
+<li>提交后，<code>sleep(5)</code></li>
+<li>跳转后，<code>sleep(1)</code></li>
+</ul>
+<p>这种方式最大的问题不是慢，而是它根本没有表达页面状态。你不知道：</p>
+<ul>
+<li>页面是否已经可交互</li>
+<li>表格是否真的渲染完成</li>
+<li>提交后到底是业务完成了，还是只是 toast 先出来了</li>
+</ul>
+<p>所以更愿意把等待理解成一组状态判断：</p>
+<ul>
+<li>页面就绪</li>
+<li>组件就绪</li>
+<li>数据稳定</li>
+<li>业务完成</li>
+</ul>
+<h2 id="二、在项目里怎么拆等待层次"><a href="#二、在项目里怎么拆等待层次" class="headerlink" title="二、在项目里怎么拆等待层次"></a>二、在项目里怎么拆等待层次</h2><p>真实项目里，等待不该只停留在“等元素出现”，而更适合拆成四层。</p>
+<h3 id="1-DOM-层等待"><a href="#1-DOM-层等待" class="headerlink" title="1. DOM 层等待"></a>1. DOM 层等待</h3><p>比如：</p>
+<ul>
+<li>元素存在</li>
+<li>元素可见</li>
+<li>元素可点击</li>
+</ul>
+<p>这一层只回答：节点能不能被操作。</p>
+<h3 id="2-组件层等待"><a href="#2-组件层等待" class="headerlink" title="2. 组件层等待"></a>2. 组件层等待</h3><p>比如：</p>
+<ul>
+<li>下拉框选项加载完成</li>
+<li>表格停止 loading</li>
+<li>弹窗动画结束</li>
+</ul>
+<p>这一层回答：组件是否进入稳定交互状态。</p>
+<h3 id="3-页面层等待"><a href="#3-页面层等待" class="headerlink" title="3. 页面层等待"></a>3. 页面层等待</h3><p>比如：</p>
+<ul>
+<li>页面主区域渲染完成</li>
+<li>关键数据区域不再是 skeleton</li>
+<li>路由跳转真正完成</li>
+</ul>
+<p>这一层回答：用户是否已经“到了正确页面”。</p>
+<h3 id="4-业务层等待"><a href="#4-业务层等待" class="headerlink" title="4. 业务层等待"></a>4. 业务层等待</h3><p>比如：</p>
+<ul>
+<li>新建任务真的出现在列表中</li>
+<li>审核状态从“待处理”变为“已通过”</li>
+<li>异步报表状态从“生成中”切到“已完成”</li>
+</ul>
+<p>这一层才是真正能决定测试结论的部分。</p>
+<p>很多脚本之所以脆，就是因为只做了第 1 层等待，然后直接去做第 4 层断言。</p>
+<h2 id="三、不同工具下，怎么实现等待"><a href="#三、不同工具下，怎么实现等待" class="headerlink" title="三、不同工具下，怎么实现等待"></a>三、不同工具下，怎么实现等待</h2><h3 id="Playwright"><a href="#Playwright" class="headerlink" title="Playwright"></a>Playwright</h3><p>我最常用的是：</p>
+<ul>
+<li><code>locator.waitFor()</code></li>
+<li>Playwright assertion 自带重试</li>
+<li>组合条件等待</li>
+</ul>
+<p>例如不是只等按钮出现，而是等：</p>
+<ul>
+<li>按钮出现</li>
+<li>loading 消失</li>
+<li>列表目标行出现</li>
+</ul>
+<h3 id="Selenium"><a href="#Selenium" class="headerlink" title="Selenium"></a>Selenium</h3><p>会统一封装：</p>
+<ul>
+<li><code>WebDriverWait</code></li>
+<li>expected conditions</li>
+<li>自定义 lambda 条件</li>
+</ul>
+<p>因为 Selenium 如果不统一等待层，很容易在各个页面对象里散落大量等待碎片。</p>
+<h3 id="chromedp"><a href="#chromedp" class="headerlink" title="chromedp"></a>chromedp</h3><p>会封装：</p>
+<ul>
+<li>节点可见</li>
+<li>文本出现</li>
+<li>某个 JS 条件返回 true</li>
+</ul>
+<p>chromedp 更底层，所以更需要你自己把等待抽象成公共能力。</p>
+<h2 id="四、一个真实页面为什么不能只等-loading-消失"><a href="#四、一个真实页面为什么不能只等-loading-消失" class="headerlink" title="四、一个真实页面为什么不能只等 loading 消失"></a>四、一个真实页面为什么不能只等 loading 消失</h2><p>很多后台页面都有这个特点：</p>
+<ol>
+<li>页面骨架先渲染</li>
+<li>列表 loading 消失</li>
+<li>但真正的数据表格还在二次渲染</li>
+<li>按钮样式已经出现，但点击后会被遮罩拦截</li>
+</ol>
+<p>如果脚本只写“等待 loading 消失”，你会得到很多随机失败：</p>
+<ul>
+<li>元素看起来存在，实际不能点击</li>
+<li>表格刚出来，但数据还是旧的</li>
+<li>toast 已弹，列表还没更新</li>
+</ul>
+<p>所以等待机制必须比“loading 没了”更贴近业务状态。</p>
+<h2 id="五、我在真实项目里最常遇到的等待场景"><a href="#五、我在真实项目里最常遇到的等待场景" class="headerlink" title="五、我在真实项目里最常遇到的等待场景"></a>五、我在真实项目里最常遇到的等待场景</h2><h3 id="1-搜索表格结果刷新"><a href="#1-搜索表格结果刷新" class="headerlink" title="1. 搜索表格结果刷新"></a>1. 搜索表格结果刷新</h3><p>这类页面通常会经历：</p>
+<ul>
+<li>点击搜索</li>
+<li>请求发出</li>
+<li>表格 loading</li>
+<li>数据替换</li>
+</ul>
+<p>这里不该只等按钮点击完成，而更该等：</p>
+<ul>
+<li>loading 消失</li>
+<li>结果总数变化或目标行出现</li>
+</ul>
+<h3 id="2-提交表单后的状态切换"><a href="#2-提交表单后的状态切换" class="headerlink" title="2. 提交表单后的状态切换"></a>2. 提交表单后的状态切换</h3><p>很多页面提交后先弹出“成功”，再异步更新列表。如果只断 toast，很容易误判。</p>
+<p>更稳妥的做法是：</p>
+<ol>
+<li>等 toast 出现</li>
+<li>等 toast 消失</li>
+<li>等列表页完成刷新</li>
+<li>等目标状态出现</li>
+</ol>
+<h3 id="3-异步任务轮询"><a href="#3-异步任务轮询" class="headerlink" title="3. 异步任务轮询"></a>3. 异步任务轮询</h3><p>比如导出报表、任务执行、审批流同步。这类场景用固定 sleep 基本是最差方案。</p>
+<p>更稳妥的做法是轮询等待：</p>
+<ul>
+<li>每隔 2 秒检查一次状态</li>
+<li>超过总超时直接失败</li>
+<li>失败时保存当前状态和最近轮询结果</li>
+</ul>
+<h2 id="六、怎么避免等待逻辑污染业务-case"><a href="#六、怎么避免等待逻辑污染业务-case" class="headerlink" title="六、怎么避免等待逻辑污染业务 case"></a>六、怎么避免等待逻辑污染业务 case</h2><p>更稳妥的约束是让等待逻辑只放在三种地方：</p>
+<ul>
+<li>页面对象</li>
+<li>组件对象</li>
+<li><code>waits</code> 公共模块</li>
+</ul>
+<p>业务 case 里尽量不出现大量原始等待代码。</p>
+<p>例如：</p>
+<figure class="highlight ts"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">await</span> taskListPage.<span class="title function_">waitLoaded</span>();</span><br><span class="line"><span class="keyword">await</span> taskListPage.<span class="title function_">search</span>(taskName);</span><br><span class="line"><span class="keyword">await</span> taskListPage.<span class="title function_">waitRowVisible</span>(taskName);</span><br></pre></td></tr></table></figure>
+
+<p>而不是：</p>
+<figure class="highlight ts"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">await</span> page.<span class="title function_">waitForSelector</span>(...);</span><br><span class="line"><span class="keyword">await</span> page.<span class="title function_">waitForTimeout</span>(<span class="number">2000</span>);</span><br><span class="line"><span class="keyword">await</span> <span class="title function_">expect</span>(page.<span class="title function_">locator</span>(...)).<span class="title function_">toBeVisible</span>();</span><br></pre></td></tr></table></figure>
+
+<p>后者短期能跑，长期会越来越散。</p>
+<h2 id="七、一个更像实战的失败例子"><a href="#七、一个更像实战的失败例子" class="headerlink" title="七、一个更像实战的失败例子"></a>七、一个更像实战的失败例子</h2><p>我遇到过一个后台任务页，提交成功后会立即弹 toast，但列表刷新依赖另一个异步接口。最早脚本只写：</p>
+<ol>
+<li>点击提交</li>
+<li>等 toast 成功</li>
+<li>断言列表出现任务</li>
+</ol>
+<p>结果在 CI 上经常失败，因为 toast 比列表刷新快很多。</p>
+<p>后来改成：</p>
+<ol>
+<li>点击提交</li>
+<li>等成功 toast 出现</li>
+<li>等表格 loading 完整走完一轮</li>
+<li>等目标任务名出现</li>
+<li>如 10 秒内未出现，再抓当前表格首屏文本和截图</li>
+</ol>
+<p>这一改，稳定性明显上升，而且失败后能更快分辨：</p>
+<ul>
+<li>是任务没创建成功</li>
+<li>还是列表刷新慢</li>
+<li>还是脚本定位错了</li>
+</ul>
+<h2 id="八、等待机制和执行速度怎么平衡"><a href="#八、等待机制和执行速度怎么平衡" class="headerlink" title="八、等待机制和执行速度怎么平衡"></a>八、等待机制和执行速度怎么平衡</h2><p>等待写深了，常常会带来“执行会很慢”的担心。更常见的情况是，真正拖慢执行的通常不是等待本身，而是无效等待。</p>
+<p>更合理的做法是：</p>
+<ul>
+<li>默认短超时</li>
+<li>对历史高波动页面单独放宽</li>
+<li>把长轮询只保留给少量高价值场景</li>
+<li>smoke 任务只保留强信号等待</li>
+</ul>
+<p>也就是说，不是所有页面都要跑最重的等待策略，而是按风险分层。</p>
+<h2 id="九、怎么判断等待设计是不是做对了"><a href="#九、怎么判断等待设计是不是做对了" class="headerlink" title="九、怎么判断等待设计是不是做对了"></a>九、怎么判断等待设计是不是做对了</h2><p>我主要看这些信号：</p>
+<ul>
+<li>同一条脚本的随机失败是否明显下降</li>
+<li>CI 和本地执行差异是否缩小</li>
+<li>失败后是否更容易定位到是数据慢、页面慢还是业务错</li>
+<li>页面行为变更时，是否更多改动集中在页面对象层</li>
+</ul>
+<p>如果这些没改善，说明等待设计大概率还停留在“换了一种写 sleep 的方式”。</p>
+<h2 id="十、结语"><a href="#十、结语" class="headerlink" title="十、结语"></a>十、结语</h2><p>UI 自动化中的等待机制，本质上是在定义页面何时真正进入“可继续执行”的状态。它不是简单的时间控制，而是一套稳定状态建模能力。只有把 DOM、组件、页面、业务四层等待边界都理清，UI 自动化才会从“偶尔能跑”变成“可以长期信任”。</p>
+<h2 id="本章延伸阅读"><a href="#本章延伸阅读" class="headerlink" title="本章延伸阅读"></a>本章延伸阅读</h2><ul>
+<li><a href="/2020/09/22/UI%E8%87%AA%E5%8A%A8%E5%8C%96-03-Playwright%E5%9C%A8%E4%B8%9A%E5%8A%A1%E5%9B%9E%E5%BD%92%E6%B5%8B%E8%AF%95%E4%B8%AD%E7%9A%84%E5%AE%9E%E8%B7%B5/">UI 自动化：Playwright 在业务回归测试中的实践</a></li>
+<li><a href="/2022/05/16/UI%E8%87%AA%E5%8A%A8%E5%8C%96-05-UI%E8%87%AA%E5%8A%A8%E5%8C%96%E4%B8%AD%E7%9A%84%E5%85%83%E7%B4%A0%E5%AE%9A%E4%BD%8D%E7%AD%96%E7%95%A5%E6%80%BB%E7%BB%93/">UI 自动化：UI 自动化中的元素定位策略总结</a></li>
+<li><a href="/2023/08/21/UI%E8%87%AA%E5%8A%A8%E5%8C%96-07-UI%E8%87%AA%E5%8A%A8%E5%8C%96%E4%B8%BA%E4%BB%80%E4%B9%88%E5%AE%B9%E6%98%93%E8%84%86%E5%BC%B1%E6%80%8E%E4%B9%88%E6%B2%BB%E7%90%86/">UI 自动化：UI 自动化为什么容易脆弱，怎么治理</a></li>
+</ul>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/UI%E8%87%AA%E5%8A%A8%E5%8C%96/" rel="tag"># UI自动化</a>
+              <a href="/tags/%E8%87%AA%E5%8A%A8%E5%8C%96%E6%B5%8B%E8%AF%95/" rel="tag"># 自动化测试</a>
+              <a href="/tags/UI%E8%87%AA%E5%8A%A8%E5%8C%96%E4%B8%93%E9%A2%98/" rel="tag"># UI自动化专题</a>
+              <a href="/tags/UI-%E8%87%AA%E5%8A%A8%E5%8C%96%E6%B5%8B%E8%AF%95/" rel="tag"># UI 自动化测试</a>
+              <a href="/tags/%E7%A8%B3%E5%AE%9A%E6%80%A7/" rel="tag"># 稳定性</a>
+              <a href="/tags/%E7%AD%89%E5%BE%85%E6%9C%BA%E5%88%B6/" rel="tag"># 等待机制</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2022/05/16/UI%E8%87%AA%E5%8A%A8%E5%8C%96-05-UI%E8%87%AA%E5%8A%A8%E5%8C%96%E4%B8%AD%E7%9A%84%E5%85%83%E7%B4%A0%E5%AE%9A%E4%BD%8D%E7%AD%96%E7%95%A5%E6%80%BB%E7%BB%93/" rel="prev" title="UI 自动化：UI 自动化中的元素定位策略总结">
+                  <i class="fa fa-angle-left"></i> UI 自动化：UI 自动化中的元素定位策略总结
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2022/07/21/UI%E8%87%AA%E5%8A%A8%E5%8C%96-07-UI%E8%87%AA%E5%8A%A8%E5%8C%96%E4%B8%BA%E4%BB%80%E4%B9%88%E5%AE%B9%E6%98%93%E8%84%86%E5%BC%B1%E6%80%8E%E4%B9%88%E6%B2%BB%E7%90%86/" rel="next" title="UI 自动化：UI 自动化为什么容易脆弱，怎么治理">
+                  UI 自动化：UI 自动化为什么容易脆弱，怎么治理 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

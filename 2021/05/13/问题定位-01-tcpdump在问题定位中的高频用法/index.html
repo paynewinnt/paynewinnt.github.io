@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="很多网络问题一到现场，最容易出现的局面是：  客户端说请求发出去了 服务端说自己没收到 中间层说监控没看到异常  然后每个人都在描述自己的视角，但没人能先把最基础的问题回答清楚：  包到底有没有出来 包到底有没有到 对端到底有没有回 是哪一段先开始不对  这就是 tcpdump 在问题定位里最实际的价值。 它不是为了让你背更多参数，而是为了在最短时间内把“到底有没有流量、流量在哪开始异常”这件事先">
+<meta property="og:type" content="article">
+<meta property="og:title" content="问题定位-01-tcpdump在问题定位中的高频用法">
+<meta property="og:url" content="https://paynewinnt.github.io/2021/05/13/%E9%97%AE%E9%A2%98%E5%AE%9A%E4%BD%8D-01-tcpdump%E5%9C%A8%E9%97%AE%E9%A2%98%E5%AE%9A%E4%BD%8D%E4%B8%AD%E7%9A%84%E9%AB%98%E9%A2%91%E7%94%A8%E6%B3%95/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="很多网络问题一到现场，最容易出现的局面是：  客户端说请求发出去了 服务端说自己没收到 中间层说监控没看到异常  然后每个人都在描述自己的视角，但没人能先把最基础的问题回答清楚：  包到底有没有出来 包到底有没有到 对端到底有没有回 是哪一段先开始不对  这就是 tcpdump 在问题定位里最实际的价值。 它不是为了让你背更多参数，而是为了在最短时间内把“到底有没有流量、流量在哪开始异常”这件事先">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2021-05-13T12:30:00.000Z">
+<meta property="article:modified_time" content="2021-05-13T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="排障">
+<meta property="article:tag" content="实战">
+<meta property="article:tag" content="网络排障">
+<meta property="article:tag" content="问题定位">
+<meta property="article:tag" content="抓包分析">
+<meta property="article:tag" content="tcpdump">
+<meta property="article:tag" content="问题定位与抓包分析">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2021/05/13/%E9%97%AE%E9%A2%98%E5%AE%9A%E4%BD%8D-01-tcpdump%E5%9C%A8%E9%97%AE%E9%A2%98%E5%AE%9A%E4%BD%8D%E4%B8%AD%E7%9A%84%E9%AB%98%E9%A2%91%E7%94%A8%E6%B3%95/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2021/05/13/%E9%97%AE%E9%A2%98%E5%AE%9A%E4%BD%8D-01-tcpdump%E5%9C%A8%E9%97%AE%E9%A2%98%E5%AE%9A%E4%BD%8D%E4%B8%AD%E7%9A%84%E9%AB%98%E9%A2%91%E7%94%A8%E6%B3%95/","path":"2021/05/13/问题定位-01-tcpdump在问题定位中的高频用法/","title":"问题定位-01-tcpdump在问题定位中的高频用法"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>问题定位-01-tcpdump在问题定位中的高频用法 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81tcpdump-%E6%9C%80%E5%80%BC%E5%BE%97%E5%85%88%E5%9B%9E%E7%AD%94%E7%9A%84%EF%BC%8C%E4%B8%8D%E6%98%AF%E7%BB%86%E8%8A%82%E9%97%AE%E9%A2%98%EF%BC%8C%E8%80%8C%E6%98%AF%E8%B7%AF%E5%BE%84%E9%97%AE%E9%A2%98"><span class="nav-number">1.</span> <span class="nav-text">一、tcpdump 最值得先回答的，不是细节问题，而是路径问题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E6%9C%80%E5%B8%B8%E7%94%A8%E7%9A%84-5-%E7%B1%BB%E6%8A%93%E5%8C%85%E5%9C%BA%E6%99%AF"><span class="nav-number">2.</span> <span class="nav-text">二、最常用的 5 类抓包场景</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%BF%9E%E9%80%9A%E6%80%A7%E5%92%8C%E7%AB%AF%E5%8F%A3%E5%8F%AF%E8%BE%BE%E6%80%A7"><span class="nav-number">2.1.</span> <span class="nav-text">1. 连通性和端口可达性</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-DNS-%E8%A7%A3%E6%9E%90%E9%97%AE%E9%A2%98"><span class="nav-number">2.2.</span> <span class="nav-text">2. DNS 解析问题</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-TCP-%E5%BB%BA%E8%BF%9E%E6%85%A2%E6%88%96%E5%81%B6%E5%8F%91%E5%A4%B1%E8%B4%A5"><span class="nav-number">2.3.</span> <span class="nav-text">3. TCP 建连慢或偶发失败</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%BA%94%E7%94%A8%E5%B1%82%E6%9C%89%E9%97%AE%E9%A2%98%EF%BC%8C%E4%BD%86%E5%85%88%E7%A1%AE%E8%AE%A4%E6%98%AF%E4%B8%8D%E6%98%AF%E7%BD%91%E7%BB%9C%E9%97%AE%E9%A2%98"><span class="nav-number">2.4.</span> <span class="nav-text">4. 应用层有问题，但先确认是不是网络问题</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%9B%9E%E5%8C%85%E8%B7%AF%E5%BE%84%E5%BC%82%E5%B8%B8"><span class="nav-number">2.5.</span> <span class="nav-text">5. 回包路径异常</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E6%9B%B4%E5%B8%B8%E7%94%A8%E7%9A%84%E4%B8%80%E5%A5%97%E6%9C%80%E5%B0%8F%E6%8A%93%E5%8C%85%E6%96%B9%E6%B3%95"><span class="nav-number">3.</span> <span class="nav-text">三、更常用的一套最小抓包方法</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%85%88%E6%98%8E%E7%A1%AE-4-%E4%B8%AA%E4%BF%A1%E6%81%AF"><span class="nav-number">3.1.</span> <span class="nav-text">1. 先明确 4 个信息</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%85%88%E6%8A%93%E6%9C%80%E5%B0%8F%E8%BF%87%E6%BB%A4%E6%9D%A1%E4%BB%B6"><span class="nav-number">3.2.</span> <span class="nav-text">2. 先抓最小过滤条件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%85%88%E7%9C%8B%E7%BB%88%E7%AB%AF%EF%BC%8C%E5%86%8D%E5%86%B3%E5%AE%9A%E8%A6%81%E4%B8%8D%E8%A6%81%E8%90%BD%E6%96%87%E4%BB%B6"><span class="nav-number">3.3.</span> <span class="nav-text">3. 先看终端，再决定要不要落文件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%8F%AA%E5%9C%A8%E5%BF%85%E8%A6%81%E6%97%B6%E6%8F%90%E5%8D%87%E6%8A%93%E5%8C%85%E8%8C%83%E5%9B%B4"><span class="nav-number">3.4.</span> <span class="nav-text">4. 只在必要时提升抓包范围</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E5%87%A0%E4%B8%AA%E6%9C%80%E6%9C%89%E7%94%A8%E7%9A%84%E9%AB%98%E9%A2%91%E5%91%BD%E4%BB%A4"><span class="nav-number">4.</span> <span class="nav-text">四、几个最有用的高频命令</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%9C%8B%E6%8C%87%E5%AE%9A%E4%B8%BB%E6%9C%BA%E5%92%8C%E7%AB%AF%E5%8F%A3"><span class="nav-number">4.1.</span> <span class="nav-text">1. 看指定主机和端口</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E7%9C%8B-DNS"><span class="nav-number">4.2.</span> <span class="nav-text">2. 看 DNS</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%90%BD%E5%8C%85%E6%96%87%E4%BB%B6%E4%BE%9B%E5%90%8E%E7%BB%AD%E5%88%86%E6%9E%90"><span class="nav-number">4.3.</span> <span class="nav-text">3. 落包文件供后续分析</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%8C%89%E6%97%B6%E9%97%B4%E7%9C%8B%E6%8F%A1%E6%89%8B%E5%92%8C%E9%87%8D%E4%BC%A0%E8%8A%82%E5%A5%8F"><span class="nav-number">4.4.</span> <span class="nav-text">4. 按时间看握手和重传节奏</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%8F%AA%E7%9C%8B%E5%B0%91%E9%87%8F%E6%A0%B7%E6%9C%AC%E5%BF%AB%E9%80%9F%E7%A1%AE%E8%AE%A4"><span class="nav-number">4.5.</span> <span class="nav-text">5. 只看少量样本快速确认</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E6%8A%93%E5%88%B0%E5%8C%85%E4%B9%8B%E5%90%8E%EF%BC%8C%E5%85%88%E7%9C%8B%E4%BB%80%E4%B9%88"><span class="nav-number">5.</span> <span class="nav-text">五、抓到包之后，先看什么</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%85%88%E7%9C%8B%E6%9C%89%E6%B2%A1%E6%9C%89%E8%AF%B7%E6%B1%82%E5%87%BA%E5%8E%BB"><span class="nav-number">5.1.</span> <span class="nav-text">1. 先看有没有请求出去</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%86%8D%E7%9C%8B%E5%AF%B9%E7%AB%AF%E6%9C%89%E6%B2%A1%E6%9C%89%E5%9B%9E%E5%BA%94"><span class="nav-number">5.2.</span> <span class="nav-text">2. 再看对端有没有回应</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%86%8D%E7%9C%8B%E6%98%AF%E4%B8%8D%E6%98%AF%E8%A2%AB%E6%8B%92%E7%BB%9D"><span class="nav-number">5.3.</span> <span class="nav-text">3. 再看是不是被拒绝</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%86%8D%E7%9C%8B%E6%9C%89%E6%B2%A1%E6%9C%89%E9%87%8D%E4%BC%A0%E5%92%8C%E8%B6%85%E6%97%B6"><span class="nav-number">5.4.</span> <span class="nav-text">4. 再看有没有重传和超时</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%9C%80%E5%90%8E%E6%89%8D%E8%80%83%E8%99%91%E6%98%AF%E4%B8%8D%E6%98%AF%E5%BA%94%E7%94%A8%E5%B1%82%E6%85%A2"><span class="nav-number">5.5.</span> <span class="nav-text">5. 最后才考虑是不是应用层慢</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E7%8E%B0%E5%9C%BA%E6%9C%80%E5%AE%B9%E6%98%93%E8%B8%A9%E7%9A%84%E5%87%A0%E4%B8%AA%E5%9D%91"><span class="nav-number">6.</span> <span class="nav-text">六、现场最容易踩的几个坑</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%8A%93%E9%94%99%E7%BD%91%E5%8D%A1"><span class="nav-number">6.1.</span> <span class="nav-text">1. 抓错网卡</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%BF%87%E6%BB%A4%E6%9D%A1%E4%BB%B6%E5%A4%AA%E5%AE%BD"><span class="nav-number">6.2.</span> <span class="nav-text">2. 过滤条件太宽</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%8F%AA%E6%8A%93%E4%B8%80%E8%BE%B9%E5%B0%B1%E4%B8%8B%E7%BB%93%E8%AE%BA"><span class="nav-number">6.3.</span> <span class="nav-text">3. 只抓一边就下结论</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%8F%AA%E7%9C%8B%E6%9C%89%E6%B2%A1%E6%9C%89%E5%8C%85%EF%BC%8C%E4%B8%8D%E7%9C%8B%E6%97%B6%E9%97%B4"><span class="nav-number">6.4.</span> <span class="nav-text">4. 只看有没有包，不看时间</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E7%9C%9F%E5%AE%9E%E6%A1%88%E4%BE%8B%EF%BC%9A%E4%B8%BA%E4%BB%80%E4%B9%88%E6%9C%8D%E5%8A%A1%E7%AB%AF%E8%AF%B4%E5%B7%B2%E7%BB%8F%E5%9B%9E%E4%BA%86%EF%BC%8C%E5%AE%A2%E6%88%B7%E7%AB%AF%E8%BF%98%E6%98%AF%E4%B8%80%E7%9B%B4%E8%B6%85%E6%97%B6"><span class="nav-number">7.</span> <span class="nav-text">七、真实案例：为什么服务端说已经回了，客户端还是一直超时</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9C%BA%E6%99%AF"><span class="nav-number">7.1.</span> <span class="nav-text">场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%89%A7%E8%A1%8C"><span class="nav-number">7.2.</span> <span class="nav-text">执行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8E%B0%E8%B1%A1"><span class="nav-number">7.3.</span> <span class="nav-text">现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%92%E6%9F%A5"><span class="nav-number">7.4.</span> <span class="nav-text">排查</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BF%AE%E5%A4%8D"><span class="nav-number">7.5.</span> <span class="nav-text">修复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E6%80%8E%E4%B9%88%E6%8A%8A-tcpdump-%E5%8F%98%E6%88%90%E9%95%BF%E6%9C%9F%E9%AB%98%E4%BB%B7%E5%80%BC%E8%83%BD%E5%8A%9B"><span class="nav-number">8.</span> <span class="nav-text">八、怎么把 tcpdump 变成长期高价值能力</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E5%86%99%E5%9C%A8%E6%9C%80%E5%90%8E"><span class="nav-number">9.</span> <span class="nav-text">九、写在最后</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2021/05/13/%E9%97%AE%E9%A2%98%E5%AE%9A%E4%BD%8D-01-tcpdump%E5%9C%A8%E9%97%AE%E9%A2%98%E5%AE%9A%E4%BD%8D%E4%B8%AD%E7%9A%84%E9%AB%98%E9%A2%91%E7%94%A8%E6%B3%95/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="问题定位-01-tcpdump在问题定位中的高频用法 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          问题定位-01-tcpdump在问题定位中的高频用法
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2021-05-13 20:30:00" itemprop="dateCreated datePublished" datetime="2021-05-13T20:30:00+08:00">2021-05-13</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/%E9%97%AE%E9%A2%98%E5%AE%9A%E4%BD%8D/" itemprop="url" rel="index"><span itemprop="name">问题定位</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>2.7k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>10 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>很多网络问题一到现场，最容易出现的局面是：</p>
+<ul>
+<li>客户端说请求发出去了</li>
+<li>服务端说自己没收到</li>
+<li>中间层说监控没看到异常</li>
+</ul>
+<p>然后每个人都在描述自己的视角，但没人能先把最基础的问题回答清楚：</p>
+<ul>
+<li>包到底有没有出来</li>
+<li>包到底有没有到</li>
+<li>对端到底有没有回</li>
+<li>是哪一段先开始不对</li>
+</ul>
+<p>这就是 <code>tcpdump</code> 在问题定位里最实际的价值。</p>
+<p>它不是为了让你背更多参数，而是为了在最短时间内把“到底有没有流量、流量在哪开始异常”这件事先钉住。</p>
+<p>这篇文章不打算写成命令手册，而是按现场排障的方式讲：</p>
+<ul>
+<li><code>tcpdump</code> 最常见的几类高频用法</li>
+<li>怎么抓包才不至于抓一堆没用数据</li>
+<li>抓到之后先看什么</li>
+<li>哪些现象最值得优先判断</li>
+</ul>
+<h2 id="一、tcpdump-最值得先回答的，不是细节问题，而是路径问题"><a href="#一、tcpdump-最值得先回答的，不是细节问题，而是路径问题" class="headerlink" title="一、tcpdump 最值得先回答的，不是细节问题，而是路径问题"></a>一、tcpdump 最值得先回答的，不是细节问题，而是路径问题</h2><p>现场排障时，通常不会一上来就看协议细节。<br>更优先的问题通常是这几个：</p>
+<ul>
+<li>请求有没有从本机发出去</li>
+<li>请求有没有到目标主机</li>
+<li>目标主机有没有回应</li>
+<li>回应有没有被中间链路挡住</li>
+<li>是 DNS、TCP 建连、应用响应还是回包路径出了问题</li>
+</ul>
+<p><code>tcpdump</code> 最适合先解决的，就是这些路径问题。</p>
+<p>因为只要这一步还没搞清楚，后面所有“是不是应用 bug”“是不是服务慢”“是不是鉴权有问题”的讨论都很容易跑偏。</p>
+<h2 id="二、最常用的-5-类抓包场景"><a href="#二、最常用的-5-类抓包场景" class="headerlink" title="二、最常用的 5 类抓包场景"></a>二、最常用的 5 类抓包场景</h2><p>如果按现场频率排，最常抓的是下面 5 类。</p>
+<h3 id="1-连通性和端口可达性"><a href="#1-连通性和端口可达性" class="headerlink" title="1. 连通性和端口可达性"></a>1. 连通性和端口可达性</h3><p>典型问题：</p>
+<ul>
+<li>请求打过去完全没反应</li>
+<li>服务端口疑似没开</li>
+<li>防火墙或安全组怀疑拦截</li>
+</ul>
+<p>这时最先看的不是应用日志，而是：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">sudo</span> tcpdump -i any host 10.10.10.12 and port 8080 -nn</span><br></pre></td></tr></table></figure>
+
+<p>重点先确认：</p>
+<ul>
+<li>有没有 <code>SYN</code></li>
+<li>有没有 <code>SYN, ACK</code></li>
+<li>有没有立即 <code>RST</code></li>
+</ul>
+<p>如果只有 <code>SYN</code> 没有回应，通常先看：</p>
+<ul>
+<li>对端没收到</li>
+<li>对端没监听</li>
+<li>中间链路丢了</li>
+</ul>
+<p>如果直接 <code>RST</code>，通常更像：</p>
+<ul>
+<li>端口没监听</li>
+<li>主机直接拒绝</li>
+</ul>
+<h3 id="2-DNS-解析问题"><a href="#2-DNS-解析问题" class="headerlink" title="2. DNS 解析问题"></a>2. DNS 解析问题</h3><p>典型问题：</p>
+<ul>
+<li>域名偶发解析失败</li>
+<li>接口超时，但实际是名字没解出来</li>
+<li>同一服务在不同机器上表现不一致</li>
+</ul>
+<p>这时先抓：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">sudo</span> tcpdump -i any port 53 -nn</span><br></pre></td></tr></table></figure>
+
+<p>先回答：</p>
+<ul>
+<li>DNS 请求有没有发出去</li>
+<li>发给了哪个 DNS 服务器</li>
+<li>是否有响应</li>
+<li>是否频繁重试</li>
+</ul>
+<p>很多“服务不可用”最后根因并不在服务，而在 DNS。</p>
+<h3 id="3-TCP-建连慢或偶发失败"><a href="#3-TCP-建连慢或偶发失败" class="headerlink" title="3. TCP 建连慢或偶发失败"></a>3. TCP 建连慢或偶发失败</h3><p>典型问题：</p>
+<ul>
+<li>接口不是每次都失败，但偶发超时</li>
+<li>建连阶段就拖很久</li>
+<li>某个环境特别慢</li>
+</ul>
+<p>这种场景会更关注三次握手是否正常，以及重传情况：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">sudo</span> tcpdump -i any host 10.10.10.12 and tcp port 443 -nn -tttt</span><br></pre></td></tr></table></figure>
+
+<p>重点看：</p>
+<ul>
+<li><code>SYN</code> 到 <code>SYN, ACK</code> 的时间差</li>
+<li>是否有重复 <code>SYN</code></li>
+<li>是否有大量重传</li>
+</ul>
+<h3 id="4-应用层有问题，但先确认是不是网络问题"><a href="#4-应用层有问题，但先确认是不是网络问题" class="headerlink" title="4. 应用层有问题，但先确认是不是网络问题"></a>4. 应用层有问题，但先确认是不是网络问题</h3><p>典型问题：</p>
+<ul>
+<li>页面报超时</li>
+<li>接口返回慢</li>
+<li>服务端说自己处理很快</li>
+</ul>
+<p>这时抓包的价值不是马上看 HTTP 内容，而是先把时间分层：</p>
+<ul>
+<li>建连花了多久</li>
+<li>请求发出花了多久</li>
+<li>对端第一个响应包多久回来</li>
+<li>是网络卡住，还是应用处理慢</li>
+</ul>
+<h3 id="5-回包路径异常"><a href="#5-回包路径异常" class="headerlink" title="5. 回包路径异常"></a>5. 回包路径异常</h3><p>典型问题：</p>
+<ul>
+<li>客户端说没收到响应</li>
+<li>服务端说自己已经回了</li>
+</ul>
+<p>这个时候 <code>tcpdump</code> 最重要。</p>
+<p>因为你可以分别在：</p>
+<ul>
+<li>客户端</li>
+<li>服务端</li>
+<li>中间代理节点</li>
+</ul>
+<p>抓同一条流量，然后回答：</p>
+<ul>
+<li>哪一端最后一次看到正常包</li>
+<li>哪一段之后包消失了</li>
+</ul>
+<p>这比反复争论“我这边没问题”有用得多。</p>
+<h2 id="三、更常用的一套最小抓包方法"><a href="#三、更常用的一套最小抓包方法" class="headerlink" title="三、更常用的一套最小抓包方法"></a>三、更常用的一套最小抓包方法</h2><p><code>tcpdump</code> 抓包失败，常见原因不是不会用，而是一上来抓太大、太杂，最后文件一堆但没有证据。</p>
+<p>更常用的最小方法是：</p>
+<h3 id="1-先明确-4-个信息"><a href="#1-先明确-4-个信息" class="headerlink" title="1. 先明确 4 个信息"></a>1. 先明确 4 个信息</h3><p>抓之前先确定：</p>
+<ul>
+<li>抓哪台机器</li>
+<li>抓哪个网卡</li>
+<li>抓哪对 IP</li>
+<li>抓哪个端口或协议</li>
+</ul>
+<p>如果这 4 个信息都不清楚，抓包通常会很散。</p>
+<h3 id="2-先抓最小过滤条件"><a href="#2-先抓最小过滤条件" class="headerlink" title="2. 先抓最小过滤条件"></a>2. 先抓最小过滤条件</h3><p>例如：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">sudo</span> tcpdump -i any host 10.10.10.12 and port 8080 -nn</span><br></pre></td></tr></table></figure>
+
+<p>或者：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">sudo</span> tcpdump -i eth0 tcp and host 10.10.10.12 and port 443 -nn</span><br></pre></td></tr></table></figure>
+
+<p>不要一开始就把整个网卡所有包都抓下来，现场很容易把自己淹没。</p>
+<h3 id="3-先看终端，再决定要不要落文件"><a href="#3-先看终端，再决定要不要落文件" class="headerlink" title="3. 先看终端，再决定要不要落文件"></a>3. 先看终端，再决定要不要落文件</h3><p>如果只是确认连通性、握手、有没有重传，很多时候先看终端就够了。</p>
+<p>如果需要后续复盘、给别人分析，再落 <code>pcap</code>：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">sudo</span> tcpdump -i any host 10.10.10.12 and port 8080 -nn -w issue-20210513.pcap</span><br></pre></td></tr></table></figure>
+
+<h3 id="4-只在必要时提升抓包范围"><a href="#4-只在必要时提升抓包范围" class="headerlink" title="4. 只在必要时提升抓包范围"></a>4. 只在必要时提升抓包范围</h3><p>先抓：</p>
+<ul>
+<li>单 IP</li>
+<li>单端口</li>
+<li>单协议</li>
+</ul>
+<p>如果证据不够，再逐步放大，不要一开始就全网卡全协议全量抓。</p>
+<h2 id="四、几个最有用的高频命令"><a href="#四、几个最有用的高频命令" class="headerlink" title="四、几个最有用的高频命令"></a>四、几个最有用的高频命令</h2><h3 id="1-看指定主机和端口"><a href="#1-看指定主机和端口" class="headerlink" title="1. 看指定主机和端口"></a>1. 看指定主机和端口</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">sudo</span> tcpdump -i any host 10.10.10.12 and port 8080 -nn</span><br></pre></td></tr></table></figure>
+
+<p>适合：</p>
+<ul>
+<li>先确认流量有没有来回</li>
+</ul>
+<h3 id="2-看-DNS"><a href="#2-看-DNS" class="headerlink" title="2. 看 DNS"></a>2. 看 DNS</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">sudo</span> tcpdump -i any port 53 -nn</span><br></pre></td></tr></table></figure>
+
+<p>适合：</p>
+<ul>
+<li>域名解析失败</li>
+<li>DNS 重试</li>
+</ul>
+<h3 id="3-落包文件供后续分析"><a href="#3-落包文件供后续分析" class="headerlink" title="3. 落包文件供后续分析"></a>3. 落包文件供后续分析</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">sudo</span> tcpdump -i any host 10.10.10.12 and port 443 -nn -w api-timeout.pcap</span><br></pre></td></tr></table></figure>
+
+<p>适合：</p>
+<ul>
+<li>后续用 <code>Wireshark</code> 复盘</li>
+<li>把问题交给网络或中间件同学继续看</li>
+</ul>
+<h3 id="4-按时间看握手和重传节奏"><a href="#4-按时间看握手和重传节奏" class="headerlink" title="4. 按时间看握手和重传节奏"></a>4. 按时间看握手和重传节奏</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">sudo</span> tcpdump -i any host 10.10.10.12 and tcp port 443 -nn -tttt</span><br></pre></td></tr></table></figure>
+
+<p>适合：</p>
+<ul>
+<li>看超时点</li>
+<li>看重传节奏</li>
+</ul>
+<h3 id="5-只看少量样本快速确认"><a href="#5-只看少量样本快速确认" class="headerlink" title="5. 只看少量样本快速确认"></a>5. 只看少量样本快速确认</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">sudo</span> tcpdump -i any host 10.10.10.12 and port 8080 -nn -c 20</span><br></pre></td></tr></table></figure>
+
+<p>适合：</p>
+<ul>
+<li>先抓几个包快速判断方向</li>
+</ul>
+<h2 id="五、抓到包之后，先看什么"><a href="#五、抓到包之后，先看什么" class="headerlink" title="五、抓到包之后，先看什么"></a>五、抓到包之后，先看什么</h2><p>如果只是现场快速判断，通常按下面顺序看。</p>
+<h3 id="1-先看有没有请求出去"><a href="#1-先看有没有请求出去" class="headerlink" title="1. 先看有没有请求出去"></a>1. 先看有没有请求出去</h3><p>没有请求出去，优先怀疑：</p>
+<ul>
+<li>应用根本没发</li>
+<li>请求发错网卡或发错地址</li>
+<li>本机路由有问题</li>
+</ul>
+<h3 id="2-再看对端有没有回应"><a href="#2-再看对端有没有回应" class="headerlink" title="2. 再看对端有没有回应"></a>2. 再看对端有没有回应</h3><p>没有回应时，优先考虑：</p>
+<ul>
+<li>对端没收到</li>
+<li>对端没监听</li>
+<li>中间链路丢弃</li>
+</ul>
+<h3 id="3-再看是不是被拒绝"><a href="#3-再看是不是被拒绝" class="headerlink" title="3. 再看是不是被拒绝"></a>3. 再看是不是被拒绝</h3><p>看到 <code>RST</code> 时，通常方向会更清楚：</p>
+<ul>
+<li>端口没开</li>
+<li>服务拒绝</li>
+<li>某层代理直接断开</li>
+</ul>
+<h3 id="4-再看有没有重传和超时"><a href="#4-再看有没有重传和超时" class="headerlink" title="4. 再看有没有重传和超时"></a>4. 再看有没有重传和超时</h3><p>大量重传通常说明：</p>
+<ul>
+<li>丢包</li>
+<li>链路不稳</li>
+<li>某段网络质量差</li>
+</ul>
+<h3 id="5-最后才考虑是不是应用层慢"><a href="#5-最后才考虑是不是应用层慢" class="headerlink" title="5. 最后才考虑是不是应用层慢"></a>5. 最后才考虑是不是应用层慢</h3><p>如果 TCP 路径正常、握手正常、请求发出正常，但响应首包很久才回来，那才更像：</p>
+<ul>
+<li>应用处理慢</li>
+<li>下游依赖慢</li>
+<li>线程池或连接池耗尽</li>
+</ul>
+<h2 id="六、现场最容易踩的几个坑"><a href="#六、现场最容易踩的几个坑" class="headerlink" title="六、现场最容易踩的几个坑"></a>六、现场最容易踩的几个坑</h2><h3 id="1-抓错网卡"><a href="#1-抓错网卡" class="headerlink" title="1. 抓错网卡"></a>1. 抓错网卡</h3><p>很多机器有：</p>
+<ul>
+<li><code>eth0</code></li>
+<li><code>docker0</code></li>
+<li><code>cni*</code></li>
+<li><code>lo</code></li>
+</ul>
+<p>如果抓错网卡，结论很容易完全错掉。<br>所以我现场经常直接先用 <code>-i any</code> 快速确认方向。</p>
+<h3 id="2-过滤条件太宽"><a href="#2-过滤条件太宽" class="headerlink" title="2. 过滤条件太宽"></a>2. 过滤条件太宽</h3><p>一上来抓整个 443 或整台机器全流量，很容易看花。<br>更好的方式是先按“单主机 + 单端口”收窄。</p>
+<h3 id="3-只抓一边就下结论"><a href="#3-只抓一边就下结论" class="headerlink" title="3. 只抓一边就下结论"></a>3. 只抓一边就下结论</h3><p>有些问题如果只抓客户端，很容易判断成服务端没回；<br>但如果服务端抓一下，可能会发现服务端其实已经回了，只是中间链路没回来。</p>
+<h3 id="4-只看有没有包，不看时间"><a href="#4-只看有没有包，不看时间" class="headerlink" title="4. 只看有没有包，不看时间"></a>4. 只看有没有包，不看时间</h3><p>很多问题不是“完全没包”，而是：</p>
+<ul>
+<li>很慢</li>
+<li>重试很多次</li>
+<li>第一次失败第二次才成功</li>
+</ul>
+<p>所以时间维度非常重要。</p>
+<h2 id="七、真实案例：为什么服务端说已经回了，客户端还是一直超时"><a href="#七、真实案例：为什么服务端说已经回了，客户端还是一直超时" class="headerlink" title="七、真实案例：为什么服务端说已经回了，客户端还是一直超时"></a>七、真实案例：为什么服务端说已经回了，客户端还是一直超时</h2><h3 id="场景"><a href="#场景" class="headerlink" title="场景"></a>场景</h3><p>一个内部接口在压测环境里频繁超时。<br>客户端同学说：</p>
+<ul>
+<li>请求已经发出</li>
+<li>页面一直转圈，最后超时</li>
+</ul>
+<p>服务端同学说：</p>
+<ul>
+<li>应用日志里已经处理完成</li>
+<li>响应也正常返回了</li>
+</ul>
+<p>看起来双方都很确定，问题却一直对不上。</p>
+<h3 id="执行"><a href="#执行" class="headerlink" title="执行"></a>执行</h3><p>我没有先看应用代码，而是先在两边同时抓包。</p>
+<p>客户端抓：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">sudo</span> tcpdump -i any host 10.20.8.15 and port 8080 -nn -tttt</span><br></pre></td></tr></table></figure>
+
+<p>服务端抓：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">sudo</span> tcpdump -i any host 10.20.8.21 and port 8080 -nn -tttt</span><br></pre></td></tr></table></figure>
+
+<h3 id="现象"><a href="#现象" class="headerlink" title="现象"></a>现象</h3><p>抓包结果非常清楚：</p>
+<ul>
+<li>客户端能正常发出请求</li>
+<li>服务端也确实收到了请求</li>
+<li>服务端处理完成后也发回了响应包</li>
+<li>但客户端侧始终收不到对应的响应</li>
+</ul>
+<p>也就是说：</p>
+<ul>
+<li>应用层不是主因</li>
+<li>真正的问题在回包路径</li>
+</ul>
+<h3 id="排查"><a href="#排查" class="headerlink" title="排查"></a>排查</h3><p>继续结合网络路径排查后发现，中间一层负载均衡配置变更后，回包链路走偏了，导致响应没有按预期返回到客户端侧。</p>
+<p>这类问题如果只看应用日志，服务端会一直觉得“我明明回了”。<br>如果只看客户端现象，客户端会一直觉得“服务端根本没回”。</p>
+<p>而双端抓包一下就把边界切清楚了：</p>
+<ul>
+<li>请求路径正常</li>
+<li>回包路径异常</li>
+</ul>
+<h3 id="修复"><a href="#修复" class="headerlink" title="修复"></a>修复</h3><p>最终修复动作很明确：</p>
+<ol>
+<li>调整中间层回包路由</li>
+<li>复测同一条流量</li>
+<li>确认客户端已能收到响应首包</li>
+<li>将这类场景加入网络变更后的专项回归</li>
+</ol>
+<p>这个案例很典型地说明：</p>
+<p><strong>tcpdump 最大的价值，不是解释所有协议细节，而是先把“哪一段开始不对”钉住。</strong></p>
+<h2 id="八、怎么把-tcpdump-变成长期高价值能力"><a href="#八、怎么把-tcpdump-变成长期高价值能力" class="headerlink" title="八、怎么把 tcpdump 变成长期高价值能力"></a>八、怎么把 tcpdump 变成长期高价值能力</h2><p>更合适的做法是把它沉淀成一套现场动作，而不是想到才用。</p>
+<p>至少固定这几条：</p>
+<ul>
+<li>先问清楚抓包目标：哪台机、哪张网卡、哪对 IP、哪个端口</li>
+<li>先小范围抓，确认方向后再扩大</li>
+<li>先看是否有请求、有响应、有重传、有 RST</li>
+<li>关键问题尽量双端抓包</li>
+<li>抓到后把时间线和现象对应起来</li>
+</ul>
+<p>这样 <code>tcpdump</code> 才不是一个“懂点命令的人会用”的工具，而是真正能在现场把排障往前推进的一步。</p>
+<h2 id="九、写在最后"><a href="#九、写在最后" class="headerlink" title="九、写在最后"></a>九、写在最后</h2><p><code>tcpdump</code> 在问题定位里最有用的地方，并不是它参数很多，而是它能帮你先把争议最小化：</p>
+<ul>
+<li>包有没有出来</li>
+<li>包有没有到</li>
+<li>对端有没有回</li>
+<li>哪一段先开始异常</li>
+</ul>
+<p>只要这四件事先清楚了，后面的应用排障、网络排障、代理排障才不会一直绕圈子。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E6%8E%92%E9%9A%9C/" rel="tag"># 排障</a>
+              <a href="/tags/%E5%AE%9E%E6%88%98/" rel="tag"># 实战</a>
+              <a href="/tags/%E7%BD%91%E7%BB%9C%E6%8E%92%E9%9A%9C/" rel="tag"># 网络排障</a>
+              <a href="/tags/%E9%97%AE%E9%A2%98%E5%AE%9A%E4%BD%8D/" rel="tag"># 问题定位</a>
+              <a href="/tags/%E6%8A%93%E5%8C%85%E5%88%86%E6%9E%90/" rel="tag"># 抓包分析</a>
+              <a href="/tags/tcpdump/" rel="tag"># tcpdump</a>
+              <a href="/tags/%E9%97%AE%E9%A2%98%E5%AE%9A%E4%BD%8D%E4%B8%8E%E6%8A%93%E5%8C%85%E5%88%86%E6%9E%90/" rel="tag"># 问题定位与抓包分析</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2021/04/29/%E5%AE%89%E5%85%A8%E6%B5%8B%E8%AF%95-07-%E5%A6%82%E4%BD%95%E6%8A%8A%E5%9F%BA%E7%A1%80%E5%AE%89%E5%85%A8%E6%A0%A1%E9%AA%8C%E6%8E%A5%E5%85%A5%E8%87%AA%E5%8A%A8%E5%8C%96%E6%B5%81%E7%A8%8B/" rel="prev" title="安全测试-07-如何把基础安全校验接入自动化流程">
+                  <i class="fa fa-angle-left"></i> 安全测试-07-如何把基础安全校验接入自动化流程
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2021/05/20/%E9%97%AE%E9%A2%98%E5%AE%9A%E4%BD%8D-02-Wireshark%E5%88%86%E6%9E%90%E7%BD%91%E7%BB%9C%E9%97%AE%E9%A2%98%E7%9A%84%E5%9F%BA%E6%9C%AC%E5%A5%97%E8%B7%AF/" rel="next" title="问题定位-02-Wireshark分析网络问题的基本套路">
+                  问题定位-02-Wireshark分析网络问题的基本套路 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

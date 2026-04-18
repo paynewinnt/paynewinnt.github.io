@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="移动端自动化一旦从“单机单设备”走向“多设备并发”，会很快碰到一个现实问题： 不是用例不会跑，而是真机环境越来越不稳定。 最典型的表现通常是这些：  同一条命令偶尔跑到别的设备上 设备昨天还能用，今天跑两轮就开始 offline 截图、日志、录屏和实际失败设备对不上 某个 case 跑挂以后，把后面的设备状态一起污染了 并发一上来，整套环境吞吐没上去，故障反而更多  这类问题本质上已经不是“单条">
+<meta property="og:type" content="article">
+<meta property="og:title" content="移动端自动化：多设备并发测试怎么管理才不会把真机环境跑崩">
+<meta property="og:url" content="https://paynewinnt.github.io/2023/02/03/%E7%A7%BB%E5%8A%A8%E7%AB%AF%E8%87%AA%E5%8A%A8%E5%8C%96-05-%E5%A4%9A%E8%AE%BE%E5%A4%87%E5%B9%B6%E5%8F%91%E6%B5%8B%E8%AF%95%E6%80%8E%E4%B9%88%E7%AE%A1%E7%90%86%E6%89%8D%E4%B8%8D%E4%BC%9A%E6%8A%8A%E7%9C%9F%E6%9C%BA%E7%8E%AF%E5%A2%83%E8%B7%91%E5%B4%A9/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="移动端自动化一旦从“单机单设备”走向“多设备并发”，会很快碰到一个现实问题： 不是用例不会跑，而是真机环境越来越不稳定。 最典型的表现通常是这些：  同一条命令偶尔跑到别的设备上 设备昨天还能用，今天跑两轮就开始 offline 截图、日志、录屏和实际失败设备对不上 某个 case 跑挂以后，把后面的设备状态一起污染了 并发一上来，整套环境吞吐没上去，故障反而更多  这类问题本质上已经不是“单条">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2023-02-03T12:30:00.000Z">
+<meta property="article:modified_time" content="2023-02-03T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="工程化">
+<meta property="article:tag" content="工程实践">
+<meta property="article:tag" content="排障">
+<meta property="article:tag" content="Android">
+<meta property="article:tag" content="ADB">
+<meta property="article:tag" content="移动端自动化">
+<meta property="article:tag" content="设备池">
+<meta property="article:tag" content="并发测试">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2023/02/03/%E7%A7%BB%E5%8A%A8%E7%AB%AF%E8%87%AA%E5%8A%A8%E5%8C%96-05-%E5%A4%9A%E8%AE%BE%E5%A4%87%E5%B9%B6%E5%8F%91%E6%B5%8B%E8%AF%95%E6%80%8E%E4%B9%88%E7%AE%A1%E7%90%86%E6%89%8D%E4%B8%8D%E4%BC%9A%E6%8A%8A%E7%9C%9F%E6%9C%BA%E7%8E%AF%E5%A2%83%E8%B7%91%E5%B4%A9/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2023/02/03/%E7%A7%BB%E5%8A%A8%E7%AB%AF%E8%87%AA%E5%8A%A8%E5%8C%96-05-%E5%A4%9A%E8%AE%BE%E5%A4%87%E5%B9%B6%E5%8F%91%E6%B5%8B%E8%AF%95%E6%80%8E%E4%B9%88%E7%AE%A1%E7%90%86%E6%89%8D%E4%B8%8D%E4%BC%9A%E6%8A%8A%E7%9C%9F%E6%9C%BA%E7%8E%AF%E5%A2%83%E8%B7%91%E5%B4%A9/","path":"2023/02/03/移动端自动化-05-多设备并发测试怎么管理才不会把真机环境跑崩/","title":"移动端自动化：多设备并发测试怎么管理才不会把真机环境跑崩"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>移动端自动化：多设备并发测试怎么管理才不会把真机环境跑崩 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E5%A4%9A%E8%AE%BE%E5%A4%87%E5%B9%B6%E5%8F%91%E6%9C%80%E5%AE%B9%E6%98%93%E8%A2%AB%E4%BD%8E%E4%BC%B0%E7%9A%84%E9%97%AE%E9%A2%98%EF%BC%8C%E4%B8%8D%E6%98%AF%E5%B9%B6%E5%8F%91%E6%9C%AC%E8%BA%AB%EF%BC%8C%E8%80%8C%E6%98%AF%E2%80%9C%E8%B5%84%E6%BA%90%E4%BA%89%E6%8A%A2%E2%80%9D"><span class="nav-number">1.</span> <span class="nav-text">一、多设备并发最容易被低估的问题，不是并发本身，而是“资源争抢”</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E8%AE%BE%E5%A4%87%E8%B0%83%E5%BA%A6%E7%9A%84%E7%AC%AC%E4%B8%80%E4%BB%B6%E4%BA%8B%EF%BC%8C%E4%B8%8D%E6%98%AF%E5%88%86%E9%85%8D%E8%AE%BE%E5%A4%87%EF%BC%8C%E8%80%8C%E6%98%AF%E5%85%88%E5%AE%9A%E4%B9%89%E8%AE%BE%E5%A4%87%E7%8A%B6%E6%80%81%E6%9C%BA"><span class="nav-number">2.</span> <span class="nav-text">二、设备调度的第一件事，不是分配设备，而是先定义设备状态机</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E9%98%B2%E6%AD%A2%E8%AE%BE%E5%A4%87%E9%87%8D%E5%A4%8D%E5%88%86%E9%85%8D"><span class="nav-number">2.1.</span> <span class="nav-text">1. 防止设备重复分配</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E9%98%B2%E6%AD%A2%E5%9D%8F%E8%AE%BE%E5%A4%87%E7%BB%A7%E7%BB%AD%E6%B5%81%E5%85%A5%E8%B0%83%E5%BA%A6"><span class="nav-number">2.2.</span> <span class="nav-text">2. 防止坏设备继续流入调度</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%AE%A9%E8%B0%83%E5%BA%A6%E5%B1%82%E5%92%8C%E6%81%A2%E5%A4%8D%E5%B1%82%E8%81%8C%E8%B4%A3%E5%88%86%E5%BC%80"><span class="nav-number">2.3.</span> <span class="nav-text">3. 让调度层和恢复层职责分开</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E8%AE%BE%E5%A4%87%E5%8D%A0%E7%94%A8%E6%9B%B4%E9%80%82%E5%90%88%E5%81%9A%E6%88%90%E2%80%9C%E6%98%BE%E5%BC%8F%E7%A7%9F%E7%BA%A6%E2%80%9D%EF%BC%8C%E4%B8%8D%E8%83%BD%E5%8F%AA%E9%9D%A0%E5%86%85%E5%AD%98%E5%8F%98%E9%87%8F"><span class="nav-number">3.</span> <span class="nav-text">三、设备占用更适合做成“显式租约”，不能只靠内存变量</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E6%89%80%E6%9C%89%E8%AE%BE%E5%A4%87%E5%91%BD%E4%BB%A4%E9%83%BD%E5%BF%85%E9%A1%BB%E5%BC%BA%E5%88%B6%E7%BB%91%E5%AE%9A%E5%BA%8F%E5%88%97%E5%8F%B7%EF%BC%8C%E8%BF%99%E6%98%AF%E5%B9%B6%E5%8F%91%E7%8E%AF%E5%A2%83%E7%9A%84%E5%BA%95%E7%BA%BF"><span class="nav-number">4.</span> <span class="nav-text">四、所有设备命令都必须强制绑定序列号，这是并发环境的底线</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E5%B9%B6%E5%8F%91%E7%8E%AF%E5%A2%83%E6%9C%80%E6%80%95%E7%9A%84%E4%B8%8D%E6%98%AF%E8%AE%BE%E5%A4%87%E5%B0%91%EF%BC%8C%E8%80%8C%E6%98%AF%E8%AE%BE%E5%A4%87%E8%84%8F"><span class="nav-number">5.</span> <span class="nav-text">五、并发环境最怕的不是设备少，而是设备脏</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E6%9B%B4%E6%8E%A8%E8%8D%90%E7%9A%84%E8%AE%BE%E5%A4%87%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F%EF%BC%9A%E5%88%86%E9%85%8D%E5%89%8D%E6%A3%80%E6%9F%A5%E3%80%81%E6%89%A7%E8%A1%8C%E4%B8%AD%E5%AE%88%E6%8A%A4%E3%80%81%E7%BB%93%E6%9D%9F%E5%90%8E%E5%9B%9E%E6%94%B6"><span class="nav-number">6.</span> <span class="nav-text">六、更推荐的设备生命周期：分配前检查、执行中守护、结束后回收</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%88%86%E9%85%8D%E5%89%8D%E6%A3%80%E6%9F%A5"><span class="nav-number">6.1.</span> <span class="nav-text">1. 分配前检查</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%89%A7%E8%A1%8C%E4%B8%AD%E5%AE%88%E6%8A%A4"><span class="nav-number">6.2.</span> <span class="nav-text">2. 执行中守护</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%BB%93%E6%9D%9F%E5%90%8E%E5%9B%9E%E6%94%B6"><span class="nav-number">6.3.</span> <span class="nav-text">3. 结束后回收</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E8%AE%BE%E5%A4%87%E6%81%A2%E5%A4%8D%E6%9B%B4%E9%80%82%E5%90%88%E5%88%86%E5%B1%82%EF%BC%8C%E4%B8%8D%E8%83%BD%E9%81%87%E5%88%B0%E5%A4%B1%E8%B4%A5%E5%B0%B1%E7%9B%B4%E6%8E%A5%E9%87%8D%E5%90%AF"><span class="nav-number">7.</span> <span class="nav-text">七、设备恢复更适合分层，不能遇到失败就直接重启</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%BD%BB%E6%81%A2%E5%A4%8D"><span class="nav-number">7.1.</span> <span class="nav-text">1. 轻恢复</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%B8%AD%E6%81%A2%E5%A4%8D"><span class="nav-number">7.2.</span> <span class="nav-text">2. 中恢复</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E9%87%8D%E6%81%A2%E5%A4%8D"><span class="nav-number">7.3.</span> <span class="nav-text">3. 重恢复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E5%B9%B6%E5%8F%91%E6%89%A7%E8%A1%8C%E6%97%B6%EF%BC%8C%E8%AF%81%E6%8D%AE%E4%B9%9F%E8%A6%81%E6%8C%89%E8%AE%BE%E5%A4%87%E5%92%8C%E4%BB%BB%E5%8A%A1%E5%8F%8C%E9%87%8D%E9%9A%94%E7%A6%BB"><span class="nav-number">8.</span> <span class="nav-text">八、并发执行时，证据也要按设备和任务双重隔离</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E6%89%A7%E8%A1%8C%E6%9C%BA%E8%B5%84%E6%BA%90%E4%B9%9F%E8%A6%81%E8%A2%AB%E5%BD%93%E6%88%90%E5%B9%B6%E5%8F%91%E7%BA%A6%E6%9D%9F%EF%BC%8C%E4%B8%8D%E7%84%B6%E8%AE%BE%E5%A4%87%E5%A4%9A%E4%B9%9F%E6%B2%A1%E7%94%A8"><span class="nav-number">9.</span> <span class="nav-text">九、执行机资源也要被当成并发约束，不然设备多也没用</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E5%9C%A8%E9%A1%B9%E7%9B%AE%E9%87%8C%E8%B8%A9%E8%BF%87%E7%9A%84%E5%87%A0%E4%B8%AA%E7%9C%9F%E6%9C%BA%E5%B9%B6%E5%8F%91%E5%9D%91"><span class="nav-number">10.</span> <span class="nav-text">十、在项目里踩过的几个真机并发坑</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9D%91-1%EF%BC%9A%E8%AE%BE%E5%A4%87%E6%B1%A0%E9%87%8C%E2%80%9C%E7%9C%8B%E8%B5%B7%E6%9D%A5%E5%8F%AF%E7%94%A8%E2%80%9D%E7%9A%84%E8%AE%BE%E5%A4%87%EF%BC%8C%E5%85%B6%E5%AE%9E%E5%B7%B2%E7%BB%8F%E5%8D%8A%E5%9D%8F%E4%BA%86"><span class="nav-number">10.1.</span> <span class="nav-text">坑 1：设备池里“看起来可用”的设备，其实已经半坏了</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9D%91-2%EF%BC%9A%E4%BB%BB%E5%8A%A1%E5%BC%82%E5%B8%B8%E9%80%80%E5%87%BA%E5%90%8E%EF%BC%8C%E8%AE%BE%E5%A4%87%E4%B8%80%E7%9B%B4%E5%A4%84%E4%BA%8E%E5%81%87%E5%8D%A0%E7%94%A8%E7%8A%B6%E6%80%81"><span class="nav-number">10.2.</span> <span class="nav-text">坑 2：任务异常退出后，设备一直处于假占用状态</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9D%91-3%EF%BC%9A%E6%81%A2%E5%A4%8D%E5%8A%A8%E4%BD%9C%E8%AF%AF%E4%BC%A4%E4%BA%86%E5%88%AB%E7%9A%84%E4%BB%BB%E5%8A%A1"><span class="nav-number">10.3.</span> <span class="nav-text">坑 3：恢复动作误伤了别的任务</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9D%91-4%EF%BC%9A%E9%97%AE%E9%A2%98%E6%98%8E%E6%98%8E%E5%87%BA%E5%9C%A8%E7%8E%AF%E5%A2%83%EF%BC%8C%E5%8D%B4%E8%A2%AB%E8%AF%AF%E5%88%A4%E6%88%90%E4%B8%9A%E5%8A%A1%E7%BC%BA%E9%99%B7"><span class="nav-number">10.4.</span> <span class="nav-text">坑 4：问题明明出在环境，却被误判成业务缺陷</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E6%9B%B4%E6%8E%A8%E8%8D%90%E7%9A%84%E4%B8%80%E5%A5%97%E7%9C%9F%E6%9C%BA%E5%B9%B6%E5%8F%91%E7%AE%A1%E7%90%86%E6%80%9D%E8%B7%AF"><span class="nav-number">11.</span> <span class="nav-text">十一、更推荐的一套真机并发管理思路</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%AE%BE%E5%A4%87%E6%B3%A8%E5%86%8C%E4%B8%8E%E5%8F%91%E7%8E%B0%E5%B1%82"><span class="nav-number">11.1.</span> <span class="nav-text">1. 设备注册与发现层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%B0%83%E5%BA%A6%E4%B8%8E%E7%A7%9F%E7%BA%A6%E5%B1%82"><span class="nav-number">11.2.</span> <span class="nav-text">2. 调度与租约层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%81%A5%E5%BA%B7%E6%A3%80%E6%9F%A5%E4%B8%8E%E6%81%A2%E5%A4%8D%E5%B1%82"><span class="nav-number">11.3.</span> <span class="nav-text">3. 健康检查与恢复层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%BB%BB%E5%8A%A1%E6%89%A7%E8%A1%8C%E4%B8%8E%E8%AF%81%E6%8D%AE%E5%B1%82"><span class="nav-number">11.4.</span> <span class="nav-text">4. 任务执行与证据层</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E6%8E%92%E6%9F%A5%E7%9C%9F%E6%9C%BA%E5%B9%B6%E5%8F%91%E9%97%AE%E9%A2%98%E6%97%B6%EF%BC%8C%E5%8F%AF%E4%BB%A5%E6%8C%89%E4%BB%80%E4%B9%88%E9%A1%BA%E5%BA%8F%E7%9C%8B"><span class="nav-number">12.</span> <span class="nav-text">十二、排查真机并发问题时，可以按什么顺序看</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%85%88%E7%9C%8B%E6%98%AF%E4%B8%8D%E6%98%AF%E8%AE%BE%E5%A4%87%E5%88%86%E9%85%8D%E9%94%99%E4%BA%86"><span class="nav-number">12.1.</span> <span class="nav-text">1. 先看是不是设备分配错了</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%86%8D%E7%9C%8B%E8%AE%BE%E5%A4%87%E8%87%AA%E8%BA%AB%E6%98%AF%E4%B8%8D%E6%98%AF%E5%81%A5%E5%BA%B7"><span class="nav-number">12.2.</span> <span class="nav-text">2. 再看设备自身是不是健康</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%86%8D%E7%9C%8B%E6%89%A7%E8%A1%8C%E6%9C%BA%E6%98%AF%E5%90%A6%E8%A2%AB%E6%89%93%E6%BB%A1"><span class="nav-number">12.3.</span> <span class="nav-text">3. 再看执行机是否被打满</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%9C%80%E5%90%8E%E5%86%8D%E7%9C%8B%E4%B8%9A%E5%8A%A1%E5%A4%B1%E8%B4%A5%E6%9C%AC%E8%BA%AB"><span class="nav-number">12.4.</span> <span class="nav-text">4. 最后再看业务失败本身</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%BB%93%E8%AF%AD"><span class="nav-number">13.</span> <span class="nav-text">结语</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2023/02/03/%E7%A7%BB%E5%8A%A8%E7%AB%AF%E8%87%AA%E5%8A%A8%E5%8C%96-05-%E5%A4%9A%E8%AE%BE%E5%A4%87%E5%B9%B6%E5%8F%91%E6%B5%8B%E8%AF%95%E6%80%8E%E4%B9%88%E7%AE%A1%E7%90%86%E6%89%8D%E4%B8%8D%E4%BC%9A%E6%8A%8A%E7%9C%9F%E6%9C%BA%E7%8E%AF%E5%A2%83%E8%B7%91%E5%B4%A9/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="移动端自动化：多设备并发测试怎么管理才不会把真机环境跑崩 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          移动端自动化：多设备并发测试怎么管理才不会把真机环境跑崩
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2023-02-03 20:30:00" itemprop="dateCreated datePublished" datetime="2023-02-03T20:30:00+08:00">2023-02-03</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/%E7%A7%BB%E5%8A%A8%E7%AB%AF%E8%87%AA%E5%8A%A8%E5%8C%96/" itemprop="url" rel="index"><span itemprop="name">移动端自动化</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>3.6k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>13 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>移动端自动化一旦从“单机单设备”走向“多设备并发”，会很快碰到一个现实问题：</p>
+<p><strong>不是用例不会跑，而是真机环境越来越不稳定。</strong></p>
+<p>最典型的表现通常是这些：</p>
+<ul>
+<li>同一条命令偶尔跑到别的设备上</li>
+<li>设备昨天还能用，今天跑两轮就开始 <code>offline</code></li>
+<li>截图、日志、录屏和实际失败设备对不上</li>
+<li>某个 case 跑挂以后，把后面的设备状态一起污染了</li>
+<li>并发一上来，整套环境吞吐没上去，故障反而更多</li>
+</ul>
+<p>这类问题本质上已经不是“单条 ADB 命令怎么写”，而是设备管理问题。<br>如果设备管理没有体系，再好的自动化脚本、再全的日志采集、再多的设备数量，最后都会被环境不稳定抵消掉。</p>
+<p>所以这一篇我想讲的是：</p>
+<p><strong>多设备并发测试到底怎么管理，才能让真机环境真的可用，而不是看起来设备很多，实际没人敢开并发。</strong></p>
+<h2 id="一、多设备并发最容易被低估的问题，不是并发本身，而是“资源争抢”"><a href="#一、多设备并发最容易被低估的问题，不是并发本身，而是“资源争抢”" class="headerlink" title="一、多设备并发最容易被低估的问题，不是并发本身，而是“资源争抢”"></a>一、多设备并发最容易被低估的问题，不是并发本身，而是“资源争抢”</h2><p>第一次做移动端并发时，重点很容易先放在“能不能同时起 10 个任务”。<br>但真实项目里，最先出问题的往往不是线程数，而是资源边界没定义清楚。</p>
+<p>在真机环境里，至少有四类资源会被争抢：</p>
+<ul>
+<li>设备本身</li>
+<li>ADB 连接</li>
+<li>执行机资源</li>
+<li>证据产物目录</li>
+</ul>
+<p>只要这几类资源里有一类没隔离好，并发执行就会开始出现诡异问题。</p>
+<p>比如：</p>
+<ul>
+<li>两个任务误用同一台设备</li>
+<li>一个任务重启了 ADB，影响所有设备</li>
+<li>截图都写到同一个目录里，最后文件串了</li>
+<li>同时拉日志、录屏、截图，把执行机 I&#x2F;O 打满</li>
+</ul>
+<p>所以多设备并发的第一原则不是“把任务并起来”，而是：</p>
+<p><strong>先把资源边界和占用关系定义清楚。</strong></p>
+<h2 id="二、设备调度的第一件事，不是分配设备，而是先定义设备状态机"><a href="#二、设备调度的第一件事，不是分配设备，而是先定义设备状态机" class="headerlink" title="二、设备调度的第一件事，不是分配设备，而是先定义设备状态机"></a>二、设备调度的第一件事，不是分配设备，而是先定义设备状态机</h2><p>做设备调度时，只维护一个“可用设备列表”。这在设备很少时还能勉强工作，但规模一大就会失控。</p>
+<p>更推荐的做法是：先把设备状态定义清楚，再做调度。</p>
+<p>最起码，会把设备分成下面几种状态：</p>
+<ul>
+<li><code>idle</code>：空闲，可分配</li>
+<li><code>busy</code>：已被任务占用</li>
+<li><code>recovering</code>：正在执行恢复动作</li>
+<li><code>quarantine</code>：疑似异常，暂时摘除</li>
+<li><code>offline</code>：连接不可用</li>
+<li><code>maintenance</code>：人工维护中</li>
+</ul>
+<p>这个状态机的价值非常直接。</p>
+<h3 id="1-防止设备重复分配"><a href="#1-防止设备重复分配" class="headerlink" title="1. 防止设备重复分配"></a>1. 防止设备重复分配</h3><p>如果没有 <code>busy</code> 状态，很容易出现两个任务几乎同时拿到同一台设备。</p>
+<h3 id="2-防止坏设备继续流入调度"><a href="#2-防止坏设备继续流入调度" class="headerlink" title="2. 防止坏设备继续流入调度"></a>2. 防止坏设备继续流入调度</h3><p>如果设备刚刚发生：</p>
+<ul>
+<li>连续安装失败</li>
+<li>截图失败</li>
+<li>录屏异常</li>
+<li>多次 <code>offline</code></li>
+</ul>
+<p>那它就不应该立即回到可用池，而应该先进入 <code>quarantine</code> 或 <code>recovering</code>。</p>
+<h3 id="3-让调度层和恢复层职责分开"><a href="#3-让调度层和恢复层职责分开" class="headerlink" title="3. 让调度层和恢复层职责分开"></a>3. 让调度层和恢复层职责分开</h3><p>调度层只关心“能不能分配”；恢复层只关心“这台设备能不能被救回来”。<br>这两个逻辑如果混在一起，系统会越来越难排查。</p>
+<h2 id="三、设备占用更适合做成“显式租约”，不能只靠内存变量"><a href="#三、设备占用更适合做成“显式租约”，不能只靠内存变量" class="headerlink" title="三、设备占用更适合做成“显式租约”，不能只靠内存变量"></a>三、设备占用更适合做成“显式租约”，不能只靠内存变量</h2><p>这件事非常重要。<br>一开始做并发执行，会在代码里维护一个“当前已占用设备集合”，看起来很简单，但实际很脆弱。</p>
+<p>因为只要发生下面这些情况，就会出错：</p>
+<ul>
+<li>任务进程崩了</li>
+<li>执行机重启了</li>
+<li>调度服务和执行服务不在同一进程</li>
+<li>多个 worker 同时抢设备</li>
+</ul>
+<p>所以更推荐把设备占用做成显式租约，至少包含这些信息：</p>
+<ul>
+<li>设备序列号</li>
+<li>任务 ID</li>
+<li>占用开始时间</li>
+<li>心跳更新时间</li>
+<li>占用过期时间</li>
+</ul>
+<p>这样做的好处是：</p>
+<ul>
+<li>设备归属关系清晰</li>
+<li>任务异常退出后可以自动回收</li>
+<li>更容易排查“这台设备现在到底被谁占着”</li>
+</ul>
+<p>否则一旦环境变复杂，最常见的现象就是“设备明明空着，却没人敢动”，或者“设备看起来空闲，实际背后还有残留任务没清掉”。</p>
+<h2 id="四、所有设备命令都必须强制绑定序列号，这是并发环境的底线"><a href="#四、所有设备命令都必须强制绑定序列号，这是并发环境的底线" class="headerlink" title="四、所有设备命令都必须强制绑定序列号，这是并发环境的底线"></a>四、所有设备命令都必须强制绑定序列号，这是并发环境的底线</h2><p>这个问题看起来基础，但在多设备环境里是最高频的事故源之一。</p>
+<p>只要环境里同时连着两台及以上设备，所有命令都必须强制带：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">adb -s &lt;serial&gt; ...</span><br></pre></td></tr></table></figure>
+
+<p>这件事不能靠口头提醒，必须在封装层强制。</p>
+<p>因为只要漏掉一次，就可能出现：</p>
+<ul>
+<li>命令发到默认设备</li>
+<li>日志采到别的设备</li>
+<li>截图和录屏归档错误</li>
+<li>清数据动作误伤另一台设备</li>
+</ul>
+<p>单设备环境里这类问题不明显，一上并发就会放大成严重事故。</p>
+<p>所以更稳妥的建议一直是：</p>
+<ul>
+<li>底层命令封装层强制要求传 <code>serial</code></li>
+<li>没传序列号直接拒绝执行</li>
+<li>报告和日志里所有证据都显式带设备标识</li>
+</ul>
+<h2 id="五、并发环境最怕的不是设备少，而是设备脏"><a href="#五、并发环境最怕的不是设备少，而是设备脏" class="headerlink" title="五、并发环境最怕的不是设备少，而是设备脏"></a>五、并发环境最怕的不是设备少，而是设备脏</h2><p>一开始会把精力放在“再多买几台手机”，但如果设备生命周期管理没做好，设备越多，脏设备也越多，环境维护成本只会跟着上升。</p>
+<p>所谓设备脏，通常包括几类情况：</p>
+<ul>
+<li>应用残留进程没清掉</li>
+<li>上一轮测试账号没退出</li>
+<li>权限弹窗残留</li>
+<li>录屏和日志文件残留</li>
+<li>屏幕停在异常页面</li>
+<li>网络状态被前一轮测试改掉</li>
+</ul>
+<p>这类问题最麻烦的地方在于，它们不一定每次都导致失败，但会让失败变得越来越随机。</p>
+<p>所以每次任务结束后，设备都应该有一套明确的收尾动作，而不是“任务跑完就算结束”。</p>
+<h2 id="六、更推荐的设备生命周期：分配前检查、执行中守护、结束后回收"><a href="#六、更推荐的设备生命周期：分配前检查、执行中守护、结束后回收" class="headerlink" title="六、更推荐的设备生命周期：分配前检查、执行中守护、结束后回收"></a>六、更推荐的设备生命周期：分配前检查、执行中守护、结束后回收</h2><p>如果想把真机环境跑稳，更倾向把一台设备的执行生命周期拆成三段。</p>
+<h3 id="1-分配前检查"><a href="#1-分配前检查" class="headerlink" title="1. 分配前检查"></a>1. 分配前检查</h3><p>目标是确认这台设备值得被分配。</p>
+<p>通常会检查：</p>
+<ul>
+<li>是否在线</li>
+<li>是否 <code>device</code> 状态</li>
+<li>电量是否过低</li>
+<li>存储空间是否不足</li>
+<li>是否存在异常残留文件</li>
+<li>是否有目标应用残留进程</li>
+</ul>
+<p>如果这些基础检查都不过，不应该把设备直接投入执行。</p>
+<h3 id="2-执行中守护"><a href="#2-执行中守护" class="headerlink" title="2. 执行中守护"></a>2. 执行中守护</h3><p>目标是避免任务跑到一半时，设备 silently 崩掉。</p>
+<p>通常会关注：</p>
+<ul>
+<li>设备是否 still online</li>
+<li>日志采集是否还在</li>
+<li>录屏是否成功启动</li>
+<li>应用进程是否还存在</li>
+<li>关键命令是否持续超时</li>
+</ul>
+<p>的任务失败后才去看设备状态，这太晚了。<br>真正稳的系统会在执行中持续感知设备健康。</p>
+<h3 id="3-结束后回收"><a href="#3-结束后回收" class="headerlink" title="3. 结束后回收"></a>3. 结束后回收</h3><p>目标是让设备尽量回到标准初始态。</p>
+<p>常见动作包括：</p>
+<ul>
+<li>停止目标应用</li>
+<li>清理临时文件</li>
+<li>拉回证据产物</li>
+<li>删除设备侧录屏</li>
+<li>回到桌面</li>
+<li>必要时清应用数据</li>
+</ul>
+<p>如果任务结束后没有统一回收，脏状态会不断积累，最终把整个设备池拖垮。</p>
+<h2 id="七、设备恢复更适合分层，不能遇到失败就直接重启"><a href="#七、设备恢复更适合分层，不能遇到失败就直接重启" class="headerlink" title="七、设备恢复更适合分层，不能遇到失败就直接重启"></a>七、设备恢复更适合分层，不能遇到失败就直接重启</h2><p>在真机环境不稳定时，最常见的补救方式就是“重启手机”。<br>这个动作不是不能用，但如果把它当成默认恢复手段，成本非常高。</p>
+<p>更倾向把恢复分成三层。</p>
+<h3 id="1-轻恢复"><a href="#1-轻恢复" class="headerlink" title="1. 轻恢复"></a>1. 轻恢复</h3><p>适用场景：</p>
+<ul>
+<li>页面卡住</li>
+<li>应用停在异常页</li>
+<li>截图或输入短暂异常</li>
+</ul>
+<p>常见动作：</p>
+<ul>
+<li>回桌面</li>
+<li>强杀目标应用</li>
+<li>清理临时文件</li>
+<li>重新拉起应用</li>
+</ul>
+<h3 id="2-中恢复"><a href="#2-中恢复" class="headerlink" title="2. 中恢复"></a>2. 中恢复</h3><p>适用场景：</p>
+<ul>
+<li>应用数据明显脏掉</li>
+<li>多次启动失败</li>
+<li>日志和录屏能力异常</li>
+</ul>
+<p>常见动作：</p>
+<ul>
+<li>清应用数据</li>
+<li>重建 ADB 会话</li>
+<li>重跑基础健康检查</li>
+</ul>
+<h3 id="3-重恢复"><a href="#3-重恢复" class="headerlink" title="3. 重恢复"></a>3. 重恢复</h3><p>适用场景：</p>
+<ul>
+<li>设备频繁 <code>offline</code></li>
+<li>系统卡死</li>
+<li>存储异常</li>
+<li>连续多轮恢复失败</li>
+</ul>
+<p>常见动作：</p>
+<ul>
+<li>重启设备</li>
+<li>从调度池摘除</li>
+<li>标记人工检查</li>
+</ul>
+<p>分层的意义在于：不是每个失败都值得付出最高恢复成本。<br>如果恢复策略过重，并发吞吐会被拖垮；如果恢复策略过轻，脏状态又会继续传播到后续任务。</p>
+<h2 id="八、并发执行时，证据也要按设备和任务双重隔离"><a href="#八、并发执行时，证据也要按设备和任务双重隔离" class="headerlink" title="八、并发执行时，证据也要按设备和任务双重隔离"></a>八、并发执行时，证据也要按设备和任务双重隔离</h2><p>多设备并发很容易被理解成只要“命令不要串”就够了，但实际另一个高频事故点是证据产物串了。</p>
+<p>典型现象包括：</p>
+<ul>
+<li>A 设备的截图挂到了 B 设备的报告里</li>
+<li>一个 case 的日志被另一个任务覆盖</li>
+<li>录屏文件名重复，后写覆盖前写</li>
+</ul>
+<p>所以多设备环境下，证据目录必须至少按下面两个维度隔离：</p>
+<ul>
+<li>设备序列号</li>
+<li>任务或 case 标识</li>
+</ul>
+<p>例如：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">outputs/</span><br><span class="line">├── run_20230203_203000/</span><br><span class="line">│   ├── device_R58N12345AB/</span><br><span class="line">│   │   ├── case_login_001/</span><br><span class="line">│   ├── device_R3CN9088XYZ/</span><br><span class="line">│   │   ├── case_login_001/</span><br></pre></td></tr></table></figure>
+
+<p>这样哪怕同一个 case 同时在两台设备上跑，证据也不会串在一起。</p>
+<h2 id="九、执行机资源也要被当成并发约束，不然设备多也没用"><a href="#九、执行机资源也要被当成并发约束，不然设备多也没用" class="headerlink" title="九、执行机资源也要被当成并发约束，不然设备多也没用"></a>九、执行机资源也要被当成并发约束，不然设备多也没用</h2><p>做真机并发时，只看设备数量，不看执行机瓶颈。这会导致一个错觉：设备明明足够多，但整体执行速度就是上不去。</p>
+<p>常见瓶颈包括：</p>
+<ul>
+<li><code>adb</code> 子进程太多</li>
+<li>日志采集太多导致 CPU 占用上升</li>
+<li>截图、录屏、文件拉取导致 I&#x2F;O 饱和</li>
+<li>大量并发分析日志导致执行机变慢</li>
+</ul>
+<p>所以并发上限不能只按设备数来设，还要结合：</p>
+<ul>
+<li>执行机 CPU</li>
+<li>内存</li>
+<li>磁盘 I&#x2F;O</li>
+<li>USB Hub 或网络调试链路稳定性</li>
+</ul>
+<p>否则你会看到一种很典型的现象：设备数量翻倍了，但故障率也翻倍，实际吞吐反而下降。</p>
+<h2 id="十、在项目里踩过的几个真机并发坑"><a href="#十、在项目里踩过的几个真机并发坑" class="headerlink" title="十、在项目里踩过的几个真机并发坑"></a>十、在项目里踩过的几个真机并发坑</h2><h3 id="坑-1：设备池里“看起来可用”的设备，其实已经半坏了"><a href="#坑-1：设备池里“看起来可用”的设备，其实已经半坏了" class="headerlink" title="坑 1：设备池里“看起来可用”的设备，其实已经半坏了"></a>坑 1：设备池里“看起来可用”的设备，其实已经半坏了</h3><p>现象：</p>
+<ul>
+<li><code>adb devices</code> 能看到</li>
+<li>偶尔也能执行命令</li>
+<li>但安装、截图、录屏成功率明显偏低</li>
+</ul>
+<p>如果调度层只看“在线&#x2F;离线”，这种设备会不断被重新分配，最终制造大量偶发失败。</p>
+<p>修复思路：</p>
+<ul>
+<li>增加健康分或失败计数</li>
+<li>连续异常达到阈值后自动摘除</li>
+<li>不让“勉强能用”的设备继续参与调度</li>
+</ul>
+<h3 id="坑-2：任务异常退出后，设备一直处于假占用状态"><a href="#坑-2：任务异常退出后，设备一直处于假占用状态" class="headerlink" title="坑 2：任务异常退出后，设备一直处于假占用状态"></a>坑 2：任务异常退出后，设备一直处于假占用状态</h3><p>现象：</p>
+<ul>
+<li>设备没人真正使用</li>
+<li>但调度系统一直认为它被占着</li>
+</ul>
+<p>根因通常是没有租约超时和心跳回收。</p>
+<p>修复思路：</p>
+<ul>
+<li>占用记录加 TTL</li>
+<li>worker 定期续约</li>
+<li>超时未续约则自动释放并进入健康检查</li>
+</ul>
+<h3 id="坑-3：恢复动作误伤了别的任务"><a href="#坑-3：恢复动作误伤了别的任务" class="headerlink" title="坑 3：恢复动作误伤了别的任务"></a>坑 3：恢复动作误伤了别的任务</h3><p>现象：</p>
+<ul>
+<li>某个任务失败后执行了 <code>adb kill-server</code></li>
+<li>结果所有设备一起受影响</li>
+</ul>
+<p>这类问题说明恢复动作粒度太粗。<br>在并发环境里，任何全局性动作都要极度谨慎，因为它可能不是“修一台设备”，而是“把整个执行面一起打断”。</p>
+<h3 id="坑-4：问题明明出在环境，却被误判成业务缺陷"><a href="#坑-4：问题明明出在环境，却被误判成业务缺陷" class="headerlink" title="坑 4：问题明明出在环境，却被误判成业务缺陷"></a>坑 4：问题明明出在环境，却被误判成业务缺陷</h3><p>这种情况非常常见。<br>比如：</p>
+<ul>
+<li>某台设备存储空间满了</li>
+<li>权限弹窗残留</li>
+<li>录屏文件没删</li>
+<li>某个 USB 口不稳定</li>
+</ul>
+<p>最后表现出来可能只是“登录失败”或“元素不存在”，如果没有设备健康上下文，很容易被当成业务问题。</p>
+<h2 id="十一、更推荐的一套真机并发管理思路"><a href="#十一、更推荐的一套真机并发管理思路" class="headerlink" title="十一、更推荐的一套真机并发管理思路"></a>十一、更推荐的一套真机并发管理思路</h2><p>如果后面要做成平台或稳定的 CI 资产，更推荐至少把能力拆成下面几层。</p>
+<h3 id="1-设备注册与发现层"><a href="#1-设备注册与发现层" class="headerlink" title="1. 设备注册与发现层"></a>1. 设备注册与发现层</h3><p>职责：</p>
+<ul>
+<li>发现设备</li>
+<li>同步设备元信息</li>
+<li>感知在线状态</li>
+</ul>
+<h3 id="2-调度与租约层"><a href="#2-调度与租约层" class="headerlink" title="2. 调度与租约层"></a>2. 调度与租约层</h3><p>职责：</p>
+<ul>
+<li>分配设备</li>
+<li>维护占用关系</li>
+<li>处理续约和超时释放</li>
+</ul>
+<h3 id="3-健康检查与恢复层"><a href="#3-健康检查与恢复层" class="headerlink" title="3. 健康检查与恢复层"></a>3. 健康检查与恢复层</h3><p>职责：</p>
+<ul>
+<li>执行分配前检查</li>
+<li>执行中监测</li>
+<li>失败后恢复</li>
+<li>坏设备摘除</li>
+</ul>
+<h3 id="4-任务执行与证据层"><a href="#4-任务执行与证据层" class="headerlink" title="4. 任务执行与证据层"></a>4. 任务执行与证据层</h3><p>职责：</p>
+<ul>
+<li>跑用例</li>
+<li>采集日志、截图、录屏</li>
+<li>按设备隔离证据</li>
+</ul>
+<p>把这几层拆开以后，环境才会逐渐稳定。<br>如果全都堆在一个执行脚本里，问题一多就很难继续演进。</p>
+<h2 id="十二、排查真机并发问题时，可以按什么顺序看"><a href="#十二、排查真机并发问题时，可以按什么顺序看" class="headerlink" title="十二、排查真机并发问题时，可以按什么顺序看"></a>十二、排查真机并发问题时，可以按什么顺序看</h2><p>当并发环境出问题时，更稳的做法通常不是先去看业务日志，而是按下面顺序排查。</p>
+<h3 id="1-先看是不是设备分配错了"><a href="#1-先看是不是设备分配错了" class="headerlink" title="1. 先看是不是设备分配错了"></a>1. 先看是不是设备分配错了</h3><p>确认：</p>
+<ul>
+<li>是否重复分配</li>
+<li>是否租约没释放</li>
+<li>是否命令带了正确序列号</li>
+</ul>
+<h3 id="2-再看设备自身是不是健康"><a href="#2-再看设备自身是不是健康" class="headerlink" title="2. 再看设备自身是不是健康"></a>2. 再看设备自身是不是健康</h3><p>确认：</p>
+<ul>
+<li>是否频繁 <code>offline</code></li>
+<li>是否空间不足</li>
+<li>是否存在异常残留文件</li>
+<li>是否处于恢复中却被重新分配</li>
+</ul>
+<h3 id="3-再看执行机是否被打满"><a href="#3-再看执行机是否被打满" class="headerlink" title="3. 再看执行机是否被打满"></a>3. 再看执行机是否被打满</h3><p>确认：</p>
+<ul>
+<li>CPU 是否过高</li>
+<li>I&#x2F;O 是否拥塞</li>
+<li><code>adb</code> 进程数是否异常</li>
+</ul>
+<h3 id="4-最后再看业务失败本身"><a href="#4-最后再看业务失败本身" class="headerlink" title="4. 最后再看业务失败本身"></a>4. 最后再看业务失败本身</h3><p>因为很多“业务失败”，前面三步就已经能定位出是环境问题。<br>如果上来先看用例断言，经常会把环境问题误判成产品缺陷。</p>
+<h2 id="结语"><a href="#结语" class="headerlink" title="结语"></a>结语</h2><p>多设备并发测试真正难的，从来不是“怎么把线程开起来”，而是怎么让设备、任务、证据和恢复动作在并发环境下仍然保持有序。</p>
+<p>更关键的是一套真正可用的真机并发管理，至少要做到：</p>
+<ul>
+<li>设备状态清晰，不是只有在线和离线</li>
+<li>占用关系可追踪，不靠进程内变量硬记</li>
+<li>设备命令强制绑定序列号</li>
+<li>分配前检查、执行中守护、结束后回收形成闭环</li>
+<li>故障设备能被自动摘除，而不是反复污染环境</li>
+<li>证据和资源都能按设备隔离</li>
+</ul>
+<p>如果这些基础能力没补齐，设备越多，并发越高，环境只会越乱；<br>只有把调度、隔离、恢复和排障一起做起来，真机环境才会从“能跑”变成“敢长期跑”。 </p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E5%B7%A5%E7%A8%8B%E5%8C%96/" rel="tag"># 工程化</a>
+              <a href="/tags/%E5%B7%A5%E7%A8%8B%E5%AE%9E%E8%B7%B5/" rel="tag"># 工程实践</a>
+              <a href="/tags/%E6%8E%92%E9%9A%9C/" rel="tag"># 排障</a>
+              <a href="/tags/Android/" rel="tag"># Android</a>
+              <a href="/tags/ADB/" rel="tag"># ADB</a>
+              <a href="/tags/%E7%A7%BB%E5%8A%A8%E7%AB%AF%E8%87%AA%E5%8A%A8%E5%8C%96/" rel="tag"># 移动端自动化</a>
+              <a href="/tags/%E8%AE%BE%E5%A4%87%E6%B1%A0/" rel="tag"># 设备池</a>
+              <a href="/tags/%E5%B9%B6%E5%8F%91%E6%B5%8B%E8%AF%95/" rel="tag"># 并发测试</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2023/01/10/%E7%A7%BB%E5%8A%A8%E7%AB%AF%E8%87%AA%E5%8A%A8%E5%8C%96-04-Android%E8%87%AA%E5%8A%A8%E6%88%AA%E5%9B%BE%E5%BD%95%E5%B1%8F%E4%B8%8E%E8%AF%81%E6%8D%AE%E7%95%99%E5%AD%98%E6%96%B9%E6%A1%88%E6%80%8E%E4%B9%88%E8%AE%BE%E8%AE%A1%E6%89%8D%E6%9C%89%E6%8E%92%E9%9A%9C%E4%BB%B7%E5%80%BC/" rel="prev" title="移动端自动化：Android 自动截图、录屏与证据留存方案怎么设计才有排障价值">
+                  <i class="fa fa-angle-left"></i> 移动端自动化：Android 自动截图、录屏与证据留存方案怎么设计才有排障价值
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2023/02/24/%E7%A7%BB%E5%8A%A8%E7%AB%AF%E8%87%AA%E5%8A%A8%E5%8C%96-06-Appium%E5%9C%A8Android%E8%87%AA%E5%8A%A8%E5%8C%96%E4%B8%AD%E7%9A%84%E8%90%BD%E5%9C%B0%E7%BB%8F%E9%AA%8C/" rel="next" title="移动端自动化：Appium 在 Android 自动化中的落地经验">
+                  移动端自动化：Appium 在 Android 自动化中的落地经验 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

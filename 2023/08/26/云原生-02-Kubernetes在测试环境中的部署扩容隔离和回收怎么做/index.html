@@ -1,0 +1,1039 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="Kubernetes 进入测试环境之后，最容易被低估的并不是部署动作本身，而是环境数量、资源生命周期和团队并发使用带来的治理压力。 刚开始接入 Kubernetes 时，关注点通常只有两件事：  服务能不能部署起来 Pod 能不能扩起来  这两个问题当然重要，但它们通常只解决了“能不能跑”的第一层问题。 一旦测试环境开始真正承担日常提测、联调、回归、专项验证、性能摸底、灰度预演这些任务，问题会很快">
+<meta property="og:type" content="article">
+<meta property="og:title" content="云原生-02-Kubernetes在测试环境中的部署扩容隔离和回收怎么做">
+<meta property="og:url" content="https://paynewinnt.github.io/2023/08/26/%E4%BA%91%E5%8E%9F%E7%94%9F-02-Kubernetes%E5%9C%A8%E6%B5%8B%E8%AF%95%E7%8E%AF%E5%A2%83%E4%B8%AD%E7%9A%84%E9%83%A8%E7%BD%B2%E6%89%A9%E5%AE%B9%E9%9A%94%E7%A6%BB%E5%92%8C%E5%9B%9E%E6%94%B6%E6%80%8E%E4%B9%88%E5%81%9A/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="Kubernetes 进入测试环境之后，最容易被低估的并不是部署动作本身，而是环境数量、资源生命周期和团队并发使用带来的治理压力。 刚开始接入 Kubernetes 时，关注点通常只有两件事：  服务能不能部署起来 Pod 能不能扩起来  这两个问题当然重要，但它们通常只解决了“能不能跑”的第一层问题。 一旦测试环境开始真正承担日常提测、联调、回归、专项验证、性能摸底、灰度预演这些任务，问题会很快">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2023-08-26T12:30:00.000Z">
+<meta property="article:modified_time" content="2023-08-26T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="工程实践">
+<meta property="article:tag" content="Kubernetes">
+<meta property="article:tag" content="测试环境">
+<meta property="article:tag" content="环境治理">
+<meta property="article:tag" content="资源隔离">
+<meta property="article:tag" content="容量管理">
+<meta property="article:tag" content="回收策略">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2023/08/26/%E4%BA%91%E5%8E%9F%E7%94%9F-02-Kubernetes%E5%9C%A8%E6%B5%8B%E8%AF%95%E7%8E%AF%E5%A2%83%E4%B8%AD%E7%9A%84%E9%83%A8%E7%BD%B2%E6%89%A9%E5%AE%B9%E9%9A%94%E7%A6%BB%E5%92%8C%E5%9B%9E%E6%94%B6%E6%80%8E%E4%B9%88%E5%81%9A/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2023/08/26/%E4%BA%91%E5%8E%9F%E7%94%9F-02-Kubernetes%E5%9C%A8%E6%B5%8B%E8%AF%95%E7%8E%AF%E5%A2%83%E4%B8%AD%E7%9A%84%E9%83%A8%E7%BD%B2%E6%89%A9%E5%AE%B9%E9%9A%94%E7%A6%BB%E5%92%8C%E5%9B%9E%E6%94%B6%E6%80%8E%E4%B9%88%E5%81%9A/","path":"2023/08/26/云原生-02-Kubernetes在测试环境中的部署扩容隔离和回收怎么做/","title":"云原生-02-Kubernetes在测试环境中的部署扩容隔离和回收怎么做"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>云原生-02-Kubernetes在测试环境中的部署扩容隔离和回收怎么做 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E6%B5%8B%E8%AF%95%E7%8E%AF%E5%A2%83%E9%87%8C%E7%9A%84-Kubernetes%EF%BC%8C%E6%B2%BB%E7%90%86%E5%AF%B9%E8%B1%A1%E9%A6%96%E5%85%88%E4%B8%8D%E6%98%AF-Pod%EF%BC%8C%E8%80%8C%E6%98%AF%E2%80%9C%E7%8E%AF%E5%A2%83%E5%AE%9E%E4%BE%8B%E2%80%9D"><span class="nav-number">1.</span> <span class="nav-text">一、测试环境里的 Kubernetes，治理对象首先不是 Pod，而是“环境实例”</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E6%B5%8B%E8%AF%95%E7%8E%AF%E5%A2%83%E7%9A%84%E7%9B%AE%E6%A0%87%EF%BC%8C%E4%B8%8D%E6%98%AF%E2%80%9C%E6%B0%B8%E8%BF%9C%E5%9C%A8%E7%BA%BF%E2%80%9D%EF%BC%8C%E8%80%8C%E6%98%AF%E2%80%9C%E6%8C%89%E9%9C%80%E5%88%9B%E5%BB%BA%E3%80%81%E7%A8%B3%E5%AE%9A%E5%8F%AF%E7%94%A8%E3%80%81%E5%8F%AF%E6%8E%A7%E5%9B%9E%E6%94%B6%E2%80%9D"><span class="nav-number">2.</span> <span class="nav-text">二、测试环境的目标，不是“永远在线”，而是“按需创建、稳定可用、可控回收”</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E9%83%A8%E7%BD%B2%E9%93%BE%E8%B7%AF%EF%BC%9A%E6%B5%8B%E8%AF%95%E7%8E%AF%E5%A2%83%E4%B8%8D%E8%83%BD%E5%8F%AA%E4%BC%9A-apply%EF%BC%8C%E5%BF%85%E9%A1%BB%E5%85%88%E6%94%B6%E5%85%A5%E5%8F%A3%E3%80%81%E6%A8%A1%E6%9D%BF%E5%92%8C%E5%8F%82%E6%95%B0"><span class="nav-number">3.</span> <span class="nav-text">三、部署链路：测试环境不能只会 apply，必须先收入口、模板和参数</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%A8%A1%E6%9D%BF%E5%B1%82%EF%BC%9A%E7%BB%9F%E4%B8%80%E9%83%A8%E7%BD%B2%E6%A8%A1%E6%9D%BF%EF%BC%8C%E8%80%8C%E4%B8%8D%E6%98%AF%E6%AF%8F%E6%AC%A1%E5%A4%8D%E5%88%B6-YAML"><span class="nav-number">3.1.</span> <span class="nav-text">1. 模板层：统一部署模板，而不是每次复制 YAML</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%8F%82%E6%95%B0%E5%B1%82%EF%BC%9A%E6%8A%8A%E7%8E%AF%E5%A2%83%E5%B7%AE%E5%BC%82%E6%94%B6%E8%BF%9B-values%EF%BC%8C%E8%80%8C%E4%B8%8D%E6%98%AF%E6%94%B9%E6%A8%A1%E6%9D%BF%E6%AD%A3%E6%96%87"><span class="nav-number">3.2.</span> <span class="nav-text">2. 参数层：把环境差异收进 values，而不是改模板正文</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%85%A5%E5%8F%A3%E5%B1%82%EF%BC%9A%E9%83%A8%E7%BD%B2%E5%8A%A8%E4%BD%9C%E5%BF%85%E9%A1%BB%E6%9C%89%E7%BB%9F%E4%B8%80%E5%85%A5%E5%8F%A3"><span class="nav-number">3.3.</span> <span class="nav-text">3. 入口层：部署动作必须有统一入口</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%A0%A1%E9%AA%8C%E5%B1%82%EF%BC%9A%E9%83%A8%E7%BD%B2%E6%88%90%E5%8A%9F%E4%B8%8D%E7%AD%89%E4%BA%8E%E7%8E%AF%E5%A2%83%E5%8F%AF%E7%94%A8"><span class="nav-number">3.4.</span> <span class="nav-text">4. 校验层：部署成功不等于环境可用</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E8%B5%84%E6%BA%90%E4%B8%8E%E5%91%BD%E5%90%8D%E7%AD%96%E7%95%A5%EF%BC%9A%E6%B5%8B%E8%AF%95%E7%8E%AF%E5%A2%83%E6%9C%80%E6%80%95%E7%9A%84%E4%B8%8D%E6%98%AF%E8%B5%84%E6%BA%90%E5%B0%91%EF%BC%8C%E8%80%8C%E6%98%AF%E8%B5%84%E6%BA%90%E6%B2%A1%E6%9C%89%E8%BE%B9%E7%95%8C"><span class="nav-number">4.</span> <span class="nav-text">四、资源与命名策略：测试环境最怕的不是资源少，而是资源没有边界</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%91%BD%E5%90%8D%E7%AD%96%E7%95%A5%E8%A6%81%E5%85%88%E5%9B%9E%E7%AD%94%E2%80%9C%E8%BF%99%E6%98%AF%E8%B0%81%E7%9A%84%E5%93%AA%E4%B8%80%E5%A5%97%E7%8E%AF%E5%A2%83%E2%80%9D"><span class="nav-number">4.1.</span> <span class="nav-text">1. 命名策略要先回答“这是谁的哪一套环境”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%A0%87%E7%AD%BE%E7%AD%96%E7%95%A5%E6%AF%94%E5%90%8D%E5%AD%97%E6%9B%B4%E9%87%8D%E8%A6%81"><span class="nav-number">4.2.</span> <span class="nav-text">2. 标签策略比名字更重要</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%B5%84%E6%BA%90%E8%AF%B7%E6%B1%82%E5%92%8C%E9%99%90%E5%88%B6%E5%BF%85%E9%A1%BB%E6%88%90%E5%9F%BA%E7%BA%BF"><span class="nav-number">4.3.</span> <span class="nav-text">3. 资源请求和限制必须成基线</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E6%89%A9%E5%AE%B9%E9%93%BE%E8%B7%AF%EF%BC%9A%E6%B5%8B%E8%AF%95%E7%8E%AF%E5%A2%83%E7%9A%84%E6%89%A9%E5%AE%B9%E9%87%8D%E7%82%B9%E4%B8%8D%E6%98%AF%E2%80%9C%E6%8A%8A%E5%89%AF%E6%9C%AC%E5%8A%A0%E4%B8%8A%E5%8E%BB%E2%80%9D%EF%BC%8C%E8%80%8C%E6%98%AF%E5%85%88%E5%88%A4%E6%96%AD%E6%89%A9%E4%BB%80%E4%B9%88%E3%80%81%E4%B8%BA%E4%BB%80%E4%B9%88%E6%89%A9%E3%80%81%E6%89%A9%E5%A4%9A%E4%B9%85"><span class="nav-number">5.</span> <span class="nav-text">五、扩容链路：测试环境的扩容重点不是“把副本加上去”，而是先判断扩什么、为什么扩、扩多久</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%89%A9%E5%AE%B9%E5%89%8D%E8%A6%81%E5%85%88%E5%81%9A%E4%B8%80%E6%AC%A1%E6%9C%80%E5%B0%8F%E5%88%A4%E6%96%AD"><span class="nav-number">5.1.</span> <span class="nav-text">1. 扩容前要先做一次最小判断</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%B5%8B%E8%AF%95%E7%8E%AF%E5%A2%83%E5%B8%B8%E8%A7%81%E7%9A%84%E6%89%A9%E5%AE%B9%E5%AF%B9%E8%B1%A1%EF%BC%8C%E4%B8%8D%E5%8F%AA%E6%9C%89-Deployment"><span class="nav-number">5.2.</span> <span class="nav-text">2. 测试环境常见的扩容对象，不只有 Deployment</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%9B%B4%E9%80%82%E5%90%88%E6%B5%8B%E8%AF%95%E7%8E%AF%E5%A2%83%E7%9A%84%E6%89%A9%E5%AE%B9%E7%AD%96%E7%95%A5%EF%BC%8C%E6%98%AF%E2%80%9C%E9%BB%98%E8%AE%A4%E5%9F%BA%E7%BA%BF-%E4%B8%B4%E6%97%B6%E5%8D%87%E7%BA%A7-%E8%87%AA%E5%8A%A8%E5%9B%9E%E8%90%BD%E2%80%9D"><span class="nav-number">5.3.</span> <span class="nav-text">3. 更适合测试环境的扩容策略，是“默认基线 + 临时升级 + 自动回落”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%B8%80%E4%B8%AA%E5%8F%AF%E6%89%A7%E8%A1%8C%E7%9A%84%E6%89%A9%E5%AE%B9%E9%AA%A8%E6%9E%B6"><span class="nav-number">5.4.</span> <span class="nav-text">4. 一个可执行的扩容骨架</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E9%9A%94%E7%A6%BB%E9%93%BE%E8%B7%AF%EF%BC%9A%E6%B5%8B%E8%AF%95%E7%8E%AF%E5%A2%83%E7%9A%84%E9%9A%94%E7%A6%BB%E7%9B%AE%E6%A0%87%EF%BC%8C%E6%98%AF%E9%81%BF%E5%85%8D%E8%AF%AF%E4%BC%A4%EF%BC%8C%E4%B8%8D%E6%98%AF%E8%BF%BD%E6%B1%82%E7%BB%9D%E5%AF%B9%E7%8B%AC%E5%8D%A0"><span class="nav-number">6.</span> <span class="nav-text">六、隔离链路：测试环境的隔离目标，是避免误伤，不是追求绝对独占</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%91%BD%E5%90%8D%E7%A9%BA%E9%97%B4%E9%9A%94%E7%A6%BB%E6%98%AF%E7%AC%AC%E4%B8%80%E5%B1%82%EF%BC%8C%E4%BD%86%E7%BB%9D%E5%AF%B9%E4%B8%8D%E5%A4%9F"><span class="nav-number">6.1.</span> <span class="nav-text">1. 命名空间隔离是第一层，但绝对不够</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%B5%8B%E8%AF%95%E7%8E%AF%E5%A2%83%E6%9B%B4%E9%80%82%E5%90%88%E5%81%9A%E4%B8%89%E5%B1%82%E9%9A%94%E7%A6%BB"><span class="nav-number">6.2.</span> <span class="nav-text">2. 测试环境更适合做三层隔离</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%AE%BF%E9%97%AE%E5%92%8C%E6%9D%83%E9%99%90%E4%B9%9F%E5%BF%85%E9%A1%BB%E9%9A%94%E7%A6%BB"><span class="nav-number">6.3.</span> <span class="nav-text">3. 访问和权限也必须隔离</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E5%9B%9E%E6%94%B6%E9%93%BE%E8%B7%AF%EF%BC%9A%E6%B5%8B%E8%AF%95%E7%8E%AF%E5%A2%83%E7%9A%84%E9%95%BF%E6%9C%9F%E7%A8%B3%E5%AE%9A%EF%BC%8C%E9%9D%A0%E7%9A%84%E4%B8%8D%E6%98%AF%E4%BA%BA%E5%B7%A5%E8%87%AA%E8%A7%89%EF%BC%8C%E8%80%8C%E6%98%AF%E8%87%AA%E5%8A%A8%E8%BF%87%E6%9C%9F%E5%92%8C%E5%BC%BA%E5%88%B6%E6%B8%85%E7%90%86"><span class="nav-number">7.</span> <span class="nav-text">七、回收链路：测试环境的长期稳定，靠的不是人工自觉，而是自动过期和强制清理</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%9B%9E%E6%94%B6%E7%AD%96%E7%95%A5%E5%BF%85%E9%A1%BB%E5%9C%A8%E5%88%9B%E5%BB%BA%E6%97%B6%E5%B0%B1%E5%86%99%E8%BF%9B%E5%8E%BB"><span class="nav-number">7.1.</span> <span class="nav-text">1. 回收策略必须在创建时就写进去</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%9B%9E%E6%94%B6%E8%A6%81%E5%88%86%E7%BA%A7%EF%BC%8C%E4%B8%8D%E6%98%AF%E5%8F%AA%E5%81%9A-delete-namespace"><span class="nav-number">7.2.</span> <span class="nav-text">2. 回收要分级，不是只做 delete namespace</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%9B%9E%E6%94%B6%E5%8A%A8%E4%BD%9C%E5%BF%85%E9%A1%BB%E6%9C%89%E7%99%BD%E5%90%8D%E5%8D%95%E5%92%8C%E4%BF%9D%E6%8A%A4%E5%AF%B9%E8%B1%A1"><span class="nav-number">7.3.</span> <span class="nav-text">3. 回收动作必须有白名单和保护对象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%B8%80%E4%B8%AA%E6%9B%B4%E5%AE%9E%E7%94%A8%E7%9A%84%E5%9B%9E%E6%94%B6%E6%89%A7%E8%A1%8C%E9%AA%A8%E6%9E%B6"><span class="nav-number">7.4.</span> <span class="nav-text">4. 一个更实用的回收执行骨架</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E5%BB%BA%E8%AE%AE%E7%9B%B4%E6%8E%A5%E8%90%BD%E5%9C%B0%E7%9A%84%E4%B8%80%E5%A5%97%E6%9C%80%E5%B0%8F%E6%89%A7%E8%A1%8C%E9%AA%A8%E6%9E%B6"><span class="nav-number">8.</span> <span class="nav-text">八、建议直接落地的一套最小执行骨架</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%8E%AF%E5%A2%83%E6%A8%A1%E5%9E%8B%E5%85%88%E7%BB%9F%E4%B8%80"><span class="nav-number">8.1.</span> <span class="nav-text">1. 环境模型先统一</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%A8%A1%E6%9D%BF%E5%92%8C%E5%8F%82%E6%95%B0%E5%88%86%E7%A6%BB"><span class="nav-number">8.2.</span> <span class="nav-text">2. 模板和参数分离</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%BC%BA%E5%88%B6%E8%B5%84%E6%BA%90%E6%A0%87%E7%AD%BE%E5%92%8C%E9%85%8D%E9%A2%9D%E5%9F%BA%E7%BA%BF"><span class="nav-number">8.3.</span> <span class="nav-text">3. 强制资源标签和配额基线</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%BB%BA%E7%AB%8B%E4%B8%89%E7%B1%BB%E7%8E%AF%E5%A2%83%E5%9F%BA%E7%BA%BF"><span class="nav-number">8.4.</span> <span class="nav-text">4. 建立三类环境基线</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%85%88%E5%81%9A%E8%87%AA%E5%8A%A8%E6%8F%90%E9%86%92%E5%92%8C%E8%87%AA%E5%8A%A8%E5%86%BB%E7%BB%93%EF%BC%8C%E5%86%8D%E5%81%9A%E5%BD%BB%E5%BA%95%E6%B8%85%E7%90%86"><span class="nav-number">8.5.</span> <span class="nav-text">5. 先做自动提醒和自动冻结，再做彻底清理</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E6%B5%8B%E8%AF%95%E7%8E%AF%E5%A2%83%E9%87%8C%E6%9C%80%E5%B8%B8%E8%A7%81%E7%9A%84-8-%E4%B8%AA%E5%9D%91"><span class="nav-number">9.</span> <span class="nav-text">九、测试环境里最常见的 8 个坑</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%8E%AF%E5%A2%83%E5%90%8D%E5%AD%97%E8%83%BD%E7%9C%8B%E6%87%82%EF%BC%8C%E4%BD%86%E6%9F%A5%E4%B8%8D%E5%85%A8%E8%B5%84%E6%BA%90"><span class="nav-number">9.1.</span> <span class="nav-text">1. 环境名字能看懂，但查不全资源</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%89%A9%E5%AE%B9%E7%94%9F%E6%95%88%E4%BA%86%EF%BC%8C%E4%BD%86%E5%88%AB%E7%9A%84%E7%8E%AF%E5%A2%83%E5%BC%80%E5%A7%8B%E8%B0%83%E5%BA%A6%E5%A4%B1%E8%B4%A5"><span class="nav-number">9.2.</span> <span class="nav-text">2. 扩容生效了，但别的环境开始调度失败</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Deployment-%E5%88%A0%E4%BA%86%EF%BC%8C%E5%AD%98%E5%82%A8%E5%92%8C%E5%85%A5%E5%8F%A3%E8%BF%98%E7%95%99%E7%9D%80"><span class="nav-number">9.3.</span> <span class="nav-text">3. Deployment 删了，存储和入口还留着</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E7%8E%AF%E5%A2%83%E7%9C%8B%E8%B5%B7%E6%9D%A5%E8%B5%B7%E5%A5%BD%E4%BA%86%EF%BC%8C%E4%BD%86%E5%AE%9E%E9%99%85%E4%B8%8D%E5%8F%AF%E6%B5%8B"><span class="nav-number">9.4.</span> <span class="nav-text">4. 环境看起来起好了，但实际不可测</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E4%B8%80%E5%A5%97%E7%8E%AF%E5%A2%83%E8%A2%AB%E5%A4%9A%E4%B8%AA%E4%BB%BB%E5%8A%A1%E5%85%B1%E7%94%A8%EF%BC%8C%E6%9C%80%E5%90%8E%E8%B0%81%E9%83%BD%E8%AF%B4%E4%B8%8D%E6%B8%85%E7%8A%B6%E6%80%81"><span class="nav-number">9.5.</span> <span class="nav-text">5. 一套环境被多个任务共用，最后谁都说不清状态</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E6%80%A7%E8%83%BD%E4%B8%93%E9%A1%B9%E5%92%8C%E6%99%AE%E9%80%9A%E5%9B%9E%E5%BD%92%E6%94%BE%E5%9C%A8%E4%B8%80%E8%B5%B7%EF%BC%8C%E6%95%B4%E4%B8%AA%E9%9B%86%E7%BE%A4%E6%8A%96%E5%8A%A8"><span class="nav-number">9.6.</span> <span class="nav-text">6. 性能专项和普通回归放在一起，整个集群抖动</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-%E4%B8%BA%E4%BA%86%E7%9C%81%E4%BA%8B%E7%9B%B4%E6%8E%A5%E5%A4%8D%E5%88%B6%E7%BA%BF%E4%B8%8A%E9%85%8D%E7%BD%AE%EF%BC%8C%E7%BB%93%E6%9E%9C%E6%B5%8B%E8%AF%95%E7%8E%AF%E5%A2%83%E4%BA%92%E7%9B%B8%E6%B1%A1%E6%9F%93"><span class="nav-number">9.7.</span> <span class="nav-text">7. 为了省事直接复制线上配置，结果测试环境互相污染</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-%E5%9B%9E%E6%94%B6%E8%A7%84%E5%88%99%E5%86%99%E4%BA%86%EF%BC%8C%E4%BD%86%E6%B2%A1%E6%9C%89%E7%BB%AD%E6%9C%9F%E5%92%8C%E4%BF%9D%E6%8A%A4%E6%9C%BA%E5%88%B6"><span class="nav-number">9.8.</span> <span class="nav-text">8. 回收规则写了，但没有续期和保护机制</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E7%9C%9F%E5%AE%9E%E6%A1%88%E4%BE%8B%EF%BC%9A%E4%B8%80%E5%9C%BA%E2%80%9C%E6%89%A9%E5%AE%B9%E5%90%8E%E6%9B%B4%E4%B9%B1%E2%80%9D%E7%9A%84%E6%B5%8B%E8%AF%95%E7%8E%AF%E5%A2%83%E4%BA%8B%E6%95%85%E6%98%AF%E6%80%8E%E4%B9%88%E6%94%B6%E6%95%9B%E7%9A%84"><span class="nav-number">10.</span> <span class="nav-text">十、真实案例：一场“扩容后更乱”的测试环境事故是怎么收敛的</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9C%BA%E6%99%AF"><span class="nav-number">10.1.</span> <span class="nav-text">场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%89%A7%E8%A1%8C"><span class="nav-number">10.2.</span> <span class="nav-text">执行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8E%B0%E8%B1%A1"><span class="nav-number">10.3.</span> <span class="nav-text">现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%92%E6%9F%A5"><span class="nav-number">10.4.</span> <span class="nav-text">排查</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BF%AE%E5%A4%8D"><span class="nav-number">10.5.</span> <span class="nav-text">修复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E7%BB%93%E8%AF%AD"><span class="nav-number">11.</span> <span class="nav-text">十一、结语</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2023/08/26/%E4%BA%91%E5%8E%9F%E7%94%9F-02-Kubernetes%E5%9C%A8%E6%B5%8B%E8%AF%95%E7%8E%AF%E5%A2%83%E4%B8%AD%E7%9A%84%E9%83%A8%E7%BD%B2%E6%89%A9%E5%AE%B9%E9%9A%94%E7%A6%BB%E5%92%8C%E5%9B%9E%E6%94%B6%E6%80%8E%E4%B9%88%E5%81%9A/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="云原生-02-Kubernetes在测试环境中的部署扩容隔离和回收怎么做 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          云原生-02-Kubernetes在测试环境中的部署扩容隔离和回收怎么做
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2023-08-26 20:30:00" itemprop="dateCreated datePublished" datetime="2023-08-26T20:30:00+08:00">2023-08-26</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/%E4%BA%91%E5%8E%9F%E7%94%9F/" itemprop="url" rel="index"><span itemprop="name">云原生</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>6.3k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>23 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>Kubernetes 进入测试环境之后，最容易被低估的并不是部署动作本身，而是环境数量、资源生命周期和团队并发使用带来的治理压力。</p>
+<p>刚开始接入 Kubernetes 时，关注点通常只有两件事：</p>
+<ul>
+<li>服务能不能部署起来</li>
+<li>Pod 能不能扩起来</li>
+</ul>
+<p>这两个问题当然重要，但它们通常只解决了“能不能跑”的第一层问题。</p>
+<p>一旦测试环境开始真正承担日常提测、联调、回归、专项验证、性能摸底、灰度预演这些任务，问题会很快从“会不会部署”转成下面这些更实际的工程问题：</p>
+<ul>
+<li>同一个集群里并行跑十几个项目时，谁在抢资源</li>
+<li>一个版本开了三套测试环境后，哪些资源该保留，哪些该自动回收</li>
+<li>接口回归和性能摸底能不能共用一套命名和资源策略</li>
+<li>某个项目临时扩容之后，为什么第二天别的团队开始调度失败</li>
+<li>测试环境的数据、日志、域名和配置，怎么跟环境实例对应起来</li>
+</ul>
+<p>所以这篇文章不讨论 Kubernetes 基础概念，也不写通用安装教程，而是专门收束到测试环境里最常见的四件事：</p>
+<ul>
+<li>部署怎么做</li>
+<li>扩容怎么做</li>
+<li>隔离怎么做</li>
+<li>回收怎么做</li>
+</ul>
+<p>重点不是讲“有什么功能”，而是讲<strong>测试环境在 Kubernetes 里怎么治理，才能既支撑并发测试，又不把集群跑成长期脏环境。</strong></p>
+<h2 id="一、测试环境里的-Kubernetes，治理对象首先不是-Pod，而是“环境实例”"><a href="#一、测试环境里的-Kubernetes，治理对象首先不是-Pod，而是“环境实例”" class="headerlink" title="一、测试环境里的 Kubernetes，治理对象首先不是 Pod，而是“环境实例”"></a>一、测试环境里的 Kubernetes，治理对象首先不是 Pod，而是“环境实例”</h2><p>很多测试团队一开始接 Kubernetes，会把注意力放在 Deployment、Service、Ingress、ConfigMap 这些资源对象上。</p>
+<p>这没有错，但如果直接按资源对象治理，很快就会失控。</p>
+<p>更合适的做法，是先把测试环境统一抽象成“环境实例”。</p>
+<p>一个环境实例通常至少包含这些内容：</p>
+<ul>
+<li>一组服务部署</li>
+<li>一组配置</li>
+<li>一组域名或入口</li>
+<li>一组测试数据或依赖连接</li>
+<li>一组资源额度</li>
+<li>一组生命周期信息</li>
+</ul>
+<p>换句话说，测试团队真正需要管理的，不是单独一个 Pod，而是：</p>
+<p><strong>某个项目、某个分支、某个版本、某次验证任务对应的一整套临时或阶段性运行环境。</strong></p>
+<p>只有先把治理对象定义成环境实例，后面下面这些动作才有统一入口：</p>
+<ul>
+<li>环境创建</li>
+<li>资源申请</li>
+<li>命名生成</li>
+<li>部署发布</li>
+<li>横向扩容</li>
+<li>访问接入</li>
+<li>证据留存</li>
+<li>自动回收</li>
+</ul>
+<p>如果没有这个抽象，现场通常会变成下面这样：</p>
+<ul>
+<li>服务 A 的命名按项目走</li>
+<li>服务 B 的命名按分支走</li>
+<li>Ingress 的域名按开发同学习惯写</li>
+<li>ConfigMap 和 Secret 不知道归属于哪一套环境</li>
+<li>扩容时只改了副本数，没有记录是谁加的、为什么加、何时恢复</li>
+<li>任务结束后，Deployment 删了，但 PVC、Job、ConfigMap、Ingress 都还留着</li>
+</ul>
+<p>最后不是 Kubernetes 不好用，而是测试环境没有统一治理模型。</p>
+<h2 id="二、测试环境的目标，不是“永远在线”，而是“按需创建、稳定可用、可控回收”"><a href="#二、测试环境的目标，不是“永远在线”，而是“按需创建、稳定可用、可控回收”" class="headerlink" title="二、测试环境的目标，不是“永远在线”，而是“按需创建、稳定可用、可控回收”"></a>二、测试环境的目标，不是“永远在线”，而是“按需创建、稳定可用、可控回收”</h2><p>生产环境追求的是长期稳定和持续在线。</p>
+<p>测试环境不一样。</p>
+<p>测试环境更常见的特点是：</p>
+<ul>
+<li>数量多</li>
+<li>生命周期短</li>
+<li>使用高峰明显</li>
+<li>资源竞争强</li>
+<li>数据状态变化快</li>
+<li>对成本和集群容量更敏感</li>
+</ul>
+<p>所以测试环境里更重要的目标，通常不是把单套环境做得无限稳，而是把环境体系做成下面这种状态：</p>
+<ul>
+<li>创建快：接到任务后能快速拉起可用环境</li>
+<li>边界清：谁用、干什么、占多少资源都清楚</li>
+<li>隔离稳：不同任务互不误伤</li>
+<li>扩缩有规则：不是谁先卡谁就手工扩</li>
+<li>回收干净：任务结束后资源能及时释放</li>
+</ul>
+<p>围绕这个目标，测试环境里的 Kubernetes 更适合被拆成 4 条治理链路：</p>
+<ol>
+<li>环境创建链路</li>
+<li>容量扩缩链路</li>
+<li>隔离与边界链路</li>
+<li>生命周期回收链路</li>
+</ol>
+<p>下面按这四条链路展开。</p>
+<h2 id="三、部署链路：测试环境不能只会-apply，必须先收入口、模板和参数"><a href="#三、部署链路：测试环境不能只会-apply，必须先收入口、模板和参数" class="headerlink" title="三、部署链路：测试环境不能只会 apply，必须先收入口、模板和参数"></a>三、部署链路：测试环境不能只会 apply，必须先收入口、模板和参数</h2><p>测试环境里的部署动作，如果只是把 Helm 或 YAML 交给每个人自由执行，很快就会出现结果不可控的问题。</p>
+<p>更适合长期维护的方式，是把部署链路拆成下面四层。</p>
+<h3 id="1-模板层：统一部署模板，而不是每次复制-YAML"><a href="#1-模板层：统一部署模板，而不是每次复制-YAML" class="headerlink" title="1. 模板层：统一部署模板，而不是每次复制 YAML"></a>1. 模板层：统一部署模板，而不是每次复制 YAML</h3><p>至少要统一下面这些模板：</p>
+<ul>
+<li>Deployment</li>
+<li>Service</li>
+<li>Ingress</li>
+<li>ConfigMap</li>
+<li>Secret 引用约定</li>
+<li>HPA 或扩容参数模板</li>
+<li>Job&#x2F;CronJob 模板</li>
+</ul>
+<p>模板统一的价值不在“写得整齐”，而在于可以保证下面这些东西长期一致：</p>
+<ul>
+<li>标签规范</li>
+<li>资源请求与限制写法</li>
+<li>探针策略</li>
+<li>日志和监控注解</li>
+<li>环境变量注入方式</li>
+<li>命名格式</li>
+</ul>
+<p>如果模板不统一，测试环境里最容易出现的现场就是：</p>
+<ul>
+<li>有的服务有 readinessProbe，有的没有</li>
+<li>有的环境限制了 CPU 和内存，有的完全没限制</li>
+<li>有的服务带了统一标签，能查到环境归属，有的查不到</li>
+<li>有的环境改一处 values 就能起，有的要改 5 份 YAML</li>
+</ul>
+<h3 id="2-参数层：把环境差异收进-values，而不是改模板正文"><a href="#2-参数层：把环境差异收进-values，而不是改模板正文" class="headerlink" title="2. 参数层：把环境差异收进 values，而不是改模板正文"></a>2. 参数层：把环境差异收进 values，而不是改模板正文</h3><p>测试环境的差异通常主要来自：</p>
+<ul>
+<li>命名空间</li>
+<li>镜像版本</li>
+<li>副本数</li>
+<li>域名</li>
+<li>数据库连接</li>
+<li>Redis、MQ、ES 等依赖地址</li>
+<li>功能开关</li>
+<li>资源额度</li>
+</ul>
+<p>这些差异更适合放进参数层统一管理，而不是让每次部署都去改模板正文。</p>
+<p>常见可执行做法是：</p>
+<ul>
+<li>每个项目保留一套基础模板</li>
+<li>每种环境类型保留一套 values 基线</li>
+<li>每次创建环境实例时，只生成本次实例的差异参数文件</li>
+</ul>
+<p>例如可以按下面的目录组织：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">deploy/</span><br><span class="line">  charts/</span><br><span class="line">    app/</span><br><span class="line">      Chart.yaml</span><br><span class="line">      templates/</span><br><span class="line">        deployment.yaml</span><br><span class="line">        service.yaml</span><br><span class="line">        ingress.yaml</span><br><span class="line">  values/</span><br><span class="line">    base.yaml</span><br><span class="line">    test-regression.yaml</span><br><span class="line">    test-feature.yaml</span><br><span class="line">    test-performance.yaml</span><br><span class="line">  instances/</span><br><span class="line">    order-api/</span><br><span class="line">      feature-login-20230826.yaml</span><br><span class="line">      release-1-9-3.yaml</span><br></pre></td></tr></table></figure>
+
+<p>这样做的好处是：</p>
+<ul>
+<li>模板变更和实例差异分开</li>
+<li>环境回放更容易</li>
+<li>哪次环境用了什么参数能追溯</li>
+<li>后续清理时可以直接按实例文件定位资源</li>
+</ul>
+<h3 id="3-入口层：部署动作必须有统一入口"><a href="#3-入口层：部署动作必须有统一入口" class="headerlink" title="3. 入口层：部署动作必须有统一入口"></a>3. 入口层：部署动作必须有统一入口</h3><p>测试环境里最危险的做法之一，就是让每个人直接在集群里手敲 <code>kubectl apply -f</code>。</p>
+<p>更合适的做法，是至少收成一个统一部署入口，入口可以是：</p>
+<ul>
+<li>平台上的环境创建按钮</li>
+<li>Jenkins 或 Pipeline 参数化任务</li>
+<li>GitOps 仓库合并后自动部署</li>
+<li>内部 CLI 工具</li>
+</ul>
+<p>不管入口长什么样，至少要做到这几件事：</p>
+<ul>
+<li>环境实例名统一生成</li>
+<li>命名空间和资源标签自动带上</li>
+<li>默认资源额度自动注入</li>
+<li>基础探针和日志注解自动带上</li>
+<li>创建人、用途、过期时间自动记录</li>
+</ul>
+<h3 id="4-校验层：部署成功不等于环境可用"><a href="#4-校验层：部署成功不等于环境可用" class="headerlink" title="4. 校验层：部署成功不等于环境可用"></a>4. 校验层：部署成功不等于环境可用</h3><p>很多测试环境“部署成功”只是资源对象创建成功。</p>
+<p>真正的可用校验至少还应该包括：</p>
+<ul>
+<li>Pod 全部 Ready</li>
+<li>Service 可访问</li>
+<li>Ingress 路由生效</li>
+<li>配置是否正确注入</li>
+<li>关键依赖连接可用</li>
+<li>核心健康检查通过</li>
+</ul>
+<p>更适合实际落地的部署执行骨架如下：</p>
+<ol>
+<li>创建环境实例记录，写入项目、分支、用途、申请人、过期时间。</li>
+<li>生成命名空间、实例名、域名、镜像标签和参数文件。</li>
+<li>执行模板渲染或 Helm 部署。</li>
+<li>轮询 Deployment、StatefulSet、Job 等资源状态。</li>
+<li>做健康检查、依赖探活和入口连通性校验。</li>
+<li>生成环境访问地址、版本信息和资源占用摘要。</li>
+<li>把环境实例写入生命周期队列，进入回收和巡检体系。</li>
+</ol>
+<p>如果这一步只做到了第 3 步，后面的大量环境问题其实都是“半成品环境”带出来的。</p>
+<h2 id="四、资源与命名策略：测试环境最怕的不是资源少，而是资源没有边界"><a href="#四、资源与命名策略：测试环境最怕的不是资源少，而是资源没有边界" class="headerlink" title="四、资源与命名策略：测试环境最怕的不是资源少，而是资源没有边界"></a>四、资源与命名策略：测试环境最怕的不是资源少，而是资源没有边界</h2><p>测试环境多了之后，最先失控的通常不是 YAML，而是命名和资源归属。</p>
+<h3 id="1-命名策略要先回答“这是谁的哪一套环境”"><a href="#1-命名策略要先回答“这是谁的哪一套环境”" class="headerlink" title="1. 命名策略要先回答“这是谁的哪一套环境”"></a>1. 命名策略要先回答“这是谁的哪一套环境”</h3><p>测试环境的资源命名至少要能回答四个问题：</p>
+<ul>
+<li>属于哪个项目</li>
+<li>对应什么用途</li>
+<li>对应哪次实例</li>
+<li>生命周期何时结束</li>
+</ul>
+<p>比较实用的命名结构通常类似这样：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">&lt;project&gt;-&lt;envType&gt;-&lt;branchOrVersion&gt;-&lt;serial&gt;</span><br></pre></td></tr></table></figure>
+
+<p>例如：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">orderapi-regression-r1-9-3-01</span><br><span class="line">orderapi-feature-login-20230826-01</span><br><span class="line">gateway-perf-20230826-01</span><br></pre></td></tr></table></figure>
+
+<p>命名不是为了好看，而是为了服务下面这些动作：</p>
+<ul>
+<li>快速识别资源归属</li>
+<li>做批量清理</li>
+<li>做资源统计</li>
+<li>做问题排查</li>
+<li>做访问地址映射</li>
+</ul>
+<h3 id="2-标签策略比名字更重要"><a href="#2-标签策略比名字更重要" class="headerlink" title="2. 标签策略比名字更重要"></a>2. 标签策略比名字更重要</h3><p>命名只能解决人眼识别问题，治理真正依赖的是标签。</p>
+<p>测试环境里的 Kubernetes 资源，至少建议统一下面这些标签：</p>
+<ul>
+<li><code>app</code></li>
+<li><code>project</code></li>
+<li><code>env.instance</code></li>
+<li><code>env.type</code></li>
+<li><code>owner</code></li>
+<li><code>branch</code></li>
+<li><code>version</code></li>
+<li><code>expire_at</code></li>
+<li><code>managed_by</code></li>
+</ul>
+<p>这些标签的价值主要体现在：</p>
+<ul>
+<li>批量查询资源</li>
+<li>统计环境占用</li>
+<li>自动回收筛选</li>
+<li>故障定位时快速拉齐上下文</li>
+</ul>
+<p>例如在排查时，如果统一有 <code>env.instance</code> 标签，就能非常快地把某套环境的 Deployment、Pod、Service、Ingress、ConfigMap、PVC 一次性查出来。</p>
+<h3 id="3-资源请求和限制必须成基线"><a href="#3-资源请求和限制必须成基线" class="headerlink" title="3. 资源请求和限制必须成基线"></a>3. 资源请求和限制必须成基线</h3><p>测试环境的资源边界如果不预先定好，扩容永远会变成“谁先喊卡谁先加”。</p>
+<p>更适合的方式是按环境类型给出基线。</p>
+<p>例如：</p>
+<ul>
+<li>功能联调环境：低副本、低配额、强调快速创建</li>
+<li>回归环境：固定副本、强调稳定性和观测</li>
+<li>性能摸底环境：独立额度、独立调度、限制并发数量</li>
+<li>临时问题复现环境：短生命周期、强制过期时间</li>
+</ul>
+<p>资源基线至少要明确：</p>
+<ul>
+<li>CPU request &#x2F; limit</li>
+<li>Memory request &#x2F; limit</li>
+<li>副本基线</li>
+<li>存储额度</li>
+<li>是否允许 HPA</li>
+<li>是否允许占用独占节点</li>
+</ul>
+<p>如果这层没有事先定义，扩容和隔离都无从谈起。</p>
+<h2 id="五、扩容链路：测试环境的扩容重点不是“把副本加上去”，而是先判断扩什么、为什么扩、扩多久"><a href="#五、扩容链路：测试环境的扩容重点不是“把副本加上去”，而是先判断扩什么、为什么扩、扩多久" class="headerlink" title="五、扩容链路：测试环境的扩容重点不是“把副本加上去”，而是先判断扩什么、为什么扩、扩多久"></a>五、扩容链路：测试环境的扩容重点不是“把副本加上去”，而是先判断扩什么、为什么扩、扩多久</h2><p>测试环境里说“要扩容”，通常至少有三种完全不同的背景：</p>
+<ul>
+<li>服务并发压力真的上来了</li>
+<li>当前副本不够导致测试阻塞</li>
+<li>其实不是容量问题，而是配置、依赖或数据问题</li>
+</ul>
+<p>如果这三种情况不先区分，现场很容易出现“遇到慢就扩容、遇到失败就加副本”的误操作。</p>
+<h3 id="1-扩容前要先做一次最小判断"><a href="#1-扩容前要先做一次最小判断" class="headerlink" title="1. 扩容前要先做一次最小判断"></a>1. 扩容前要先做一次最小判断</h3><p>更合适的扩容前检查通常包括：</p>
+<ul>
+<li>当前问题是 CPU、内存、连接数还是依赖瓶颈</li>
+<li>Pod 是真的打满，还是 readiness 反复失败</li>
+<li>当前环境是单套问题，还是整个命名空间资源紧张</li>
+<li>扩容会不会把别的环境挤爆</li>
+<li>这次扩容是临时动作还是应该固化成基线</li>
+</ul>
+<p>只有这些问题明确了，再决定扩什么。</p>
+<h3 id="2-测试环境常见的扩容对象，不只有-Deployment"><a href="#2-测试环境常见的扩容对象，不只有-Deployment" class="headerlink" title="2. 测试环境常见的扩容对象，不只有 Deployment"></a>2. 测试环境常见的扩容对象，不只有 Deployment</h3><p>测试环境里的扩容对象常见有四类：</p>
+<ul>
+<li>应用副本数扩容</li>
+<li>节点池或节点资源扩容</li>
+<li>存储资源扩容</li>
+<li>周边依赖扩容，例如 Redis、MQ、ES 或数据库连接池</li>
+</ul>
+<p>很多“扩了还是慢”的现场，本质上是只扩了应用层，没有扩真实瓶颈层。</p>
+<h3 id="3-更适合测试环境的扩容策略，是“默认基线-临时升级-自动回落”"><a href="#3-更适合测试环境的扩容策略，是“默认基线-临时升级-自动回落”" class="headerlink" title="3. 更适合测试环境的扩容策略，是“默认基线 + 临时升级 + 自动回落”"></a>3. 更适合测试环境的扩容策略，是“默认基线 + 临时升级 + 自动回落”</h3><p>生产环境常常强调弹性自动化。</p>
+<p>测试环境更实用的策略通常是：</p>
+<ul>
+<li>默认基线：每类环境有标准资源配置</li>
+<li>临时升级：专项测试期间提升副本或配额</li>
+<li>自动回落：专项结束后恢复到基线</li>
+</ul>
+<p>这三步缺一不可。</p>
+<p>如果只有升级，没有回落，测试集群最终一定会被历史临时扩容拖垮。</p>
+<h3 id="4-一个可执行的扩容骨架"><a href="#4-一个可执行的扩容骨架" class="headerlink" title="4. 一个可执行的扩容骨架"></a>4. 一个可执行的扩容骨架</h3><ol>
+<li>先确认当前问题是否真由容量引起。</li>
+<li>确认扩容对象是应用、节点、存储还是依赖层。</li>
+<li>判断扩容范围是单服务、单环境还是独立节点池。</li>
+<li>记录本次扩容原因、起止时间、责任人和恢复时间。</li>
+<li>执行扩容并观察关键指标：Ready 数、CPU、内存、错误率、时延、队列积压。</li>
+<li>测试结束后自动回落到基线。</li>
+<li>如果该问题高频出现，再回写基线模板和容量规划。</li>
+</ol>
+<p>如果第 4 步和第 6 步缺失，这次扩容通常会在一个月后变成新的脏资源来源。</p>
+<h2 id="六、隔离链路：测试环境的隔离目标，是避免误伤，不是追求绝对独占"><a href="#六、隔离链路：测试环境的隔离目标，是避免误伤，不是追求绝对独占" class="headerlink" title="六、隔离链路：测试环境的隔离目标，是避免误伤，不是追求绝对独占"></a>六、隔离链路：测试环境的隔离目标，是避免误伤，不是追求绝对独占</h2><p>测试环境的隔离经常被理解成“每个项目一套独立集群”。</p>
+<p>这当然最干净，但通常不是成本最合适的方案。</p>
+<p>更常见也更现实的做法，是在共享集群里做分层隔离。</p>
+<h3 id="1-命名空间隔离是第一层，但绝对不够"><a href="#1-命名空间隔离是第一层，但绝对不够" class="headerlink" title="1. 命名空间隔离是第一层，但绝对不够"></a>1. 命名空间隔离是第一层，但绝对不够</h3><p>做了 Namespace，就以为隔离已经完成。</p>
+<p>实际通常还差下面这些层：</p>
+<ul>
+<li>ResourceQuota</li>
+<li>LimitRange</li>
+<li>NetworkPolicy</li>
+<li>RBAC</li>
+<li>节点亲和和污点容忍</li>
+<li>存储目录或 PVC 隔离</li>
+<li>域名与入口隔离</li>
+</ul>
+<p>Namespace 解决的是分组问题，不是资源抢占、网络互访和权限越界问题。</p>
+<h3 id="2-测试环境更适合做三层隔离"><a href="#2-测试环境更适合做三层隔离" class="headerlink" title="2. 测试环境更适合做三层隔离"></a>2. 测试环境更适合做三层隔离</h3><p>比较实用的分层方式通常是：</p>
+<h4 id="第一层：环境类型隔离"><a href="#第一层：环境类型隔离" class="headerlink" title="第一层：环境类型隔离"></a>第一层：环境类型隔离</h4><p>例如把下面几类环境分开：</p>
+<ul>
+<li>日常联调</li>
+<li>版本回归</li>
+<li>性能专项</li>
+<li>问题复现</li>
+</ul>
+<p>这样做的原因是，不同环境类型的稳定性要求和资源波动完全不同。</p>
+<h4 id="第二层：资源隔离"><a href="#第二层：资源隔离" class="headerlink" title="第二层：资源隔离"></a>第二层：资源隔离</h4><p>针对每个命名空间或环境类型，定义：</p>
+<ul>
+<li>CPU 和内存总额度</li>
+<li>默认请求和上限</li>
+<li>PVC 配额</li>
+<li>并发环境实例上限</li>
+</ul>
+<p>这样可以避免单个团队把共享集群吃空。</p>
+<h4 id="第三层：调度隔离"><a href="#第三层：调度隔离" class="headerlink" title="第三层：调度隔离"></a>第三层：调度隔离</h4><p>对性能专项、压测、需要高 IO 的任务，建议单独打节点标签或单独节点池，避免和普通回归环境混跑。</p>
+<p>如果这一层不做，最常见的现象就是：</p>
+<ul>
+<li>回归环境突然抖动</li>
+<li>巡检任务大面积超时</li>
+<li>各个团队都会觉得自己服务变慢了</li>
+</ul>
+<p>本质上是某个高资源任务把共享节点打满。</p>
+<h3 id="3-访问和权限也必须隔离"><a href="#3-访问和权限也必须隔离" class="headerlink" title="3. 访问和权限也必须隔离"></a>3. 访问和权限也必须隔离</h3><p>测试环境里还有一类很容易被忽略的隔离问题：</p>
+<ul>
+<li>A 团队误操作了 B 团队环境</li>
+<li>公共域名覆盖了别的环境路由</li>
+<li>Secret 在多个环境被混用</li>
+<li>日志和监控看不到实例边界</li>
+</ul>
+<p>更适合的做法包括：</p>
+<ul>
+<li>不同环境实例使用独立入口前缀或子域名</li>
+<li>RBAC 按项目或环境类型收权限</li>
+<li>Secret 由模板引用，不直接跨环境复制</li>
+<li>日志、指标、链路追踪带环境实例标签</li>
+</ul>
+<h2 id="七、回收链路：测试环境的长期稳定，靠的不是人工自觉，而是自动过期和强制清理"><a href="#七、回收链路：测试环境的长期稳定，靠的不是人工自觉，而是自动过期和强制清理" class="headerlink" title="七、回收链路：测试环境的长期稳定，靠的不是人工自觉，而是自动过期和强制清理"></a>七、回收链路：测试环境的长期稳定，靠的不是人工自觉，而是自动过期和强制清理</h2><p>测试环境最常见、也最容易被拖成历史包袱的问题，就是回收做不起来。</p>
+<p>表面上看，测试环境里的资源很多都是临时创建的。</p>
+<p>实际上，最容易长期残留的资源恰恰不是 Deployment，而是：</p>
+<ul>
+<li>PVC</li>
+<li>ConfigMap</li>
+<li>Secret</li>
+<li>Ingress</li>
+<li>Job 和 CronJob</li>
+<li>临时域名配置</li>
+<li>环境实例元数据</li>
+</ul>
+<h3 id="1-回收策略必须在创建时就写进去"><a href="#1-回收策略必须在创建时就写进去" class="headerlink" title="1. 回收策略必须在创建时就写进去"></a>1. 回收策略必须在创建时就写进去</h3><p>最危险的方式，是环境先创建，等后面有人有空再清理。</p>
+<p>更适合的做法是，环境创建时就强制写入：</p>
+<ul>
+<li>创建时间</li>
+<li>过期时间</li>
+<li>申请人</li>
+<li>用途</li>
+<li>是否允许续期</li>
+<li>默认回收动作</li>
+</ul>
+<p>如果没有过期时间，所谓“临时环境”通常都会长期留下来。</p>
+<h3 id="2-回收要分级，不是只做-delete-namespace"><a href="#2-回收要分级，不是只做-delete-namespace" class="headerlink" title="2. 回收要分级，不是只做 delete namespace"></a>2. 回收要分级，不是只做 delete namespace</h3><p>测试环境的回收更适合分成三层：</p>
+<h4 id="第一层：软提醒"><a href="#第一层：软提醒" class="headerlink" title="第一层：软提醒"></a>第一层：软提醒</h4><p>环境接近过期时：</p>
+<ul>
+<li>给申请人发提醒</li>
+<li>给项目群发提醒</li>
+<li>提供续期入口</li>
+</ul>
+<h4 id="第二层：冻结"><a href="#第二层：冻结" class="headerlink" title="第二层：冻结"></a>第二层：冻结</h4><p>超过过期时间但未续期时：</p>
+<ul>
+<li>停止对外入口</li>
+<li>缩容到最小副本</li>
+<li>标记为冻结环境</li>
+</ul>
+<p>冻结的目的，是给业务方最后一次确认窗口，同时立刻释放大部分运行资源。</p>
+<h4 id="第三层：彻底清理"><a href="#第三层：彻底清理" class="headerlink" title="第三层：彻底清理"></a>第三层：彻底清理</h4><p>超过冻结窗口后：</p>
+<ul>
+<li>删除 Deployment、StatefulSet、Service、Ingress</li>
+<li>删除 PVC 或执行数据归档后删除</li>
+<li>删除 ConfigMap、Secret、Job</li>
+<li>删除环境实例记录和域名映射</li>
+</ul>
+<h3 id="3-回收动作必须有白名单和保护对象"><a href="#3-回收动作必须有白名单和保护对象" class="headerlink" title="3. 回收动作必须有白名单和保护对象"></a>3. 回收动作必须有白名单和保护对象</h3><p>测试环境不能无脑批量删。</p>
+<p>至少要预留下面几类保护规则：</p>
+<ul>
+<li>正在执行回归或压测的环境不回收</li>
+<li>标记为 <code>protected=true</code> 的环境不自动删</li>
+<li>挂着排障任务单的环境可以延长生命周期</li>
+<li>包含数据留证需求的环境先做快照或归档</li>
+</ul>
+<h3 id="4-一个更实用的回收执行骨架"><a href="#4-一个更实用的回收执行骨架" class="headerlink" title="4. 一个更实用的回收执行骨架"></a>4. 一个更实用的回收执行骨架</h3><ol>
+<li>每次创建环境实例时，写入过期时间和默认回收策略。</li>
+<li>定时任务扫描即将过期和已过期实例。</li>
+<li>对即将过期环境发提醒并允许续期。</li>
+<li>对已过期未续期环境先做冻结和缩容。</li>
+<li>冻结窗口结束后执行彻底清理。</li>
+<li>清理后做资源核对，确认 Deployment、PVC、Ingress、ConfigMap、Secret 没有残留。</li>
+<li>输出回收日报，统计释放的 CPU、内存、存储和环境数量。</li>
+</ol>
+<p>只有做到第 6 步，回收才算真的完成。</p>
+<p>的问题不是没有回收脚本，而是删完核心资源之后，没有核对残留对象，结果集群里长期堆着一批“看不见但还在占资源”的历史垃圾。</p>
+<h2 id="八、建议直接落地的一套最小执行骨架"><a href="#八、建议直接落地的一套最小执行骨架" class="headerlink" title="八、建议直接落地的一套最小执行骨架"></a>八、建议直接落地的一套最小执行骨架</h2><p>如果测试团队准备把 Kubernetes 测试环境治理真正落地，可以先按下面这套最小骨架推进，而不是一开始就追求特别重的平台。</p>
+<h3 id="1-环境模型先统一"><a href="#1-环境模型先统一" class="headerlink" title="1. 环境模型先统一"></a>1. 环境模型先统一</h3><p>先明确下面这些字段：</p>
+<ul>
+<li>项目名</li>
+<li>环境类型</li>
+<li>环境实例名</li>
+<li>分支或版本</li>
+<li>申请人</li>
+<li>创建时间</li>
+<li>过期时间</li>
+<li>当前状态</li>
+</ul>
+<h3 id="2-模板和参数分离"><a href="#2-模板和参数分离" class="headerlink" title="2. 模板和参数分离"></a>2. 模板和参数分离</h3><p>至少把：</p>
+<ul>
+<li>模板</li>
+<li>基线 values</li>
+<li>实例差异参数</li>
+</ul>
+<p>这三层分开。</p>
+<h3 id="3-强制资源标签和配额基线"><a href="#3-强制资源标签和配额基线" class="headerlink" title="3. 强制资源标签和配额基线"></a>3. 强制资源标签和配额基线</h3><p>无论是不是平台入口创建，都统一要求：</p>
+<ul>
+<li>必带环境实例标签</li>
+<li>必带过期时间标签</li>
+<li>必带 owner 标签</li>
+<li>必带资源 request 和 limit</li>
+</ul>
+<h3 id="4-建立三类环境基线"><a href="#4-建立三类环境基线" class="headerlink" title="4. 建立三类环境基线"></a>4. 建立三类环境基线</h3><p>建议最先定义这三类：</p>
+<ul>
+<li>联调环境</li>
+<li>回归环境</li>
+<li>专项环境</li>
+</ul>
+<p>不同类型给不同的：</p>
+<ul>
+<li>默认副本</li>
+<li>CPU&#x2F;内存额度</li>
+<li>生命周期</li>
+<li>是否允许扩容</li>
+<li>是否允许独占节点</li>
+</ul>
+<h3 id="5-先做自动提醒和自动冻结，再做彻底清理"><a href="#5-先做自动提醒和自动冻结，再做彻底清理" class="headerlink" title="5. 先做自动提醒和自动冻结，再做彻底清理"></a>5. 先做自动提醒和自动冻结，再做彻底清理</h3><p>直接一步删掉，风险太高。</p>
+<p>更稳妥的推进顺序是：</p>
+<ul>
+<li>第一步：先有到期提醒</li>
+<li>第二步：再做自动冻结</li>
+<li>第三步：最后做彻底删除和残留核对</li>
+</ul>
+<h2 id="九、测试环境里最常见的-8-个坑"><a href="#九、测试环境里最常见的-8-个坑" class="headerlink" title="九、测试环境里最常见的 8 个坑"></a>九、测试环境里最常见的 8 个坑</h2><h3 id="1-环境名字能看懂，但查不全资源"><a href="#1-环境名字能看懂，但查不全资源" class="headerlink" title="1. 环境名字能看懂，但查不全资源"></a>1. 环境名字能看懂，但查不全资源</h3><p>原因通常是只有名字统一，没有标签统一。</p>
+<h3 id="2-扩容生效了，但别的环境开始调度失败"><a href="#2-扩容生效了，但别的环境开始调度失败" class="headerlink" title="2. 扩容生效了，但别的环境开始调度失败"></a>2. 扩容生效了，但别的环境开始调度失败</h3><p>原因通常是共享集群没有 ResourceQuota 或节点隔离，某个环境临时扩容挤占了公共额度。</p>
+<h3 id="3-Deployment-删了，存储和入口还留着"><a href="#3-Deployment-删了，存储和入口还留着" class="headerlink" title="3. Deployment 删了，存储和入口还留着"></a>3. Deployment 删了，存储和入口还留着</h3><p>原因通常是回收只删工作负载，没有做残留资源核对。</p>
+<h3 id="4-环境看起来起好了，但实际不可测"><a href="#4-环境看起来起好了，但实际不可测" class="headerlink" title="4. 环境看起来起好了，但实际不可测"></a>4. 环境看起来起好了，但实际不可测</h3><p>原因通常是只看资源创建成功，没有做健康检查、依赖探活和入口校验。</p>
+<h3 id="5-一套环境被多个任务共用，最后谁都说不清状态"><a href="#5-一套环境被多个任务共用，最后谁都说不清状态" class="headerlink" title="5. 一套环境被多个任务共用，最后谁都说不清状态"></a>5. 一套环境被多个任务共用，最后谁都说不清状态</h3><p>原因通常是环境实例和任务实例没有绑定，导致环境边界长期模糊。</p>
+<h3 id="6-性能专项和普通回归放在一起，整个集群抖动"><a href="#6-性能专项和普通回归放在一起，整个集群抖动" class="headerlink" title="6. 性能专项和普通回归放在一起，整个集群抖动"></a>6. 性能专项和普通回归放在一起，整个集群抖动</h3><p>原因通常是高资源任务没有调度隔离。</p>
+<h3 id="7-为了省事直接复制线上配置，结果测试环境互相污染"><a href="#7-为了省事直接复制线上配置，结果测试环境互相污染" class="headerlink" title="7. 为了省事直接复制线上配置，结果测试环境互相污染"></a>7. 为了省事直接复制线上配置，结果测试环境互相污染</h3><p>原因通常是 Secret、域名、数据库连接和回调地址没有做环境实例化。</p>
+<h3 id="8-回收规则写了，但没有续期和保护机制"><a href="#8-回收规则写了，但没有续期和保护机制" class="headerlink" title="8. 回收规则写了，但没有续期和保护机制"></a>8. 回收规则写了，但没有续期和保护机制</h3><p>原因通常是回收策略只考虑“删不删”，没有考虑排障、留证和任务进行中状态。</p>
+<h2 id="十、真实案例：一场“扩容后更乱”的测试环境事故是怎么收敛的"><a href="#十、真实案例：一场“扩容后更乱”的测试环境事故是怎么收敛的" class="headerlink" title="十、真实案例：一场“扩容后更乱”的测试环境事故是怎么收敛的"></a>十、真实案例：一场“扩容后更乱”的测试环境事故是怎么收敛的</h2><h3 id="场景"><a href="#场景" class="headerlink" title="场景"></a>场景</h3><p>某次版本回归前，支付链路相关服务需要在测试集群中同时支撑下面三类任务：</p>
+<ul>
+<li>常规接口回归</li>
+<li>UI 回归</li>
+<li>一轮支付峰值专项摸底</li>
+</ul>
+<p>这三类任务原本都在同一个 Kubernetes 测试集群中运行。</p>
+<p>为了赶进度，专项测试开始前，相关服务被临时从 <code>2</code> 个副本扩到了 <code>6</code> 个副本，同时消息消费服务也做了扩容，但没有调整命名空间配额，也没有把专项任务调度到独立节点。</p>
+<h3 id="执行"><a href="#执行" class="headerlink" title="执行"></a>执行</h3><p>现场执行动作大致是：</p>
+<ul>
+<li>运维侧直接修改了 Deployment 副本数</li>
+<li>测试侧继续按原计划触发回归</li>
+<li>回归环境和专项环境共用同一套 Ingress 和公共依赖</li>
+<li>扩容动作没有登记恢复时间，也没有写回环境实例记录</li>
+</ul>
+<h3 id="现象"><a href="#现象" class="headerlink" title="现象"></a>现象</h3><p>扩容后问题并没有缓解，反而出现了几类新现象：</p>
+<ul>
+<li>部分回归任务开始频繁超时</li>
+<li>多个服务 Pod 一直 Pending</li>
+<li>某些环境里的 Ingress 响应变慢</li>
+<li>集群节点 CPU 抬高，普通联调环境开始不稳定</li>
+</ul>
+<p>表面上看像是“副本加了还不够”。</p>
+<h3 id="排查"><a href="#排查" class="headerlink" title="排查"></a>排查</h3><p>沿着环境和资源链路排查后，问题逐步收敛到下面几层：</p>
+<ol>
+<li>相关命名空间没有 ResourceQuota 保护，临时扩容把共享节点资源吃掉了。</li>
+<li>性能专项和普通回归任务没有做节点隔离，高负载压测把普通任务一起拖慢。</li>
+<li>扩容只改了应用副本，没有同步检查消息中间件和数据库连接池，依赖层先到瓶颈。</li>
+<li>环境实例记录里没有扩容历史，值班同学最开始甚至不知道哪些服务被改过。</li>
+<li>专项结束后没有自动回落策略，临时扩容本来还准备继续保留到第二天。</li>
+</ol>
+<h3 id="修复"><a href="#修复" class="headerlink" title="修复"></a>修复</h3><p>最后的修复动作不是继续加副本，而是按治理链路做了四件事：</p>
+<ol>
+<li>把专项测试迁到带独立标签的节点池，和回归环境彻底分开。</li>
+<li>给命名空间补上 ResourceQuota 和 LimitRange，明确共享额度。</li>
+<li>把扩容动作接入环境实例记录，要求写入原因、起止时间和回落时间。</li>
+<li>给专项环境增加自动回落和到期回收规则，结束后恢复默认副本数。</li>
+</ol>
+<p>修复后，同一套集群里的回归任务和专项任务不再互相误伤，后续再做临时扩容时，也能很快看清本次扩的是哪套环境、占用了多少额度、何时恢复。</p>
+<p>这个案例说明一个很现实的问题：</p>
+<p><strong>测试环境里的扩容如果没有和隔离、配额、生命周期管理绑在一起，扩容本身就可能变成新的故障来源。</strong></p>
+<h2 id="十一、结语"><a href="#十一、结语" class="headerlink" title="十一、结语"></a>十一、结语</h2><p>Kubernetes 放进测试环境之后，真正难的通常不是把服务部署起来，而是把环境体系治理起来。</p>
+<p>测试环境里的部署、扩容、隔离和回收，本质上是一条完整的生命周期管理链路。</p>
+<p>如果只做其中一段，现场通常还是会乱：</p>
+<ul>
+<li>只会部署，不会回收，资源会越来越脏</li>
+<li>只会扩容，不做隔离，集群会越来越抖</li>
+<li>只会分 Namespace，不做配额和权限，边界依然不清</li>
+<li>只会写 YAML，不建环境实例模型，后续根本管不住</li>
+</ul>
+<p>更稳妥的推进方式通常是：</p>
+<ol>
+<li>先统一环境实例模型。</li>
+<li>再统一模板、参数和部署入口。</li>
+<li>再补资源配额、节点隔离和扩缩规则。</li>
+<li>最后把过期提醒、冻结和自动回收真正接起来。</li>
+</ol>
+<p>做到这一步，Kubernetes 在测试环境里才不只是一个运行平台，而会真正变成一套可治理、可扩展、可回收的环境基础设施。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E5%B7%A5%E7%A8%8B%E5%AE%9E%E8%B7%B5/" rel="tag"># 工程实践</a>
+              <a href="/tags/Kubernetes/" rel="tag"># Kubernetes</a>
+              <a href="/tags/%E6%B5%8B%E8%AF%95%E7%8E%AF%E5%A2%83/" rel="tag"># 测试环境</a>
+              <a href="/tags/%E7%8E%AF%E5%A2%83%E6%B2%BB%E7%90%86/" rel="tag"># 环境治理</a>
+              <a href="/tags/%E8%B5%84%E6%BA%90%E9%9A%94%E7%A6%BB/" rel="tag"># 资源隔离</a>
+              <a href="/tags/%E5%AE%B9%E9%87%8F%E7%AE%A1%E7%90%86/" rel="tag"># 容量管理</a>
+              <a href="/tags/%E5%9B%9E%E6%94%B6%E7%AD%96%E7%95%A5/" rel="tag"># 回收策略</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2023/08/19/%E4%BA%91%E5%8E%9F%E7%94%9F-01-%E6%B5%8B%E8%AF%95%E5%9B%A2%E9%98%9F%E5%9C%A8Kubernetes%E5%9C%BA%E6%99%AF%E9%87%8C%E6%9C%80%E5%B8%B8%E5%A4%84%E7%90%86%E5%93%AA%E4%BA%9B%E7%9C%9F%E5%AE%9E%E9%97%AE%E9%A2%98/" rel="prev" title="云原生-01-测试团队在Kubernetes场景里最常处理哪些真实问题">
+                  <i class="fa fa-angle-left"></i> 云原生-01-测试团队在Kubernetes场景里最常处理哪些真实问题
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2023/09/02/%E4%BA%91%E5%8E%9F%E7%94%9F-03-%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E5%AE%B9%E5%99%A8%E5%8C%96%E5%90%8E%E9%85%8D%E7%BD%AE%E6%97%A5%E5%BF%97%E5%92%8C%E6%8E%92%E9%9A%9C%E9%93%BE%E8%B7%AF%E6%80%8E%E4%B9%88%E9%87%8D%E6%9E%84/" rel="next" title="云原生-03-测试平台容器化后配置日志和排障链路怎么重构">
+                  云原生-03-测试平台容器化后配置日志和排障链路怎么重构 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

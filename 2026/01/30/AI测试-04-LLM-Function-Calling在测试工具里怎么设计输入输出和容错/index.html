@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="在 AI 测试平台里，Function Calling 很容易被误解成一个“把自然语言转成工具调用”的轻量能力。 如果只是做 Demo，这么理解问题不大。但只要它进入测试工具，要求就会立刻变化：  输入不能只是一段模糊提示词，而要变成结构化任务上下文 输出不能只看模型有没有“说对”，而要看参数是否可执行、可审计、可恢复 调用失败不能简单重试，而要先判断失败类型和恢复边界 工具执行结果不能只回给模型">
+<meta property="og:type" content="article">
+<meta property="og:title" content="AI测试-04-LLM Function Calling在测试工具里怎么设计输入输出和容错">
+<meta property="og:url" content="https://paynewinnt.github.io/2026/01/30/AI%E6%B5%8B%E8%AF%95-04-LLM-Function-Calling%E5%9C%A8%E6%B5%8B%E8%AF%95%E5%B7%A5%E5%85%B7%E9%87%8C%E6%80%8E%E4%B9%88%E8%AE%BE%E8%AE%A1%E8%BE%93%E5%85%A5%E8%BE%93%E5%87%BA%E5%92%8C%E5%AE%B9%E9%94%99/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="在 AI 测试平台里，Function Calling 很容易被误解成一个“把自然语言转成工具调用”的轻量能力。 如果只是做 Demo，这么理解问题不大。但只要它进入测试工具，要求就会立刻变化：  输入不能只是一段模糊提示词，而要变成结构化任务上下文 输出不能只看模型有没有“说对”，而要看参数是否可执行、可审计、可恢复 调用失败不能简单重试，而要先判断失败类型和恢复边界 工具执行结果不能只回给模型">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-01-30T12:30:00.000Z">
+<meta property="article:modified_time" content="2026-01-30T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="AI测试">
+<meta property="article:tag" content="测试平台">
+<meta property="article:tag" content="LLM">
+<meta property="article:tag" content="工程化">
+<meta property="article:tag" content="Function Calling">
+<meta property="article:tag" content="测试工具">
+<meta property="article:tag" content="参数约束">
+<meta property="article:tag" content="容错设计">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2026/01/30/AI%E6%B5%8B%E8%AF%95-04-LLM-Function-Calling%E5%9C%A8%E6%B5%8B%E8%AF%95%E5%B7%A5%E5%85%B7%E9%87%8C%E6%80%8E%E4%B9%88%E8%AE%BE%E8%AE%A1%E8%BE%93%E5%85%A5%E8%BE%93%E5%87%BA%E5%92%8C%E5%AE%B9%E9%94%99/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2026/01/30/AI%E6%B5%8B%E8%AF%95-04-LLM-Function-Calling%E5%9C%A8%E6%B5%8B%E8%AF%95%E5%B7%A5%E5%85%B7%E9%87%8C%E6%80%8E%E4%B9%88%E8%AE%BE%E8%AE%A1%E8%BE%93%E5%85%A5%E8%BE%93%E5%87%BA%E5%92%8C%E5%AE%B9%E9%94%99/","path":"2026/01/30/AI测试-04-LLM-Function-Calling在测试工具里怎么设计输入输出和容错/","title":"AI测试-04-LLM Function Calling在测试工具里怎么设计输入输出和容错"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>AI测试-04-LLM Function Calling在测试工具里怎么设计输入输出和容错 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E5%85%88%E6%8A%8A%E8%BE%B9%E7%95%8C%E8%AF%B4%E6%B8%85%EF%BC%9A%E6%B5%8B%E8%AF%95%E5%B7%A5%E5%85%B7%E9%87%8C%E7%9A%84-Function-Calling-%E4%B8%8D%E7%AD%89%E4%BA%8E%E8%81%8A%E5%A4%A9%E5%8A%A9%E6%89%8B%E9%87%8C%E7%9A%84%E5%B7%A5%E5%85%B7%E8%B0%83%E7%94%A8"><span class="nav-number">1.</span> <span class="nav-text">一、先把边界说清：测试工具里的 Function Calling 不等于聊天助手里的工具调用</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E5%85%88%E8%AE%BE%E8%AE%A1%E5%88%86%E5%B1%82%EF%BC%8C%E4%B8%8D%E8%A6%81%E5%85%88%E8%AE%BE%E8%AE%A1%E5%87%BD%E6%95%B0%E8%A1%A8"><span class="nav-number">2.</span> <span class="nav-text">二、先设计分层，不要先设计函数表</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%BB%BB%E5%8A%A1%E7%90%86%E8%A7%A3%E5%B1%82"><span class="nav-number">2.1.</span> <span class="nav-text">1. 任务理解层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%B0%83%E7%94%A8%E8%A7%84%E5%88%92%E5%B1%82"><span class="nav-number">2.2.</span> <span class="nav-text">2. 调用规划层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%8F%82%E6%95%B0%E7%BA%A6%E6%9D%9F%E5%B1%82"><span class="nav-number">2.3.</span> <span class="nav-text">3. 参数约束层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%B7%A5%E5%85%B7%E6%89%A7%E8%A1%8C%E5%B1%82"><span class="nav-number">2.4.</span> <span class="nav-text">4. 工具执行层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E7%BB%93%E6%9E%9C%E6%94%B6%E5%8F%A3%E5%B1%82"><span class="nav-number">2.5.</span> <span class="nav-text">5. 结果收口层</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E8%BE%93%E5%85%A5%E8%AE%BE%E8%AE%A1%E7%9A%84%E5%85%B3%E9%94%AE%EF%BC%8C%E4%B8%8D%E6%98%AF%E2%80%9C%E6%8F%90%E7%A4%BA%E8%AF%8D%E5%86%99%E5%BE%97%E4%B8%B0%E5%AF%8C%E2%80%9D%EF%BC%8C%E8%80%8C%E6%98%AF%E2%80%9C%E4%B8%8A%E4%B8%8B%E6%96%87%E6%98%AF%E5%90%A6%E8%B6%B3%E5%A4%9F%E7%BA%A6%E6%9D%9F%E2%80%9D"><span class="nav-number">3.</span> <span class="nav-text">三、输入设计的关键，不是“提示词写得丰富”，而是“上下文是否足够约束”</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%BB%BB%E5%8A%A1%E7%9B%AE%E6%A0%87"><span class="nav-number">3.1.</span> <span class="nav-text">1. 任务目标</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E7%8E%AF%E5%A2%83%E4%B8%8A%E4%B8%8B%E6%96%87"><span class="nav-number">3.2.</span> <span class="nav-text">2. 环境上下文</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%BD%93%E5%89%8D%E7%8A%B6%E6%80%81"><span class="nav-number">3.3.</span> <span class="nav-text">3. 当前状态</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%B7%A5%E5%85%B7%E7%99%BD%E5%90%8D%E5%8D%95"><span class="nav-number">3.4.</span> <span class="nav-text">4. 工具白名单</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E8%BE%93%E5%87%BA%E5%A5%91%E7%BA%A6"><span class="nav-number">3.5.</span> <span class="nav-text">5. 输出契约</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E8%BE%93%E5%87%BA%E8%AE%BE%E8%AE%A1%E7%9A%84%E5%85%B3%E9%94%AE%EF%BC%8C%E4%B8%8D%E6%98%AF%E2%80%9C%E8%83%BD%E8%A7%A3%E6%9E%90-JSON%E2%80%9D%EF%BC%8C%E8%80%8C%E6%98%AF%E2%80%9C%E8%83%BD%E4%B8%8D%E8%83%BD%E7%BB%A7%E7%BB%AD%E6%89%A7%E8%A1%8C%E2%80%9D"><span class="nav-number">4.</span> <span class="nav-text">四、输出设计的关键，不是“能解析 JSON”，而是“能不能继续执行”</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E5%8F%82%E6%95%B0%E7%BA%A6%E6%9D%9F%E4%B8%8D%E8%83%BD%E5%8F%AA%E9%9D%A0-JSON-Schema%EF%BC%8C%E8%BF%98%E8%A6%81%E8%A1%A5%E4%B8%9A%E5%8A%A1%E7%BA%A6%E6%9D%9F%E5%92%8C%E6%89%A7%E8%A1%8C%E7%BA%A6%E6%9D%9F"><span class="nav-number">5.</span> <span class="nav-text">五、参数约束不能只靠 JSON Schema，还要补业务约束和执行约束</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%BB%93%E6%9E%84%E7%BA%A6%E6%9D%9F"><span class="nav-number">5.1.</span> <span class="nav-text">1. 结构约束</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%B8%9A%E5%8A%A1%E7%BA%A6%E6%9D%9F"><span class="nav-number">5.2.</span> <span class="nav-text">2. 业务约束</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%89%A7%E8%A1%8C%E7%BA%A6%E6%9D%9F"><span class="nav-number">5.3.</span> <span class="nav-text">3. 执行约束</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E6%9C%80%E5%B0%8F%E6%89%A7%E8%A1%8C%E9%AA%A8%E6%9E%B6%EF%BC%9AFunction-Calling-%E5%9C%A8%E6%B5%8B%E8%AF%95%E5%B7%A5%E5%85%B7%E9%87%8C%E8%87%B3%E5%B0%91%E8%A6%81%E6%9C%89%E8%BF%99-8-%E6%AD%A5"><span class="nav-number">6.</span> <span class="nav-text">六、最小执行骨架：Function Calling 在测试工具里至少要有这 8 步</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%BB%84%E8%A3%85%E4%BB%BB%E5%8A%A1%E4%B8%8A%E4%B8%8B%E6%96%87"><span class="nav-number">6.1.</span> <span class="nav-text">1. 组装任务上下文</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%AF%B7%E6%B1%82%E6%A8%A1%E5%9E%8B%E7%94%9F%E6%88%90%E8%B0%83%E7%94%A8%E6%84%8F%E5%9B%BE"><span class="nav-number">6.2.</span> <span class="nav-text">2. 请求模型生成调用意图</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%81%9A%E5%8F%82%E6%95%B0%E6%A0%87%E5%87%86%E5%8C%96"><span class="nav-number">6.3.</span> <span class="nav-text">3. 做参数标准化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%81%9A%E7%BB%93%E6%9E%84%E6%A0%A1%E9%AA%8C%E5%92%8C%E4%B8%9A%E5%8A%A1%E6%A0%A1%E9%AA%8C"><span class="nav-number">6.4.</span> <span class="nav-text">4. 做结构校验和业务校验</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%89%A7%E8%A1%8C%E5%B7%A5%E5%85%B7"><span class="nav-number">6.5.</span> <span class="nav-text">5. 执行工具</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E5%BD%92%E4%B8%80%E5%8C%96%E7%BB%93%E6%9E%9C"><span class="nav-number">6.6.</span> <span class="nav-text">6. 归一化结果</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-%E5%88%A4%E6%96%AD%E6%98%AF%E5%90%A6%E9%9C%80%E8%A6%81%E9%87%8D%E8%AF%95%E6%88%96%E9%99%8D%E7%BA%A7"><span class="nav-number">6.7.</span> <span class="nav-text">7. 判断是否需要重试或降级</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-%E5%86%99%E5%9B%9E%E7%8A%B6%E6%80%81%E5%92%8C%E8%AF%81%E6%8D%AE"><span class="nav-number">6.8.</span> <span class="nav-text">8. 写回状态和证据</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E5%A4%B1%E8%B4%A5%E5%88%86%E7%B1%BB%E8%A6%81%E5%85%88%E5%81%9A%EF%BC%8C%E4%B8%8D%E7%84%B6%E9%87%8D%E8%AF%95%E9%93%BE%E8%B7%AF%E5%BE%88%E5%AE%B9%E6%98%93%E5%86%99%E6%AD%AA"><span class="nav-number">7.</span> <span class="nav-text">七、失败分类要先做，不然重试链路很容易写歪</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%8F%82%E6%95%B0%E7%B1%BB%E5%A4%B1%E8%B4%A5"><span class="nav-number">7.1.</span> <span class="nav-text">1. 参数类失败</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%B7%A5%E5%85%B7%E5%8F%AF%E7%94%A8%E6%80%A7%E5%A4%B1%E8%B4%A5"><span class="nav-number">7.2.</span> <span class="nav-text">2. 工具可用性失败</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%8E%AF%E5%A2%83%E7%8A%B6%E6%80%81%E5%A4%B1%E8%B4%A5"><span class="nav-number">7.3.</span> <span class="nav-text">3. 环境状态失败</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E7%BB%93%E6%9E%9C%E4%B8%8D%E7%A1%AE%E5%AE%9A%E5%A4%B1%E8%B4%A5"><span class="nav-number">7.4.</span> <span class="nav-text">4. 结果不确定失败</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%B9%B3%E5%8F%B0%E5%86%85%E9%83%A8%E5%A4%B1%E8%B4%A5"><span class="nav-number">7.5.</span> <span class="nav-text">5. 平台内部失败</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E9%87%8D%E8%AF%95%E4%B8%8D%E6%98%AF%E5%A4%9A%E8%B0%83%E5%87%A0%E6%AC%A1%EF%BC%8C%E8%80%8C%E6%98%AF%E2%80%9C%E6%8C%89%E5%A4%B1%E8%B4%A5%E7%B1%BB%E5%9E%8B%E9%80%89%E6%8B%A9%E6%81%A2%E5%A4%8D%E5%8A%A8%E4%BD%9C%E2%80%9D"><span class="nav-number">8.</span> <span class="nav-text">八、重试不是多调几次，而是“按失败类型选择恢复动作”</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%90%8C%E5%8F%82%E9%87%8D%E8%AF%95"><span class="nav-number">8.1.</span> <span class="nav-text">1. 同参重试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%A1%A5%E5%85%85%E8%AF%81%E6%8D%AE%E5%90%8E%E9%87%8D%E8%AF%95"><span class="nav-number">8.2.</span> <span class="nav-text">2. 补充证据后重试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%88%87%E6%8D%A2%E5%B7%A5%E5%85%B7%E6%88%96%E9%99%8D%E7%BA%A7%E6%89%A7%E8%A1%8C"><span class="nav-number">8.3.</span> <span class="nav-text">3. 切换工具或降级执行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E7%BB%88%E6%AD%A2%E5%B9%B6%E4%B8%8A%E6%8A%A5"><span class="nav-number">8.4.</span> <span class="nav-text">4. 终止并上报</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E5%B8%B8%E8%A7%81%E5%9D%91%E4%B8%8D%E5%9C%A8%E6%A8%A1%E5%9E%8B%E2%80%9C%E5%B9%BB%E8%A7%89%E2%80%9D%EF%BC%8C%E8%80%8C%E5%9C%A8%E5%B7%A5%E7%A8%8B%E9%93%BE%E8%B7%AF%E6%B2%A1%E6%9C%89%E6%94%B6%E5%8F%A3"><span class="nav-number">9.</span> <span class="nav-text">九、常见坑不在模型“幻觉”，而在工程链路没有收口</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%8A%8A%E5%B7%A5%E5%85%B7%E5%87%BD%E6%95%B0%E8%AE%BE%E8%AE%A1%E5%BE%97%E8%BF%87%E7%BB%86"><span class="nav-number">9.1.</span> <span class="nav-text">1. 把工具函数设计得过细</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%8A%8A%E5%B7%A5%E5%85%B7%E5%87%BD%E6%95%B0%E8%AE%BE%E8%AE%A1%E5%BE%97%E8%BF%87%E7%B2%97"><span class="nav-number">9.2.</span> <span class="nav-text">2. 把工具函数设计得过粗</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%8F%AA%E6%A0%A1%E9%AA%8C-schema%EF%BC%8C%E4%B8%8D%E6%A0%A1%E9%AA%8C%E4%B8%9A%E5%8A%A1%E5%89%8D%E7%BD%AE%E6%9D%A1%E4%BB%B6"><span class="nav-number">9.3.</span> <span class="nav-text">3. 只校验 schema，不校验业务前置条件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%A4%B1%E8%B4%A5%E5%90%8E%E7%9B%B4%E6%8E%A5%E6%8A%8A%E5%8E%9F%E5%A7%8B%E9%94%99%E8%AF%AF%E4%B8%A2%E5%9B%9E%E6%A8%A1%E5%9E%8B"><span class="nav-number">9.4.</span> <span class="nav-text">4. 失败后直接把原始错误丢回模型</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%B2%A1%E6%9C%89%E5%8C%BA%E5%88%86%E2%80%9C%E5%8F%AF%E9%87%8D%E8%AF%95%E5%A4%B1%E8%B4%A5%E2%80%9D%E5%92%8C%E2%80%9C%E4%B8%8D%E5%8F%AF%E9%87%8D%E8%AF%95%E5%A4%B1%E8%B4%A5%E2%80%9D"><span class="nav-number">9.5.</span> <span class="nav-text">5. 没有区分“可重试失败”和“不可重试失败”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E6%B2%A1%E6%9C%89%E6%8A%8A%E6%A0%87%E5%87%86%E5%8C%96%E5%8F%82%E6%95%B0%E8%90%BD%E7%9B%98"><span class="nav-number">9.6.</span> <span class="nav-text">6. 没有把标准化参数落盘</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-%E8%AF%81%E6%8D%AE%E9%93%BE%E5%92%8C%E8%B0%83%E7%94%A8%E9%93%BE%E8%84%B1%E8%8A%82"><span class="nav-number">9.7.</span> <span class="nav-text">7. 证据链和调用链脱节</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E7%9C%9F%E5%AE%9E%E6%A1%88%E4%BE%8B%EF%BC%9A%E4%B8%80%E6%AC%A1%E8%AE%A2%E5%8D%95%E6%A0%A1%E9%AA%8C%E4%BB%BB%E5%8A%A1%E4%B8%BA%E4%BB%80%E4%B9%88%E5%9C%A8%E2%80%9C%E8%87%AA%E5%8A%A8%E6%81%A2%E5%A4%8D%E2%80%9D%E9%87%8C%E6%8A%8A%E6%95%B0%E6%8D%AE%E8%B6%8A%E5%86%99%E8%B6%8A%E4%B9%B1"><span class="nav-number">10.</span> <span class="nav-text">十、真实案例：一次订单校验任务为什么在“自动恢复”里把数据越写越乱</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9C%BA%E6%99%AF"><span class="nav-number">10.1.</span> <span class="nav-text">场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%89%A7%E8%A1%8C"><span class="nav-number">10.2.</span> <span class="nav-text">执行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8E%B0%E8%B1%A1"><span class="nav-number">10.3.</span> <span class="nav-text">现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%92%E6%9F%A5"><span class="nav-number">10.4.</span> <span class="nav-text">排查</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BF%AE%E5%A4%8D"><span class="nav-number">10.5.</span> <span class="nav-text">修复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E6%8A%8A-Function-Calling-%E6%8E%A5%E8%BF%9B%E6%B5%8B%E8%AF%95%E5%B7%A5%E5%85%B7%E6%97%B6%EF%BC%8C%E7%9C%9F%E6%AD%A3%E8%A6%81%E4%BC%98%E5%85%88%E5%81%9A%E7%9A%84%E4%B8%8D%E6%98%AF%E6%A8%A1%E5%9E%8B%E8%B0%83%E4%BC%98%EF%BC%8C%E8%80%8C%E6%98%AF%E8%B0%83%E7%94%A8%E6%B2%BB%E7%90%86"><span class="nav-number">11.</span> <span class="nav-text">十一、把 Function Calling 接进测试工具时，真正要优先做的不是模型调优，而是调用治理</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2026/01/30/AI%E6%B5%8B%E8%AF%95-04-LLM-Function-Calling%E5%9C%A8%E6%B5%8B%E8%AF%95%E5%B7%A5%E5%85%B7%E9%87%8C%E6%80%8E%E4%B9%88%E8%AE%BE%E8%AE%A1%E8%BE%93%E5%85%A5%E8%BE%93%E5%87%BA%E5%92%8C%E5%AE%B9%E9%94%99/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="AI测试-04-LLM Function Calling在测试工具里怎么设计输入输出和容错 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          AI测试-04-LLM Function Calling在测试工具里怎么设计输入输出和容错
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2026-01-30 20:30:00" itemprop="dateCreated datePublished" datetime="2026-01-30T20:30:00+08:00">2026-01-30</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/AI%E6%B5%8B%E8%AF%95/" itemprop="url" rel="index"><span itemprop="name">AI测试</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>4.5k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>16 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>在 AI 测试平台里，<code>Function Calling</code> 很容易被误解成一个“把自然语言转成工具调用”的轻量能力。</p>
+<p>如果只是做 Demo，这么理解问题不大。<br>但只要它进入测试工具，要求就会立刻变化：</p>
+<ul>
+<li>输入不能只是一段模糊提示词，而要变成结构化任务上下文</li>
+<li>输出不能只看模型有没有“说对”，而要看参数是否可执行、可审计、可恢复</li>
+<li>调用失败不能简单重试，而要先判断失败类型和恢复边界</li>
+<li>工具执行结果不能只回给模型，还要沉淀进证据链和结果链</li>
+</ul>
+<p>也就是说，测试工具里的 <code>Function Calling</code> 不是一个“模型能力展示点”，而是一条工程链路。</p>
+<p>这篇文章只聚焦这条链路最容易写坏的几块：</p>
+<ul>
+<li>输入怎么建模</li>
+<li>输出怎么约束</li>
+<li>参数校验放在哪里</li>
+<li>重试与容错怎么设计</li>
+<li>哪些失败该交给模型，哪些失败必须由工具层兜底</li>
+</ul>
+<h2 id="一、先把边界说清：测试工具里的-Function-Calling-不等于聊天助手里的工具调用"><a href="#一、先把边界说清：测试工具里的-Function-Calling-不等于聊天助手里的工具调用" class="headerlink" title="一、先把边界说清：测试工具里的 Function Calling 不等于聊天助手里的工具调用"></a>一、先把边界说清：测试工具里的 Function Calling 不等于聊天助手里的工具调用</h2><p>聊天助手场景里，模型调用工具通常只需要回答两个问题：</p>
+<ul>
+<li>要不要调工具</li>
+<li>调哪个工具</li>
+</ul>
+<p>但测试工具里的要求更严格，因为工具调用往往会直接影响：</p>
+<ul>
+<li>测试环境</li>
+<li>数据状态</li>
+<li>执行顺序</li>
+<li>报告结果</li>
+<li>证据留存</li>
+</ul>
+<p>例如一个 AI 测试代理要做“登录后创建订单并校验回写结果”，背后可能涉及：</p>
+<ul>
+<li>打开环境</li>
+<li>获取账号</li>
+<li>构造测试数据</li>
+<li>调接口</li>
+<li>查数据库</li>
+<li>截图</li>
+<li>拉日志</li>
+<li>生成报告片段</li>
+</ul>
+<p>这时 <code>Function Calling</code> 如果只按“模型说了一个函数名，程序就照着执行”的方式落地，风险会非常高：</p>
+<ul>
+<li>参数可能不完整</li>
+<li>参数可能不合法</li>
+<li>调用顺序可能错误</li>
+<li>失败后可能重复写数据</li>
+<li>成功和失败边界可能不清</li>
+</ul>
+<p>所以在测试工具里，更合适的理解是：</p>
+<p><strong>Function Calling 是一个带约束的任务编排入口，而不是一个放任模型自由发挥的工具分发器。</strong></p>
+<h2 id="二、先设计分层，不要先设计函数表"><a href="#二、先设计分层，不要先设计函数表" class="headerlink" title="二、先设计分层，不要先设计函数表"></a>二、先设计分层，不要先设计函数表</h2><p>Function Calling 最常见的一个误区，是先把工具清单铺出来：</p>
+<ul>
+<li><code>open_page</code></li>
+<li><code>click_element</code></li>
+<li><code>call_api</code></li>
+<li><code>query_db</code></li>
+<li><code>capture_screenshot</code></li>
+<li><code>assert_text</code></li>
+</ul>
+<p>看起来很完整，但很快就会遇到一个问题：</p>
+<p><strong>工具很多，调用很乱，失败很难收。</strong></p>
+<p>更稳的做法不是先列函数，而是先拆分层。</p>
+<h3 id="1-任务理解层"><a href="#1-任务理解层" class="headerlink" title="1. 任务理解层"></a>1. 任务理解层</h3><p>这一层负责把外部输入转成可执行上下文，例如：</p>
+<ul>
+<li>当前任务目标</li>
+<li>所属环境</li>
+<li>允许使用的工具范围</li>
+<li>当前步骤号</li>
+<li>已有中间结果</li>
+<li>风险等级</li>
+</ul>
+<p>这一层不负责执行，只负责把“模糊需求”收成“结构化任务”。</p>
+<h3 id="2-调用规划层"><a href="#2-调用规划层" class="headerlink" title="2. 调用规划层"></a>2. 调用规划层</h3><p>这一层负责决定：</p>
+<ul>
+<li>当前这一步是否需要调用工具</li>
+<li>可以调用哪个工具</li>
+<li>参数从哪里来</li>
+<li>这次调用是不是幂等动作</li>
+<li>是否需要先做前置校验</li>
+</ul>
+<p>这层的重点不是让模型自由规划很多步，而是把允许调用的动作收在受控范围内。</p>
+<h3 id="3-参数约束层"><a href="#3-参数约束层" class="headerlink" title="3. 参数约束层"></a>3. 参数约束层</h3><p>这一层负责：</p>
+<ul>
+<li>参数是否缺失</li>
+<li>类型是否正确</li>
+<li>枚举值是否合法</li>
+<li>是否越权</li>
+<li>是否命中环境限制</li>
+<li>是否会破坏已有状态</li>
+</ul>
+<p>这一层必须独立于模型输出存在，不能把参数正确性寄托在模型“自己会写对”。</p>
+<h3 id="4-工具执行层"><a href="#4-工具执行层" class="headerlink" title="4. 工具执行层"></a>4. 工具执行层</h3><p>这一层才真正执行：</p>
+<ul>
+<li>HTTP 请求</li>
+<li>UI 操作</li>
+<li>数据查询</li>
+<li>文件读写</li>
+<li>取证动作</li>
+</ul>
+<p>它的职责是稳定执行和标准化返回，而不是推理。</p>
+<h3 id="5-结果收口层"><a href="#5-结果收口层" class="headerlink" title="5. 结果收口层"></a>5. 结果收口层</h3><p>这一层负责把执行结果统一成结构化输出，例如：</p>
+<ul>
+<li>是否成功</li>
+<li>失败类型</li>
+<li>重试建议</li>
+<li>证据引用</li>
+<li>对后续步骤的影响</li>
+</ul>
+<p>如果没有这一层，模型拿到的将是一堆杂乱日志，后续链路会越来越脆。</p>
+<h2 id="三、输入设计的关键，不是“提示词写得丰富”，而是“上下文是否足够约束”"><a href="#三、输入设计的关键，不是“提示词写得丰富”，而是“上下文是否足够约束”" class="headerlink" title="三、输入设计的关键，不是“提示词写得丰富”，而是“上下文是否足够约束”"></a>三、输入设计的关键，不是“提示词写得丰富”，而是“上下文是否足够约束”</h2><p>测试工具里最常见的失败，不是模型不会调用，而是输入把边界给丢了。</p>
+<p>一个可执行的输入，至少要包含 5 类信息。</p>
+<h3 id="1-任务目标"><a href="#1-任务目标" class="headerlink" title="1. 任务目标"></a>1. 任务目标</h3><p>不要只给一句：</p>
+<p><code>帮我执行订单创建测试。</code></p>
+<p>更可执行的输入应该至少带上：</p>
+<ul>
+<li>业务目标：创建订单并确认支付状态为待支付</li>
+<li>入口类型：API &#x2F; UI &#x2F; 混合</li>
+<li>成功判定：接口返回 200 且数据库生成订单记录</li>
+<li>禁止动作：不得调用删除真实订单的接口</li>
+</ul>
+<h3 id="2-环境上下文"><a href="#2-环境上下文" class="headerlink" title="2. 环境上下文"></a>2. 环境上下文</h3><p>例如：</p>
+<ul>
+<li>环境标识：<code>test-a</code></li>
+<li>租户：<code>mall-regression</code></li>
+<li>账号池：<code>buyer-low-risk</code></li>
+<li>可访问域名或 base URL</li>
+<li>可调用的数据源范围</li>
+</ul>
+<p>如果这层缺失，模型很容易出现：</p>
+<ul>
+<li>打错环境</li>
+<li>调错租户</li>
+<li>用错账号</li>
+<li>查错库表</li>
+</ul>
+<h3 id="3-当前状态"><a href="#3-当前状态" class="headerlink" title="3. 当前状态"></a>3. 当前状态</h3><p>Function Calling 不能假设“每次调用都从零开始”。</p>
+<p>实际链路里经常需要补充：</p>
+<ul>
+<li>已完成步骤</li>
+<li>上一步输出</li>
+<li>当前会话 ID</li>
+<li>当前页面或资源状态</li>
+<li>已保留的证据位置</li>
+</ul>
+<p>这类上下文决定了后续是继续执行、补执行，还是需要回滚。</p>
+<h3 id="4-工具白名单"><a href="#4-工具白名单" class="headerlink" title="4. 工具白名单"></a>4. 工具白名单</h3><p>不是所有工具都应该暴露给当前任务。</p>
+<p>例如一个只做查询验证的任务，工具白名单可以限制为：</p>
+<ul>
+<li><code>call_readonly_api</code></li>
+<li><code>query_readonly_db</code></li>
+<li><code>capture_screenshot</code></li>
+<li><code>collect_log_excerpt</code></li>
+</ul>
+<p>如果把写操作工具也一起暴露，模型很可能在恢复阶段多做一步，直接把现场改掉。</p>
+<h3 id="5-输出契约"><a href="#5-输出契约" class="headerlink" title="5. 输出契约"></a>5. 输出契约</h3><p>输入里就应该明确告诉模型：</p>
+<ul>
+<li>这次工具调用希望返回什么结构</li>
+<li>哪些字段必填</li>
+<li>哪些字段失败时也必须返回</li>
+<li>哪些结果会被后续步骤继续消费</li>
+</ul>
+<p>不把这层前置，后面就会在输出解析阶段补锅。</p>
+<h2 id="四、输出设计的关键，不是“能解析-JSON”，而是“能不能继续执行”"><a href="#四、输出设计的关键，不是“能解析-JSON”，而是“能不能继续执行”" class="headerlink" title="四、输出设计的关键，不是“能解析 JSON”，而是“能不能继续执行”"></a>四、输出设计的关键，不是“能解析 JSON”，而是“能不能继续执行”</h2><p>很多实现把 <code>Function Calling</code> 的输出要求简化成：</p>
+<ul>
+<li>函数名正确</li>
+<li>参数能被 JSON 解析</li>
+</ul>
+<p>这远远不够。</p>
+<p>在测试工具里，真正有价值的输出需要同时满足 4 个条件：</p>
+<ul>
+<li>可执行</li>
+<li>可校验</li>
+<li>可追踪</li>
+<li>可恢复</li>
+</ul>
+<p>一个更稳的工具返回结构，至少应该包含：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;success&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">false</span></span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;error_type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;PARAM_INVALID&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;retryable&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">false</span></span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;tool_name&quot;</span><span class="punctuation">:</span> <span class="string">&quot;query_order_api&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;request_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;fc-20260130-00128&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;normalized_args&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;order_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;A20260130001&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;env&quot;</span><span class="punctuation">:</span> <span class="string">&quot;test-a&quot;</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;data&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">null</span></span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;evidence&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;log&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;ref&quot;</span><span class="punctuation">:</span> <span class="string">&quot;logs/order-api/fc-20260130-00128.log&quot;</span></span><br><span class="line">    <span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;message&quot;</span><span class="punctuation">:</span> <span class="string">&quot;order_id format mismatch&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;next_action&quot;</span><span class="punctuation">:</span> <span class="string">&quot;abort_and_request_new_id&quot;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>这里面真正重要的不是字段多，而是收口清晰：</p>
+<ul>
+<li><code>success</code> 给流程判断</li>
+<li><code>error_type</code> 给失败分类</li>
+<li><code>retryable</code> 给恢复策略</li>
+<li><code>normalized_args</code> 给审计和复现</li>
+<li><code>evidence</code> 给证据链</li>
+<li><code>next_action</code> 给后续编排</li>
+</ul>
+<p>如果只返回：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span><span class="attr">&quot;result&quot;</span><span class="punctuation">:</span><span class="string">&quot;failed&quot;</span><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>那后面无论是模型、调度器还是报告系统，都无法稳定判断下一步应该做什么。</p>
+<h2 id="五、参数约束不能只靠-JSON-Schema，还要补业务约束和执行约束"><a href="#五、参数约束不能只靠-JSON-Schema，还要补业务约束和执行约束" class="headerlink" title="五、参数约束不能只靠 JSON Schema，还要补业务约束和执行约束"></a>五、参数约束不能只靠 JSON Schema，还要补业务约束和执行约束</h2><p>很多工具链在接入 Function Calling 时，会先做一层 schema 校验。<br>这一步必须做，但只做这一步不够。</p>
+<p>更稳的参数约束通常至少分 3 层。</p>
+<h3 id="1-结构约束"><a href="#1-结构约束" class="headerlink" title="1. 结构约束"></a>1. 结构约束</h3><p>这一层回答：</p>
+<ul>
+<li>字段是否存在</li>
+<li>类型是否正确</li>
+<li>枚举值是否在允许范围</li>
+<li>日期、金额、分页参数格式是否符合要求</li>
+</ul>
+<p>这是最基础的一层，适合用 schema 完成。</p>
+<h3 id="2-业务约束"><a href="#2-业务约束" class="headerlink" title="2. 业务约束"></a>2. 业务约束</h3><p>这一层回答：</p>
+<ul>
+<li>当前任务是否允许这个动作</li>
+<li>这个账号是否有权限</li>
+<li>这个资源是否属于当前租户</li>
+<li>这个 case 是否允许写操作</li>
+<li>这个参数组合是否会触发危险行为</li>
+</ul>
+<p>例如：</p>
+<ul>
+<li>查询接口允许 <code>order_id</code></li>
+<li>但退款接口必须校验订单状态是否为已支付</li>
+<li>数据清理工具只能在沙箱环境调用</li>
+</ul>
+<p>这些约束不该交给模型判断，而该交给工具层。</p>
+<h3 id="3-执行约束"><a href="#3-执行约束" class="headerlink" title="3. 执行约束"></a>3. 执行约束</h3><p>这一层回答：</p>
+<ul>
+<li>当前系统状态是否允许执行</li>
+<li>依赖资源是否可用</li>
+<li>是否与前一步冲突</li>
+<li>是否已超出重试次数</li>
+<li>是否触发熔断或静默窗口</li>
+</ul>
+<p>这层很容易被忽略，但它恰恰决定链路是不是可控。</p>
+<p>例如一个 <code>create_user</code> 工具，即使参数正确，也不代表现在就可以执行：</p>
+<ul>
+<li>当前环境账号池可能已耗尽</li>
+<li>同租户可能已有重复用户</li>
+<li>当前压测窗口可能禁止创建新数据</li>
+</ul>
+<h2 id="六、最小执行骨架：Function-Calling-在测试工具里至少要有这-8-步"><a href="#六、最小执行骨架：Function-Calling-在测试工具里至少要有这-8-步" class="headerlink" title="六、最小执行骨架：Function Calling 在测试工具里至少要有这 8 步"></a>六、最小执行骨架：Function Calling 在测试工具里至少要有这 8 步</h2><p>如果要把这条链路做成真正可复用能力，最小执行骨架可以收成下面 8 步。</p>
+<h3 id="1-组装任务上下文"><a href="#1-组装任务上下文" class="headerlink" title="1. 组装任务上下文"></a>1. 组装任务上下文</h3><p>把任务目标、环境、账号、证据目录、步骤号和工具白名单组装好。</p>
+<h3 id="2-请求模型生成调用意图"><a href="#2-请求模型生成调用意图" class="headerlink" title="2. 请求模型生成调用意图"></a>2. 请求模型生成调用意图</h3><p>让模型只返回：</p>
+<ul>
+<li>是否调用工具</li>
+<li>调哪个工具</li>
+<li>参数候选值</li>
+</ul>
+<p>不要在这一层放任模型直接规划很长的多步链路。</p>
+<h3 id="3-做参数标准化"><a href="#3-做参数标准化" class="headerlink" title="3. 做参数标准化"></a>3. 做参数标准化</h3><p>例如：</p>
+<ul>
+<li>字段名统一</li>
+<li>枚举值归一</li>
+<li>日期格式统一</li>
+<li>空字符串转空值</li>
+</ul>
+<p>这一步可以把模型输出里的轻微格式噪声提前收掉。</p>
+<h3 id="4-做结构校验和业务校验"><a href="#4-做结构校验和业务校验" class="headerlink" title="4. 做结构校验和业务校验"></a>4. 做结构校验和业务校验</h3><p>结构校验不过，直接拒绝执行。<br>业务校验不过，返回明确失败类型，不进入工具层。</p>
+<h3 id="5-执行工具"><a href="#5-执行工具" class="headerlink" title="5. 执行工具"></a>5. 执行工具</h3><p>执行时必须带：</p>
+<ul>
+<li>request id</li>
+<li>timeout</li>
+<li>trace id</li>
+<li>evidence path</li>
+<li>tool version</li>
+</ul>
+<p>否则问题一多就很难定位是哪次调用出了问题。</p>
+<h3 id="6-归一化结果"><a href="#6-归一化结果" class="headerlink" title="6. 归一化结果"></a>6. 归一化结果</h3><p>无论是 HTTP 结果、浏览器动作还是数据库查询，都收成统一结果结构。</p>
+<h3 id="7-判断是否需要重试或降级"><a href="#7-判断是否需要重试或降级" class="headerlink" title="7. 判断是否需要重试或降级"></a>7. 判断是否需要重试或降级</h3><p>不要一失败就让模型重新想一遍。<br>先根据失败类型判断：</p>
+<ul>
+<li>参数错误：不重试</li>
+<li>超时：可重试</li>
+<li>环境不可用：转降级</li>
+<li>工具 bug：终止并上报</li>
+</ul>
+<h3 id="8-写回状态和证据"><a href="#8-写回状态和证据" class="headerlink" title="8. 写回状态和证据"></a>8. 写回状态和证据</h3><p>把这次调用的：</p>
+<ul>
+<li>输入</li>
+<li>标准化参数</li>
+<li>工具返回</li>
+<li>证据引用</li>
+<li>重试次数</li>
+<li>最终状态</li>
+</ul>
+<p>一起落到任务记录里，后面报告和排障才有基础。</p>
+<h2 id="七、失败分类要先做，不然重试链路很容易写歪"><a href="#七、失败分类要先做，不然重试链路很容易写歪" class="headerlink" title="七、失败分类要先做，不然重试链路很容易写歪"></a>七、失败分类要先做，不然重试链路很容易写歪</h2><p>Function Calling 最容易失控的地方不是第一次失败，而是失败后的第二次动作。</p>
+<p>如果失败没有分类，系统最容易出现三种坏结果：</p>
+<ul>
+<li>不该重试的错误被重试</li>
+<li>该重试的错误被直接终止</li>
+<li>模型为了“完成任务”擅自换了工具或改了参数</li>
+</ul>
+<p>更实用的失败分类，通常至少分成下面 5 类。</p>
+<h3 id="1-参数类失败"><a href="#1-参数类失败" class="headerlink" title="1. 参数类失败"></a>1. 参数类失败</h3><p>例如：</p>
+<ul>
+<li>缺字段</li>
+<li>类型错误</li>
+<li>非法枚举值</li>
+<li>不满足业务前置条件</li>
+</ul>
+<p>这类失败通常不应该自动重试。<br>因为重试不会改变输入本身。</p>
+<h3 id="2-工具可用性失败"><a href="#2-工具可用性失败" class="headerlink" title="2. 工具可用性失败"></a>2. 工具可用性失败</h3><p>例如：</p>
+<ul>
+<li>工具超时</li>
+<li>依赖服务 502</li>
+<li>浏览器实例失联</li>
+<li>数据库连接池耗尽</li>
+</ul>
+<p>这类失败通常可以按策略做有限重试，但要带指数退避和上限。</p>
+<h3 id="3-环境状态失败"><a href="#3-环境状态失败" class="headerlink" title="3. 环境状态失败"></a>3. 环境状态失败</h3><p>例如：</p>
+<ul>
+<li>测试环境未部署完成</li>
+<li>账号池为空</li>
+<li>租户冻结</li>
+<li>配置尚未生效</li>
+</ul>
+<p>这类失败更适合转成等待、切换环境或终止任务，而不是继续压重试。</p>
+<h3 id="4-结果不确定失败"><a href="#4-结果不确定失败" class="headerlink" title="4. 结果不确定失败"></a>4. 结果不确定失败</h3><p>例如：</p>
+<ul>
+<li>请求超时，但服务端可能已落库</li>
+<li>页面卡死，但后端订单可能已创建</li>
+<li>回写接口失败，但主流程可能已完成</li>
+</ul>
+<p>这类失败最危险，因为不能直接重复执行写操作。<br>更稳的做法是先查状态，再决定补执行还是终止。</p>
+<h3 id="5-平台内部失败"><a href="#5-平台内部失败" class="headerlink" title="5. 平台内部失败"></a>5. 平台内部失败</h3><p>例如：</p>
+<ul>
+<li>结果归一化器崩溃</li>
+<li>证据写盘失败</li>
+<li>状态机写入异常</li>
+</ul>
+<p>这类失败不该继续交给模型恢复，而应该由平台层直接接管。</p>
+<h2 id="八、重试不是多调几次，而是“按失败类型选择恢复动作”"><a href="#八、重试不是多调几次，而是“按失败类型选择恢复动作”" class="headerlink" title="八、重试不是多调几次，而是“按失败类型选择恢复动作”"></a>八、重试不是多调几次，而是“按失败类型选择恢复动作”</h2><p>在测试工具里，重试策略至少应该区分四种动作。</p>
+<h3 id="1-同参重试"><a href="#1-同参重试" class="headerlink" title="1. 同参重试"></a>1. 同参重试</h3><p>适合：</p>
+<ul>
+<li>网络抖动</li>
+<li>短时超时</li>
+<li>短暂 5xx</li>
+</ul>
+<p>要求：</p>
+<ul>
+<li>工具幂等</li>
+<li>调用次数受控</li>
+<li>每次重试都要记录</li>
+</ul>
+<h3 id="2-补充证据后重试"><a href="#2-补充证据后重试" class="headerlink" title="2. 补充证据后重试"></a>2. 补充证据后重试</h3><p>适合：</p>
+<ul>
+<li>执行结果不确定</li>
+<li>调用前后状态不清晰</li>
+</ul>
+<p>例如先加一步：</p>
+<ul>
+<li>查询订单状态</li>
+<li>查页面是否已跳转</li>
+<li>拉取接口 trace</li>
+</ul>
+<p>确认现场后再决定是否重试。</p>
+<h3 id="3-切换工具或降级执行"><a href="#3-切换工具或降级执行" class="headerlink" title="3. 切换工具或降级执行"></a>3. 切换工具或降级执行</h3><p>适合：</p>
+<ul>
+<li>UI 操作失败但接口可验证</li>
+<li>主数据源超时但只读副本可查</li>
+<li>浏览器证据失败但日志仍可收集</li>
+</ul>
+<p>这类降级要在平台层预先定义，不应该由模型临场发明。</p>
+<h3 id="4-终止并上报"><a href="#4-终止并上报" class="headerlink" title="4. 终止并上报"></a>4. 终止并上报</h3><p>适合：</p>
+<ul>
+<li>参数错误</li>
+<li>越权风险</li>
+<li>危险写操作</li>
+<li>连续失败达到上限</li>
+</ul>
+<p>终止不是失败设计不够，而是为了保护环境和结果可信度。</p>
+<h2 id="九、常见坑不在模型“幻觉”，而在工程链路没有收口"><a href="#九、常见坑不在模型“幻觉”，而在工程链路没有收口" class="headerlink" title="九、常见坑不在模型“幻觉”，而在工程链路没有收口"></a>九、常见坑不在模型“幻觉”，而在工程链路没有收口</h2><h3 id="1-把工具函数设计得过细"><a href="#1-把工具函数设计得过细" class="headerlink" title="1. 把工具函数设计得过细"></a>1. 把工具函数设计得过细</h3><p>例如拆成：</p>
+<ul>
+<li><code>click_login_button</code></li>
+<li><code>fill_username</code></li>
+<li><code>fill_password</code></li>
+<li><code>fill_captcha</code></li>
+</ul>
+<p>这样模型表面上可控，实际上编排会非常脆。<br>更合适的拆法是围绕业务动作和可验证边界定义工具。</p>
+<h3 id="2-把工具函数设计得过粗"><a href="#2-把工具函数设计得过粗" class="headerlink" title="2. 把工具函数设计得过粗"></a>2. 把工具函数设计得过粗</h3><p>例如一个 <code>complete_order_flow</code> 同时负责：</p>
+<ul>
+<li>下单</li>
+<li>支付</li>
+<li>截图</li>
+<li>查库</li>
+<li>回写报告</li>
+</ul>
+<p>这会让失败定位和恢复都变得困难。</p>
+<h3 id="3-只校验-schema，不校验业务前置条件"><a href="#3-只校验-schema，不校验业务前置条件" class="headerlink" title="3. 只校验 schema，不校验业务前置条件"></a>3. 只校验 schema，不校验业务前置条件</h3><p>参数类型都对，不代表动作就该执行。<br>在测试平台里，这类错误最容易直接污染环境。</p>
+<h3 id="4-失败后直接把原始错误丢回模型"><a href="#4-失败后直接把原始错误丢回模型" class="headerlink" title="4. 失败后直接把原始错误丢回模型"></a>4. 失败后直接把原始错误丢回模型</h3><p>如果原始错误是长日志、大段 HTML 或异常堆栈，模型很容易抓不到重点。<br>更稳的做法是先归一化，再回传关键摘要和证据引用。</p>
+<h3 id="5-没有区分“可重试失败”和“不可重试失败”"><a href="#5-没有区分“可重试失败”和“不可重试失败”" class="headerlink" title="5. 没有区分“可重试失败”和“不可重试失败”"></a>5. 没有区分“可重试失败”和“不可重试失败”</h3><p>最后就会演变成所有失败都重复 3 次，看起来很稳，实际只是在放大破坏。</p>
+<h3 id="6-没有把标准化参数落盘"><a href="#6-没有把标准化参数落盘" class="headerlink" title="6. 没有把标准化参数落盘"></a>6. 没有把标准化参数落盘</h3><p>问题复盘时只能看到模型原始输出，看不到真正执行时的参数版本，排查成本会非常高。</p>
+<h3 id="7-证据链和调用链脱节"><a href="#7-证据链和调用链脱节" class="headerlink" title="7. 证据链和调用链脱节"></a>7. 证据链和调用链脱节</h3><p>工具执行成功了，但：</p>
+<ul>
+<li>日志找不到</li>
+<li>截图对不上</li>
+<li>报告里没有 request id</li>
+<li>调用和证据没有统一编号</li>
+</ul>
+<p>这会让 Function Calling 变成一个“执行过，但说不清”的黑箱。</p>
+<h2 id="十、真实案例：一次订单校验任务为什么在“自动恢复”里把数据越写越乱"><a href="#十、真实案例：一次订单校验任务为什么在“自动恢复”里把数据越写越乱" class="headerlink" title="十、真实案例：一次订单校验任务为什么在“自动恢复”里把数据越写越乱"></a>十、真实案例：一次订单校验任务为什么在“自动恢复”里把数据越写越乱</h2><h3 id="场景"><a href="#场景" class="headerlink" title="场景"></a>场景</h3><p>一个 AI 测试工具需要完成下面这条链路：</p>
+<ul>
+<li>调用创建订单接口</li>
+<li>查询订单详情</li>
+<li>校验数据库中的订单状态</li>
+<li>输出报告结果</li>
+</ul>
+<p>工具层已经接了 <code>Function Calling</code>，并暴露了：</p>
+<ul>
+<li><code>create_order</code></li>
+<li><code>query_order_api</code></li>
+<li><code>query_order_db</code></li>
+<li><code>attach_evidence</code></li>
+</ul>
+<h3 id="执行"><a href="#执行" class="headerlink" title="执行"></a>执行</h3><p>模型先调用 <code>create_order</code>，返回超时。<br>平台没有立刻分类失败，而是简单按“失败重试”策略再次调用 <code>create_order</code>。<br>第二次调用成功后，模型继续调用查询工具，并发现数据库里出现了两条相似订单记录。</p>
+<h3 id="现象"><a href="#现象" class="headerlink" title="现象"></a>现象</h3><p>最终报告里出现了几个看似矛盾的结果：</p>
+<ul>
+<li>接口第一次调用超时</li>
+<li>第二次调用成功</li>
+<li>数据库中有两条订单</li>
+<li>页面侧只展示了一条</li>
+<li>回归结果被判成“状态不一致”</li>
+</ul>
+<p>从表面看，像是业务接口幂等有问题。<br>但继续排查后发现，第一次调用虽然客户端超时，服务端其实已经写入成功。</p>
+<h3 id="排查"><a href="#排查" class="headerlink" title="排查"></a>排查</h3><p>后续把证据链重新串起来时，暴露出了 4 个设计问题：</p>
+<ul>
+<li><code>create_order</code> 被错误标记为“可直接重试”</li>
+<li>失败分类里没有“结果不确定”这一类</li>
+<li>平台没有在重试前先执行状态确认动作</li>
+<li>工具返回结构里没有明确的 <code>retryable</code> 和 <code>next_action</code></li>
+</ul>
+<p>也就是说，真正的问题不在接口本身，而在 Function Calling 这一层把恢复动作设计错了。</p>
+<h3 id="修复"><a href="#修复" class="headerlink" title="修复"></a>修复</h3><p>后面做了 4 个收口动作：</p>
+<ul>
+<li>把 <code>create_order</code> 标记成“写操作且非盲重试工具”</li>
+<li>新增 <code>UNCERTAIN_RESULT</code> 失败类型</li>
+<li>规定写操作超时后必须先调 <code>query_order_api</code> 或 <code>query_order_db</code> 做状态确认</li>
+<li>在统一结果结构里强制要求返回 <code>retryable</code>、<code>next_action</code> 和 <code>normalized_args</code></li>
+</ul>
+<p>改完后，同类问题的恢复策略就从“超时后重复创建”变成了：</p>
+<ol>
+<li>写操作超时</li>
+<li>进入结果不确定分支</li>
+<li>先做状态确认</li>
+<li>已创建则补证据并继续</li>
+<li>未创建才允许有限重试</li>
+</ol>
+<p>这样链路才真正可控。</p>
+<h2 id="十一、把-Function-Calling-接进测试工具时，真正要优先做的不是模型调优，而是调用治理"><a href="#十一、把-Function-Calling-接进测试工具时，真正要优先做的不是模型调优，而是调用治理" class="headerlink" title="十一、把 Function Calling 接进测试工具时，真正要优先做的不是模型调优，而是调用治理"></a>十一、把 Function Calling 接进测试工具时，真正要优先做的不是模型调优，而是调用治理</h2><p>如果要给这类能力排优先级，更值得优先补的是下面几项：</p>
+<ul>
+<li>明确工具分层和边界</li>
+<li>定义统一输入上下文</li>
+<li>定义统一输出结构</li>
+<li>做三层参数约束</li>
+<li>建失败分类和恢复动作表</li>
+<li>把证据链和调用链绑定</li>
+</ul>
+<p>只有这些基础收稳之后，模型能力提升才会真正转化成平台能力提升。</p>
+<p>否则最常见的结果是：</p>
+<ul>
+<li>Demo 很聪明</li>
+<li>现场很混乱</li>
+<li>报告说不清</li>
+<li>重试越做越危险</li>
+</ul>
+<p>Function Calling 在测试工具里真正的价值，不在于“模型会不会调函数”，而在于：</p>
+<p><strong>模型发出的每一次工具调用，能不能被平台收成一次可执行、可校验、可恢复、可追踪的受控动作。</strong></p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/AI%E6%B5%8B%E8%AF%95/" rel="tag"># AI测试</a>
+              <a href="/tags/%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0/" rel="tag"># 测试平台</a>
+              <a href="/tags/LLM/" rel="tag"># LLM</a>
+              <a href="/tags/%E5%B7%A5%E7%A8%8B%E5%8C%96/" rel="tag"># 工程化</a>
+              <a href="/tags/Function-Calling/" rel="tag"># Function Calling</a>
+              <a href="/tags/%E6%B5%8B%E8%AF%95%E5%B7%A5%E5%85%B7/" rel="tag"># 测试工具</a>
+              <a href="/tags/%E5%8F%82%E6%95%B0%E7%BA%A6%E6%9D%9F/" rel="tag"># 参数约束</a>
+              <a href="/tags/%E5%AE%B9%E9%94%99%E8%AE%BE%E8%AE%A1/" rel="tag"># 容错设计</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2026/01/23/AI%E6%B5%8B%E8%AF%95-03-Scenix%E9%A1%B9%E7%9B%AE%E5%AE%9E%E6%88%98%E5%A4%8D%E7%9B%98/" rel="prev" title="AI测试-03-Scenix项目实战复盘">
+                  <i class="fa fa-angle-left"></i> AI测试-03-Scenix项目实战复盘
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2026/02/06/AI%E6%B5%8B%E8%AF%95-05-Agent-Workflow%E6%89%A7%E8%A1%8C%E5%A4%9A%E6%AD%A5%E9%AA%A4%E6%B5%8B%E8%AF%95%E4%BB%BB%E5%8A%A1%E6%97%B6%E6%80%8E%E4%B9%88%E5%81%9A%E7%8A%B6%E6%80%81%E7%AE%A1%E7%90%86%E5%92%8C%E5%A4%B1%E8%B4%A5%E6%81%A2%E5%A4%8D/" rel="next" title="AI测试-05-Agent Workflow执行多步骤测试任务时怎么做状态管理和失败恢复">
+                  AI测试-05-Agent Workflow执行多步骤测试任务时怎么做状态管理和失败恢复 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="生产压测最大的难点不是把流量打进去，而是在真实用户、真实数据、真实依赖都在线的情况下，设计一套可控、可隔离、可回退、可止损的验证机制。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="性能测试：生产系统压测的风险与控制策略">
+<meta property="og:url" content="https://paynewinnt.github.io/2023/07/29/%E6%80%A7%E8%83%BD%E6%B5%8B%E8%AF%95-09-%E7%94%9F%E4%BA%A7%E7%B3%BB%E7%BB%9F%E5%8E%8B%E6%B5%8B%E7%9A%84%E9%A3%8E%E9%99%A9%E4%B8%8E%E6%8E%A7%E5%88%B6%E7%AD%96%E7%95%A5/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="生产压测最大的难点不是把流量打进去，而是在真实用户、真实数据、真实依赖都在线的情况下，设计一套可控、可隔离、可回退、可止损的验证机制。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2023-07-29T12:30:00.000Z">
+<meta property="article:modified_time" content="2023-07-29T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="工程化">
+<meta property="article:tag" content="风险控制">
+<meta property="article:tag" content="排障">
+<meta property="article:tag" content="性能测试">
+<meta property="article:tag" content="质量工程">
+<meta property="article:tag" content="生产压测">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2023/07/29/%E6%80%A7%E8%83%BD%E6%B5%8B%E8%AF%95-09-%E7%94%9F%E4%BA%A7%E7%B3%BB%E7%BB%9F%E5%8E%8B%E6%B5%8B%E7%9A%84%E9%A3%8E%E9%99%A9%E4%B8%8E%E6%8E%A7%E5%88%B6%E7%AD%96%E7%95%A5/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2023/07/29/%E6%80%A7%E8%83%BD%E6%B5%8B%E8%AF%95-09-%E7%94%9F%E4%BA%A7%E7%B3%BB%E7%BB%9F%E5%8E%8B%E6%B5%8B%E7%9A%84%E9%A3%8E%E9%99%A9%E4%B8%8E%E6%8E%A7%E5%88%B6%E7%AD%96%E7%95%A5/","path":"2023/07/29/性能测试-09-生产系统压测的风险与控制策略/","title":"性能测试：生产系统压测的风险与控制策略"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>性能测试：生产系统压测的风险与控制策略 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E7%94%9F%E4%BA%A7%E5%8E%8B%E6%B5%8B%E7%9C%9F%E6%AD%A3%E7%9A%84%E9%A3%8E%E9%99%A9%EF%BC%8C%E4%B8%8D%E5%8F%AA%E6%98%AF%E2%80%9C%E6%8A%8A%E7%B3%BB%E7%BB%9F%E5%8E%8B%E6%8C%82%E2%80%9D"><span class="nav-number">1.</span> <span class="nav-text">一、生产压测真正的风险，不只是“把系统压挂”</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E7%94%9F%E4%BA%A7%E5%8E%8B%E6%B5%8B%E9%A6%96%E5%85%88%E8%A6%81%E8%A7%A3%E5%86%B3%E7%9A%84%EF%BC%8C%E4%B8%8D%E6%98%AF%E6%96%BD%E5%8E%8B%E6%96%B9%E5%BC%8F%EF%BC%8C%E8%80%8C%E6%98%AF%E9%9A%94%E7%A6%BB%E6%96%B9%E5%BC%8F"><span class="nav-number">2.</span> <span class="nav-text">二、生产压测首先要解决的，不是施压方式，而是隔离方式</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E7%94%9F%E4%BA%A7%E5%8E%8B%E6%B5%8B%E6%9C%80%E5%AE%B9%E6%98%93%E5%87%BA%E4%BA%8B%E6%95%85%E7%9A%84%E5%9C%B0%E6%96%B9%EF%BC%8C%E6%98%AF%E5%89%AF%E4%BD%9C%E7%94%A8%E9%93%BE%E8%B7%AF%E6%B2%A1%E6%9C%89%E6%8F%90%E5%89%8D%E7%9B%98%E6%B8%85%E6%A5%9A"><span class="nav-number">3.</span> <span class="nav-text">三、生产压测最容易出事故的地方，是副作用链路没有提前盘清楚</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E6%9B%B4%E6%8E%A8%E8%8D%90%E7%9A%84%E7%94%9F%E4%BA%A7%E5%8E%8B%E6%B5%8B%E6%8E%A8%E8%BF%9B%E9%A1%BA%E5%BA%8F%EF%BC%9A%E5%85%88%E6%8E%A2%E6%B5%8B%EF%BC%8C%E5%86%8D%E6%89%A9%E9%9D%A2%EF%BC%8C%E5%86%8D%E5%8D%87%E5%8E%8B"><span class="nav-number">4.</span> <span class="nav-text">四、更推荐的生产压测推进顺序：先探测，再扩面，再升压</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%BD%8E%E6%B5%81%E9%87%8F%E6%8E%A2%E6%B5%8B"><span class="nav-number">4.1.</span> <span class="nav-text">1. 低流量探测</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%B0%8F%E8%8C%83%E5%9B%B4%E6%94%BE%E9%87%8F"><span class="nav-number">4.2.</span> <span class="nav-text">2. 小范围放量</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%88%86%E6%AE%B5%E5%8D%87%E5%8E%8B"><span class="nav-number">4.3.</span> <span class="nav-text">3. 分段升压</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E7%94%9F%E4%BA%A7%E5%8E%8B%E6%B5%8B%E5%BF%85%E9%A1%BB%E6%8F%90%E5%89%8D%E5%AE%9A%E4%B9%89%E2%80%9C%E8%B0%81%E6%9C%89%E6%9D%83%E5%81%9C%E6%AD%A2%E3%80%81%E4%BB%80%E4%B9%88%E6%83%85%E5%86%B5%E4%B8%8B%E5%81%9C%E6%AD%A2%E2%80%9D"><span class="nav-number">5.</span> <span class="nav-text">五、生产压测必须提前定义“谁有权停止、什么情况下停止”</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%81%9C%E6%9C%BA%E7%BA%BF"><span class="nav-number">5.1.</span> <span class="nav-text">1. 停机线</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%86%B3%E7%AD%96%E4%BA%BA"><span class="nav-number">5.2.</span> <span class="nav-text">2. 决策人</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E5%9C%A8%E9%A1%B9%E7%9B%AE%E9%87%8C%E6%9C%80%E7%9C%8B%E9%87%8D%E7%9A%84%E5%87%A0%E7%B1%BB%E7%94%9F%E4%BA%A7%E5%8E%8B%E6%B5%8B%E6%8E%A7%E5%88%B6%E7%AD%96%E7%95%A5"><span class="nav-number">6.</span> <span class="nav-text">六、在项目里最看重的几类生产压测控制策略</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%8E%8B%E6%B5%8B%E6%B5%81%E9%87%8F%E6%A0%87%E8%AF%86%E9%9C%80%E8%A6%81%E8%B4%AF%E7%A9%BF%E9%93%BE%E8%B7%AF"><span class="nav-number">6.1.</span> <span class="nav-text">1. 压测流量标识需要贯穿链路</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%95%B0%E6%8D%AE%E9%9C%80%E8%A6%81%E5%8F%AF%E5%9B%9E%E6%94%B6"><span class="nav-number">6.2.</span> <span class="nav-text">2. 数据需要可回收</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%AC%AC%E4%B8%89%E6%96%B9%E8%B0%83%E7%94%A8%E9%9C%80%E8%A6%81%E6%8F%90%E5%89%8D%E8%AE%BE%E8%BE%B9%E7%95%8C"><span class="nav-number">6.3.</span> <span class="nav-text">3. 第三方调用需要提前设边界</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E7%9B%91%E6%8E%A7%E8%A6%81%E6%8F%90%E5%89%8D%E8%BF%9B%E5%85%A5%E2%80%9C%E5%8E%8B%E6%B5%8B%E8%A7%86%E8%A7%92%E2%80%9D"><span class="nav-number">6.4.</span> <span class="nav-text">4. 监控要提前进入“压测视角”</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E5%9C%A8%E9%A1%B9%E7%9B%AE%E9%87%8C%E8%B8%A9%E8%BF%87%E7%9A%84%E5%87%A0%E4%B8%AA%E5%85%B8%E5%9E%8B%E5%9D%91"><span class="nav-number">7.</span> <span class="nav-text">七、在项目里踩过的几个典型坑</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9D%91-1%EF%BC%9A%E5%8F%AA%E9%9A%94%E7%A6%BB%E4%BA%86%E5%85%A5%E5%8F%A3%EF%BC%8C%E6%B2%A1%E6%9C%89%E9%9A%94%E7%A6%BB%E4%B8%8B%E6%B8%B8%E5%89%AF%E4%BD%9C%E7%94%A8"><span class="nav-number">7.1.</span> <span class="nav-text">坑 1：只隔离了入口，没有隔离下游副作用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9D%91-2%EF%BC%9A%E5%8E%8B%E6%B5%8B%E8%B4%A6%E5%8F%B7%E6%98%AF%E7%8B%AC%E7%AB%8B%E7%9A%84%EF%BC%8C%E4%BD%86%E5%86%99%E6%95%B0%E6%8D%AE%E8%BF%98%E6%98%AF%E8%BF%9B%E4%BA%86%E7%9C%9F%E5%AE%9E%E4%B8%9A%E5%8A%A1%E5%9F%9F"><span class="nav-number">7.2.</span> <span class="nav-text">坑 2：压测账号是独立的，但写数据还是进了真实业务域</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9D%91-3%EF%BC%9A%E7%9B%91%E6%8E%A7%E6%B2%A1%E5%81%9A%E5%8E%8B%E6%B5%8B%E6%B5%81%E9%87%8F%E5%88%87%E5%88%86%EF%BC%8C%E7%BB%93%E6%9E%9C%E7%8E%B0%E5%9C%BA%E5%8F%AA%E7%9C%8B%E5%88%B0%E2%80%9C%E5%85%A8%E5%B1%80%E5%BC%82%E5%B8%B8%E2%80%9D"><span class="nav-number">7.3.</span> <span class="nav-text">坑 3：监控没做压测流量切分，结果现场只看到“全局异常”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9D%91-4%EF%BC%9A%E6%B2%A1%E6%9C%89%E6%98%8E%E7%A1%AE%E5%81%9C%E6%9C%BA%E7%BA%BF%EF%BC%8C%E7%8E%B0%E5%9C%BA%E9%9D%A0%E6%84%9F%E8%A7%89%E5%88%A4%E6%96%AD"><span class="nav-number">7.4.</span> <span class="nav-text">坑 4：没有明确停机线，现场靠感觉判断</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E6%8E%92%E6%9F%A5%E7%94%9F%E4%BA%A7%E5%8E%8B%E6%B5%8B%E6%96%B9%E6%A1%88%E6%98%AF%E5%90%A6%E9%9D%A0%E8%B0%B1%E6%97%B6%EF%BC%8C%E9%80%9A%E5%B8%B8%E5%85%88%E7%9C%8B%E4%BB%80%E4%B9%88"><span class="nav-number">8.</span> <span class="nav-text">八、排查生产压测方案是否靠谱时，通常先看什么</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%85%88%E7%9C%8B%E9%9A%94%E7%A6%BB%E8%AE%BE%E8%AE%A1"><span class="nav-number">8.1.</span> <span class="nav-text">1. 先看隔离设计</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E7%94%9F%E4%BA%A7%E5%8E%8B%E6%B5%8B%E5%89%8D%E4%BC%9A%E7%9B%B4%E6%8E%A5%E6%8B%89%E4%B8%80%E5%BC%A0%E6%89%A7%E8%A1%8C%E6%B8%85%E5%8D%95"><span class="nav-number">9.</span> <span class="nav-text">九、生产压测前会直接拉一张执行清单</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E6%9B%B4%E5%B8%B8%E7%94%A8%E7%9A%84%E4%B8%80%E5%A5%97%E7%94%9F%E4%BA%A7%E5%8E%8B%E6%B5%8B%E6%8E%A8%E8%BF%9B%E8%8A%82%E5%A5%8F"><span class="nav-number">10.</span> <span class="nav-text">十、更常用的一套生产压测推进节奏</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E7%9C%9F%E5%87%BA%E9%97%AE%E9%A2%98%E6%97%B6%E6%80%8E%E4%B9%88%E6%AD%A2%E6%8D%9F"><span class="nav-number">11.</span> <span class="nav-text">十一、真出问题时怎么止损</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%86%8D%E7%9C%8B%E7%9B%91%E6%8E%A7%E5%92%8C%E6%AD%A2%E6%8D%9F%E6%9C%BA%E5%88%B6"><span class="nav-number">11.1.</span> <span class="nav-text">2. 再看监控和止损机制</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%86%8D%E7%9C%8B%E6%96%BD%E5%8E%8B%E7%AD%96%E7%95%A5"><span class="nav-number">11.2.</span> <span class="nav-text">3. 再看施压策略</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%9C%80%E5%90%8E%E6%89%8D%E7%9C%8B%E8%84%9A%E6%9C%AC%E4%B8%8E%E5%B7%A5%E5%85%B7"><span class="nav-number">11.3.</span> <span class="nav-text">4. 最后才看脚本与工具</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%BB%93%E8%AF%AD"><span class="nav-number">12.</span> <span class="nav-text">结语</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2023/07/29/%E6%80%A7%E8%83%BD%E6%B5%8B%E8%AF%95-09-%E7%94%9F%E4%BA%A7%E7%B3%BB%E7%BB%9F%E5%8E%8B%E6%B5%8B%E7%9A%84%E9%A3%8E%E9%99%A9%E4%B8%8E%E6%8E%A7%E5%88%B6%E7%AD%96%E7%95%A5/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="性能测试：生产系统压测的风险与控制策略 | 大道至简">
+      <meta itemprop="description" content="生产压测最大的难点不是把流量打进去，而是在真实用户、真实数据、真实依赖都在线的情况下，设计一套可控、可隔离、可回退、可止损的验证机制。">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          性能测试：生产系统压测的风险与控制策略
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2023-07-29 20:30:00" itemprop="dateCreated datePublished" datetime="2023-07-29T20:30:00+08:00">2023-07-29</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/%E6%80%A7%E8%83%BD%E6%B5%8B%E8%AF%95/" itemprop="url" rel="index"><span itemprop="name">性能测试</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>2.7k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>10 分钟</span>
+    </span>
+</div>
+
+            <div class="post-description">生产压测最大的难点不是把流量打进去，而是在真实用户、真实数据、真实依赖都在线的情况下，设计一套可控、可隔离、可回退、可止损的验证机制。</div>
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>生产压测一直是性能测试里最敏感、也最容易引发争议的话题之一。</p>
+<p>支持生产压测的判断通常是：</p>
+<ul>
+<li>只有生产环境最真实</li>
+<li>不在生产压，很多风险根本看不到</li>
+</ul>
+<p>反对它的人也有很强的理由：</p>
+<ul>
+<li>一旦失控，代价太大</li>
+<li>用户、数据、第三方依赖都可能被误伤</li>
+</ul>
+<p>这两边都没有完全错。<br>生产压测真正难的，不在“要不要做”这么简单，而在：</p>
+<p><strong>如果真要做，怎样把风险降到一个可控、可接受、可快速止损的范围内。</strong></p>
+<p>所以更愿意把生产压测理解成一场受严格约束的风险实验，而不是一次“更接近生产流量的普通压测”。</p>
+<h2 id="一、生产压测真正的风险，不只是“把系统压挂”"><a href="#一、生产压测真正的风险，不只是“把系统压挂”" class="headerlink" title="一、生产压测真正的风险，不只是“把系统压挂”"></a>一、生产压测真正的风险，不只是“把系统压挂”</h2><p>一提生产压测，脑子里只有一种风险：</p>
+<ul>
+<li>系统会不会被打挂</li>
+</ul>
+<p>但从真实项目经验看，更常见、也更隐蔽的风险其实包括：</p>
+<ul>
+<li>误伤真实用户流量</li>
+<li>写入真实脏数据</li>
+<li>触发真实风控、告警、补偿、发券、发消息链路</li>
+<li>放大第三方调用成本</li>
+<li>把缓存、消息、数据库状态污染到生产</li>
+</ul>
+<p>也就是说，生产压测的风险不只是“慢”和“挂”，更可怕的是“业务污染”和“外部副作用”。</p>
+<p>如果这一层不先想清楚，生产压测很容易变成一次代价昂贵的误操作。</p>
+<h2 id="二、生产压测首先要解决的，不是施压方式，而是隔离方式"><a href="#二、生产压测首先要解决的，不是施压方式，而是隔离方式" class="headerlink" title="二、生产压测首先要解决的，不是施压方式，而是隔离方式"></a>二、生产压测首先要解决的，不是施压方式，而是隔离方式</h2><p>如果要只保留一个原则，那就是：</p>
+<p><strong>生产压测更稳的顺序是先解决隔离，再考虑加压。</strong></p>
+<p>常见的隔离思路包括：</p>
+<ul>
+<li>压测流量标识</li>
+<li>压测账号池</li>
+<li>压测数据空间</li>
+<li>压测白名单</li>
+<li>压测消息主题或影子队列</li>
+<li>影子表、影子库、影子索引</li>
+</ul>
+<p>重点不在于形式多高级，而在于是否能回答这几个问题：</p>
+<ul>
+<li>压测流量能不能和真实用户请求区分开</li>
+<li>压测写入的数据能不能回收</li>
+<li>压测触发的副作用能不能被限制在可控范围</li>
+</ul>
+<p>如果这三件事做不到，生产压测基本就不该开始。</p>
+<h2 id="三、生产压测最容易出事故的地方，是副作用链路没有提前盘清楚"><a href="#三、生产压测最容易出事故的地方，是副作用链路没有提前盘清楚" class="headerlink" title="三、生产压测最容易出事故的地方，是副作用链路没有提前盘清楚"></a>三、生产压测最容易出事故的地方，是副作用链路没有提前盘清楚</h2><p>很多系统不是一个请求结束就完了。<br>一次生产请求背后可能会连带触发：</p>
+<ul>
+<li>短信</li>
+<li>邮件</li>
+<li>推送</li>
+<li>工单</li>
+<li>积分</li>
+<li>优惠券</li>
+<li>风控</li>
+<li>异步补偿</li>
+<li>第三方支付或回调</li>
+</ul>
+<p>如果这些副作用链路没有在压测前逐个确认清楚，生产压测最容易发生的事情不是“性能问题”，而是“业务事故”。</p>
+<p>所以通常会要求在压测前列一张非常明确的副作用清单：</p>
+<ul>
+<li>哪些链路会被真实触发</li>
+<li>哪些要屏蔽</li>
+<li>哪些要走影子通道</li>
+<li>哪些可以保留但必须限量</li>
+</ul>
+<p>这一步通常比写脚本更重要。</p>
+<h2 id="四、更推荐的生产压测推进顺序：先探测，再扩面，再升压"><a href="#四、更推荐的生产压测推进顺序：先探测，再扩面，再升压" class="headerlink" title="四、更推荐的生产压测推进顺序：先探测，再扩面，再升压"></a>四、更推荐的生产压测推进顺序：先探测，再扩面，再升压</h2><p>生产压测最忌讳的方式，就是：</p>
+<ul>
+<li>方案没收紧</li>
+<li>隔离没验证</li>
+<li>监控还没盯稳</li>
+<li>一上来就打峰值</li>
+</ul>
+<p>这类操作一旦出事，通常连回头空间都很小。</p>
+<p>更倾向的顺序通常是：</p>
+<h3 id="1-低流量探测"><a href="#1-低流量探测" class="headerlink" title="1. 低流量探测"></a>1. 低流量探测</h3><p>目的：</p>
+<ul>
+<li>验证压测流量有没有被正确识别</li>
+<li>验证压测标识、影子数据、隔离策略有没有生效</li>
+<li>验证告警、监控和止损链路是否可用</li>
+</ul>
+<h3 id="2-小范围放量"><a href="#2-小范围放量" class="headerlink" title="2. 小范围放量"></a>2. 小范围放量</h3><p>目的：</p>
+<ul>
+<li>观察系统和依赖是否出现意外副作用</li>
+<li>确认真实生产流量和压测流量是否发生冲突</li>
+</ul>
+<h3 id="3-分段升压"><a href="#3-分段升压" class="headerlink" title="3. 分段升压"></a>3. 分段升压</h3><p>目的：</p>
+<ul>
+<li>在可观测前提下逐步逼近目标负载</li>
+<li>识别退化拐点</li>
+<li>保留及时止损空间</li>
+</ul>
+<p>生产压测不是越快越好，而是越可控越好。</p>
+<h2 id="五、生产压测必须提前定义“谁有权停止、什么情况下停止”"><a href="#五、生产压测必须提前定义“谁有权停止、什么情况下停止”" class="headerlink" title="五、生产压测必须提前定义“谁有权停止、什么情况下停止”"></a>五、生产压测必须提前定义“谁有权停止、什么情况下停止”</h2><p>这是生产压测里最容易被忽略、但极其重要的一点。</p>
+<p>会认真准备脚本和方案，却没有认真准备“怎么停”。</p>
+<p>通常要求在执行前就明确：</p>
+<h3 id="1-停机线"><a href="#1-停机线" class="headerlink" title="1. 停机线"></a>1. 停机线</h3><p>例如：</p>
+<ul>
+<li>错误率超过某阈值</li>
+<li>关键依赖资源超阈</li>
+<li>用户投诉开始出现</li>
+<li>第三方服务异常</li>
+</ul>
+<h3 id="2-决策人"><a href="#2-决策人" class="headerlink" title="2. 决策人"></a>2. 决策人</h3><p>也就是谁能明确拍板：</p>
+<ul>
+<li>暂停</li>
+<li>继续</li>
+<li>终止</li>
+</ul>
+<p>如果这件事不提前约定，现场一旦出异常，最常见的情况就是：</p>
+<ul>
+<li>每个人都看到了风险</li>
+<li>但没人敢先喊停</li>
+</ul>
+<p>这时候风险往往会比系统本身的问题扩散得更快。</p>
+<h2 id="六、在项目里最看重的几类生产压测控制策略"><a href="#六、在项目里最看重的几类生产压测控制策略" class="headerlink" title="六、在项目里最看重的几类生产压测控制策略"></a>六、在项目里最看重的几类生产压测控制策略</h2><h3 id="1-压测流量标识需要贯穿链路"><a href="#1-压测流量标识需要贯穿链路" class="headerlink" title="1. 压测流量标识需要贯穿链路"></a>1. 压测流量标识需要贯穿链路</h3><p>不能只在入口层加个 header 就算完。<br>更理想的方式是让它在日志、监控、调用链、下游服务里都可识别。</p>
+<p>否则一旦出问题，你甚至分不清：</p>
+<ul>
+<li>当前看到的异常到底是生产真实流量，还是压测流量带来的</li>
+</ul>
+<h3 id="2-数据需要可回收"><a href="#2-数据需要可回收" class="headerlink" title="2. 数据需要可回收"></a>2. 数据需要可回收</h3><p>如果压测会写生产数据，那你至少要回答：</p>
+<ul>
+<li>这些数据如何标记</li>
+<li>这些数据如何清理</li>
+<li>清理失败怎么办</li>
+</ul>
+<p>否则压测结束以后，脏数据会持续污染业务分析和后续流程。</p>
+<h3 id="3-第三方调用需要提前设边界"><a href="#3-第三方调用需要提前设边界" class="headerlink" title="3. 第三方调用需要提前设边界"></a>3. 第三方调用需要提前设边界</h3><p>很多系统最容易出问题的，不是自己扛不住，而是把第三方打穿、打超费、打进风控。<br>生产压测前，这一层必须单独确认。</p>
+<h3 id="4-监控要提前进入“压测视角”"><a href="#4-监控要提前进入“压测视角”" class="headerlink" title="4. 监控要提前进入“压测视角”"></a>4. 监控要提前进入“压测视角”</h3><p>不能压测开始了才临时找图。<br>更好的方式是提前明确：</p>
+<ul>
+<li>入口流量图</li>
+<li>业务成功率</li>
+<li>核心依赖资源</li>
+<li>压测流量识别维度</li>
+</ul>
+<h2 id="七、在项目里踩过的几个典型坑"><a href="#七、在项目里踩过的几个典型坑" class="headerlink" title="七、在项目里踩过的几个典型坑"></a>七、在项目里踩过的几个典型坑</h2><h3 id="坑-1：只隔离了入口，没有隔离下游副作用"><a href="#坑-1：只隔离了入口，没有隔离下游副作用" class="headerlink" title="坑 1：只隔离了入口，没有隔离下游副作用"></a>坑 1：只隔离了入口，没有隔离下游副作用</h3><p>表面上看请求是压测流量，实际上消息、通知、补偿还是走了真实链路。<br>这种问题非常危险，因为现场一开始可能根本看不出来。</p>
+<h3 id="坑-2：压测账号是独立的，但写数据还是进了真实业务域"><a href="#坑-2：压测账号是独立的，但写数据还是进了真实业务域" class="headerlink" title="坑 2：压测账号是独立的，但写数据还是进了真实业务域"></a>坑 2：压测账号是独立的，但写数据还是进了真实业务域</h3><p>用了压测账号并不代表就万事大吉，如果订单、工单、消息、日志等仍然写在真实域里，污染照样会发生。</p>
+<h3 id="坑-3：监控没做压测流量切分，结果现场只看到“全局异常”"><a href="#坑-3：监控没做压测流量切分，结果现场只看到“全局异常”" class="headerlink" title="坑 3：监控没做压测流量切分，结果现场只看到“全局异常”"></a>坑 3：监控没做压测流量切分，结果现场只看到“全局异常”</h3><p>这类情况一出现，现场会非常混乱，因为没人能快速判断：</p>
+<ul>
+<li>是压测在伤系统</li>
+<li>还是本来就有线上波动</li>
+</ul>
+<h3 id="坑-4：没有明确停机线，现场靠感觉判断"><a href="#坑-4：没有明确停机线，现场靠感觉判断" class="headerlink" title="坑 4：没有明确停机线，现场靠感觉判断"></a>坑 4：没有明确停机线，现场靠感觉判断</h3><p>这是我最不推荐的做法。<br>生产压测最怕“再观察一下”，因为很多风险扩散并不会给你太多缓冲时间。</p>
+<h2 id="八、排查生产压测方案是否靠谱时，通常先看什么"><a href="#八、排查生产压测方案是否靠谱时，通常先看什么" class="headerlink" title="八、排查生产压测方案是否靠谱时，通常先看什么"></a>八、排查生产压测方案是否靠谱时，通常先看什么</h2><h3 id="1-先看隔离设计"><a href="#1-先看隔离设计" class="headerlink" title="1. 先看隔离设计"></a>1. 先看隔离设计</h3><p>确认：</p>
+<ul>
+<li>压测流量是否可识别</li>
+<li>压测数据是否可回收</li>
+<li>副作用链路是否已处理</li>
+</ul>
+<h2 id="九、生产压测前会直接拉一张执行清单"><a href="#九、生产压测前会直接拉一张执行清单" class="headerlink" title="九、生产压测前会直接拉一张执行清单"></a>九、生产压测前会直接拉一张执行清单</h2><p>生产压测不能只靠口头确认。<br>如果真要做，通常会拉一张显式清单，执行前逐项勾掉。</p>
+<p>例如：</p>
+<table>
+<thead>
+<tr>
+<th>检查项</th>
+<th>是否完成</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>压测流量 header 已贯穿入口和下游</td>
+<td>是&#x2F;否</td>
+<td>包括日志和调用链</td>
+</tr>
+<tr>
+<td>压测账号池已准备</td>
+<td>是&#x2F;否</td>
+<td>可区分真实用户</td>
+</tr>
+<tr>
+<td>写入数据可标记、可回收</td>
+<td>是&#x2F;否</td>
+<td>已验证清理脚本</td>
+</tr>
+<tr>
+<td>短信、邮件、推送已屏蔽或走影子通道</td>
+<td>是&#x2F;否</td>
+<td>防止副作用扩散</td>
+</tr>
+<tr>
+<td>第三方接口限流边界已确认</td>
+<td>是&#x2F;否</td>
+<td>避免外部成本和风控</td>
+</tr>
+<tr>
+<td>监控面板已切好压测视角</td>
+<td>是&#x2F;否</td>
+<td>可区分压测流量</td>
+</tr>
+<tr>
+<td>停机线和决策人已确认</td>
+<td>是&#x2F;否</td>
+<td>现场可立即止损</td>
+</tr>
+</tbody></table>
+<p>这张表没有技术门槛，但极其有用。<br>因为生产压测很多事故，本质上都是“以为确认了，其实没人真确认”。</p>
+<h2 id="十、更常用的一套生产压测推进节奏"><a href="#十、更常用的一套生产压测推进节奏" class="headerlink" title="十、更常用的一套生产压测推进节奏"></a>十、更常用的一套生产压测推进节奏</h2><p>如果隔离设计已经准备好，通常也不会一上来就放大流量。<br>更常见的节奏是：</p>
+<ol>
+<li>先打极小流量，验证流量标识和副作用隔离</li>
+<li>再做 5 到 10 分钟小范围放量</li>
+<li>观察用户指标、业务指标和依赖指标都稳定后，再进入正式升压</li>
+<li>每次升压前都做一次“是否继续”确认</li>
+</ol>
+<p>现场通常会把继续条件写得非常具体：</p>
+<ul>
+<li>当前错误率仍低于阈值</li>
+<li>没有真实用户投诉</li>
+<li>第三方调用没有异常放大</li>
+<li>压测流量与真实流量仍可清晰区分</li>
+</ul>
+<p>如果这些条件里有一条解释不清，就不继续加压。</p>
+<h2 id="十一、真出问题时怎么止损"><a href="#十一、真出问题时怎么止损" class="headerlink" title="十一、真出问题时怎么止损"></a>十一、真出问题时怎么止损</h2><p>生产压测不是不能出问题，而是必须准备好问题一出现就能收住。</p>
+<p>通常会预设下面几个动作：</p>
+<ol>
+<li>立即停止入口压测流量</li>
+<li>冻结当前阶段参数和监控截图</li>
+<li>确认异常是否仍在持续</li>
+<li>如果异常仍在，回看是否有副作用链路未被切断</li>
+<li>先恢复业务，再讨论根因</li>
+</ol>
+<p>这里有个很现实的原则：</p>
+<p><strong>生产压测现场，止损优先级永远高于根因分析。</strong></p>
+<p>根因可以会后慢慢看，但真实业务和真实用户不能拿来等分析结论。</p>
+<h3 id="2-再看监控和止损机制"><a href="#2-再看监控和止损机制" class="headerlink" title="2. 再看监控和止损机制"></a>2. 再看监控和止损机制</h3><p>确认：</p>
+<ul>
+<li>关键指标是否能实时观测</li>
+<li>谁来拍板停止是否明确</li>
+</ul>
+<h3 id="3-再看施压策略"><a href="#3-再看施压策略" class="headerlink" title="3. 再看施压策略"></a>3. 再看施压策略</h3><p>确认：</p>
+<ul>
+<li>是不是分阶段推进</li>
+<li>有没有低流量探测环节</li>
+</ul>
+<h3 id="4-最后才看脚本与工具"><a href="#4-最后才看脚本与工具" class="headerlink" title="4. 最后才看脚本与工具"></a>4. 最后才看脚本与工具</h3><p>因为生产压测最大的风险很多并不是来自脚本本身，而是来自边界没控住。</p>
+<h2 id="结语"><a href="#结语" class="headerlink" title="结语"></a>结语</h2><p>生产压测的核心从来不是“敢不敢压”，而是能不能在真实用户、真实数据、真实依赖都在线的情况下，把这场实验设计得足够可控。</p>
+<p>更准确地说，生产压测最少要做到：</p>
+<ul>
+<li>流量可识别</li>
+<li>数据可回收</li>
+<li>副作用可隔离</li>
+<li>风险可观测</li>
+<li>现场可止损</li>
+</ul>
+<p>如果这些基础都没补齐，生产压测很容易变成一次高风险冒险；<br>只有把隔离、监控、回退和停机线都设计好，它才有资格成为一场可控验证。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E5%B7%A5%E7%A8%8B%E5%8C%96/" rel="tag"># 工程化</a>
+              <a href="/tags/%E9%A3%8E%E9%99%A9%E6%8E%A7%E5%88%B6/" rel="tag"># 风险控制</a>
+              <a href="/tags/%E6%8E%92%E9%9A%9C/" rel="tag"># 排障</a>
+              <a href="/tags/%E6%80%A7%E8%83%BD%E6%B5%8B%E8%AF%95/" rel="tag"># 性能测试</a>
+              <a href="/tags/%E8%B4%A8%E9%87%8F%E5%B7%A5%E7%A8%8B/" rel="tag"># 质量工程</a>
+              <a href="/tags/%E7%94%9F%E4%BA%A7%E5%8E%8B%E6%B5%8B/" rel="tag"># 生产压测</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2023/07/19/Kubernetes-19-consul%E9%83%A8%E7%BD%B2/" rel="prev" title="Kubernetes：Consul 部署实践">
+                  <i class="fa fa-angle-left"></i> Kubernetes：Consul 部署实践
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2023/08/12/%E6%80%A7%E8%83%BD%E6%B5%8B%E8%AF%95-10-%E6%80%A7%E8%83%BD%E6%B5%8B%E8%AF%95%E5%A6%82%E4%BD%95%E4%B8%BA%E6%9E%B6%E6%9E%84%E4%BC%98%E5%8C%96%E6%8F%90%E4%BE%9B%E4%BE%9D%E6%8D%AE/" rel="next" title="性能测试：性能测试如何为架构优化提供依据">
+                  性能测试：性能测试如何为架构优化提供依据 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

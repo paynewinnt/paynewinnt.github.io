@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="语音项目里最难讲清楚的一类问题，不是“能不能接通”，而是：  为什么机器人反应慢 为什么一通电话越跑越长 为什么有时识别正常，但用户还是明显感觉卡  遇到这类问题时，给出的结论都很像：  语音识别慢 对话接口慢 电话系统有时延  这些说法不能说错，但几乎没有排障价值。因为“慢”只是现象，不是定位结果。 真正要回答的问题应该是：  慢发生在接入建立、接听、识别、对话、回写还是收尾 是某一段先拉长，还">
+<meta property="og:type" content="article">
+<meta property="og:title" content="SIP测试-07-如何定位语音链路中的时延问题">
+<meta property="og:url" content="https://paynewinnt.github.io/2020/07/10/SIP%E6%B5%8B%E8%AF%95-07-%E5%A6%82%E4%BD%95%E5%AE%9A%E4%BD%8D%E8%AF%AD%E9%9F%B3%E9%93%BE%E8%B7%AF%E4%B8%AD%E7%9A%84%E6%97%B6%E5%BB%B6%E9%97%AE%E9%A2%98/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="语音项目里最难讲清楚的一类问题，不是“能不能接通”，而是：  为什么机器人反应慢 为什么一通电话越跑越长 为什么有时识别正常，但用户还是明显感觉卡  遇到这类问题时，给出的结论都很像：  语音识别慢 对话接口慢 电话系统有时延  这些说法不能说错，但几乎没有排障价值。因为“慢”只是现象，不是定位结果。 真正要回答的问题应该是：  慢发生在接入建立、接听、识别、对话、回写还是收尾 是某一段先拉长，还">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2020-07-10T12:30:00.000Z">
+<meta property="article:modified_time" content="2020-07-10T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="排障">
+<meta property="article:tag" content="SIP">
+<meta property="article:tag" content="SIPp">
+<meta property="article:tag" content="语音测试">
+<meta property="article:tag" content="实战">
+<meta property="article:tag" content="信令与压测">
+<meta property="article:tag" content="性能测试">
+<meta property="article:tag" content="AIBus">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2020/07/10/SIP%E6%B5%8B%E8%AF%95-07-%E5%A6%82%E4%BD%95%E5%AE%9A%E4%BD%8D%E8%AF%AD%E9%9F%B3%E9%93%BE%E8%B7%AF%E4%B8%AD%E7%9A%84%E6%97%B6%E5%BB%B6%E9%97%AE%E9%A2%98/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2020/07/10/SIP%E6%B5%8B%E8%AF%95-07-%E5%A6%82%E4%BD%95%E5%AE%9A%E4%BD%8D%E8%AF%AD%E9%9F%B3%E9%93%BE%E8%B7%AF%E4%B8%AD%E7%9A%84%E6%97%B6%E5%BB%B6%E9%97%AE%E9%A2%98/","path":"2020/07/10/SIP测试-07-如何定位语音链路中的时延问题/","title":"SIP测试-07-如何定位语音链路中的时延问题"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>SIP测试-07-如何定位语音链路中的时延问题 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E8%AF%AD%E9%9F%B3%E9%93%BE%E8%B7%AF%E9%87%8C%E7%9A%84%E2%80%9C%E6%97%B6%E5%BB%B6%E2%80%9D%E4%B8%8D%E6%98%AF%E4%B8%80%E4%B8%AA%E7%82%B9%EF%BC%8C%E8%80%8C%E6%98%AF%E4%B8%80%E4%B8%B2%E6%97%B6%E9%97%B4%E6%AE%B5"><span class="nav-number">1.</span> <span class="nav-text">一、语音链路里的“时延”不是一个点，而是一串时间段</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E6%9B%B4%E5%B8%B8%E7%94%A8%E7%9A%84%E4%B8%80%E5%BC%A0%E2%80%9C%E8%AF%AD%E9%9F%B3%E9%93%BE%E8%B7%AF%E6%97%B6%E5%BB%B6%E6%8B%86%E5%88%86%E8%A1%A8%E2%80%9D"><span class="nav-number">2.</span> <span class="nav-text">二、更常用的一张“语音链路时延拆分表”</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E8%AF%AD%E9%9F%B3%E9%93%BE%E8%B7%AF%E6%97%B6%E5%BB%B6%E5%AE%9A%E4%BD%8D%EF%BC%8C%E6%9C%80%E9%87%8D%E8%A6%81%E7%9A%84%E6%98%AF%E6%97%B6%E9%97%B4%E5%AF%B9%E9%BD%90"><span class="nav-number">3.</span> <span class="nav-text">三、语音链路时延定位，最重要的是时间对齐</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E6%9B%B4%E5%B8%B8%E7%94%A8%E7%9A%84%E4%B8%80%E5%A5%97%E6%9C%80%E5%B0%8F%E5%AE%9A%E4%BD%8D%E9%AA%A8%E6%9E%B6"><span class="nav-number">4.</span> <span class="nav-text">四、更常用的一套最小定位骨架</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%85%88%E5%88%A4%E6%96%AD%E6%85%A2%E6%98%AF%E5%9C%A8%E5%89%8D%E5%8D%8A%E6%AE%B5%E8%BF%98%E6%98%AF%E5%90%8E%E5%8D%8A%E6%AE%B5"><span class="nav-number">4.1.</span> <span class="nav-text">1. 先判断慢是在前半段还是后半段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%86%8D%E7%9C%8B%E6%95%B4%E4%BD%93%E9%80%9A%E8%AF%9D%E6%97%B6%E9%95%BF%E6%9C%89%E6%B2%A1%E6%9C%89%E8%A2%AB%E6%98%BE%E8%91%97%E6%8B%89%E9%95%BF"><span class="nav-number">4.2.</span> <span class="nav-text">2. 再看整体通话时长有没有被显著拉长</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%86%8D%E7%9C%8B%E6%98%AF%E5%90%A6%E5%AD%98%E5%9C%A8%E9%95%BF%E5%B0%BE"><span class="nav-number">4.3.</span> <span class="nav-text">3. 再看是否存在长尾</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%9C%80%E5%90%8E%E5%86%8D%E5%88%A4%E6%96%AD%E4%B8%BB%E5%9B%A0%E5%92%8C%E4%BC%B4%E7%94%9F%E7%8E%B0%E8%B1%A1"><span class="nav-number">4.4.</span> <span class="nav-text">4. 最后再判断主因和伴生现象</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E6%9B%B4%E9%80%82%E5%90%88%E7%9A%84%E4%B8%80%E5%A5%97%E8%AE%B0%E5%BD%95%E8%A1%A8"><span class="nav-number">5.</span> <span class="nav-text">五、更适合的一套记录表</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E6%97%B6%E5%BB%B6%E9%97%AE%E9%A2%98%E9%87%8C%E6%9C%80%E5%AE%B9%E6%98%93%E5%87%BA%E7%8E%B0%E7%9A%84%E5%87%A0%E7%A7%8D%E8%AF%AF%E5%88%A4"><span class="nav-number">6.</span> <span class="nav-text">六、时延问题里最容易出现的几种误判</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%94%A8%E6%88%B7%E8%A7%89%E5%BE%97%E2%80%9C%E6%9C%BA%E5%99%A8%E4%BA%BA%E5%8F%8D%E5%BA%94%E6%85%A2%E2%80%9D%EF%BC%8C%E5%B0%B1%E9%BB%98%E8%AE%A4%E6%98%AF%E8%AF%86%E5%88%AB%E6%9C%8D%E5%8A%A1%E6%85%A2"><span class="nav-number">6.1.</span> <span class="nav-text">1. 用户觉得“机器人反应慢”，就默认是识别服务慢</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%8F%AA%E7%9C%8B%E5%B9%B3%E5%9D%87%E5%80%BC%EF%BC%8C%E4%B8%8D%E7%9C%8B%E9%95%BF%E5%B0%BE"><span class="nav-number">6.2.</span> <span class="nav-text">2. 只看平均值，不看长尾</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%9C%8B%E5%88%B0%E6%9C%80%E5%90%8E%E4%B8%80%E6%AD%A5%E6%85%A2%EF%BC%8C%E5%B0%B1%E6%8A%8A%E6%9C%80%E5%90%8E%E4%B8%80%E6%AD%A5%E5%BD%93%E4%B8%BB%E5%9B%A0"><span class="nav-number">6.3.</span> <span class="nav-text">3. 看到最后一步慢，就把最后一步当主因</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E7%9C%9F%E5%AE%9E%E6%A1%88%E4%BE%8B%E5%9E%8B%E6%AE%B5%E8%90%BD%EF%BC%9A%E4%B8%80%E6%AC%A1%E2%80%9C%E7%8E%B0%E5%9C%BA%E9%83%BD%E5%88%A4%E6%96%AD%E8%AF%86%E5%88%AB%E6%85%A2%EF%BC%8C%E6%9C%80%E5%90%8E%E5%8F%91%E7%8E%B0%E7%9C%9F%E6%AD%A3%E6%8B%96%E9%95%BF%E7%94%B5%E8%AF%9D%E7%9A%84%E6%98%AF%E5%89%8D%E9%9D%A2%E7%9A%84%E7%AD%89%E5%BE%85%E5%92%8C%E5%90%8E%E9%9D%A2%E7%9A%84%E5%AF%B9%E8%AF%9D%E2%80%9D%E7%9A%84%E6%8E%92%E6%9F%A5"><span class="nav-number">7.</span> <span class="nav-text">七、真实案例型段落：一次“现场都判断识别慢，最后发现真正拖长电话的是前面的等待和后面的对话”的排查</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9C%BA%E6%99%AF"><span class="nav-number">7.1.</span> <span class="nav-text">场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%89%A7%E8%A1%8C"><span class="nav-number">7.2.</span> <span class="nav-text">执行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8E%B0%E8%B1%A1"><span class="nav-number">7.3.</span> <span class="nav-text">现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%92%E6%9F%A5"><span class="nav-number">7.4.</span> <span class="nav-text">排查</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BF%AE%E5%A4%8D"><span class="nav-number">7.5.</span> <span class="nav-text">修复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E5%A6%82%E6%9E%9C%E8%A6%81%E7%BB%99%E5%9B%A2%E9%98%9F%E5%AE%9A%E4%B8%80%E5%A5%97%E8%AF%AD%E9%9F%B3%E6%97%B6%E5%BB%B6%E5%AE%9A%E4%BD%8D%E5%8E%9F%E5%88%99%EF%BC%8C%E5%8F%AF%E4%BB%A5%E8%BF%99%E6%A0%B7%E5%AE%9A"><span class="nav-number">8.</span> <span class="nav-text">八、如果要给团队定一套语音时延定位原则，可以这样定</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%BB%93%E8%AF%AD"><span class="nav-number">9.</span> <span class="nav-text">结语</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2020/07/10/SIP%E6%B5%8B%E8%AF%95-07-%E5%A6%82%E4%BD%95%E5%AE%9A%E4%BD%8D%E8%AF%AD%E9%9F%B3%E9%93%BE%E8%B7%AF%E4%B8%AD%E7%9A%84%E6%97%B6%E5%BB%B6%E9%97%AE%E9%A2%98/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="SIP测试-07-如何定位语音链路中的时延问题 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          SIP测试-07-如何定位语音链路中的时延问题
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2020-07-10 20:30:00" itemprop="dateCreated datePublished" datetime="2020-07-10T20:30:00+08:00">2020-07-10</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/SIP%E6%B5%8B%E8%AF%95/" itemprop="url" rel="index"><span itemprop="name">SIP测试</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>2.3k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>8 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>语音项目里最难讲清楚的一类问题，不是“能不能接通”，而是：</p>
+<ul>
+<li>为什么机器人反应慢</li>
+<li>为什么一通电话越跑越长</li>
+<li>为什么有时识别正常，但用户还是明显感觉卡</li>
+</ul>
+<p>遇到这类问题时，给出的结论都很像：</p>
+<ul>
+<li>语音识别慢</li>
+<li>对话接口慢</li>
+<li>电话系统有时延</li>
+</ul>
+<p>这些说法不能说错，但几乎没有排障价值。<br>因为“慢”只是现象，不是定位结果。</p>
+<p>真正要回答的问题应该是：</p>
+<ul>
+<li>慢发生在接入建立、接听、识别、对话、回写还是收尾</li>
+<li>是某一段先拉长，还是多段一起变慢</li>
+<li>它是整条链路的主因，还是前面某个问题放大后的结果</li>
+</ul>
+<p>所以这篇文章想讲清楚的是：</p>
+<p><strong>语音链路中的时延问题，到底该怎么拆、怎么量、怎么对齐、怎么判断。</strong></p>
+<h2 id="一、语音链路里的“时延”不是一个点，而是一串时间段"><a href="#一、语音链路里的“时延”不是一个点，而是一串时间段" class="headerlink" title="一、语音链路里的“时延”不是一个点，而是一串时间段"></a>一、语音链路里的“时延”不是一个点，而是一串时间段</h2><p>一旦把问题描述成“语音链路时延高”，默认就是把一整通电话当成了一个黑盒。<br>这会让定位变得特别难。</p>
+<p>在真实项目里，通常会把一通语音交互至少拆成下面几段：</p>
+<ol>
+<li>呼叫建立时间</li>
+<li>机器人接听时间</li>
+<li>引导语和等待时间</li>
+<li>识别请求耗时</li>
+<li>对话处理耗时</li>
+<li>业务动作或结果回写耗时</li>
+<li>整体通话时长</li>
+</ol>
+<p>如果不先拆开，你后面看到“电话长了”时，根本不知道是：</p>
+<ul>
+<li>前面接入慢</li>
+<li>中间识别慢</li>
+<li>还是尾部回写把整通电话拖长</li>
+</ul>
+<h2 id="二、更常用的一张“语音链路时延拆分表”"><a href="#二、更常用的一张“语音链路时延拆分表”" class="headerlink" title="二、更常用的一张“语音链路时延拆分表”"></a>二、更常用的一张“语音链路时延拆分表”</h2><p>为了让时延定位可操作，通常会先拉一张简单的分段表。</p>
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>典型信号</th>
+<th>常见问题</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>呼叫建立</td>
+<td><code>INVITE -&gt; 200 OK</code></td>
+<td>路由、接听、信令等待</td>
+</tr>
+<tr>
+<td>接听后准备</td>
+<td>引导语、静音、等待</td>
+<td>模板配置不合理、设备反应慢</td>
+</tr>
+<tr>
+<td>识别阶段</td>
+<td>识别服务返回</td>
+<td>识别服务长尾、音频输入异常</td>
+</tr>
+<tr>
+<td>对话阶段</td>
+<td>对话接口返回</td>
+<td>对话服务慢、下游依赖抖动</td>
+</tr>
+<tr>
+<td>收尾阶段</td>
+<td>回写、挂断</td>
+<td>回写堆积、尾部清理慢</td>
+</tr>
+<tr>
+<td>总时长</td>
+<td>电话整体占用时间</td>
+<td>某一段被放大后拖长全链路</td>
+</tr>
+</tbody></table>
+<p>这张表的意义很大。<br>因为你之后所有判断都必须落回这几个时间段里，而不是一直在说一句“整体慢”。</p>
+<h2 id="三、语音链路时延定位，最重要的是时间对齐"><a href="#三、语音链路时延定位，最重要的是时间对齐" class="headerlink" title="三、语音链路时延定位，最重要的是时间对齐"></a>三、语音链路时延定位，最重要的是时间对齐</h2><p>语音项目里最容易犯的错误，就是每个人各看各的时间：</p>
+<ul>
+<li>SIP 报文看一套时间</li>
+<li>机器人日志看一套时间</li>
+<li>识别服务看一套时间</li>
+<li>对话服务再看一套时间</li>
+</ul>
+<p>结果就是：</p>
+<ul>
+<li>每个人都能证明自己“看起来没问题”</li>
+<li>但没人能讲清楚哪一段先变慢</li>
+</ul>
+<p>所以做时延定位时，最先做的事情通常不是抓更多日志，而是统一时间主线。</p>
+<p>更常用的主线一般是：</p>
+<ul>
+<li>以一通电话的 <code>Call-ID</code> 或会话标识作为主索引</li>
+<li>把 SIP 层、机器人层、识别层、对话层日志都串起来</li>
+<li>然后按时间顺序对齐关键事件</li>
+</ul>
+<p>一个更接近现场的事件顺序通常像这样：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">INVITE 发起</span><br><span class="line">-&gt; 200 OK</span><br><span class="line">-&gt; ACK</span><br><span class="line">-&gt; 机器人接听</span><br><span class="line">-&gt; 音频送识别</span><br><span class="line">-&gt; 识别结果返回</span><br><span class="line">-&gt; 对话结果返回</span><br><span class="line">-&gt; 结果回写</span><br><span class="line">-&gt; BYE</span><br></pre></td></tr></table></figure>
+
+<p>当这些事件排成一条时间线以后，时延问题才真正开始“可定位”。</p>
+<h2 id="四、更常用的一套最小定位骨架"><a href="#四、更常用的一套最小定位骨架" class="headerlink" title="四、更常用的一套最小定位骨架"></a>四、更常用的一套最小定位骨架</h2><p>如果现场有人说“语音链路慢”，通常不会先去看最复杂的地方。<br>更常按下面顺序拆。</p>
+<h3 id="1-先判断慢是在前半段还是后半段"><a href="#1-先判断慢是在前半段还是后半段" class="headerlink" title="1. 先判断慢是在前半段还是后半段"></a>1. 先判断慢是在前半段还是后半段</h3><p>也就是先回答：</p>
+<ul>
+<li>是接入、接听慢</li>
+<li>还是识别、对话、回写慢</li>
+</ul>
+<h3 id="2-再看整体通话时长有没有被显著拉长"><a href="#2-再看整体通话时长有没有被显著拉长" class="headerlink" title="2. 再看整体通话时长有没有被显著拉长"></a>2. 再看整体通话时长有没有被显著拉长</h3><p>如果总时长没有明显变化，但某一段响应慢，问题可能是局部抖动。<br>如果总时长已经一起被拉长，那就要警惕链路占用放大。</p>
+<h3 id="3-再看是否存在长尾"><a href="#3-再看是否存在长尾" class="headerlink" title="3. 再看是否存在长尾"></a>3. 再看是否存在长尾</h3><p>语音链路里，平均值经常不够看。<br>很多严重问题都藏在：</p>
+<ul>
+<li>P95</li>
+<li>P99</li>
+<li>个别特别长的电话样本</li>
+</ul>
+<h3 id="4-最后再判断主因和伴生现象"><a href="#4-最后再判断主因和伴生现象" class="headerlink" title="4. 最后再判断主因和伴生现象"></a>4. 最后再判断主因和伴生现象</h3><p>这一步很关键。<br>因为很多时候对话慢了，回写也会慢；<br>或者识别慢了，整通电话都变长。<br>后面的慢不一定是主因。</p>
+<h2 id="五、更适合的一套记录表"><a href="#五、更适合的一套记录表" class="headerlink" title="五、更适合的一套记录表"></a>五、更适合的一套记录表</h2><p>语音链路时延定位时，最好维护这样一张表：</p>
+<table>
+<thead>
+<tr>
+<th>样本</th>
+<th>呼叫建立</th>
+<th>接听准备</th>
+<th>识别耗时</th>
+<th>对话耗时</th>
+<th>回写耗时</th>
+<th>总时长</th>
+<th>初步判断</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>call-1</td>
+<td>正常</td>
+<td>正常</td>
+<td>200ms</td>
+<td>300ms</td>
+<td>100ms</td>
+<td>正常</td>
+<td>健康样本</td>
+</tr>
+<tr>
+<td>call-2</td>
+<td>正常</td>
+<td>正常</td>
+<td>900ms</td>
+<td>400ms</td>
+<td>120ms</td>
+<td>略长</td>
+<td>识别偏慢</td>
+</tr>
+<tr>
+<td>call-3</td>
+<td>正常</td>
+<td>正常</td>
+<td>1.8s</td>
+<td>1.2s</td>
+<td>150ms</td>
+<td>明显变长</td>
+<td>识别+对话拉长</td>
+</tr>
+<tr>
+<td>call-4</td>
+<td>正常</td>
+<td>正常</td>
+<td>2.2s</td>
+<td>2.8s</td>
+<td>600ms</td>
+<td>很长</td>
+<td>服务层风险区</td>
+</tr>
+</tbody></table>
+<p>这张表的好处是，它迫使你把“慢”拆成结构化事实，而不是停留在感觉层面。</p>
+<h2 id="六、时延问题里最容易出现的几种误判"><a href="#六、时延问题里最容易出现的几种误判" class="headerlink" title="六、时延问题里最容易出现的几种误判"></a>六、时延问题里最容易出现的几种误判</h2><h3 id="1-用户觉得“机器人反应慢”，就默认是识别服务慢"><a href="#1-用户觉得“机器人反应慢”，就默认是识别服务慢" class="headerlink" title="1. 用户觉得“机器人反应慢”，就默认是识别服务慢"></a>1. 用户觉得“机器人反应慢”，就默认是识别服务慢</h3><p>这特别常见。<br>但真实情况可能是：</p>
+<ul>
+<li>接听前等待配置过长</li>
+<li>引导语播放过长</li>
+<li>对话服务才是真正慢点</li>
+</ul>
+<h3 id="2-只看平均值，不看长尾"><a href="#2-只看平均值，不看长尾" class="headerlink" title="2. 只看平均值，不看长尾"></a>2. 只看平均值，不看长尾</h3><p>语音链路很多时候平均耗时不夸张，但个别长电话已经足以拖垮整体体验和资源占用。</p>
+<h3 id="3-看到最后一步慢，就把最后一步当主因"><a href="#3-看到最后一步慢，就把最后一步当主因" class="headerlink" title="3. 看到最后一步慢，就把最后一步当主因"></a>3. 看到最后一步慢，就把最后一步当主因</h3><p>比如结果回写慢，不一定说明回写服务就是源头。<br>也可能是前面识别和对话已经把整通电话拖得过长，最后尾部一起堆积。</p>
+<h2 id="七、真实案例型段落：一次“现场都判断识别慢，最后发现真正拖长电话的是前面的等待和后面的对话”的排查"><a href="#七、真实案例型段落：一次“现场都判断识别慢，最后发现真正拖长电话的是前面的等待和后面的对话”的排查" class="headerlink" title="七、真实案例型段落：一次“现场都判断识别慢，最后发现真正拖长电话的是前面的等待和后面的对话”的排查"></a>七、真实案例型段落：一次“现场都判断识别慢，最后发现真正拖长电话的是前面的等待和后面的对话”的排查</h2><h3 id="场景"><a href="#场景" class="headerlink" title="场景"></a>场景</h3><p>一次语音机器人项目里，团队持续收到一个反馈：</p>
+<ul>
+<li>机器人回答慢</li>
+<li>用户等得久</li>
+<li>整通电话时长明显偏长</li>
+</ul>
+<p>现场最自然的共识是：</p>
+<ul>
+<li>识别服务应该是瓶颈</li>
+</ul>
+<p>因为识别本来就是最容易被怀疑的一段。</p>
+<h3 id="执行"><a href="#执行" class="headerlink" title="执行"></a>执行</h3><p>当时我们已经有一套基础日志：</p>
+<ol>
+<li>SIP 层报文时间</li>
+<li>机器人接听日志</li>
+<li>识别服务调用时间</li>
+<li>对话服务调用时间</li>
+<li>通话结束和结果回写时间</li>
+</ol>
+<h3 id="现象"><a href="#现象" class="headerlink" title="现象"></a>现象</h3><p>一开始粗看日志，确实会觉得识别有问题：</p>
+<ul>
+<li>某些识别请求耗时偏高</li>
+</ul>
+<p>但继续把一整通电话按时间线串起来后，发现情况没那么简单：</p>
+<ul>
+<li>呼叫建立本身没问题</li>
+<li>接听后等待阶段比预期更长</li>
+<li>识别有抖动，但不是所有长电话都由识别造成</li>
+<li>对话服务在部分样本里比识别更慢</li>
+</ul>
+<h3 id="排查"><a href="#排查" class="headerlink" title="排查"></a>排查</h3><p>我当时的做法不是继续只盯识别，而是把一整通长电话拆开对齐：</p>
+<ol>
+<li>先看接入建立时间是否正常</li>
+<li>再看接听后的引导与等待时间是否超出预期</li>
+<li>再看识别耗时是否稳定高</li>
+<li>最后看对话和回写是否跟着被拉长</li>
+</ol>
+<p>这一轮拆开以后，真正的链路问题是：</p>
+<ul>
+<li>接听后等待配置偏保守，先吃掉了一段时间</li>
+<li>识别有一定抖动，但并不是唯一主因</li>
+<li>对话服务在高峰期的长尾更明显，进一步把整通电话拉长</li>
+</ul>
+<h3 id="修复"><a href="#修复" class="headerlink" title="修复"></a>修复</h3><p>后面的收敛动作分成两部分：</p>
+<ol>
+<li>优化接听后模板等待时间，不再给过长静音窗口</li>
+<li>单独治理对话服务的长尾，再回头复测整条语音链路</li>
+</ol>
+<p>修完以后，用户体感改善很明显。<br>这个案例最直接的提醒是：</p>
+<p><strong>语音链路里的时延问题，很少是靠一句“识别慢”就能真正讲清楚的。</strong></p>
+<h2 id="八、如果要给团队定一套语音时延定位原则，可以这样定"><a href="#八、如果要给团队定一套语音时延定位原则，可以这样定" class="headerlink" title="八、如果要给团队定一套语音时延定位原则，可以这样定"></a>八、如果要给团队定一套语音时延定位原则，可以这样定</h2><ol>
+<li>先拆阶段，不先下结论</li>
+<li>先对齐时间，不先看单点截图</li>
+<li>先找最早变慢的那一段，不先解释最后的结果</li>
+<li>同时看平均值和长尾，不只看平均值</li>
+<li>把总通话时长作为最终结果，但不要把它当唯一线索</li>
+</ol>
+<p>这 5 条看起来简单，但能明显减少时延定位里的误判。</p>
+<h2 id="结语"><a href="#结语" class="headerlink" title="结语"></a>结语</h2><p>语音链路时延定位，最怕的不是没有日志，而是有一堆日志却没拆出时间结构。</p>
+<p>真正有效的方法通常只有两步：</p>
+<ul>
+<li>把一通电话拆成多个时间段</li>
+<li>把这些时间段按同一条时间线对齐</li>
+</ul>
+<p>做到这一步以后，你才真正能回答：</p>
+<ul>
+<li>慢到底发生在哪</li>
+<li>是谁先拉长了整条链路</li>
+<li>后面该优先优化哪一段</li>
+</ul>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E6%8E%92%E9%9A%9C/" rel="tag"># 排障</a>
+              <a href="/tags/SIP/" rel="tag"># SIP</a>
+              <a href="/tags/SIPp/" rel="tag"># SIPp</a>
+              <a href="/tags/%E8%AF%AD%E9%9F%B3%E6%B5%8B%E8%AF%95/" rel="tag"># 语音测试</a>
+              <a href="/tags/%E5%AE%9E%E6%88%98/" rel="tag"># 实战</a>
+              <a href="/tags/%E4%BF%A1%E4%BB%A4%E4%B8%8E%E5%8E%8B%E6%B5%8B/" rel="tag"># 信令与压测</a>
+              <a href="/tags/%E6%80%A7%E8%83%BD%E6%B5%8B%E8%AF%95/" rel="tag"># 性能测试</a>
+              <a href="/tags/AIBus/" rel="tag"># AIBus</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2020/07/03/SIP%E6%B5%8B%E8%AF%95-06-%E8%AF%AD%E9%9F%B3%E4%BA%A4%E4%BA%92%E5%9C%BA%E6%99%AF%E5%A6%82%E4%BD%95%E8%AE%BE%E8%AE%A1%E8%87%AA%E5%8A%A8%E5%8C%96%E9%AA%8C%E8%AF%81/" rel="prev" title="SIP测试-06-语音交互场景如何设计自动化验证">
+                  <i class="fa fa-angle-left"></i> SIP测试-06-语音交互场景如何设计自动化验证
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2020/07/17/SIP%E6%B5%8B%E8%AF%95-08-%E8%AF%AD%E9%9F%B3%E9%93%BE%E8%B7%AF%E4%B8%AD%E7%9A%84%E5%A4%B1%E8%B4%A5%E7%A0%81%E3%80%81%E6%97%A5%E5%BF%97%E5%92%8C%E8%AF%81%E6%8D%AE%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E7%BB%9F%E4%B8%80%E5%88%86%E6%9E%90/" rel="next" title="SIP测试-08-语音链路中的失败码、日志和证据应该怎么统一分析">
+                  SIP测试-08-语音链路中的失败码、日志和证据应该怎么统一分析 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

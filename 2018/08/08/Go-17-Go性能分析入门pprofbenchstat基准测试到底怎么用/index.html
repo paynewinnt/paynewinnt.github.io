@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="Go 性能优化不能只靠猜。更稳的路径是先用基准测试复现，再用 pprof 找热点，再用 benchstat 比较改动前后差异。这篇文章围绕一个日志聚合器，讲清三者怎么串成一条完整分析链。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Go：性能分析入门，pprof、benchstat、基准测试到底怎么用">
+<meta property="og:url" content="https://paynewinnt.github.io/2018/08/08/Go-17-Go%E6%80%A7%E8%83%BD%E5%88%86%E6%9E%90%E5%85%A5%E9%97%A8pprofbenchstat%E5%9F%BA%E5%87%86%E6%B5%8B%E8%AF%95%E5%88%B0%E5%BA%95%E6%80%8E%E4%B9%88%E7%94%A8/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="Go 性能优化不能只靠猜。更稳的路径是先用基准测试复现，再用 pprof 找热点，再用 benchstat 比较改动前后差异。这篇文章围绕一个日志聚合器，讲清三者怎么串成一条完整分析链。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2018-08-08T12:30:00.000Z">
+<meta property="article:modified_time" content="2018-08-08T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="Go">
+<meta property="article:tag" content="Go专题">
+<meta property="article:tag" content="编程语言">
+<meta property="article:tag" content="性能分析">
+<meta property="article:tag" content="pprof">
+<meta property="article:tag" content="benchstat">
+<meta property="article:tag" content="基准测试">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2018/08/08/Go-17-Go%E6%80%A7%E8%83%BD%E5%88%86%E6%9E%90%E5%85%A5%E9%97%A8pprofbenchstat%E5%9F%BA%E5%87%86%E6%B5%8B%E8%AF%95%E5%88%B0%E5%BA%95%E6%80%8E%E4%B9%88%E7%94%A8/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2018/08/08/Go-17-Go%E6%80%A7%E8%83%BD%E5%88%86%E6%9E%90%E5%85%A5%E9%97%A8pprofbenchstat%E5%9F%BA%E5%87%86%E6%B5%8B%E8%AF%95%E5%88%B0%E5%BA%95%E6%80%8E%E4%B9%88%E7%94%A8/","path":"2018/08/08/Go-17-Go性能分析入门pprofbenchstat基准测试到底怎么用/","title":"Go：性能分析入门，pprof、benchstat、基准测试到底怎么用"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>Go：性能分析入门，pprof、benchstat、基准测试到底怎么用 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E8%BF%99%E7%AF%87%E6%96%87%E7%AB%A0%E8%A6%81%E8%A7%A3%E5%86%B3%E4%BB%80%E4%B9%88%E9%97%AE%E9%A2%98"><span class="nav-number">1.</span> <span class="nav-text">一、这篇文章要解决什么问题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E5%85%88%E7%9C%8B%E8%BF%99%E7%AF%87%E6%96%87%E7%AB%A0%E9%87%8C%E7%9A%84%E5%AE%9E%E9%99%85%E5%9C%BA%E6%99%AF"><span class="nav-number">2.</span> <span class="nav-text">二、先看这篇文章里的实际场景</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E5%85%88%E7%BB%99%E4%B8%80%E4%B8%AA%E6%9C%80%E5%B0%8F%E5%8F%AF%E8%BF%90%E8%A1%8C%E7%89%88%E6%9C%AC"><span class="nav-number">3.</span> <span class="nav-text">三、先给一个最小可运行版本</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E6%80%A7%E8%83%BD%E5%88%86%E6%9E%90%E9%87%8C%E6%9C%80%E5%AE%B9%E6%98%93%E8%B5%B0%E5%81%8F%E7%9A%84%E5%9C%B0%E6%96%B9"><span class="nav-number">4.</span> <span class="nav-text">四、性能分析里最容易走偏的地方</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E5%9F%BA%E5%87%86%E6%B5%8B%E8%AF%95%E5%88%B0%E5%BA%95%E5%9C%A8%E8%A7%A3%E5%86%B3%E4%BB%80%E4%B9%88%E9%97%AE%E9%A2%98"><span class="nav-number">5.</span> <span class="nav-text">五、基准测试到底在解决什么问题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E4%B8%BA%E4%BB%80%E4%B9%88-benchmark-%E9%87%8C%E4%B8%8D%E8%83%BD%E8%BE%B9%E6%B5%8B%E8%BE%B9%E9%80%A0%E5%9C%BA%E6%99%AF"><span class="nav-number">6.</span> <span class="nav-text">六、为什么 benchmark 里不能边测边造场景</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E5%85%88%E8%A1%A5%E4%B8%80%E7%BB%84%E6%9B%B4%E5%83%8F%E6%A0%B7%E7%9A%84%E5%9F%BA%E5%87%86%E6%B5%8B%E8%AF%95"><span class="nav-number">7.</span> <span class="nav-text">七、先补一组更像样的基准测试</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81b-ReportAllocs-%E4%B8%BA%E4%BB%80%E4%B9%88%E9%87%8D%E8%A6%81"><span class="nav-number">8.</span> <span class="nav-text">八、b.ReportAllocs() 为什么重要</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81pprof-%E5%88%B0%E5%BA%95%E5%9C%A8%E8%A7%A3%E5%86%B3%E4%BB%80%E4%B9%88%E9%97%AE%E9%A2%98"><span class="nav-number">9.</span> <span class="nav-text">九、pprof 到底在解决什么问题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E7%AC%AC%E4%B8%80%E6%AC%A1%E8%BF%9B-pprof%EF%BC%8C%E5%85%88%E7%9C%8B%E4%BB%80%E4%B9%88"><span class="nav-number">10.</span> <span class="nav-text">十、第一次进 pprof，先看什么</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81top-%E5%92%8C-list-%E5%88%86%E5%88%AB%E5%9C%A8%E7%9C%8B%E4%BB%80%E4%B9%88"><span class="nav-number">11.</span> <span class="nav-text">十一、top 和 list 分别在看什么</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E8%BF%99%E4%B8%AA%E5%9C%BA%E6%99%AF%E9%87%8C%E6%9C%80%E5%8F%AF%E8%83%BD%E5%85%88%E7%9C%8B%E5%88%B0%E4%BB%80%E4%B9%88%E7%83%AD%E7%82%B9"><span class="nav-number">12.</span> <span class="nav-text">十二、这个场景里最可能先看到什么热点</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81%E5%85%88%E5%81%9A%E4%B8%80%E4%B8%AA%E5%B0%8F%E4%BC%98%E5%8C%96%EF%BC%8C%E5%86%8D%E6%AF%94%E8%BE%83%E5%89%8D%E5%90%8E"><span class="nav-number">13.</span> <span class="nav-text">十三、先做一个小优化，再比较前后</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81%E4%B8%BA%E4%BB%80%E4%B9%88%E4%B8%8D%E8%83%BD%E5%8F%AA%E7%9C%8B%E4%B8%80%E6%AC%A1-benchmark-%E6%95%B0%E5%AD%97"><span class="nav-number">14.</span> <span class="nav-text">十四、为什么不能只看一次 benchmark 数字</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%94%E3%80%81benchstat-%E5%88%B0%E5%BA%95%E5%9C%A8%E8%A7%A3%E5%86%B3%E4%BB%80%E4%B9%88%E9%97%AE%E9%A2%98"><span class="nav-number">15.</span> <span class="nav-text">十五、benchstat 到底在解决什么问题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AD%E3%80%81%E4%B8%80%E4%B8%AA%E6%9B%B4%E5%AE%8C%E6%95%B4%E7%9A%84%E5%B0%8F%E9%A1%B9%E7%9B%AE%E7%89%88%E6%9C%AC"><span class="nav-number">16.</span> <span class="nav-text">十六、一个更完整的小项目版本</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%83%E3%80%81%E6%80%8E%E4%B9%88%E6%8A%8A-pprof-%E5%92%8C-benchmark-%E4%B8%B2%E6%88%90%E4%B8%80%E6%9D%A1%E5%88%86%E6%9E%90%E9%93%BE"><span class="nav-number">17.</span> <span class="nav-text">十七、怎么把 pprof 和 benchmark 串成一条分析链</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AB%E3%80%81%E4%B8%80%E4%B8%AA%E9%AB%98%E9%A2%91%E8%AF%AF%E5%8C%BA%EF%BC%9A%E5%8F%AA%E7%9C%8B-CPU%EF%BC%8C%E4%B8%8D%E7%9C%8B%E5%88%86%E9%85%8D"><span class="nav-number">18.</span> <span class="nav-text">十八、一个高频误区：只看 CPU，不看分配</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B9%9D%E3%80%81%E4%B8%80%E4%B8%AA%E9%AB%98%E9%A2%91%E8%AF%AF%E5%8C%BA%EF%BC%9A%E5%8F%AA%E7%9C%8B-benchmark%EF%BC%8C%E4%B8%8D%E7%9C%8B%E7%9C%9F%E5%AE%9E%E7%83%AD%E7%82%B9"><span class="nav-number">19.</span> <span class="nav-text">十九、一个高频误区：只看 benchmark，不看真实热点</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E3%80%81%E4%B8%80%E4%B8%AA%E6%9B%B4%E6%8E%A5%E8%BF%91%E9%A1%B9%E7%9B%AE%E7%8E%B0%E5%9C%BA%E7%9A%84%E5%AE%8C%E6%95%B4%E6%A1%88%E4%BE%8B"><span class="nav-number">20.</span> <span class="nav-text">二十、一个更接近项目现场的完整案例</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%80%E3%80%81%E6%80%8E%E4%B9%88%E7%BB%99%E6%80%A7%E8%83%BD%E5%88%86%E6%9E%90%E6%B5%81%E7%A8%8B%E8%A1%A5%E6%9C%80%E5%B0%8F%E9%AA%8C%E8%AF%81"><span class="nav-number">21.</span> <span class="nav-text">二十一、怎么给性能分析流程补最小验证</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%8C%E3%80%81%E4%B8%80%E4%B8%AA%E9%AB%98%E9%A2%91%E6%8E%92%E9%94%99%E5%9C%BA%E6%99%AF%EF%BC%9A%E4%B8%BA%E4%BB%80%E4%B9%88-benchmark-%E4%BC%98%E5%8C%96%E4%BA%86%EF%BC%8C%E7%BA%BF%E4%B8%8A%E8%BF%98%E6%98%AF%E6%B2%A1%E5%8F%98"><span class="nav-number">22.</span> <span class="nav-text">二十二、一个高频排错场景：为什么 benchmark 优化了，线上还是没变</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%89%E3%80%81%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E4%B8%8D%E8%AF%A5%E7%BB%A7%E7%BB%AD%E4%BC%98%E5%8C%96"><span class="nav-number">23.</span> <span class="nav-text">二十三、什么时候不该继续优化</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%9B%9B%E3%80%81%E4%B8%80%E4%B8%AA%E5%AE%9E%E9%99%85%E7%BB%83%E4%B9%A0"><span class="nav-number">24.</span> <span class="nav-text">二十四、一个实际练习</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%94%E3%80%81%E8%BF%99%E7%AF%87%E6%96%87%E7%AB%A0%E7%9A%84%E8%BE%B9%E7%95%8C%E5%9C%A8%E5%93%AA%E9%87%8C"><span class="nav-number">25.</span> <span class="nav-text">二十五、这篇文章的边界在哪里</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%85%AD%E3%80%81%E8%BF%99%E7%AF%87%E6%96%87%E7%AB%A0%E5%AD%A6%E5%AE%8C%E4%BB%A5%E5%90%8E%EF%BC%8C%E4%B8%8B%E4%B8%80%E6%AD%A5%E5%BA%94%E8%AF%A5%E8%A1%A5%E4%BB%80%E4%B9%88"><span class="nav-number">26.</span> <span class="nav-text">二十六、这篇文章学完以后，下一步应该补什么</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%83%E3%80%81%E7%BB%93%E8%AF%AD"><span class="nav-number">27.</span> <span class="nav-text">二十七、结语</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2018/08/08/Go-17-Go%E6%80%A7%E8%83%BD%E5%88%86%E6%9E%90%E5%85%A5%E9%97%A8pprofbenchstat%E5%9F%BA%E5%87%86%E6%B5%8B%E8%AF%95%E5%88%B0%E5%BA%95%E6%80%8E%E4%B9%88%E7%94%A8/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="Go：性能分析入门，pprof、benchstat、基准测试到底怎么用 | 大道至简">
+      <meta itemprop="description" content="Go 性能优化不能只靠猜。更稳的路径是先用基准测试复现，再用 pprof 找热点，再用 benchstat 比较改动前后差异。这篇文章围绕一个日志聚合器，讲清三者怎么串成一条完整分析链。">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Go：性能分析入门，pprof、benchstat、基准测试到底怎么用
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2018-08-08 20:30:00" itemprop="dateCreated datePublished" datetime="2018-08-08T20:30:00+08:00">2018-08-08</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>3.6k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>13 分钟</span>
+    </span>
+</div>
+
+            <div class="post-description">Go 性能优化不能只靠猜。更稳的路径是先用基准测试复现，再用 pprof 找热点，再用 benchstat 比较改动前后差异。这篇文章围绕一个日志聚合器，讲清三者怎么串成一条完整分析链。</div>
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>Go 写到一定阶段后，最容易出现一种很熟悉的场景：</p>
+<ul>
+<li>功能是对的</li>
+<li>测试也过了</li>
+<li>线上吞吐却上不去</li>
+<li>CPU 飙高，延迟抖动</li>
+<li>一改代码又说不清到底变快了还是变慢了</li>
+</ul>
+<p>如果这时直接开始“凭感觉优化”，代码通常会很快走向另一种混乱：</p>
+<ul>
+<li>先改一批循环</li>
+<li>再改一批对象创建</li>
+<li>顺手把接口和结构也一起动了</li>
+<li>最后提交里看起来做了很多事</li>
+<li>但没人能证明到底哪一步真的带来了收益</li>
+</ul>
+<p>Go 的性能分析更适合走一条明确链路：</p>
+<ol>
+<li>先用基准测试稳定复现</li>
+<li>再用 <code>pprof</code> 找热点</li>
+<li>再用 <code>benchstat</code> 比较前后差异</li>
+</ol>
+<p>这一篇就围绕一个实际小场景来讲：<strong>做一个日志聚合器的性能分析和优化闭环</strong>。</p>
+<p>这个聚合器要做几件事：</p>
+<ol>
+<li>读取一批日志行</li>
+<li>提取服务名和状态码</li>
+<li>按服务聚合计数</li>
+<li>输出慢请求和错误统计</li>
+</ol>
+<p>这个场景不大，但足够把基准测试、CPU 分析、内存分配和结果对比串成一条完整链。</p>
+<h2 id="一、这篇文章要解决什么问题"><a href="#一、这篇文章要解决什么问题" class="headerlink" title="一、这篇文章要解决什么问题"></a>一、这篇文章要解决什么问题</h2><p>读完这一篇，应该能独立回答这些问题：</p>
+<ol>
+<li>Go 里的基准测试和普通单元测试有什么区别</li>
+<li><code>pprof</code> 到底在看什么，最先该看哪几张图</li>
+<li><code>benchstat</code> 解决的是什么问题</li>
+<li>什么情况下性能优化是有效的，什么情况下只是“看起来像优化”</li>
+<li>怎么把性能分析做成一条可重复的工程链路</li>
+<li>什么时候不该过早优化</li>
+</ol>
+<p>如果这些问题能答清，后面再做服务端热点分析、接口性能排查和压测后优化，路径会稳很多。</p>
+<h2 id="二、先看这篇文章里的实际场景"><a href="#二、先看这篇文章里的实际场景" class="headerlink" title="二、先看这篇文章里的实际场景"></a>二、先看这篇文章里的实际场景</h2><p>假设现在有一个最小日志聚合器，输入类似下面这样的日志：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">order-api,200,18</span><br><span class="line">order-api,500,24</span><br><span class="line">user-api,200,9</span><br><span class="line">billing-api,503,61</span><br></pre></td></tr></table></figure>
+
+<p>要输出这些结果：</p>
+<ul>
+<li>每个服务总请求数</li>
+<li>每个服务错误数</li>
+<li>超过阈值的慢请求数</li>
+</ul>
+<p>第一版实现很直接：</p>
+<ul>
+<li><code>strings.Split</code></li>
+<li><code>strconv.Atoi</code></li>
+<li><code>map[string]Stat</code></li>
+<li>一行一行处理</li>
+</ul>
+<p>功能没问题，但数据量一大就出现两个现象：</p>
+<ol>
+<li>CPU 时间明显上升</li>
+<li>分配次数偏多，GC 压力也上来了</li>
+</ol>
+<p>这个时候最容易犯的错不是“不会优化”，而是还没定位就开始乱改。</p>
+<h2 id="三、先给一个最小可运行版本"><a href="#三、先给一个最小可运行版本" class="headerlink" title="三、先给一个最小可运行版本"></a>三、先给一个最小可运行版本</h2><p><code>aggregator.go</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> aggregator</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">	<span class="string">&quot;strconv&quot;</span></span><br><span class="line">	<span class="string">&quot;strings&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Stat <span class="keyword">struct</span> &#123;</span><br><span class="line">	Total    <span class="type">int</span></span><br><span class="line">	Error    <span class="type">int</span></span><br><span class="line">	Slow     <span class="type">int</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Aggregate</span><span class="params">(lines []<span class="type">string</span>, slowThreshold <span class="type">int</span>)</span></span> <span class="keyword">map</span>[<span class="type">string</span>]Stat &#123;</span><br><span class="line">	result := <span class="built_in">make</span>(<span class="keyword">map</span>[<span class="type">string</span>]Stat)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> _, line := <span class="keyword">range</span> lines &#123;</span><br><span class="line">		parts := strings.Split(line, <span class="string">&quot;,&quot;</span>)</span><br><span class="line">		<span class="keyword">if</span> <span class="built_in">len</span>(parts) != <span class="number">3</span> &#123;</span><br><span class="line">			<span class="keyword">continue</span></span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		service := parts[<span class="number">0</span>]</span><br><span class="line">		code, err := strconv.Atoi(parts[<span class="number">1</span>])</span><br><span class="line">		<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">			<span class="keyword">continue</span></span><br><span class="line">		&#125;</span><br><span class="line">		cost, err := strconv.Atoi(parts[<span class="number">2</span>])</span><br><span class="line">		<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">			<span class="keyword">continue</span></span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		stat := result[service]</span><br><span class="line">		stat.Total++</span><br><span class="line">		<span class="keyword">if</span> code &gt;= <span class="number">500</span> &#123;</span><br><span class="line">			stat.Error++</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">if</span> cost &gt;= slowThreshold &#123;</span><br><span class="line">			stat.Slow++</span><br><span class="line">		&#125;</span><br><span class="line">		result[service] = stat</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> result</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这段代码先别急着优化。<br>当前更重要的是：先把它变成一个可测、可 benchmark、可 profile 的对象。</p>
+<h2 id="四、性能分析里最容易走偏的地方"><a href="#四、性能分析里最容易走偏的地方" class="headerlink" title="四、性能分析里最容易走偏的地方"></a>四、性能分析里最容易走偏的地方</h2><p>性能问题最常见的几种坏开局是：</p>
+<ol>
+<li>先改代码，再想怎么证明收益</li>
+<li>线上慢一次，就开始凭经验大改</li>
+<li>看一眼 CPU 高，就默认是算法问题</li>
+<li>跑一次 benchmark，就把偶然结果当结论</li>
+</ol>
+<p>更稳的顺序通常是：</p>
+<ol>
+<li>先固定输入</li>
+<li>先写 benchmark</li>
+<li>先拿到基线数据</li>
+<li>再用 <code>pprof</code> 看热点</li>
+<li>改完以后再用 <code>benchstat</code> 对比</li>
+</ol>
+<h2 id="五、基准测试到底在解决什么问题"><a href="#五、基准测试到底在解决什么问题" class="headerlink" title="五、基准测试到底在解决什么问题"></a>五、基准测试到底在解决什么问题</h2><p>基准测试解决的是：<strong>把某段逻辑的性能表现稳定地量出来。</strong></p>
+<p>和普通测试不同，基准测试不是回答“对不对”，而是回答：</p>
+<ul>
+<li>慢在哪</li>
+<li>分配多不多</li>
+<li>改完后是否真的更好</li>
+</ul>
+<p>最小 benchmark 写法：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">BenchmarkAggregate</span><span class="params">(b *testing.B)</span></span> &#123;</span><br><span class="line">	lines := []<span class="type">string</span>&#123;</span><br><span class="line">		<span class="string">&quot;order-api,200,18&quot;</span>,</span><br><span class="line">		<span class="string">&quot;order-api,500,24&quot;</span>,</span><br><span class="line">		<span class="string">&quot;user-api,200,9&quot;</span>,</span><br><span class="line">		<span class="string">&quot;billing-api,503,61&quot;</span>,</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> i := <span class="number">0</span>; i &lt; b.N; i++ &#123;</span><br><span class="line">		_ = Aggregate(lines, <span class="number">20</span>)</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>执行：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">go <span class="built_in">test</span> -bench=.</span><br></pre></td></tr></table></figure>
+
+<h2 id="六、为什么-benchmark-里不能边测边造场景"><a href="#六、为什么-benchmark-里不能边测边造场景" class="headerlink" title="六、为什么 benchmark 里不能边测边造场景"></a>六、为什么 benchmark 里不能边测边造场景</h2><p>如果在 benchmark 循环体里一边测一边准备数据，例如：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">for</span> i := <span class="number">0</span>; i &lt; b.N; i++ &#123;</span><br><span class="line">	lines := buildLargeInput()</span><br><span class="line">	_ = Aggregate(lines, <span class="number">20</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>那最后测到的就不只是聚合逻辑，而是：</p>
+<ul>
+<li>输入构造</li>
+<li>聚合逻辑</li>
+<li>临时分配</li>
+</ul>
+<p>这会把信号搅浑。</p>
+<p>更稳的方式通常是：</p>
+<ul>
+<li>循环外准备输入</li>
+<li>循环内只跑目标逻辑</li>
+</ul>
+<h2 id="七、先补一组更像样的基准测试"><a href="#七、先补一组更像样的基准测试" class="headerlink" title="七、先补一组更像样的基准测试"></a>七、先补一组更像样的基准测试</h2><p><code>aggregator_test.go</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> aggregator</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">	<span class="string">&quot;fmt&quot;</span></span><br><span class="line">	<span class="string">&quot;testing&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">buildInput</span><span class="params">(size <span class="type">int</span>)</span></span> []<span class="type">string</span> &#123;</span><br><span class="line">	lines := <span class="built_in">make</span>([]<span class="type">string</span>, <span class="number">0</span>, size)</span><br><span class="line">	<span class="keyword">for</span> i := <span class="number">0</span>; i &lt; size; i++ &#123;</span><br><span class="line">		service := <span class="string">&quot;order-api&quot;</span></span><br><span class="line">		<span class="keyword">if</span> i%<span class="number">3</span> == <span class="number">1</span> &#123;</span><br><span class="line">			service = <span class="string">&quot;user-api&quot;</span></span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">if</span> i%<span class="number">3</span> == <span class="number">2</span> &#123;</span><br><span class="line">			service = <span class="string">&quot;billing-api&quot;</span></span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		code := <span class="number">200</span></span><br><span class="line">		<span class="keyword">if</span> i%<span class="number">10</span> == <span class="number">0</span> &#123;</span><br><span class="line">			code = <span class="number">500</span></span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		cost := <span class="number">12</span> + i%<span class="number">80</span></span><br><span class="line">		lines = <span class="built_in">append</span>(lines, fmt.Sprintf(<span class="string">&quot;%s,%d,%d&quot;</span>, service, code, cost))</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> lines</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">BenchmarkAggregate</span><span class="params">(b *testing.B)</span></span> &#123;</span><br><span class="line">	lines := buildInput(<span class="number">10000</span>)</span><br><span class="line">	b.ReportAllocs()</span><br><span class="line">	b.ResetTimer()</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> i := <span class="number">0</span>; i &lt; b.N; i++ &#123;</span><br><span class="line">		_ = Aggregate(lines, <span class="number">40</span>)</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这里先建立了三件事：</p>
+<ol>
+<li>输入规模固定</li>
+<li>循环内只跑目标逻辑</li>
+<li>把分配信息也打出来</li>
+</ol>
+<h2 id="八、b-ReportAllocs-为什么重要"><a href="#八、b-ReportAllocs-为什么重要" class="headerlink" title="八、b.ReportAllocs() 为什么重要"></a>八、<code>b.ReportAllocs()</code> 为什么重要</h2><p>只看耗时很容易漏掉另一个关键问题：分配。</p>
+<p>例如同样是 1ms：</p>
+<ul>
+<li>一个版本 alloc 很少</li>
+<li>另一个版本 alloc 很多</li>
+</ul>
+<p>在长时间运行的服务里，后者往往会带来：</p>
+<ul>
+<li>更多 GC 压力</li>
+<li>更明显的尾延迟抖动</li>
+</ul>
+<p>所以 Go 性能分析里，至少先同时看：</p>
+<ul>
+<li><code>ns/op</code></li>
+<li><code>B/op</code></li>
+<li><code>allocs/op</code></li>
+</ul>
+<h2 id="九、pprof-到底在解决什么问题"><a href="#九、pprof-到底在解决什么问题" class="headerlink" title="九、pprof 到底在解决什么问题"></a>九、<code>pprof</code> 到底在解决什么问题</h2><p>如果基准测试解决的是“量出来”，那 <code>pprof</code> 解决的是：</p>
+<p><strong>到底哪一段代码在吃时间或吃内存。</strong></p>
+<p>对这篇文章的场景，最先常用的是：</p>
+<ul>
+<li>CPU profile</li>
+<li>memory &#x2F; alloc profile</li>
+</ul>
+<p>执行方式通常是：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">go <span class="built_in">test</span> -bench=BenchmarkAggregate -cpuprofile cpu.out -memprofile mem.out</span><br></pre></td></tr></table></figure>
+
+<p>然后再看：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">go tool pprof cpu.out</span><br><span class="line">go tool pprof mem.out</span><br></pre></td></tr></table></figure>
+
+<h2 id="十、第一次进-pprof，先看什么"><a href="#十、第一次进-pprof，先看什么" class="headerlink" title="十、第一次进 pprof，先看什么"></a>十、第一次进 <code>pprof</code>，先看什么</h2><p>很多性能分析第一次卡住，不是因为工具难，而是因为入口太多。</p>
+<p>更稳的顺序通常是：</p>
+<ol>
+<li>先看 <code>top</code></li>
+<li>再看 <code>list 函数名</code></li>
+<li>最后再决定要不要看 <code>web</code></li>
+</ol>
+<p>例如：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(pprof) top</span><br></pre></td></tr></table></figure>
+
+<p>这个命令先回答：</p>
+<ul>
+<li>哪些函数最耗 CPU</li>
+<li>哪些函数分配最多</li>
+</ul>
+<p>如果 <code>Aggregate</code> 本身不在前排，说明热点可能在它调用的更底层函数里。</p>
+<h2 id="十一、top-和-list-分别在看什么"><a href="#十一、top-和-list-分别在看什么" class="headerlink" title="十一、top 和 list 分别在看什么"></a>十一、<code>top</code> 和 <code>list</code> 分别在看什么</h2><p><code>top</code> 看的是函数级热点。<br>例如：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">Showing nodes accounting for 1.80s, 90% of 2.00s total</span><br><span class="line">      flat  flat%   sum%        cum   cum%</span><br><span class="line">     0.70s 35.0% 35.0%      0.90s 45.0%  strings.Split</span><br><span class="line">     0.50s 25.0% 60.0%      0.55s 27.5%  strconv.Atoi</span><br><span class="line">     0.30s 15.0% 75.0%      1.90s 95.0%  aggregator.Aggregate</span><br></pre></td></tr></table></figure>
+
+<p><code>list Aggregate</code> 看的是源码级热点：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(pprof) list Aggregate</span><br></pre></td></tr></table></figure>
+
+<p>它更适合回答：</p>
+<ul>
+<li>是哪一行在烧时间</li>
+<li>哪一行分配最多</li>
+</ul>
+<h2 id="十二、这个场景里最可能先看到什么热点"><a href="#十二、这个场景里最可能先看到什么热点" class="headerlink" title="十二、这个场景里最可能先看到什么热点"></a>十二、这个场景里最可能先看到什么热点</h2><p>对当前这个日志聚合器，第一次常见热点往往是：</p>
+<ol>
+<li><code>strings.Split</code></li>
+<li><code>strconv.Atoi</code></li>
+<li><code>fmt.Sprintf</code> 如果 benchmark 输入构造也进了测量</li>
+</ol>
+<p>如果 CPU top 里 <code>strings.Split</code> 很高，通常说明：</p>
+<ul>
+<li>当前字符串切分的分配成本偏重</li>
+</ul>
+<p>如果 alloc top 里也有它，就更值得先看这里。</p>
+<h2 id="十三、先做一个小优化，再比较前后"><a href="#十三、先做一个小优化，再比较前后" class="headerlink" title="十三、先做一个小优化，再比较前后"></a>十三、先做一个小优化，再比较前后</h2><p>例如把：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">parts := strings.Split(line, <span class="string">&quot;,&quot;</span>)</span><br></pre></td></tr></table></figure>
+
+<p>改成：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">parts := strings.SplitN(line, <span class="string">&quot;,&quot;</span>, <span class="number">3</span>)</span><br></pre></td></tr></table></figure>
+
+<p>或者进一步改成基于索引的手写解析。</p>
+<p>这里先不要纠结哪种一定更快。<br>更关键的是：改完以后要证明。</p>
+<h2 id="十四、为什么不能只看一次-benchmark-数字"><a href="#十四、为什么不能只看一次-benchmark-数字" class="headerlink" title="十四、为什么不能只看一次 benchmark 数字"></a>十四、为什么不能只看一次 benchmark 数字</h2><p>如果只跑一次：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">go <span class="built_in">test</span> -bench=BenchmarkAggregate</span><br></pre></td></tr></table></figure>
+
+<p>你拿到的只是一次样本。<br>这时最容易出现两种误判：</p>
+<ol>
+<li>抖动被当成优化收益</li>
+<li>偶然变慢被误判成回归</li>
+</ol>
+<p>更稳的方式通常是重复采样。</p>
+<p>例如：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">go <span class="built_in">test</span> -bench=BenchmarkAggregate -count=10 &gt; old.txt</span><br></pre></td></tr></table></figure>
+
+<p>改完以后：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">go <span class="built_in">test</span> -bench=BenchmarkAggregate -count=10 &gt; new.txt</span><br></pre></td></tr></table></figure>
+
+<h2 id="十五、benchstat-到底在解决什么问题"><a href="#十五、benchstat-到底在解决什么问题" class="headerlink" title="十五、benchstat 到底在解决什么问题"></a>十五、<code>benchstat</code> 到底在解决什么问题</h2><p><code>benchstat</code> 解决的是：<strong>把多轮 benchmark 结果做统计对比。</strong></p>
+<p>也就是说，它不是替代 benchmark，而是替代“肉眼比数字”。</p>
+<p>例如：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">benchstat old.txt new.txt</span><br></pre></td></tr></table></figure>
+
+<p>输出可能像这样：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">name              old time/op    new time/op    delta</span><br><span class="line">Aggregate-8         1.20ms ± 3%    0.95ms ± 2%  -20.8%</span><br><span class="line"></span><br><span class="line">name              old alloc/op   new alloc/op   delta</span><br><span class="line">Aggregate-8          320kB ± 0%     240kB ± 0%  -25.0%</span><br><span class="line"></span><br><span class="line">name              old allocs/op  new allocs/op  delta</span><br><span class="line">Aggregate-8          10000 ± 0%      7000 ± 0%  -30.0%</span><br></pre></td></tr></table></figure>
+
+<p>这时你才能比较有底气地说：</p>
+<ul>
+<li>优化是真的</li>
+<li>不是偶然抖动</li>
+</ul>
+<h2 id="十六、一个更完整的小项目版本"><a href="#十六、一个更完整的小项目版本" class="headerlink" title="十六、一个更完整的小项目版本"></a>十六、一个更完整的小项目版本</h2><p>现在把日志聚合器改成更像工程代码的结构。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> aggregator</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">	<span class="string">&quot;strconv&quot;</span></span><br><span class="line">	<span class="string">&quot;strings&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Stat <span class="keyword">struct</span> &#123;</span><br><span class="line">	Total <span class="type">int</span></span><br><span class="line">	Error <span class="type">int</span></span><br><span class="line">	Slow  <span class="type">int</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Aggregate</span><span class="params">(lines []<span class="type">string</span>, slowThreshold <span class="type">int</span>)</span></span> <span class="keyword">map</span>[<span class="type">string</span>]Stat &#123;</span><br><span class="line">	result := <span class="built_in">make</span>(<span class="keyword">map</span>[<span class="type">string</span>]Stat, <span class="number">8</span>)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> _, line := <span class="keyword">range</span> lines &#123;</span><br><span class="line">		service, code, cost, ok := parseLine(line)</span><br><span class="line">		<span class="keyword">if</span> !ok &#123;</span><br><span class="line">			<span class="keyword">continue</span></span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		stat := result[service]</span><br><span class="line">		stat.Total++</span><br><span class="line">		<span class="keyword">if</span> code &gt;= <span class="number">500</span> &#123;</span><br><span class="line">			stat.Error++</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">if</span> cost &gt;= slowThreshold &#123;</span><br><span class="line">			stat.Slow++</span><br><span class="line">		&#125;</span><br><span class="line">		result[service] = stat</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> result</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">parseLine</span><span class="params">(line <span class="type">string</span>)</span></span> (<span class="type">string</span>, <span class="type">int</span>, <span class="type">int</span>, <span class="type">bool</span>) &#123;</span><br><span class="line">	first := strings.IndexByte(line, <span class="string">&#x27;,&#x27;</span>)</span><br><span class="line">	<span class="keyword">if</span> first == <span class="number">-1</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> <span class="string">&quot;&quot;</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="literal">false</span></span><br><span class="line">	&#125;</span><br><span class="line">	second := strings.IndexByte(line[first+<span class="number">1</span>:], <span class="string">&#x27;,&#x27;</span>)</span><br><span class="line">	<span class="keyword">if</span> second == <span class="number">-1</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> <span class="string">&quot;&quot;</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="literal">false</span></span><br><span class="line">	&#125;</span><br><span class="line">	second += first + <span class="number">1</span></span><br><span class="line"></span><br><span class="line">	service := line[:first]</span><br><span class="line">	code, err := strconv.Atoi(line[first+<span class="number">1</span> : second])</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> <span class="string">&quot;&quot;</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="literal">false</span></span><br><span class="line">	&#125;</span><br><span class="line">	cost, err := strconv.Atoi(line[second+<span class="number">1</span>:])</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> <span class="string">&quot;&quot;</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="literal">false</span></span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> service, code, cost, <span class="literal">true</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这个版本的目标不是“写得更炫”，而是：</p>
+<ul>
+<li>先让热点明确</li>
+<li>再看分配是否下降</li>
+</ul>
+<h2 id="十七、怎么把-pprof-和-benchmark-串成一条分析链"><a href="#十七、怎么把-pprof-和-benchmark-串成一条分析链" class="headerlink" title="十七、怎么把 pprof 和 benchmark 串成一条分析链"></a>十七、怎么把 <code>pprof</code> 和 benchmark 串成一条分析链</h2><p>更完整的一轮动作通常是：</p>
+<ol>
+<li>先写 benchmark</li>
+<li><code>go test -bench ... -count=10 &gt; old.txt</code></li>
+<li><code>go test -bench ... -cpuprofile cpu.out -memprofile mem.out</code></li>
+<li><code>go tool pprof cpu.out</code></li>
+<li>改代码</li>
+<li>再跑 <code>-count=10 &gt; new.txt</code></li>
+<li><code>benchstat old.txt new.txt</code></li>
+</ol>
+<p>这样做的好处是：</p>
+<ul>
+<li>benchmark 证明有没有变化</li>
+<li><code>pprof</code> 解释变化来自哪里</li>
+<li><code>benchstat</code> 证明变化是不是稳定</li>
+</ul>
+<h2 id="十八、一个高频误区：只看-CPU，不看分配"><a href="#十八、一个高频误区：只看-CPU，不看分配" class="headerlink" title="十八、一个高频误区：只看 CPU，不看分配"></a>十八、一个高频误区：只看 CPU，不看分配</h2><p>例如某次优化后：</p>
+<ul>
+<li><code>ns/op</code> 下降不明显</li>
+<li><code>allocs/op</code> 大幅下降</li>
+</ul>
+<p>这不一定代表优化没价值。<br>在长时间运行的服务里，分配下降带来的收益可能体现在：</p>
+<ul>
+<li>GC 次数下降</li>
+<li>尾延迟更稳</li>
+<li>高并发时抖动更小</li>
+</ul>
+<p>所以不要把“性能”窄化成只看 CPU 时间。</p>
+<h2 id="十九、一个高频误区：只看-benchmark，不看真实热点"><a href="#十九、一个高频误区：只看-benchmark，不看真实热点" class="headerlink" title="十九、一个高频误区：只看 benchmark，不看真实热点"></a>十九、一个高频误区：只看 benchmark，不看真实热点</h2><p>另一种常见偏差是：</p>
+<ul>
+<li>benchmark 改了很多</li>
+<li>真实服务热点根本不在这里</li>
+</ul>
+<p>这说明当前优化对象选错了。<br>所以更稳的路径不是“只做 benchmark”，而是：</p>
+<ul>
+<li>benchmark 用来复现和量化</li>
+<li><code>pprof</code> 用来确认热点是否真在这里</li>
+</ul>
+<h2 id="二十、一个更接近项目现场的完整案例"><a href="#二十、一个更接近项目现场的完整案例" class="headerlink" title="二十、一个更接近项目现场的完整案例"></a>二十、一个更接近项目现场的完整案例</h2><p>假设现在有一个巡检平台，每分钟汇总一次接口日志：</p>
+<ul>
+<li>读取 5 万行日志</li>
+<li>聚合每个服务的错误和慢请求</li>
+<li>生成一份摘要</li>
+</ul>
+<p>现象是：</p>
+<ul>
+<li>平台 CPU 周期性抬高</li>
+<li>汇总任务偶发超过调度窗口</li>
+</ul>
+<p>第一轮 benchmark 显示：</p>
+<ul>
+<li><code>Aggregate</code> 大约 4ms</li>
+<li>allocs 偏多</li>
+</ul>
+<p>CPU profile 里最显眼的是：</p>
+<ul>
+<li><code>strings.Split</code></li>
+<li><code>strconv.Atoi</code></li>
+</ul>
+<p>于是先做两步小改动：</p>
+<ol>
+<li>把整行 <code>Split</code> 改成基于分隔符索引的解析</li>
+<li>给 result map 预估容量</li>
+</ol>
+<p>改完以后：</p>
+<ul>
+<li><code>benchstat</code> 显示 time&#x2F;op 下降</li>
+<li>alloc&#x2F;op 和 allocs&#x2F;op 也一起下降</li>
+</ul>
+<p>这时才值得继续往下做更深的优化。<br>如果 <code>benchstat</code> 没有稳定收益，就不该继续往这条路上堆复杂度。</p>
+<h2 id="二十一、怎么给性能分析流程补最小验证"><a href="#二十一、怎么给性能分析流程补最小验证" class="headerlink" title="二十一、怎么给性能分析流程补最小验证"></a>二十一、怎么给性能分析流程补最小验证</h2><p>性能分析不是只有 benchmark。<br>至少还可以补两类验证：</p>
+<ol>
+<li><p>正确性测试<br>避免为了性能把逻辑改坏。</p>
+</li>
+<li><p>小规模基线比较<br>避免“优化”只是偶然波动。</p>
+</li>
+</ol>
+<p>例如普通测试：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestAggregate</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">	lines := []<span class="type">string</span>&#123;</span><br><span class="line">		<span class="string">&quot;order-api,200,18&quot;</span>,</span><br><span class="line">		<span class="string">&quot;order-api,500,24&quot;</span>,</span><br><span class="line">		<span class="string">&quot;order-api,503,66&quot;</span>,</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	got := Aggregate(lines, <span class="number">20</span>)</span><br><span class="line">	stat := got[<span class="string">&quot;order-api&quot;</span>]</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> stat.Total != <span class="number">3</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;want total=3, got %d&quot;</span>, stat.Total)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> stat.Error != <span class="number">2</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;want error=2, got %d&quot;</span>, stat.Error)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> stat.Slow != <span class="number">2</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;want slow=2, got %d&quot;</span>, stat.Slow)</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="二十二、一个高频排错场景：为什么-benchmark-优化了，线上还是没变"><a href="#二十二、一个高频排错场景：为什么-benchmark-优化了，线上还是没变" class="headerlink" title="二十二、一个高频排错场景：为什么 benchmark 优化了，线上还是没变"></a>二十二、一个高频排错场景：为什么 benchmark 优化了，线上还是没变</h2><p>这种情况通常先查三件事：</p>
+<ol>
+<li>benchmark 是否覆盖了真实热点</li>
+<li>线上热点是否其实在 I&#x2F;O、锁等待或网络</li>
+<li>当前优化收益是否被更大的瓶颈吃掉了</li>
+</ol>
+<p>例如：</p>
+<ul>
+<li>benchmark 只测了字符串聚合</li>
+<li>线上真正最慢的是磁盘读取或远程存储</li>
+</ul>
+<p>那当前优化当然不会明显改善端到端耗时。</p>
+<h2 id="二十三、什么时候不该继续优化"><a href="#二十三、什么时候不该继续优化" class="headerlink" title="二十三、什么时候不该继续优化"></a>二十三、什么时候不该继续优化</h2><p>这也是性能分析里很重要的边界。</p>
+<p>如果当前情况是：</p>
+<ul>
+<li>benchmark 收益很小</li>
+<li><code>pprof</code> 热点不明显</li>
+<li>代码复杂度会显著上升</li>
+<li>当前瓶颈不在 CPU 和 alloc</li>
+</ul>
+<p>那更合适的做法通常是停下来，先转去看：</p>
+<ul>
+<li>I&#x2F;O</li>
+<li>网络</li>
+<li>调度窗口</li>
+<li>缓存策略</li>
+</ul>
+<p>性能优化不是默认要一直做下去，而是要看当前收益值不值得。</p>
+<h2 id="二十四、一个实际练习"><a href="#二十四、一个实际练习" class="headerlink" title="二十四、一个实际练习"></a>二十四、一个实际练习</h2><p>可以直接把这一篇改成一个完整练习。</p>
+<p>练习目标：做一个最小日志聚合器性能分析闭环。</p>
+<p>要求：</p>
+<ol>
+<li>先写一个能通过正确性测试的版本</li>
+<li>补一个 <code>BenchmarkAggregate</code></li>
+<li>用 <code>b.ReportAllocs()</code> 观察分配</li>
+<li>生成 <code>cpu.out</code> 和 <code>mem.out</code></li>
+<li>做一次小优化</li>
+<li>用 <code>benchstat</code> 比较优化前后结果</li>
+</ol>
+<p>如果这个练习能独立做完，说明性能分析已经不只是“会跑工具”，而是开始具备闭环意识了。</p>
+<h2 id="二十五、这篇文章的边界在哪里"><a href="#二十五、这篇文章的边界在哪里" class="headerlink" title="二十五、这篇文章的边界在哪里"></a>二十五、这篇文章的边界在哪里</h2><p>这一篇重点讲的是最小性能分析链：</p>
+<ul>
+<li>benchmark</li>
+<li><code>pprof</code></li>
+<li><code>benchstat</code></li>
+</ul>
+<p>先不展开这些更大的话题：</p>
+<ul>
+<li>线上持续 profiling</li>
+<li>trace</li>
+<li>block &#x2F; mutex profile</li>
+<li>更复杂的负载模型</li>
+</ul>
+<p>这些更适合放到后面的服务性能分析或并发问题文章里继续展开。</p>
+<h2 id="二十六、这篇文章学完以后，下一步应该补什么"><a href="#二十六、这篇文章学完以后，下一步应该补什么" class="headerlink" title="二十六、这篇文章学完以后，下一步应该补什么"></a>二十六、这篇文章学完以后，下一步应该补什么</h2><p>这一篇解决的是：</p>
+<ul>
+<li>怎么量性能</li>
+<li>怎么找热点</li>
+<li>怎么比前后差异</li>
+</ul>
+<p>接下来最适合继续补的是：</p>
+<ol>
+<li>数组、链表、栈、队列这些基础结构在 Go 里怎么实现和使用</li>
+<li>双指针、滑动窗口、哈希、递归、回溯这些模式在工程里怎么落地</li>
+<li>排序、查找、堆、图这些结构和算法怎么从会写题走向会落地</li>
+</ol>
+<p>因为到这一步，已经能开始做“性能证据化”了。<br>后面更值得补的是：底层结构和算法选择为什么会直接影响性能表现。</p>
+<h2 id="二十七、结语"><a href="#二十七、结语" class="headerlink" title="二十七、结语"></a>二十七、结语</h2><p>Go 性能分析最容易走偏的地方，不是工具不会用，而是没有把三步连起来：</p>
+<ul>
+<li>benchmark 量出来</li>
+<li><code>pprof</code> 找出来</li>
+<li><code>benchstat</code> 比出来</li>
+</ul>
+<p>只要这条链先立住，后面的优化就不再只是感觉。<br>它会变成一套能复现、能比较、能回滚、能说服别人的工程动作。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Go/" rel="tag"># Go</a>
+              <a href="/tags/Go%E4%B8%93%E9%A2%98/" rel="tag"># Go专题</a>
+              <a href="/tags/%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80/" rel="tag"># 编程语言</a>
+              <a href="/tags/%E6%80%A7%E8%83%BD%E5%88%86%E6%9E%90/" rel="tag"># 性能分析</a>
+              <a href="/tags/pprof/" rel="tag"># pprof</a>
+              <a href="/tags/benchstat/" rel="tag"># benchstat</a>
+              <a href="/tags/%E5%9F%BA%E5%87%86%E6%B5%8B%E8%AF%95/" rel="tag"># 基准测试</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2018/08/08/Python-17-Python%E5%B8%B8%E8%A7%81%E7%AE%97%E6%B3%95%E9%A2%98%E7%9A%84%E5%B7%A5%E7%A8%8B%E4%BB%B7%E5%80%BC%E5%8F%8C%E6%8C%87%E9%92%88%E6%BB%91%E5%8A%A8%E7%AA%97%E5%8F%A3%E9%80%92%E5%BD%92%E5%9B%9E%E6%BA%AF%E5%8A%A8%E6%80%81%E8%A7%84%E5%88%92%E6%80%8E%E4%B9%88%E5%85%A5%E9%97%A8/" rel="prev" title="Python：常见算法题的工程价值，双指针、滑动窗口、递归、回溯、动态规划怎么入门">
+                  <i class="fa fa-angle-left"></i> Python：常见算法题的工程价值，双指针、滑动窗口、递归、回溯、动态规划怎么入门
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2018/08/15/Python-18-Python%E5%9F%BA%E7%A1%80%E8%AF%AD%E6%B3%95%E4%B9%8B%E5%A4%96%E6%9C%80%E8%AF%A5%E8%A1%A5%E7%9A%84%E5%85%B6%E5%AE%9E%E6%98%AF%E6%95%B0%E6%8D%AE%E6%A8%A1%E5%9E%8B%E5%92%8C%E5%AF%B9%E8%B1%A1%E8%AF%AD%E4%B9%89/" rel="next" title="Python：基础语法之外，最该补的其实是数据模型和对象语义">
+                  Python：基础语法之外，最该补的其实是数据模型和对象语义 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

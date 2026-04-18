@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="把自动化测试接入 CI&#x2F;CD，最开始理解成下面这件事：  代码提交后触发流水线 流水线执行测试脚本 失败了就阻塞发布  这套理解并不算错，但它只覆盖了最表层的“能跑起来”。 真正开始长期使用后，问题通常会集中暴露：  流水线里能跑，本地却复现不了 同一套测试脚本，白天稳定，晚上频繁误报 构建时间越来越长，发布节奏越来越慢 测试失败后没人能快速判断是代码问题、环境问题还是测试自身问题 发布">
+<meta property="og:type" content="article">
+<meta property="og:title" content="DevOps-02-自动化测试接入CI-CD时最容易踩的8个坑">
+<meta property="og:url" content="https://paynewinnt.github.io/2021/11/11/DevOps-02-%E8%87%AA%E5%8A%A8%E5%8C%96%E6%B5%8B%E8%AF%95%E6%8E%A5%E5%85%A5CI-CD%E6%97%B6%E6%9C%80%E5%AE%B9%E6%98%93%E8%B8%A9%E7%9A%848%E4%B8%AA%E5%9D%91/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="把自动化测试接入 CI&#x2F;CD，最开始理解成下面这件事：  代码提交后触发流水线 流水线执行测试脚本 失败了就阻塞发布  这套理解并不算错，但它只覆盖了最表层的“能跑起来”。 真正开始长期使用后，问题通常会集中暴露：  流水线里能跑，本地却复现不了 同一套测试脚本，白天稳定，晚上频繁误报 构建时间越来越长，发布节奏越来越慢 测试失败后没人能快速判断是代码问题、环境问题还是测试自身问题 发布">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2021-11-11T12:30:00.000Z">
+<meta property="article:modified_time" content="2021-11-11T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="工程实践">
+<meta property="article:tag" content="DevOps">
+<meta property="article:tag" content="Jenkins">
+<meta property="article:tag" content="CI-CD">
+<meta property="article:tag" content="DevOps &#x2F; CI&#x2F;CD">
+<meta property="article:tag" content="自动化测试">
+<meta property="article:tag" content="流水线治理">
+<meta property="article:tag" content="排障">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2021/11/11/DevOps-02-%E8%87%AA%E5%8A%A8%E5%8C%96%E6%B5%8B%E8%AF%95%E6%8E%A5%E5%85%A5CI-CD%E6%97%B6%E6%9C%80%E5%AE%B9%E6%98%93%E8%B8%A9%E7%9A%848%E4%B8%AA%E5%9D%91/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2021/11/11/DevOps-02-%E8%87%AA%E5%8A%A8%E5%8C%96%E6%B5%8B%E8%AF%95%E6%8E%A5%E5%85%A5CI-CD%E6%97%B6%E6%9C%80%E5%AE%B9%E6%98%93%E8%B8%A9%E7%9A%848%E4%B8%AA%E5%9D%91/","path":"2021/11/11/DevOps-02-自动化测试接入CI-CD时最容易踩的8个坑/","title":"DevOps-02-自动化测试接入CI-CD时最容易踩的8个坑"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>DevOps-02-自动化测试接入CI-CD时最容易踩的8个坑 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E5%85%88%E6%8A%8A%E6%9C%80%E5%B0%8F%E5%8F%AF%E6%89%A7%E8%A1%8C%E6%8E%A5%E5%85%A5%E9%AA%A8%E6%9E%B6%E6%94%B6%E6%B8%85%E6%A5%9A"><span class="nav-number">1.</span> <span class="nav-text">一、先把最小可执行接入骨架收清楚</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%98%8E%E7%A1%AE%E6%B5%81%E6%B0%B4%E7%BA%BF%E9%87%8C%E7%9A%84%E6%B5%8B%E8%AF%95%E5%B1%82%E6%AC%A1"><span class="nav-number">1.1.</span> <span class="nav-text">1. 明确流水线里的测试层次</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E7%BB%9F%E4%B8%80%E8%BE%93%E5%85%A5%E5%92%8C%E4%B8%8A%E4%B8%8B%E6%96%87"><span class="nav-number">1.2.</span> <span class="nav-text">2. 统一输入和上下文</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%BB%9F%E4%B8%80%E8%BE%93%E5%87%BA%E5%92%8C%E8%AF%81%E6%8D%AE"><span class="nav-number">1.3.</span> <span class="nav-text">3. 统一输出和证据</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E7%BB%9F%E4%B8%80%E5%A4%B1%E8%B4%A5%E5%BD%92%E5%9B%A0"><span class="nav-number">1.4.</span> <span class="nav-text">4. 统一失败归因</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E4%B8%80%E6%9D%A1%E6%9B%B4%E5%8F%AF%E6%89%A7%E8%A1%8C%E7%9A%84%E6%B5%81%E6%B0%B4%E7%BA%BF%E9%AA%A8%E6%9E%B6"><span class="nav-number">1.5.</span> <span class="nav-text">5. 一条更可执行的流水线骨架</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E5%9D%91-1%EF%BC%9A%E6%8A%8A%E6%89%80%E6%9C%89%E8%87%AA%E5%8A%A8%E5%8C%96%E6%B5%8B%E8%AF%95%E9%83%BD%E5%BC%BA%E8%A1%8C%E5%A1%9E%E8%BF%9B%E4%B8%BB%E6%B5%81%E6%B0%B4%E7%BA%BF"><span class="nav-number">2.</span> <span class="nav-text">二、坑 1：把所有自动化测试都强行塞进主流水线</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B8%B8%E8%A7%81%E7%8E%B0%E8%B1%A1"><span class="nav-number">2.1.</span> <span class="nav-text">常见现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%92%E6%9F%A5%E9%87%8D%E7%82%B9"><span class="nav-number">2.2.</span> <span class="nav-text">排查重点</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BF%AE%E5%A4%8D%E5%BB%BA%E8%AE%AE"><span class="nav-number">2.3.</span> <span class="nav-text">修复建议</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E5%9D%91-2%EF%BC%9A%E6%B5%8B%E8%AF%95%E7%8E%AF%E5%A2%83%E6%B2%A1%E6%9C%89%E7%89%88%E6%9C%AC%E4%B8%80%E8%87%B4%E6%80%A7%EF%BC%8C%E5%AF%BC%E8%87%B4%E7%BB%93%E6%9E%9C%E4%B8%8D%E5%8F%AF%E4%BF%A1"><span class="nav-number">3.</span> <span class="nav-text">三、坑 2：测试环境没有版本一致性，导致结果不可信</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B8%B8%E8%A7%81%E7%8E%B0%E8%B1%A1-1"><span class="nav-number">3.1.</span> <span class="nav-text">常见现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%92%E6%9F%A5%E9%87%8D%E7%82%B9-1"><span class="nav-number">3.2.</span> <span class="nav-text">排查重点</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BF%AE%E5%A4%8D%E5%BB%BA%E8%AE%AE-1"><span class="nav-number">3.3.</span> <span class="nav-text">修复建议</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E5%9D%91-3%EF%BC%9A%E6%B2%A1%E6%9C%89%E5%87%86%E5%A4%87%E5%8F%AF%E5%A4%8D%E7%94%A8%E7%9A%84%E6%B5%8B%E8%AF%95%E6%95%B0%E6%8D%AE%EF%BC%8C%E5%AF%BC%E8%87%B4%E7%94%A8%E4%BE%8B%E8%B7%91%E4%B8%80%E8%BD%AE%E5%B0%B1%E8%84%8F"><span class="nav-number">4.</span> <span class="nav-text">四、坑 3：没有准备可复用的测试数据，导致用例跑一轮就脏</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B8%B8%E8%A7%81%E7%8E%B0%E8%B1%A1-2"><span class="nav-number">4.1.</span> <span class="nav-text">常见现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%92%E6%9F%A5%E9%87%8D%E7%82%B9-2"><span class="nav-number">4.2.</span> <span class="nav-text">排查重点</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BF%AE%E5%A4%8D%E5%BB%BA%E8%AE%AE-2"><span class="nav-number">4.3.</span> <span class="nav-text">修复建议</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E5%9D%91-4%EF%BC%9A%E6%8A%8A%E7%8E%AF%E5%A2%83%E5%A4%B1%E8%B4%A5%E3%80%81%E4%BE%9D%E8%B5%96%E5%A4%B1%E8%B4%A5%E9%83%BD%E7%AE%97%E6%88%90%E4%B8%9A%E5%8A%A1%E5%A4%B1%E8%B4%A5"><span class="nav-number">5.</span> <span class="nav-text">五、坑 4：把环境失败、依赖失败都算成业务失败</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B8%B8%E8%A7%81%E7%8E%B0%E8%B1%A1-3"><span class="nav-number">5.1.</span> <span class="nav-text">常见现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%92%E6%9F%A5%E9%87%8D%E7%82%B9-3"><span class="nav-number">5.2.</span> <span class="nav-text">排查重点</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BF%AE%E5%A4%8D%E5%BB%BA%E8%AE%AE-3"><span class="nav-number">5.3.</span> <span class="nav-text">修复建议</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E5%9D%91-5%EF%BC%9A%E8%B6%85%E6%97%B6%E4%B8%8E%E9%87%8D%E8%AF%95%E7%AD%96%E7%95%A5%E8%AE%BE%E8%AE%A1%E5%BE%97%E5%A4%AA%E7%B2%97%EF%BC%8C%E7%BB%93%E6%9E%9C%E8%A6%81%E4%B9%88%E5%8D%A1%E6%AD%BB%EF%BC%8C%E8%A6%81%E4%B9%88%E6%8E%A9%E7%9B%96%E9%97%AE%E9%A2%98"><span class="nav-number">6.</span> <span class="nav-text">六、坑 5：超时与重试策略设计得太粗，结果要么卡死，要么掩盖问题</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B8%B8%E8%A7%81%E7%8E%B0%E8%B1%A1-4"><span class="nav-number">6.1.</span> <span class="nav-text">常见现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%92%E6%9F%A5%E9%87%8D%E7%82%B9-4"><span class="nav-number">6.2.</span> <span class="nav-text">排查重点</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BF%AE%E5%A4%8D%E5%BB%BA%E8%AE%AE-4"><span class="nav-number">6.3.</span> <span class="nav-text">修复建议</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E5%9D%91-6%EF%BC%9A%E5%B9%B6%E5%8F%91%E8%B5%84%E6%BA%90%E6%B2%A1%E6%9C%89%E6%B2%BB%E7%90%86%EF%BC%8C%E5%AF%BC%E8%87%B4%E6%B5%81%E6%B0%B4%E7%BA%BF%E4%B9%8B%E9%97%B4%E4%BA%92%E7%9B%B8%E5%B9%B2%E6%89%B0"><span class="nav-number">7.</span> <span class="nav-text">七、坑 6：并发资源没有治理，导致流水线之间互相干扰</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B8%B8%E8%A7%81%E7%8E%B0%E8%B1%A1-5"><span class="nav-number">7.1.</span> <span class="nav-text">常见现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%92%E6%9F%A5%E9%87%8D%E7%82%B9-5"><span class="nav-number">7.2.</span> <span class="nav-text">排查重点</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BF%AE%E5%A4%8D%E5%BB%BA%E8%AE%AE-5"><span class="nav-number">7.3.</span> <span class="nav-text">修复建议</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E5%9D%91-7%EF%BC%9A%E6%8A%A5%E5%91%8A%E5%8F%AA%E6%9C%89%E9%80%9A%E8%BF%87%E7%8E%87%EF%BC%8C%E6%B2%A1%E6%9C%89%E8%AF%81%E6%8D%AE%E9%93%BE%EF%BC%8C%E5%AF%BC%E8%87%B4%E5%A4%B1%E8%B4%A5%E5%90%8E%E6%B2%A1%E4%BA%BA%E6%95%A2%E5%88%A4"><span class="nav-number">8.</span> <span class="nav-text">八、坑 7：报告只有通过率，没有证据链，导致失败后没人敢判</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B8%B8%E8%A7%81%E7%8E%B0%E8%B1%A1-6"><span class="nav-number">8.1.</span> <span class="nav-text">常见现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%92%E6%9F%A5%E9%87%8D%E7%82%B9-6"><span class="nav-number">8.2.</span> <span class="nav-text">排查重点</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BF%AE%E5%A4%8D%E5%BB%BA%E8%AE%AE-6"><span class="nav-number">8.3.</span> <span class="nav-text">修复建议</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E5%9D%91-8%EF%BC%9A%E6%8A%8A%E6%8E%A5%E5%85%A5%E5%BD%93%E6%88%90%E4%B8%80%E6%AC%A1%E6%80%A7%E5%B7%A5%E4%BD%9C%EF%BC%8C%E5%90%8E%E7%BB%AD%E6%B2%A1%E4%BA%BA%E6%B2%BB%E7%90%86%EF%BC%8C%E6%9C%80%E7%BB%88%E8%B6%8A%E8%B7%91%E8%B6%8A%E8%84%86"><span class="nav-number">9.</span> <span class="nav-text">九、坑 8：把接入当成一次性工作，后续没人治理，最终越跑越脆</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B8%B8%E8%A7%81%E7%8E%B0%E8%B1%A1-7"><span class="nav-number">9.1.</span> <span class="nav-text">常见现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%92%E6%9F%A5%E9%87%8D%E7%82%B9-7"><span class="nav-number">9.2.</span> <span class="nav-text">排查重点</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BF%AE%E5%A4%8D%E5%BB%BA%E8%AE%AE-7"><span class="nav-number">9.3.</span> <span class="nav-text">修复建议</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E4%B8%80%E5%A5%97%E6%9B%B4%E5%AE%9E%E7%94%A8%E7%9A%84%E6%8E%A5%E5%85%A5%E6%A3%80%E6%9F%A5%E8%A1%A8"><span class="nav-number">10.</span> <span class="nav-text">十、一套更实用的接入检查表</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%B5%81%E6%B0%B4%E7%BA%BF%E5%B1%82"><span class="nav-number">10.1.</span> <span class="nav-text">流水线层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8E%AF%E5%A2%83%E5%B1%82"><span class="nav-number">10.2.</span> <span class="nav-text">环境层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E5%B1%82"><span class="nav-number">10.3.</span> <span class="nav-text">数据层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8A%A5%E5%91%8A%E5%B1%82"><span class="nav-number">10.4.</span> <span class="nav-text">报告层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%B2%BB%E7%90%86%E5%B1%82"><span class="nav-number">10.5.</span> <span class="nav-text">治理层</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E7%9C%9F%E5%AE%9E%E6%A1%88%E4%BE%8B%EF%BC%9A%E4%B8%80%E5%A5%97%E6%8E%A5%E5%8F%A3%E5%9B%9E%E5%BD%92%E6%8E%A5%E5%85%A5%E5%8F%91%E5%B8%83%E6%B5%81%E6%B0%B4%E7%BA%BF%E5%90%8E%EF%BC%8C%E5%A4%B1%E8%B4%A5%E7%8E%87%E7%AA%81%E7%84%B6%E9%A3%99%E5%8D%87"><span class="nav-number">11.</span> <span class="nav-text">十一、真实案例：一套接口回归接入发布流水线后，失败率突然飙升</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9C%BA%E6%99%AF"><span class="nav-number">11.1.</span> <span class="nav-text">场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%89%A7%E8%A1%8C"><span class="nav-number">11.2.</span> <span class="nav-text">执行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8E%B0%E8%B1%A1"><span class="nav-number">11.3.</span> <span class="nav-text">现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%92%E6%9F%A5"><span class="nav-number">11.4.</span> <span class="nav-text">排查</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BF%AE%E5%A4%8D"><span class="nav-number">11.5.</span> <span class="nav-text">修复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E7%BB%93%E8%AF%AD"><span class="nav-number">12.</span> <span class="nav-text">十二、结语</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2021/11/11/DevOps-02-%E8%87%AA%E5%8A%A8%E5%8C%96%E6%B5%8B%E8%AF%95%E6%8E%A5%E5%85%A5CI-CD%E6%97%B6%E6%9C%80%E5%AE%B9%E6%98%93%E8%B8%A9%E7%9A%848%E4%B8%AA%E5%9D%91/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="DevOps-02-自动化测试接入CI-CD时最容易踩的8个坑 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          DevOps-02-自动化测试接入CI-CD时最容易踩的8个坑
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2021-11-11 20:30:00" itemprop="dateCreated datePublished" datetime="2021-11-11T20:30:00+08:00">2021-11-11</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/DevOps/" itemprop="url" rel="index"><span itemprop="name">DevOps</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>4.1k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>15 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>把自动化测试接入 CI&#x2F;CD，最开始理解成下面这件事：</p>
+<ul>
+<li>代码提交后触发流水线</li>
+<li>流水线执行测试脚本</li>
+<li>失败了就阻塞发布</li>
+</ul>
+<p>这套理解并不算错，但它只覆盖了最表层的“能跑起来”。</p>
+<p>真正开始长期使用后，问题通常会集中暴露：</p>
+<ul>
+<li>流水线里能跑，本地却复现不了</li>
+<li>同一套测试脚本，白天稳定，晚上频繁误报</li>
+<li>构建时间越来越长，发布节奏越来越慢</li>
+<li>测试失败后没人能快速判断是代码问题、环境问题还是测试自身问题</li>
+<li>发布前明明做了自动化校验，线上还是出了本该被提前拦住的问题</li>
+</ul>
+<p>所以自动化测试接入 CI&#x2F;CD，难点不在“接上去”，而在：</p>
+<p><strong>把触发时机、执行环境、测试数据、并发资源、失败归因和回滚决策，组织成一条稳定、可信、可维护的工程链路。</strong></p>
+<p>这篇文章只聚焦一个问题：</p>
+<p><strong>自动化测试接入 CI&#x2F;CD 时，最容易踩的 8 个坑到底是什么，应该怎么排查，怎么修。</strong></p>
+<h2 id="一、先把最小可执行接入骨架收清楚"><a href="#一、先把最小可执行接入骨架收清楚" class="headerlink" title="一、先把最小可执行接入骨架收清楚"></a>一、先把最小可执行接入骨架收清楚</h2><p>在讨论坑位之前，先把一条能长期维护的最小接入骨架摆清楚。没有骨架，后面的坑只会越补越乱。</p>
+<h3 id="1-明确流水线里的测试层次"><a href="#1-明确流水线里的测试层次" class="headerlink" title="1. 明确流水线里的测试层次"></a>1. 明确流水线里的测试层次</h3><p>更合适的做法不是把所有测试都塞进同一阶段，而是至少拆成下面 4 层：</p>
+<ul>
+<li>提交后快速校验：单测、静态检查、少量冒烟接口</li>
+<li>合并前校验：关键接口回归、核心页面冒烟</li>
+<li>发版前校验：关键业务链路回归、环境探活、依赖检查</li>
+<li>定时或异步校验：全量回归、长链路回放、巡检任务</li>
+</ul>
+<p>如果一开始不拆层，后面通常会出现两个结果：</p>
+<ul>
+<li>流水线太慢后，测试步骤会被绕过</li>
+<li>流水线太轻，真正该拦住的问题拦不住</li>
+</ul>
+<h3 id="2-统一输入和上下文"><a href="#2-统一输入和上下文" class="headerlink" title="2. 统一输入和上下文"></a>2. 统一输入和上下文</h3><p>接入 CI&#x2F;CD 时，测试任务至少要拿到下面这些执行上下文：</p>
+<ul>
+<li><code>commit_id</code></li>
+<li><code>branch</code></li>
+<li><code>build_id</code></li>
+<li><code>pipeline_id</code></li>
+<li><code>target_env</code></li>
+<li><code>service_list</code></li>
+<li><code>test_scope</code></li>
+<li><code>trigger_type</code></li>
+</ul>
+<p>如果这些信息没有统一进入测试入口，后面出现失败时，连“这次到底测了什么”都说不清。</p>
+<h3 id="3-统一输出和证据"><a href="#3-统一输出和证据" class="headerlink" title="3. 统一输出和证据"></a>3. 统一输出和证据</h3><p>测试结果不要只产出一个 <code>pass/fail</code>，至少要统一产出下面几类内容：</p>
+<ul>
+<li>用例汇总结果</li>
+<li>失败明细</li>
+<li>日志入口</li>
+<li>截图、录屏、抓包或接口请求证据</li>
+<li>环境快照</li>
+<li>报告地址</li>
+</ul>
+<h3 id="4-统一失败归因"><a href="#4-统一失败归因" class="headerlink" title="4. 统一失败归因"></a>4. 统一失败归因</h3><p>流水线中的失败，至少要先粗分成下面几类：</p>
+<ul>
+<li>代码变更导致的业务失败</li>
+<li>测试脚本失败</li>
+<li>环境失败</li>
+<li>测试数据失败</li>
+<li>流水线基础设施失败</li>
+</ul>
+<p>没有这一步，所有失败都会被混成“自动化不稳定”。</p>
+<h3 id="5-一条更可执行的流水线骨架"><a href="#5-一条更可执行的流水线骨架" class="headerlink" title="5. 一条更可执行的流水线骨架"></a>5. 一条更可执行的流水线骨架</h3><p>下面这条骨架更适合多数业务团队从 0 到 1 起步：</p>
+<ol>
+<li>代码构建与基础校验</li>
+<li>部署到目标测试环境</li>
+<li>环境探活与依赖检查</li>
+<li>执行冒烟自动化测试</li>
+<li>根据结果决定是否继续后续回归</li>
+<li>回收结果、归档证据、发送通知</li>
+<li>根据失败分类决定阻塞、重试、人工确认还是继续放行</li>
+</ol>
+<p>如果已经有 Jenkins、GitLab CI 或其他流水线系统，这条骨架不需要大改工具，只需要把职责收清楚。</p>
+<h2 id="二、坑-1：把所有自动化测试都强行塞进主流水线"><a href="#二、坑-1：把所有自动化测试都强行塞进主流水线" class="headerlink" title="二、坑 1：把所有自动化测试都强行塞进主流水线"></a>二、坑 1：把所有自动化测试都强行塞进主流水线</h2><p>这是最常见的第一类错误。</p>
+<p>看到自动化测试跑通后，会把接口回归、UI 回归、巡检脚本、环境检查甚至压测都塞进同一条发布流水线。短期看像是“质量全兜住了”，长期一定会出问题。</p>
+<h3 id="常见现象"><a href="#常见现象" class="headerlink" title="常见现象"></a>常见现象</h3><ul>
+<li>一次提交要等很久才能出结果</li>
+<li>某些低价值用例频繁阻塞高优先级发布</li>
+<li>团队开始手工跳过某些阶段</li>
+<li>流水线时间持续膨胀</li>
+</ul>
+<h3 id="排查重点"><a href="#排查重点" class="headerlink" title="排查重点"></a>排查重点</h3><ul>
+<li>当前流水线总耗时拆分</li>
+<li>每个测试阶段的阻塞价值</li>
+<li>哪些任务属于发布前必须执行，哪些适合异步执行</li>
+</ul>
+<h3 id="修复建议"><a href="#修复建议" class="headerlink" title="修复建议"></a>修复建议</h3><ul>
+<li>重新拆分成同步阻塞任务和异步观察任务</li>
+<li>把高成本低收益的校验移出主链路</li>
+<li>只把“真正有发版决策价值”的测试保留在阻塞路径</li>
+</ul>
+<h2 id="三、坑-2：测试环境没有版本一致性，导致结果不可信"><a href="#三、坑-2：测试环境没有版本一致性，导致结果不可信" class="headerlink" title="三、坑 2：测试环境没有版本一致性，导致结果不可信"></a>三、坑 2：测试环境没有版本一致性，导致结果不可信</h2><p>自动化测试最容易被误判成“不稳定”，其实很多时候根因不是测试脚本，而是 CI&#x2F;CD 部署后的环境不一致。</p>
+<p>例如：</p>
+<ul>
+<li>应用服务已经更新到新版本</li>
+<li>下游依赖还是旧版本</li>
+<li>配置中心还没同步</li>
+<li>前端资源缓存没有刷新</li>
+</ul>
+<p>这时跑出来的自动化结果，本质上并不是在验证同一套交付物。</p>
+<h3 id="常见现象-1"><a href="#常见现象-1" class="headerlink" title="常见现象"></a>常见现象</h3><ul>
+<li>同一个 commit 在不同时间执行结果不同</li>
+<li>接口和页面看到的行为对不上</li>
+<li>测试明明失败，但手工验证又偶尔成功</li>
+</ul>
+<h3 id="排查重点-1"><a href="#排查重点-1" class="headerlink" title="排查重点"></a>排查重点</h3><ul>
+<li>当前流水线部署了哪些服务，版本号是否一致</li>
+<li>配置、缓存、数据库迁移是否同步完成</li>
+<li>测试开始前是否有环境探活和版本确认动作</li>
+</ul>
+<h3 id="修复建议-1"><a href="#修复建议-1" class="headerlink" title="修复建议"></a>修复建议</h3><ul>
+<li>测试开始前增加版本快照与依赖探活</li>
+<li>把“部署成功”与“环境可测”拆成两个判断点</li>
+<li>报告中保留服务版本、配置版本和时间戳证据</li>
+</ul>
+<h2 id="四、坑-3：没有准备可复用的测试数据，导致用例跑一轮就脏"><a href="#四、坑-3：没有准备可复用的测试数据，导致用例跑一轮就脏" class="headerlink" title="四、坑 3：没有准备可复用的测试数据，导致用例跑一轮就脏"></a>四、坑 3：没有准备可复用的测试数据，导致用例跑一轮就脏</h2><p>自动化测试一旦进流水线，执行频率和并发度都会明显上升。原本靠手工造数据、临时清数据的做法，很快就会失效。</p>
+<h3 id="常见现象-2"><a href="#常见现象-2" class="headerlink" title="常见现象"></a>常见现象</h3><ul>
+<li>用例第一次通过，第二次开始失败</li>
+<li>账号余额、库存、订单状态被前序执行污染</li>
+<li>多条流水线并发时互相抢数据</li>
+</ul>
+<h3 id="排查重点-2"><a href="#排查重点-2" class="headerlink" title="排查重点"></a>排查重点</h3><ul>
+<li>测试前的数据准备是否幂等</li>
+<li>不同任务是否复用了同一批账户或资源</li>
+<li>失败后的回收动作是否可靠</li>
+</ul>
+<h3 id="修复建议-2"><a href="#修复建议-2" class="headerlink" title="修复建议"></a>修复建议</h3><ul>
+<li>按任务维度隔离测试数据</li>
+<li>把造数、回收、重置做成独立步骤</li>
+<li>对关键账号、库存、业务对象建立数据池和租约机制</li>
+</ul>
+<p>如果测试数据仍然依赖人工清理，自动化接入 CI&#x2F;CD 只会把脏数据问题放大。</p>
+<h2 id="五、坑-4：把环境失败、依赖失败都算成业务失败"><a href="#五、坑-4：把环境失败、依赖失败都算成业务失败" class="headerlink" title="五、坑 4：把环境失败、依赖失败都算成业务失败"></a>五、坑 4：把环境失败、依赖失败都算成业务失败</h2><p>的流水线报告只有一种结果：失败。</p>
+<p>但真正的工程现场里，失败至少要先分清：</p>
+<ul>
+<li>代码失败</li>
+<li>环境失败</li>
+<li>网络失败</li>
+<li>测试框架失败</li>
+<li>外部依赖失败</li>
+</ul>
+<h3 id="常见现象-3"><a href="#常见现象-3" class="headerlink" title="常见现象"></a>常见现象</h3><ul>
+<li>大量失败集中在登录前、页面打开前、接口首跳阶段</li>
+<li>重跑一次就恢复</li>
+<li>失败原因写得很像业务问题，但证据明显不足</li>
+</ul>
+<h3 id="排查重点-3"><a href="#排查重点-3" class="headerlink" title="排查重点"></a>排查重点</h3><ul>
+<li>失败发生在业务断言前还是业务断言后</li>
+<li>失败时环境探活、依赖接口、网关状态是否正常</li>
+<li>测试脚本是否已经拿到足够证据支撑“业务失败”结论</li>
+</ul>
+<h3 id="修复建议-3"><a href="#修复建议-3" class="headerlink" title="修复建议"></a>修复建议</h3><ul>
+<li>在报告中增加失败分类字段</li>
+<li>在关键步骤前补探活和前置校验</li>
+<li>把环境性失败从业务阻塞链路里拆出去，单独治理</li>
+</ul>
+<p>只有先把失败分层，团队才不会把所有不稳定都归罪给自动化测试。</p>
+<h2 id="六、坑-5：超时与重试策略设计得太粗，结果要么卡死，要么掩盖问题"><a href="#六、坑-5：超时与重试策略设计得太粗，结果要么卡死，要么掩盖问题" class="headerlink" title="六、坑 5：超时与重试策略设计得太粗，结果要么卡死，要么掩盖问题"></a>六、坑 5：超时与重试策略设计得太粗，结果要么卡死，要么掩盖问题</h2><p>CI&#x2F;CD 流水线里最常见的坏味道之一，就是“超时统一 60 分钟，失败统一重跑一次”。</p>
+<p>这种做法看起来省事，实际上问题很多：</p>
+<ul>
+<li>太短会误杀正常长流程</li>
+<li>太长会拖垮构建资源</li>
+<li>无脑重试会掩盖真实缺陷</li>
+</ul>
+<h3 id="常见现象-4"><a href="#常见现象-4" class="headerlink" title="常见现象"></a>常见现象</h3><ul>
+<li>构建卡在某一步很久没人处理</li>
+<li>相同失败靠重试偶尔通过</li>
+<li>团队不知道该看第一次失败还是第二次成功</li>
+</ul>
+<h3 id="排查重点-4"><a href="#排查重点-4" class="headerlink" title="排查重点"></a>排查重点</h3><ul>
+<li>超时是整体超时还是阶段超时</li>
+<li>重试发生在什么层级：单步、单用例、整任务还是整流水线</li>
+<li>重试后是否保留第一次失败证据</li>
+</ul>
+<h3 id="修复建议-4"><a href="#修复建议-4" class="headerlink" title="修复建议"></a>修复建议</h3><ul>
+<li>对部署、探活、冒烟、回归分别设置阶段超时</li>
+<li>只对明确的瞬时性失败开放有限重试</li>
+<li>所有重试都保留首次失败证据和重试原因</li>
+</ul>
+<p>超时和重试如果设计不好，不是提高稳定性，而是在制造假稳定。</p>
+<h2 id="七、坑-6：并发资源没有治理，导致流水线之间互相干扰"><a href="#七、坑-6：并发资源没有治理，导致流水线之间互相干扰" class="headerlink" title="七、坑 6：并发资源没有治理，导致流水线之间互相干扰"></a>七、坑 6：并发资源没有治理，导致流水线之间互相干扰</h2><p>自动化测试一旦挂到 CI&#x2F;CD，执行就不再只有单线程。</p>
+<p>这时最容易出现的问题包括：</p>
+<ul>
+<li>多条流水线抢同一套测试环境</li>
+<li>多个任务共用同一批账号</li>
+<li>UI 自动化共用同一台浏览器执行机</li>
+<li>移动端任务抢同一台设备</li>
+</ul>
+<h3 id="常见现象-5"><a href="#常见现象-5" class="headerlink" title="常见现象"></a>常见现象</h3><ul>
+<li>单独执行稳定，并发时大量失败</li>
+<li>失败分布没有业务规律，集中表现为超时、页面异常、状态错乱</li>
+<li>一条流水线结束后，另一条流水线的环境被顺手清掉</li>
+</ul>
+<h3 id="排查重点-5"><a href="#排查重点-5" class="headerlink" title="排查重点"></a>排查重点</h3><ul>
+<li>当前任务用了哪些共享资源</li>
+<li>资源是否有显式租约和释放机制</li>
+<li>是否存在全局清理脚本误伤并发任务</li>
+</ul>
+<h3 id="修复建议-5"><a href="#修复建议-5" class="headerlink" title="修复建议"></a>修复建议</h3><ul>
+<li>给环境、账号、设备、执行机建立资源池</li>
+<li>执行前申请租约，执行后显式释放</li>
+<li>把清理动作限制在任务作用域内</li>
+</ul>
+<p>并发问题如果不在接入早期解决，后面规模越大，定位越困难。</p>
+<h2 id="八、坑-7：报告只有通过率，没有证据链，导致失败后没人敢判"><a href="#八、坑-7：报告只有通过率，没有证据链，导致失败后没人敢判" class="headerlink" title="八、坑 7：报告只有通过率，没有证据链，导致失败后没人敢判"></a>八、坑 7：报告只有通过率，没有证据链，导致失败后没人敢判</h2><p>很多自动化测试接入 CI&#x2F;CD 后，流水线页面里只有一个红色或绿色状态。这样的结果对发布决策帮助很有限。</p>
+<h3 id="常见现象-6"><a href="#常见现象-6" class="headerlink" title="常见现象"></a>常见现象</h3><ul>
+<li>流水线失败后，最常见的补救动作是手工复测</li>
+<li>失败原因需要打开多个系统才能拼出来</li>
+<li>用例失败后不知道是哪里失败，也不知道失败前系统处于什么状态</li>
+</ul>
+<h3 id="排查重点-6"><a href="#排查重点-6" class="headerlink" title="排查重点"></a>排查重点</h3><ul>
+<li>是否能从一条失败记录直接跳到日志、截图、接口请求和环境信息</li>
+<li>是否保留了失败前后的关键步骤证据</li>
+<li>报告是否区分新增失败、历史已知失败和环境失败</li>
+</ul>
+<h3 id="修复建议-6"><a href="#修复建议-6" class="headerlink" title="修复建议"></a>修复建议</h3><ul>
+<li>统一报告入口和证据链接</li>
+<li>对关键链路保留步骤日志、请求响应、截图或录屏</li>
+<li>增加历史对比和失败聚合能力</li>
+</ul>
+<p>如果报告只输出通过率，CI&#x2F;CD 里接入的自动化测试很难真正成为决策依据。</p>
+<h2 id="九、坑-8：把接入当成一次性工作，后续没人治理，最终越跑越脆"><a href="#九、坑-8：把接入当成一次性工作，后续没人治理，最终越跑越脆" class="headerlink" title="九、坑 8：把接入当成一次性工作，后续没人治理，最终越跑越脆"></a>九、坑 8：把接入当成一次性工作，后续没人治理，最终越跑越脆</h2><p>花了一周把自动化测试挂进流水线，然后默认这件事已经完成。实际上，接入只是开始，后面真正耗时的是治理。</p>
+<h3 id="常见现象-7"><a href="#常见现象-7" class="headerlink" title="常见现象"></a>常见现象</h3><ul>
+<li>流水线触发越来越多，但没人维护用例分层</li>
+<li>已知不稳定用例长时间挂在主链路</li>
+<li>失败率上升却没有定期收敛</li>
+<li>发布节奏变化后，原有测试层次已经不匹配</li>
+</ul>
+<h3 id="排查重点-7"><a href="#排查重点-7" class="headerlink" title="排查重点"></a>排查重点</h3><ul>
+<li>是否有定期清理低价值、脆弱、重复用例</li>
+<li>是否有失败率、误报率、平均执行时长等治理指标</li>
+<li>发布流程变化后，测试接入策略是否同步调整</li>
+</ul>
+<h3 id="修复建议-7"><a href="#修复建议-7" class="headerlink" title="修复建议"></a>修复建议</h3><ul>
+<li>建立月度或双周治理节奏</li>
+<li>把误报率和稳定性纳入自动化质量指标</li>
+<li>对主链路中的测试任务持续做分层、瘦身和重构</li>
+</ul>
+<p>自动化测试接入 CI&#x2F;CD 不是一次挂接动作，而是一套长期运营工程。</p>
+<h2 id="十、一套更实用的接入检查表"><a href="#十、一套更实用的接入检查表" class="headerlink" title="十、一套更实用的接入检查表"></a>十、一套更实用的接入检查表</h2><p>如果现在要把一套自动化测试接入 CI&#x2F;CD，可以先按下面这个检查表走一次。</p>
+<h3 id="流水线层"><a href="#流水线层" class="headerlink" title="流水线层"></a>流水线层</h3><ul>
+<li>是否拆清了阻塞任务与非阻塞任务</li>
+<li>是否定义了每个阶段的超时、失败动作和通知策略</li>
+<li>是否能追踪一次执行对应的 commit、环境和报告</li>
+</ul>
+<h3 id="环境层"><a href="#环境层" class="headerlink" title="环境层"></a>环境层</h3><ul>
+<li>是否有部署完成后的环境探活</li>
+<li>是否能确认服务、配置、依赖版本一致</li>
+<li>是否有并发资源隔离与回收动作</li>
+</ul>
+<h3 id="数据层"><a href="#数据层" class="headerlink" title="数据层"></a>数据层</h3><ul>
+<li>是否能稳定准备测试数据</li>
+<li>是否有回收与重置</li>
+<li>并发执行时是否会抢同一批业务对象</li>
+</ul>
+<h3 id="报告层"><a href="#报告层" class="headerlink" title="报告层"></a>报告层</h3><ul>
+<li>是否能保留失败证据链</li>
+<li>是否能区分业务失败、环境失败、脚本失败</li>
+<li>是否能给发布决策提供明确结论</li>
+</ul>
+<h3 id="治理层"><a href="#治理层" class="headerlink" title="治理层"></a>治理层</h3><ul>
+<li>是否有不稳定用例治理节奏</li>
+<li>是否有误报率和平均耗时指标</li>
+<li>是否有规则决定哪些失败必须阻塞，哪些失败只观察</li>
+</ul>
+<h2 id="十一、真实案例：一套接口回归接入发布流水线后，失败率突然飙升"><a href="#十一、真实案例：一套接口回归接入发布流水线后，失败率突然飙升" class="headerlink" title="十一、真实案例：一套接口回归接入发布流水线后，失败率突然飙升"></a>十一、真实案例：一套接口回归接入发布流水线后，失败率突然飙升</h2><p>下面这类问题，在自动化测试接入 CI&#x2F;CD 的早期非常常见。</p>
+<h3 id="场景"><a href="#场景" class="headerlink" title="场景"></a>场景</h3><p>某业务把接口回归正式挂进发布流水线，目标是在每次预发布部署完成后自动执行关键接口回归，并据此决定是否放行。</p>
+<h3 id="执行"><a href="#执行" class="headerlink" title="执行"></a>执行</h3><ul>
+<li>流水线部署应用服务</li>
+<li>部署完成后立刻触发接口回归</li>
+<li>接口回归覆盖登录、下单、支付、查询等核心链路</li>
+<li>测试失败就阻塞后续发布步骤</li>
+</ul>
+<h3 id="现象"><a href="#现象" class="headerlink" title="现象"></a>现象</h3><p>接入后的前几天，流水线失败率迅速升高。</p>
+<p>表面看起来像是接口自动化不稳定，但失败分布有几个明显特征：</p>
+<ul>
+<li>大量失败集中在前 3 个接口</li>
+<li>失败码并不固定，有时是超时，有时是 502</li>
+<li>同一个 commit 重跑后经常恢复</li>
+</ul>
+<h3 id="排查"><a href="#排查" class="headerlink" title="排查"></a>排查</h3><p>沿着时间线拆开后，问题逐步收敛：</p>
+<ol>
+<li>查看部署日志，发现应用服务虽然已经完成发布，但配置中心刷新比服务启动更慢</li>
+<li>查看环境探活记录，发现流水线里只有“端口存活”检查，没有“关键依赖可用”检查</li>
+<li>查看接口报告，发现失败都发生在业务断言之前，大量请求还没进入稳定处理阶段</li>
+<li>对照网关日志，发现接口回归启动时，下游依赖还在陆续重连</li>
+</ol>
+<h3 id="修复"><a href="#修复" class="headerlink" title="修复"></a>修复</h3><p>最终没有先改测试脚本，而是先调整接入链路：</p>
+<ul>
+<li>在部署后增加关键依赖探活和配置生效检查</li>
+<li>把测试触发时机从“部署完成即执行”改成“环境可测后执行”</li>
+<li>报告中新增环境快照和失败分类</li>
+<li>对 502、探活失败这类问题单独标记为环境失败，不直接归类成业务失败</li>
+</ul>
+<p>调整后，流水线失败率明显下降，真正的业务回归失败也更容易被识别出来。</p>
+<p>这个案例说明了一件事：</p>
+<p><strong>自动化测试接入 CI&#x2F;CD 后出现高失败率时，并不能直接把结论落到“测试不稳定”；更合适的排查起点，是先确认接入链路本身是不是工程化地收稳了。</strong></p>
+<h2 id="十二、结语"><a href="#十二、结语" class="headerlink" title="十二、结语"></a>十二、结语</h2><p>自动化测试接入 CI&#x2F;CD，最容易被低估的不是工具配置，而是工程收敛。</p>
+<p>真正决定这件事能不能长期跑下去的，通常不是某个 Jenkins 插件，也不是某段测试脚本，而是下面这些基本功：</p>
+<ul>
+<li>测试分层是否清楚</li>
+<li>环境是否可信</li>
+<li>数据是否可复用</li>
+<li>并发资源是否受控</li>
+<li>失败是否能被正确归因</li>
+<li>报告是否提供证据链</li>
+<li>治理是否持续进行</li>
+</ul>
+<p>把这 8 个坑提前收住，自动化测试接入 CI&#x2F;CD 才更可能从“能跑”走到“可信、可用、可维护”。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E5%B7%A5%E7%A8%8B%E5%AE%9E%E8%B7%B5/" rel="tag"># 工程实践</a>
+              <a href="/tags/DevOps/" rel="tag"># DevOps</a>
+              <a href="/tags/Jenkins/" rel="tag"># Jenkins</a>
+              <a href="/tags/CI-CD/" rel="tag"># CI-CD</a>
+              <a href="/tags/DevOps-CI-CD/" rel="tag"># DevOps / CI/CD</a>
+              <a href="/tags/%E8%87%AA%E5%8A%A8%E5%8C%96%E6%B5%8B%E8%AF%95/" rel="tag"># 自动化测试</a>
+              <a href="/tags/%E6%B5%81%E6%B0%B4%E7%BA%BF%E6%B2%BB%E7%90%86/" rel="tag"># 流水线治理</a>
+              <a href="/tags/%E6%8E%92%E9%9A%9C/" rel="tag"># 排障</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2021/11/04/DevOps-01-Jenkins%E5%9C%A8%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E5%9B%9E%E5%BD%92%E5%92%8C%E5%B7%A1%E6%A3%80%E9%87%8C%E7%9A%84%E5%88%86%E5%B7%A5%E8%BE%B9%E7%95%8C%E6%80%8E%E4%B9%88%E5%AE%9A/" rel="prev" title="DevOps-01-Jenkins在测试平台回归和巡检里的分工边界怎么定">
+                  <i class="fa fa-angle-left"></i> DevOps-01-Jenkins在测试平台回归和巡检里的分工边界怎么定
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2021/11/18/DevOps-03-Jenkins-Pipeline%E6%80%8E%E4%B9%88%E8%AE%BE%E8%AE%A1%E6%89%8D%E4%B8%8D%E4%BC%9A%E8%B6%8A%E6%9D%A5%E8%B6%8A%E9%9A%BE%E7%BB%B4%E6%8A%A4/" rel="next" title="DevOps-03-Jenkins-Pipeline怎么设计才不会越来越难维护">
+                  DevOps-03-Jenkins-Pipeline怎么设计才不会越来越难维护 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

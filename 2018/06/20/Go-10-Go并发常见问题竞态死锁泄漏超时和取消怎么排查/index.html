@@ -1,0 +1,1190 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="围绕一个并发巡检器，系统讲清 Go 项目里最常见的并发问题：数据竞态、死锁、goroutine 泄漏、超时与取消控制，以及一套更实用的并发排障顺序和最小可观测性骨架。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Go：并发常见问题，竞态、死锁、泄漏、超时和取消怎么排查">
+<meta property="og:url" content="https://paynewinnt.github.io/2018/06/20/Go-10-Go%E5%B9%B6%E5%8F%91%E5%B8%B8%E8%A7%81%E9%97%AE%E9%A2%98%E7%AB%9E%E6%80%81%E6%AD%BB%E9%94%81%E6%B3%84%E6%BC%8F%E8%B6%85%E6%97%B6%E5%92%8C%E5%8F%96%E6%B6%88%E6%80%8E%E4%B9%88%E6%8E%92%E6%9F%A5/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="围绕一个并发巡检器，系统讲清 Go 项目里最常见的并发问题：数据竞态、死锁、goroutine 泄漏、超时与取消控制，以及一套更实用的并发排障顺序和最小可观测性骨架。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2018-06-20T12:30:00.000Z">
+<meta property="article:modified_time" content="2018-06-20T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="Go">
+<meta property="article:tag" content="Go专题">
+<meta property="article:tag" content="编程语言">
+<meta property="article:tag" content="并发">
+<meta property="article:tag" content="goroutine">
+<meta property="article:tag" content="context">
+<meta property="article:tag" content="竞态条件">
+<meta property="article:tag" content="死锁">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2018/06/20/Go-10-Go%E5%B9%B6%E5%8F%91%E5%B8%B8%E8%A7%81%E9%97%AE%E9%A2%98%E7%AB%9E%E6%80%81%E6%AD%BB%E9%94%81%E6%B3%84%E6%BC%8F%E8%B6%85%E6%97%B6%E5%92%8C%E5%8F%96%E6%B6%88%E6%80%8E%E4%B9%88%E6%8E%92%E6%9F%A5/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2018/06/20/Go-10-Go%E5%B9%B6%E5%8F%91%E5%B8%B8%E8%A7%81%E9%97%AE%E9%A2%98%E7%AB%9E%E6%80%81%E6%AD%BB%E9%94%81%E6%B3%84%E6%BC%8F%E8%B6%85%E6%97%B6%E5%92%8C%E5%8F%96%E6%B6%88%E6%80%8E%E4%B9%88%E6%8E%92%E6%9F%A5/","path":"2018/06/20/Go-10-Go并发常见问题竞态死锁泄漏超时和取消怎么排查/","title":"Go：并发常见问题，竞态、死锁、泄漏、超时和取消怎么排查"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>Go：并发常见问题，竞态、死锁、泄漏、超时和取消怎么排查 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E8%BF%99%E7%AF%87%E6%96%87%E7%AB%A0%E8%A6%81%E8%A7%A3%E5%86%B3%E4%BB%80%E4%B9%88%E9%97%AE%E9%A2%98"><span class="nav-number">1.</span> <span class="nav-text">一、这篇文章要解决什么问题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E5%85%88%E6%8A%8A%E8%BF%99%E4%B8%AA%E5%B9%B6%E5%8F%91%E5%B0%8F%E9%A1%B9%E7%9B%AE%E7%9A%84%E5%9C%BA%E6%99%AF%E8%AF%B4%E6%B8%85%E6%A5%9A"><span class="nav-number">2.</span> <span class="nav-text">二、先把这个并发小项目的场景说清楚</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E5%85%88%E7%9C%8B%E4%B8%80%E4%B8%AA%E6%9C%80%E5%B0%8F%E5%8F%AF%E8%BF%90%E8%A1%8C%E7%A4%BA%E4%BE%8B"><span class="nav-number">3.</span> <span class="nav-text">三、先看一个最小可运行示例</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E5%85%88%E6%8A%8A%E4%B8%80%E5%8F%A5%E8%AF%9D%E7%BB%93%E8%AE%BA%E8%AF%B4%E6%B8%85%E6%A5%9A"><span class="nav-number">4.</span> <span class="nav-text">四、先把一句话结论说清楚</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E6%95%B0%E6%8D%AE%E7%AB%9E%E6%80%81%E5%88%B0%E5%BA%95%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%8C%E4%B8%BA%E4%BB%80%E4%B9%88%E5%AE%83%E8%BF%99%E4%B9%88%E9%9A%BE%E5%AE%9A%E4%BD%8D"><span class="nav-number">5.</span> <span class="nav-text">五、数据竞态到底是什么，为什么它这么难定位</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E7%AB%9E%E6%80%81%E6%9C%80%E5%B8%B8%E8%A7%81%E7%9A%84%E4%B8%89%E7%A7%8D%E6%9D%A5%E6%BA%90"><span class="nav-number">6.</span> <span class="nav-text">六、竞态最常见的三种来源</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%A4%9A%E4%B8%AA-goroutine-%E7%9B%B4%E6%8E%A5%E6%94%B9%E5%85%B1%E4%BA%AB-map%E3%80%81%E5%88%87%E7%89%87%E3%80%81%E7%BB%93%E6%9E%84%E4%BD%93%E5%AD%97%E6%AE%B5"><span class="nav-number">6.1.</span> <span class="nav-text">1. 多个 goroutine 直接改共享 map、切片、结构体字段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%BB%A5%E4%B8%BA%E2%80%9C%E5%8F%AA%E8%AF%BB%E2%80%9D%E5%B0%B1%E5%AE%89%E5%85%A8%EF%BC%8C%E7%BB%93%E6%9E%9C%E5%BA%95%E5%B1%82%E5%AF%B9%E8%B1%A1%E5%85%B6%E5%AE%9E%E8%BF%98%E5%9C%A8%E8%A2%AB%E6%94%B9"><span class="nav-number">6.2.</span> <span class="nav-text">2. 以为“只读”就安全，结果底层对象其实还在被改</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E9%97%AD%E5%8C%85%E6%8D%95%E8%8E%B7%E4%BA%86%E6%8C%81%E7%BB%AD%E5%8F%98%E5%8C%96%E7%9A%84%E5%A4%96%E9%83%A8%E7%8A%B6%E6%80%81"><span class="nav-number">6.3.</span> <span class="nav-text">3. 闭包捕获了持续变化的外部状态</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E7%AB%9E%E6%80%81%E4%B8%8D%E6%98%AF%E5%8F%AA%E6%9C%89%E2%80%9C%E5%8A%A0%E9%94%81%E2%80%9D%E8%BF%99%E4%B8%80%E7%A7%8D%E4%BF%AE%E6%B3%95"><span class="nav-number">7.</span> <span class="nav-text">七、竞态不是只有“加锁”这一种修法</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%94%A8%E5%8D%95-goroutine-%E6%94%B6%E5%8F%A3%E5%86%99%E5%85%A5%E6%9D%83"><span class="nav-number">7.1.</span> <span class="nav-text">1. 用单 goroutine 收口写入权</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E7%94%A8-sync-Mutex-%E6%98%8E%E7%A1%AE%E4%BF%9D%E6%8A%A4%E5%85%B1%E4%BA%AB%E7%8A%B6%E6%80%81"><span class="nav-number">7.2.</span> <span class="nav-text">2. 用 sync.Mutex 明确保护共享状态</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%94%A8-atomic-%E5%A4%84%E7%90%86%E9%9D%9E%E5%B8%B8%E7%AE%80%E5%8D%95%E7%9A%84%E6%95%B0%E5%80%BC%E8%AE%A1%E6%95%B0"><span class="nav-number">7.3.</span> <span class="nav-text">3. 用 atomic 处理非常简单的数值计数</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E6%80%8E%E4%B9%88%E7%94%A8-go-test-race-%E7%9C%8B%E7%AB%9E%E6%80%81%EF%BC%8C%E8%80%8C%E4%B8%8D%E6%98%AF%E9%9D%A0%E7%8C%9C"><span class="nav-number">8.</span> <span class="nav-text">八、怎么用 go test -race 看竞态，而不是靠猜</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E6%AD%BB%E9%94%81%E5%88%B0%E5%BA%95%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%8C%E5%88%AB%E5%92%8C%E2%80%9C%E7%A8%8B%E5%BA%8F%E5%BE%88%E6%85%A2%E2%80%9D%E6%B7%B7%E4%B8%BA%E4%B8%80%E8%B0%88"><span class="nav-number">9.</span> <span class="nav-text">九、死锁到底是什么，别和“程序很慢”混为一谈</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E7%9C%9F%E5%AE%9E%E9%A1%B9%E7%9B%AE%E9%87%8C%E6%9C%80%E5%B8%B8%E8%A7%81%E7%9A%84%E6%AD%BB%E9%94%81%E6%9D%A5%E6%BA%90"><span class="nav-number">10.</span> <span class="nav-text">十、真实项目里最常见的死锁来源</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-channel-%E6%B2%A1%E6%9C%89%E4%BA%BA%E6%B6%88%E8%B4%B9%EF%BC%8C%E5%8F%91%E9%80%81%E6%96%B9%E4%B8%80%E7%9B%B4%E5%A0%B5%E4%BD%8F"><span class="nav-number">10.1.</span> <span class="nav-text">1. channel 没有人消费，发送方一直堵住</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-channel-%E6%B2%A1%E6%9C%89%E4%BA%BA%E5%85%B3%E9%97%AD%EF%BC%8C%E6%8E%A5%E6%94%B6%E6%96%B9%E4%B8%80%E7%9B%B4-range-%E4%B8%8D%E5%AE%8C"><span class="nav-number">10.2.</span> <span class="nav-text">2. channel 没有人关闭，接收方一直 range 不完</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-WaitGroup-%E7%AD%89%E5%BE%85%E5%92%8C-channel-%E5%85%B3%E9%97%AD%E9%A1%BA%E5%BA%8F%E5%86%99%E5%8F%8D"><span class="nav-number">10.3.</span> <span class="nav-text">3. WaitGroup 等待和 channel 关闭顺序写反</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E9%94%81%E9%A1%BA%E5%BA%8F%E4%B8%8D%E4%B8%80%E8%87%B4"><span class="nav-number">10.4.</span> <span class="nav-text">4. 锁顺序不一致</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E5%85%88%E7%9C%8B%E4%B8%80%E4%B8%AA%E6%9B%B4%E6%8E%A5%E8%BF%91%E7%8E%B0%E5%9C%BA%E7%9A%84%E6%AD%BB%E9%94%81%E9%94%99%E8%AF%AF%E4%BE%8B%E5%AD%90"><span class="nav-number">11.</span> <span class="nav-text">十一、先看一个更接近现场的死锁错误例子</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81goroutine-%E6%B3%84%E6%BC%8F%E6%98%AF%E4%BB%80%E4%B9%88%EF%BC%8C%E5%92%8C%E6%AD%BB%E9%94%81%E6%9C%89%E4%BB%80%E4%B9%88%E5%8C%BA%E5%88%AB"><span class="nav-number">12.</span> <span class="nav-text">十二、goroutine 泄漏是什么，和死锁有什么区别</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81goroutine-%E6%B3%84%E6%BC%8F%E6%9C%80%E5%B8%B8%E8%A7%81%E7%9A%84%E5%9B%9B%E7%A7%8D%E6%9D%A5%E6%BA%90"><span class="nav-number">13.</span> <span class="nav-text">十三、goroutine 泄漏最常见的四种来源</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%B8%80%E7%9B%B4%E9%98%BB%E5%A1%9E%E5%9C%A8-channel-%E5%8F%91%E9%80%81"><span class="nav-number">13.1.</span> <span class="nav-text">1. 一直阻塞在 channel 发送</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%B8%80%E7%9B%B4%E9%98%BB%E5%A1%9E%E5%9C%A8-channel-%E6%8E%A5%E6%94%B6"><span class="nav-number">13.2.</span> <span class="nav-text">2. 一直阻塞在 channel 接收</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%B5%B7%E4%BA%86-ticker%E3%80%81timer%E3%80%81%E5%90%8E%E5%8F%B0%E5%BE%AA%E7%8E%AF%EF%BC%8C%E5%8D%B4%E6%B2%A1%E6%9C%89%E5%81%9C%E6%AD%A2%E6%9D%A1%E4%BB%B6"><span class="nav-number">13.3.</span> <span class="nav-text">3. 起了 ticker、timer、后台循环，却没有停止条件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E8%B0%83%E7%94%A8%E4%BA%86%E6%94%AF%E6%8C%81%E5%8F%96%E6%B6%88%E7%9A%84-API%EF%BC%8C%E5%8D%B4%E6%A0%B9%E6%9C%AC%E6%B2%A1%E6%8A%8A%E5%8F%96%E6%B6%88%E4%BF%A1%E5%8F%B7%E4%BC%A0%E4%B8%8B%E5%8E%BB"><span class="nav-number">13.4.</span> <span class="nav-text">4. 调用了支持取消的 API，却根本没把取消信号传下去</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81%E4%B8%BA%E4%BB%80%E4%B9%88%E2%80%9C%E5%8A%A0%E4%BA%86%E8%B6%85%E6%97%B6%E2%80%9D%E4%BB%8D%E7%84%B6%E5%8F%AF%E8%83%BD%E6%B3%84%E6%BC%8F-goroutine"><span class="nav-number">14.</span> <span class="nav-text">十四、为什么“加了超时”仍然可能泄漏 goroutine</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%94%E3%80%81context-WithCancel-%E5%92%8C-context-WithTimeout-%E5%88%86%E5%88%AB%E8%A7%A3%E5%86%B3%E4%BB%80%E4%B9%88%E9%97%AE%E9%A2%98"><span class="nav-number">15.</span> <span class="nav-text">十五、context.WithCancel 和 context.WithTimeout 分别解决什么问题</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-context-WithCancel"><span class="nav-number">15.1.</span> <span class="nav-text">1. context.WithCancel</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-context-WithTimeout"><span class="nav-number">15.2.</span> <span class="nav-text">2. context.WithTimeout</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AD%E3%80%81%E5%9C%A8%E5%B9%B6%E5%8F%91%E4%BB%A3%E7%A0%81%E9%87%8C%EF%BC%8C%E5%8F%96%E6%B6%88%E4%BF%A1%E5%8F%B7%E5%88%B0%E5%BA%95%E5%BA%94%E8%AF%A5%E8%90%BD%E5%88%B0%E5%93%AA%E4%BA%9B%E5%9C%B0%E6%96%B9"><span class="nav-number">16.</span> <span class="nav-text">十六、在并发代码里，取消信号到底应该落到哪些地方</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-worker-%E4%BB%8E-jobs-%E5%8F%96%E4%BB%BB%E5%8A%A1%E6%97%B6"><span class="nav-number">16.1.</span> <span class="nav-text">1. worker 从 jobs 取任务时</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-worker-%E5%BE%80-results-%E5%8F%91%E9%80%81%E7%BB%93%E6%9E%9C%E6%97%B6"><span class="nav-number">16.2.</span> <span class="nav-text">2. worker 往 results 发送结果时</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%B0%83%E7%94%A8%E5%A4%96%E9%83%A8%E4%BE%9D%E8%B5%96%E6%97%B6"><span class="nav-number">16.3.</span> <span class="nav-text">3. 调用外部依赖时</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%90%8E%E5%8F%B0%E5%AE%9A%E6%97%B6%E5%BE%AA%E7%8E%AF%E9%87%8C"><span class="nav-number">16.4.</span> <span class="nav-text">4. 后台定时循环里</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%83%E3%80%81%E5%85%88%E6%90%AD%E4%B8%80%E4%B8%AA%E6%9B%B4%E5%AE%8C%E6%95%B4%E7%9A%84%E5%B9%B6%E5%8F%91%E5%B7%A1%E6%A3%80%E5%99%A8%E9%AA%A8%E6%9E%B6"><span class="nav-number">17.</span> <span class="nav-text">十七、先搭一个更完整的并发巡检器骨架</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AB%E3%80%81%E8%BF%99%E4%B8%AA%E5%B0%8F%E9%A1%B9%E7%9B%AE%E9%87%8C%E6%9C%80%E5%AE%B9%E6%98%93%E5%86%99%E9%94%99%E7%9A%84%E5%87%A0%E4%B8%AA%E5%9C%B0%E6%96%B9"><span class="nav-number">18.</span> <span class="nav-text">十八、这个小项目里最容易写错的几个地方</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%AE%A9-worker-%E7%9B%B4%E6%8E%A5%E5%B9%B6%E5%8F%91%E6%9B%B4%E6%96%B0-summary"><span class="nav-number">18.1.</span> <span class="nav-text">1. 让 worker 直接并发更新 summary</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%9C%A8%E5%A4%9A%E4%B8%AA%E5%9C%B0%E6%96%B9%E5%85%B3%E9%97%AD%E5%90%8C%E4%B8%80%E4%B8%AA-channel"><span class="nav-number">18.2.</span> <span class="nav-text">2. 在多个地方关闭同一个 channel</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%BF%98%E8%AE%B0%E5%9C%A8%E6%B4%BE%E7%94%9F-context-WithTimeout-%E5%90%8E%E8%B0%83%E7%94%A8-cancel"><span class="nav-number">18.3.</span> <span class="nav-text">3. 忘记在派生 context.WithTimeout 后调用 cancel</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E7%BB%93%E6%9E%9C%E5%8F%91%E9%80%81%E6%97%B6%E4%B8%8D%E7%9B%91%E5%90%AC-ctx-Done"><span class="nav-number">18.4.</span> <span class="nav-text">4. 结果发送时不监听 ctx.Done()</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B9%9D%E3%80%81%E5%B9%B6%E5%8F%91%E4%BB%A3%E7%A0%81%E6%9C%80%E5%B0%91%E8%AF%A5%E8%A1%A5%E5%93%AA%E4%BA%9B%E5%8F%AF%E8%A7%82%E6%B5%8B%E6%80%A7"><span class="nav-number">19.</span> <span class="nav-text">十九、并发代码最少该补哪些可观测性</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%B8%A6%E4%BB%BB%E5%8A%A1-ID-%E7%9A%84%E7%BB%93%E6%9E%84%E5%8C%96%E6%97%A5%E5%BF%97"><span class="nav-number">19.1.</span> <span class="nav-text">1. 带任务 ID 的结构化日志</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%89%B9%E6%AC%A1%E7%BB%B4%E5%BA%A6%E5%92%8C-worker-%E7%BB%B4%E5%BA%A6%E7%9A%84%E8%AE%A1%E6%95%B0"><span class="nav-number">19.2.</span> <span class="nav-text">2. 批次维度和 worker 维度的计数</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%85%B3%E9%94%AE%E9%98%BB%E5%A1%9E%E7%82%B9%E7%9A%84%E8%80%97%E6%97%B6"><span class="nav-number">19.3.</span> <span class="nav-text">3. 关键阻塞点的耗时</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-goroutine-%E6%95%B0%E9%87%8F%E8%B6%8B%E5%8A%BF"><span class="nav-number">19.4.</span> <span class="nav-text">4. goroutine 数量趋势</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%BF%85%E8%A6%81%E6%97%B6%E6%8E%A5%E5%85%A5-pprof"><span class="nav-number">19.5.</span> <span class="nav-text">5. 必要时接入 pprof</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E3%80%81%E4%B8%80%E4%B8%AA%E6%9B%B4%E5%AE%9E%E7%94%A8%E7%9A%84%E6%9C%80%E5%B0%8F%E8%A7%82%E6%B5%8B%E9%AA%A8%E6%9E%B6"><span class="nav-number">20.</span> <span class="nav-text">二十、一个更实用的最小观测骨架</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%80%E3%80%81%E8%B6%85%E6%97%B6%E3%80%81%E5%8F%96%E6%B6%88%E5%92%8C%E6%B3%84%E6%BC%8F%E8%BF%99%E4%B8%89%E4%BB%B6%E4%BA%8B%EF%BC%8C%E6%9C%80%E5%AE%B9%E6%98%93%E6%B7%B7%E6%B7%86%E5%9C%A8%E5%93%AA%E9%87%8C"><span class="nav-number">21.</span> <span class="nav-text">二十一、超时、取消和泄漏这三件事，最容易混淆在哪里</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%B6%85%E6%97%B6"><span class="nav-number">21.1.</span> <span class="nav-text">1. 超时</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%8F%96%E6%B6%88"><span class="nav-number">21.2.</span> <span class="nav-text">2. 取消</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%B3%84%E6%BC%8F"><span class="nav-number">21.3.</span> <span class="nav-text">3. 泄漏</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%8C%E3%80%81%E7%BB%99%E8%BF%99%E4%B8%AA%E5%B0%8F%E9%A1%B9%E7%9B%AE%E8%A1%A5%E5%87%A0%E4%B8%AA%E6%9C%80%E5%B8%B8%E8%A7%81%E7%9A%84%E9%94%99%E8%AF%AF%E7%A4%BA%E4%BE%8B"><span class="nav-number">22.</span> <span class="nav-text">二十二、给这个小项目补几个最常见的错误示例</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%94%99%E8%AF%AF%E7%A4%BA%E4%BE%8B%E4%B8%80%EF%BC%9A%E5%85%B1%E4%BA%AB%E5%88%87%E7%89%87%E5%B9%B6%E5%8F%91-append"><span class="nav-number">22.1.</span> <span class="nav-text">错误示例一：共享切片并发 append</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%94%99%E8%AF%AF%E7%A4%BA%E4%BE%8B%E4%BA%8C%EF%BC%9A%E7%BB%93%E6%9E%9C%E9%80%9A%E9%81%93%E6%B2%A1%E4%BA%BA%E6%B6%88%E8%B4%B9%EF%BC%8Cworker-%E5%85%A8%E5%A0%B5%E4%BD%8F"><span class="nav-number">22.2.</span> <span class="nav-text">错误示例二：结果通道没人消费，worker 全堵住</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%94%99%E8%AF%AF%E7%A4%BA%E4%BE%8B%E4%B8%89%EF%BC%9A%E5%8F%AA%E5%9C%A8%E5%A4%96%E5%B1%82%E8%BF%94%E5%9B%9E%E8%B6%85%E6%97%B6%EF%BC%8C%E4%B8%8D%E5%9C%A8%E5%86%85%E9%83%A8%E7%9B%91%E5%90%AC%E5%8F%96%E6%B6%88"><span class="nav-number">22.3.</span> <span class="nav-text">错误示例三：只在外层返回超时，不在内部监听取消</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%94%99%E8%AF%AF%E7%A4%BA%E4%BE%8B%E5%9B%9B%EF%BC%9A%E5%90%8E%E5%8F%B0-watcher-%E6%B2%A1%E6%9C%89%E9%80%80%E5%87%BA%E6%9D%A1%E4%BB%B6"><span class="nav-number">22.4.</span> <span class="nav-text">错误示例四：后台 watcher 没有退出条件</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%89%E3%80%81%E6%80%8E%E4%B9%88%E7%BB%99%E5%B9%B6%E5%8F%91%E9%97%AE%E9%A2%98%E8%A1%A5%E6%9C%80%E5%B0%8F%E6%B5%8B%E8%AF%95%EF%BC%8C%E8%80%8C%E4%B8%8D%E6%98%AF%E5%8F%AA%E9%9D%A0%E6%89%8B%E8%B7%91"><span class="nav-number">23.</span> <span class="nav-text">二十三、怎么给并发问题补最小测试，而不是只靠手跑</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%9F%BA%E6%9C%AC%E6%88%90%E5%8A%9F%E8%B7%AF%E5%BE%84%E6%B5%8B%E8%AF%95"><span class="nav-number">23.1.</span> <span class="nav-text">1. 基本成功路径测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%8F%96%E6%B6%88%E6%B5%8B%E8%AF%95"><span class="nav-number">23.2.</span> <span class="nav-text">2. 取消测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%B6%85%E6%97%B6%E6%B5%8B%E8%AF%95"><span class="nav-number">23.3.</span> <span class="nav-text">3. 超时测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E7%AB%9E%E6%80%81%E6%B5%8B%E8%AF%95"><span class="nav-number">23.4.</span> <span class="nav-text">4. 竞态测试</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%9B%9B%E3%80%81%E5%B9%B6%E5%8F%91%E9%97%AE%E9%A2%98%E5%87%BA%E7%8E%B0%E6%97%B6%EF%BC%8C%E6%9B%B4%E5%AE%9E%E7%94%A8%E7%9A%84%E6%8E%92%E6%9F%A5%E9%A1%BA%E5%BA%8F%E6%98%AF%E4%BB%80%E4%B9%88"><span class="nav-number">24.</span> <span class="nav-text">二十四、并发问题出现时，更实用的排查顺序是什么</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%85%88%E5%88%A4%E6%96%AD%E7%97%87%E7%8A%B6%E5%B1%9E%E4%BA%8E%E5%93%AA%E4%B8%80%E7%B1%BB"><span class="nav-number">24.1.</span> <span class="nav-text">1. 先判断症状属于哪一类</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%85%88%E7%BB%99%E7%B3%BB%E7%BB%9F%E5%8A%A0%E6%80%BB%E8%B6%85%E6%97%B6%EF%BC%8C%E9%81%BF%E5%85%8D%E6%8E%92%E6%9F%A5%E6%97%B6%E6%97%A0%E9%99%90%E6%8C%82%E4%BD%8F"><span class="nav-number">24.2.</span> <span class="nav-text">2. 先给系统加总超时，避免排查时无限挂住</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%94%A8-go-test-race-%E6%88%96%E6%9C%80%E5%B0%8F%E5%A4%8D%E7%8E%B0%E5%85%88%E6%8E%92%E9%99%A4%E7%AB%9E%E6%80%81"><span class="nav-number">24.3.</span> <span class="nav-text">3. 用 go test -race 或最小复现先排除竞态</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E7%9C%8B-goroutine-%E6%95%B0%E5%92%8C%E5%85%B3%E9%94%AE%E6%97%A5%E5%BF%97%EF%BC%8C%E5%88%A4%E6%96%AD%E6%9C%89%E6%B2%A1%E6%9C%89%E9%80%80%E5%87%BA%E9%97%AE%E9%A2%98"><span class="nav-number">24.4.</span> <span class="nav-text">4. 看 goroutine 数和关键日志，判断有没有退出问题</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E7%94%BB%E5%87%BA-channel-%E5%92%8C%E5%85%B3%E9%97%AD%E8%B4%A3%E4%BB%BB%E5%9B%BE"><span class="nav-number">24.5.</span> <span class="nav-text">5. 画出 channel 和关闭责任图</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E5%86%8D%E5%8E%BB%E7%9C%8B%E6%9B%B4%E7%BB%86%E7%9A%84%E9%98%BB%E5%A1%9E%E6%A0%88%E5%92%8C-profile"><span class="nav-number">24.6.</span> <span class="nav-text">6. 再去看更细的阻塞栈和 profile</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-%E6%9C%80%E5%90%8E%E5%86%8D%E4%BC%98%E5%8C%96%E5%B9%B6%E5%8F%91%E5%BA%A6%EF%BC%8C%E8%80%8C%E4%B8%8D%E6%98%AF%E4%B8%80%E5%BC%80%E5%A7%8B%E5%B0%B1%E4%B9%B1%E8%B0%83-worker-%E6%95%B0"><span class="nav-number">24.7.</span> <span class="nav-text">7. 最后再优化并发度，而不是一开始就乱调 worker 数</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%94%E3%80%81%E6%80%8E%E4%B9%88%E4%BB%8E%E6%97%A5%E5%BF%97%E5%92%8C%E7%8E%B0%E8%B1%A1%E5%88%9D%E6%AD%A5%E5%88%A4%E6%96%AD%E9%97%AE%E9%A2%98%E7%B1%BB%E5%9E%8B"><span class="nav-number">25.</span> <span class="nav-text">二十五、怎么从日志和现象初步判断问题类型</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9B%B4%E5%83%8F%E7%AB%9E%E6%80%81%E7%9A%84%E4%BF%A1%E5%8F%B7"><span class="nav-number">25.1.</span> <span class="nav-text">更像竞态的信号</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9B%B4%E5%83%8F%E6%AD%BB%E9%94%81%E7%9A%84%E4%BF%A1%E5%8F%B7"><span class="nav-number">25.2.</span> <span class="nav-text">更像死锁的信号</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9B%B4%E5%83%8F-goroutine-%E6%B3%84%E6%BC%8F%E7%9A%84%E4%BF%A1%E5%8F%B7"><span class="nav-number">25.3.</span> <span class="nav-text">更像 goroutine 泄漏的信号</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9B%B4%E5%83%8F%E5%8F%96%E6%B6%88%E6%B2%A1%E4%BC%A0%E9%80%8F%E7%9A%84%E4%BF%A1%E5%8F%B7"><span class="nav-number">25.4.</span> <span class="nav-text">更像取消没传透的信号</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%85%AD%E3%80%81%E5%B7%A5%E7%A8%8B%E9%87%8C%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E8%AF%A5%E7%94%A8-channel%EF%BC%8C%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E8%AF%A5%E7%94%A8-mutex"><span class="nav-number">26.</span> <span class="nav-text">二十六、工程里什么时候该用 channel，什么时候该用 mutex</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9B%B4%E9%80%82%E5%90%88-channel-%E7%9A%84%E5%9C%BA%E6%99%AF"><span class="nav-number">26.1.</span> <span class="nav-text">更适合 channel 的场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9B%B4%E9%80%82%E5%90%88-mutex-%E7%9A%84%E5%9C%BA%E6%99%AF"><span class="nav-number">26.2.</span> <span class="nav-text">更适合 mutex 的场景</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%83%E3%80%81%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E6%A0%B9%E6%9C%AC%E4%B8%8D%E8%AF%A5%E4%B8%8A%E5%B9%B6%E5%8F%91"><span class="nav-number">27.</span> <span class="nav-text">二十七、什么时候根本不该上并发</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%BB%BB%E5%8A%A1%E9%87%8F%E5%BE%88%E5%B0%8F%EF%BC%8C%E4%B8%B2%E8%A1%8C%E5%B7%B2%E7%BB%8F%E8%B6%B3%E5%A4%9F"><span class="nav-number">27.1.</span> <span class="nav-text">1. 任务量很小，串行已经足够</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%B8%8B%E6%B8%B8%E6%9C%AC%E8%BA%AB%E4%B8%8D%E6%94%AF%E6%8C%81%E5%B9%B6%E5%8F%91%E6%94%BE%E5%A4%A7"><span class="nav-number">27.2.</span> <span class="nav-text">2. 下游本身不支持并发放大</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%95%B0%E6%8D%AE%E4%BE%9D%E8%B5%96%E5%BC%BA%EF%BC%8C%E9%A1%BA%E5%BA%8F%E6%9C%AC%E8%BA%AB%E5%B0%B1%E6%98%AF%E4%B8%9A%E5%8A%A1%E8%AF%AD%E4%B9%89"><span class="nav-number">27.3.</span> <span class="nav-text">3. 数据依赖强，顺序本身就是业务语义</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%9B%A2%E9%98%9F%E7%8E%B0%E5%9C%A8%E8%BF%9E%E9%80%80%E5%87%BA%E8%B7%AF%E5%BE%84%E5%92%8C%E6%8E%92%E9%9A%9C%E6%89%8B%E6%AE%B5%E9%83%BD%E6%B2%A1%E5%87%86%E5%A4%87%E5%A5%BD"><span class="nav-number">27.4.</span> <span class="nav-text">4. 团队现在连退出路径和排障手段都没准备好</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%85%AB%E3%80%81%E8%BF%99%E7%B1%BB%E5%B9%B6%E5%8F%91%E4%BB%A3%E7%A0%81%E7%9A%84%E4%BD%BF%E7%94%A8%E8%BE%B9%E7%95%8C%E5%92%8C%E5%B8%B8%E8%A7%81%E8%AF%AF%E7%94%A8"><span class="nav-number">28.</span> <span class="nav-text">二十八、这类并发代码的使用边界和常见误用</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%80%82%E5%90%88%E8%BF%99%E5%A5%97%E6%A8%A1%E5%BC%8F%E7%9A%84%E5%9C%BA%E6%99%AF"><span class="nav-number">28.1.</span> <span class="nav-text">适合这套模式的场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%8D%E9%80%82%E5%90%88%E7%9B%B4%E6%8E%A5%E7%85%A7%E6%8A%84%E7%9A%84%E5%9C%BA%E6%99%AF"><span class="nav-number">28.2.</span> <span class="nav-text">不适合直接照抄的场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B8%B8%E8%A7%81%E8%AF%AF%E7%94%A8"><span class="nav-number">28.3.</span> <span class="nav-text">常见误用</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B9%9D%E3%80%81%E7%BB%83%E4%B9%A0%E9%A2%98"><span class="nav-number">29.</span> <span class="nav-text">二十九、练习题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E5%8D%81%E3%80%81%E7%BB%93%E8%AF%AD"><span class="nav-number">30.</span> <span class="nav-text">三十、结语</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2018/06/20/Go-10-Go%E5%B9%B6%E5%8F%91%E5%B8%B8%E8%A7%81%E9%97%AE%E9%A2%98%E7%AB%9E%E6%80%81%E6%AD%BB%E9%94%81%E6%B3%84%E6%BC%8F%E8%B6%85%E6%97%B6%E5%92%8C%E5%8F%96%E6%B6%88%E6%80%8E%E4%B9%88%E6%8E%92%E6%9F%A5/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="Go：并发常见问题，竞态、死锁、泄漏、超时和取消怎么排查 | 大道至简">
+      <meta itemprop="description" content="围绕一个并发巡检器，系统讲清 Go 项目里最常见的并发问题：数据竞态、死锁、goroutine 泄漏、超时与取消控制，以及一套更实用的并发排障顺序和最小可观测性骨架。">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Go：并发常见问题，竞态、死锁、泄漏、超时和取消怎么排查
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2018-06-20 20:30:00" itemprop="dateCreated datePublished" datetime="2018-06-20T20:30:00+08:00">2018-06-20</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>8.3k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>30 分钟</span>
+    </span>
+</div>
+
+            <div class="post-description">围绕一个并发巡检器，系统讲清 Go 项目里最常见的并发问题：数据竞态、死锁、goroutine 泄漏、超时与取消控制，以及一套更实用的并发排障顺序和最小可观测性骨架。</div>
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>学 Go 学到并发时，最容易被几句很有诱惑力的话带偏：</p>
+<ul>
+<li>Go 起 goroutine 很轻量</li>
+<li>channel 很优雅</li>
+<li><code>select</code> 一加就高级了</li>
+<li><code>context</code> 一传就算支持取消了</li>
+<li>并发代码只要能跑通，就说明设计差不多没问题</li>
+</ul>
+<p>这些话单独看都不算错，但放到真实项目里，很容易把人带进另一种混乱：</p>
+<ul>
+<li>吞吐量没上去，bug 先上去了</li>
+<li>偶发数据错乱，复现一次很难</li>
+<li>程序不是卡死，就是 goroutine 数量越跑越多</li>
+<li>上线后偶尔超时，但不知道到底是慢、堵、泄漏还是没取消</li>
+<li>日志很多，真正定位问题时却连哪条 goroutine 没退出都看不出来</li>
+</ul>
+<p>并发最难的地方，从来不是会不会写 <code>go func() &#123;&#125;</code>，而是下面这些边界能不能分清：</p>
+<ul>
+<li>哪些数据可以共享，哪些必须明确归属</li>
+<li>哪个 goroutine 负责生产，哪个负责消费，哪个负责关闭 channel</li>
+<li>任务结束后，所有 goroutine 是否真的都能退出</li>
+<li>超时是业务边界，还是排障补丁</li>
+<li>取消信号能不能沿整条调用链传到底</li>
+<li>出问题时，先查竞态、查阻塞、查泄漏，还是先查下游慢</li>
+</ul>
+<p>这一篇不按零碎语法点来讲，而是围绕一个实际小场景来讲：<strong>做一个并发巡检器</strong>。</p>
+<p>这个巡检器要做这些事：</p>
+<ol>
+<li>接收一批待巡检接口</li>
+<li>用固定 worker 并发执行</li>
+<li>支持整批取消</li>
+<li>支持单任务超时</li>
+<li>汇总成功、失败、超时数量</li>
+<li>出问题时能看出是竞态、死锁还是 goroutine 泄漏</li>
+</ol>
+<p>这个场景不大，但足够把 Go 并发里最常见、最容易互相缠住的问题一次讲清楚。</p>
+<h2 id="一、这篇文章要解决什么问题"><a href="#一、这篇文章要解决什么问题" class="headerlink" title="一、这篇文章要解决什么问题"></a>一、这篇文章要解决什么问题</h2><p>读完这一篇，应该能独立回答下面这些问题：</p>
+<ol>
+<li>Go 里的并发问题，为什么很多不是“语法错”，而是边界错</li>
+<li>数据竞态到底是什么，为什么有时会错，有时又像没事</li>
+<li>死锁和 goroutine 泄漏的区别到底是什么</li>
+<li><code>context.WithTimeout</code> 和 <code>context.WithCancel</code> 分别解决什么问题</li>
+<li>为什么很多“支持超时”的代码仍然会泄漏 goroutine</li>
+<li>并发代码最少应该补哪些可观测性</li>
+<li>线上出现超时、卡住、goroutine 增长时，排查顺序应该怎么定</li>
+</ol>
+<p>如果这些问题能独立说清楚，后面再写 worker pool、HTTP 服务、任务调度器、消息消费器，代码会稳很多。</p>
+<h2 id="二、先把这个并发小项目的场景说清楚"><a href="#二、先把这个并发小项目的场景说清楚" class="headerlink" title="二、先把这个并发小项目的场景说清楚"></a>二、先把这个并发小项目的场景说清楚</h2><p>假设现在要写一个最小的测试平台巡检器。</p>
+<p>它每天会拿到一批接口巡检任务：</p>
+<ul>
+<li>检查登录接口</li>
+<li>检查订单接口</li>
+<li>检查支付接口</li>
+<li>检查消息推送接口</li>
+</ul>
+<p>每个任务都有：</p>
+<ul>
+<li>任务 ID</li>
+<li>接口名</li>
+<li>超时时间</li>
+<li>巡检函数</li>
+</ul>
+<p>目标是让它具备这些能力：</p>
+<ol>
+<li>不要串行慢慢跑，要固定数量 worker 并发跑</li>
+<li>某个任务超时时，只影响当前任务，不把整个批次永远拖住</li>
+<li>整批取消时，worker 能尽快退出</li>
+<li>汇总统计不能出现并发写坏</li>
+<li>出问题时，能快速判断是共享数据冲突、channel 设计错误，还是 goroutine 没退出</li>
+</ol>
+<p>后面的所有概念，都围绕这个小项目来展开。</p>
+<h2 id="三、先看一个最小可运行示例"><a href="#三、先看一个最小可运行示例" class="headerlink" title="三、先看一个最小可运行示例"></a>三、先看一个最小可运行示例</h2><p>先不要一上来就把并发写复杂，先看最小骨架。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">	<span class="string">&quot;context&quot;</span></span><br><span class="line">	<span class="string">&quot;fmt&quot;</span></span><br><span class="line">	<span class="string">&quot;sync&quot;</span></span><br><span class="line">	<span class="string">&quot;time&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Task <span class="keyword">struct</span> &#123;</span><br><span class="line">	ID      <span class="type">string</span></span><br><span class="line">	Name    <span class="type">string</span></span><br><span class="line">	Timeout time.Duration</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">probe</span><span class="params">(ctx context.Context, task Task)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">	<span class="keyword">select</span> &#123;</span><br><span class="line">	<span class="keyword">case</span> &lt;-time.After(<span class="number">50</span> * time.Millisecond):</span><br><span class="line">		fmt.Println(<span class="string">&quot;done:&quot;</span>, task.Name)</span><br><span class="line">		<span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">	<span class="keyword">case</span> &lt;-ctx.Done():</span><br><span class="line">		<span class="keyword">return</span> ctx.Err()</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	tasks := []Task&#123;</span><br><span class="line">		&#123;ID: <span class="string">&quot;t-1&quot;</span>, Name: <span class="string">&quot;login&quot;</span>, Timeout: <span class="number">100</span> * time.Millisecond&#125;,</span><br><span class="line">		&#123;ID: <span class="string">&quot;t-2&quot;</span>, Name: <span class="string">&quot;order&quot;</span>, Timeout: <span class="number">100</span> * time.Millisecond&#125;,</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	jobs := <span class="built_in">make</span>(<span class="keyword">chan</span> Task)</span><br><span class="line">	<span class="keyword">var</span> wg sync.WaitGroup</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> i := <span class="number">0</span>; i &lt; <span class="number">2</span>; i++ &#123;</span><br><span class="line">		wg.Add(<span class="number">1</span>)</span><br><span class="line">		<span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">			<span class="keyword">defer</span> wg.Done()</span><br><span class="line">			<span class="keyword">for</span> task := <span class="keyword">range</span> jobs &#123;</span><br><span class="line">				ctx, cancel := context.WithTimeout(context.Background(), task.Timeout)</span><br><span class="line">				_ = probe(ctx, task)</span><br><span class="line">				cancel()</span><br><span class="line">			&#125;</span><br><span class="line">		&#125;()</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> _, task := <span class="keyword">range</span> tasks &#123;</span><br><span class="line">		jobs &lt;- task</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="built_in">close</span>(jobs)</span><br><span class="line">	wg.Wait()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这段代码已经把几个核心点带出来了：</p>
+<ul>
+<li>goroutine 用来并发执行 worker</li>
+<li>channel 用来分发任务</li>
+<li><code>context.WithTimeout</code> 给单任务加超时</li>
+<li><code>WaitGroup</code> 用来等 worker 退出</li>
+</ul>
+<p>但它还远远不够稳。</p>
+<p>因为真实项目里你很快就会碰到：</p>
+<ul>
+<li>多个 worker 同时写共享 <code>map</code></li>
+<li>某个结果 channel 没人接收，worker 卡住</li>
+<li>某个 goroutine 一直等不到退出信号</li>
+<li>任务超时了，但探测协程还在后台偷偷跑</li>
+<li>统计数字偶尔不对，但肉眼看代码又像没问题</li>
+</ul>
+<p>所以接下来真正要学的，不是“怎么开 goroutine”，而是“怎么让这些 goroutine 有边界、有退出路径、能排障”。</p>
+<h2 id="四、先把一句话结论说清楚"><a href="#四、先把一句话结论说清楚" class="headerlink" title="四、先把一句话结论说清楚"></a>四、先把一句话结论说清楚</h2><p>Go 并发里最重要的不是“并发起来”，而是：</p>
+<p><strong>把数据归属、阻塞点、退出路径和观测点设计清楚。</strong></p>
+<p>很多并发 bug 本质上都能归到下面四类问题：</p>
+<ol>
+<li>共享数据没有归属，导致竞态</li>
+<li>阻塞关系没有闭环，导致死锁</li>
+<li>退出路径不完整，导致 goroutine 泄漏</li>
+<li>超时和取消只写了一半，导致表面返回了，后台还没停</li>
+</ol>
+<p>如果一开始只盯着语法，后面通常会把并发问题修成更难排查的状态。</p>
+<h2 id="五、数据竞态到底是什么，为什么它这么难定位"><a href="#五、数据竞态到底是什么，为什么它这么难定位" class="headerlink" title="五、数据竞态到底是什么，为什么它这么难定位"></a>五、数据竞态到底是什么，为什么它这么难定位</h2><p>第一次接触“竞态条件”时，很容易把它理解成“两个 goroutine 同时操作一个变量”。<br>这个理解不算错，但还不够工程化。</p>
+<p>更准确一点的说法是：</p>
+<p><strong>多个 goroutine 在没有正确同步的前提下，同时读写或写写同一份共享数据，最终结果依赖执行时序。</strong></p>
+<p>这类 bug 难定位的原因是：</p>
+<ul>
+<li>有时会直接报错，例如 <code>concurrent map writes</code></li>
+<li>有时完全不报错，只是结果偶尔错</li>
+<li>有时本地跑不出来，线上高并发才出现</li>
+<li>加日志以后时序变了，bug 又不见了</li>
+</ul>
+<p>先看一个典型错误例子：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">	<span class="string">&quot;fmt&quot;</span></span><br><span class="line">	<span class="string">&quot;sync&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	counter := <span class="keyword">map</span>[<span class="type">string</span>]<span class="type">int</span>&#123;&#125;</span><br><span class="line">	<span class="keyword">var</span> wg sync.WaitGroup</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> i := <span class="number">0</span>; i &lt; <span class="number">100</span>; i++ &#123;</span><br><span class="line">		wg.Add(<span class="number">1</span>)</span><br><span class="line">		<span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">			<span class="keyword">defer</span> wg.Done()</span><br><span class="line">			counter[<span class="string">&quot;success&quot;</span>]++</span><br><span class="line">		&#125;()</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	wg.Wait()</span><br><span class="line">	fmt.Println(counter[<span class="string">&quot;success&quot;</span>])</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这段代码的问题不是“map 语法错”，而是：</p>
+<ul>
+<li><code>counter</code> 被多个 goroutine 同时写</li>
+<li>写入过程没有锁，也没有单线程所有权</li>
+<li>最终结果可能错，也可能直接 panic</li>
+</ul>
+<p>这里要先建立一个很重要的判断标准：</p>
+<p><strong>并发里最该先问的不是“能不能访问这个变量”，而是“谁拥有它的写权限”。</strong></p>
+<p>如果这句话没想清楚，代码就算这次跑过了，后面也会出问题。</p>
+<h2 id="六、竞态最常见的三种来源"><a href="#六、竞态最常见的三种来源" class="headerlink" title="六、竞态最常见的三种来源"></a>六、竞态最常见的三种来源</h2><p>真实项目里，竞态不只发生在 <code>map</code> 上。<br>最常见的来源通常有三类。</p>
+<h3 id="1-多个-goroutine-直接改共享-map、切片、结构体字段"><a href="#1-多个-goroutine-直接改共享-map、切片、结构体字段" class="headerlink" title="1. 多个 goroutine 直接改共享 map、切片、结构体字段"></a>1. 多个 goroutine 直接改共享 <code>map</code>、切片、结构体字段</h3><p>例如：</p>
+<ul>
+<li>共享 <code>map[string]int</code> 做统计</li>
+<li>共享 <code>[]Result</code> 做 append</li>
+<li>共享 <code>TaskSummary</code> 直接累加计数</li>
+</ul>
+<p>这些写法看起来都很顺手，但只要多个 worker 同时碰，就会出事。</p>
+<h3 id="2-以为“只读”就安全，结果底层对象其实还在被改"><a href="#2-以为“只读”就安全，结果底层对象其实还在被改" class="headerlink" title="2. 以为“只读”就安全，结果底层对象其实还在被改"></a>2. 以为“只读”就安全，结果底层对象其实还在被改</h3><p>例如把一个切片、map、指针传给多个 goroutine，以为都只是读；<br>但某处偷偷改了一下底层内容，其他 goroutine 读到的就是变化中的状态。</p>
+<h3 id="3-闭包捕获了持续变化的外部状态"><a href="#3-闭包捕获了持续变化的外部状态" class="headerlink" title="3. 闭包捕获了持续变化的外部状态"></a>3. 闭包捕获了持续变化的外部状态</h3><p>例如循环里启动 goroutine，然后直接引用外层变量、共享配置、共享结果对象。</p>
+<p>这类问题的共同点不是“看起来很复杂”，而是：</p>
+<ul>
+<li>共享边界不清楚</li>
+<li>写权限分散</li>
+<li>谁负责同步不明确</li>
+</ul>
+<h2 id="七、竞态不是只有“加锁”这一种修法"><a href="#七、竞态不是只有“加锁”这一种修法" class="headerlink" title="七、竞态不是只有“加锁”这一种修法"></a>七、竞态不是只有“加锁”这一种修法</h2><p>一看到竞态，第一反应常常就是上锁。<br>锁当然是办法，但不是唯一办法，也不总是最好的办法。</p>
+<p>更实用的修复思路通常有三种。</p>
+<h3 id="1-用单-goroutine-收口写入权"><a href="#1-用单-goroutine-收口写入权" class="headerlink" title="1. 用单 goroutine 收口写入权"></a>1. 用单 goroutine 收口写入权</h3><p>例如 worker 只产出结果，汇总 goroutine 单独消费并更新统计。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Summary <span class="keyword">struct</span> &#123;</span><br><span class="line">	Success <span class="type">int</span></span><br><span class="line">	Failed  <span class="type">int</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">collect</span><span class="params">(results &lt;-<span class="keyword">chan</span> <span class="type">error</span>)</span></span> Summary &#123;</span><br><span class="line">	<span class="keyword">var</span> s Summary</span><br><span class="line">	<span class="keyword">for</span> err := <span class="keyword">range</span> results &#123;</span><br><span class="line">		<span class="keyword">if</span> err == <span class="literal">nil</span> &#123;</span><br><span class="line">			s.Success++</span><br><span class="line">			<span class="keyword">continue</span></span><br><span class="line">		&#125;</span><br><span class="line">		s.Failed++</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> s</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这种方式最适合：</p>
+<ul>
+<li>汇总类数据</li>
+<li>事件流处理</li>
+<li>状态天然可以顺序更新的场景</li>
+</ul>
+<p>优点是：</p>
+<ul>
+<li>不需要多个 goroutine 同时写同一个对象</li>
+<li>逻辑更容易推演</li>
+<li>出错点更集中</li>
+</ul>
+<h3 id="2-用-sync-Mutex-明确保护共享状态"><a href="#2-用-sync-Mutex-明确保护共享状态" class="headerlink" title="2. 用 sync.Mutex 明确保护共享状态"></a>2. 用 <code>sync.Mutex</code> 明确保护共享状态</h3><p>例如缓存、注册表、连接池状态这类对象，确实需要被多个 goroutine 共享写入。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> SafeCounter <span class="keyword">struct</span> &#123;</span><br><span class="line">	mu sync.Mutex</span><br><span class="line">	m  <span class="keyword">map</span>[<span class="type">string</span>]<span class="type">int</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c *SafeCounter)</span></span> Inc(key <span class="type">string</span>) &#123;</span><br><span class="line">	c.mu.Lock()</span><br><span class="line">	<span class="keyword">defer</span> c.mu.Unlock()</span><br><span class="line">	c.m[key]++</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>锁适合：</p>
+<ul>
+<li>有明确共享状态</li>
+<li>更新逻辑不适合拆成事件流</li>
+<li>临界区可以保持足够小</li>
+</ul>
+<h3 id="3-用-atomic-处理非常简单的数值计数"><a href="#3-用-atomic-处理非常简单的数值计数" class="headerlink" title="3. 用 atomic 处理非常简单的数值计数"></a>3. 用 <code>atomic</code> 处理非常简单的数值计数</h3><p>例如活跃 worker 数、成功次数、失败次数。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> active <span class="type">int64</span></span><br><span class="line"></span><br><span class="line">atomic.AddInt64(&amp;active, <span class="number">1</span>)</span><br><span class="line"><span class="keyword">defer</span> atomic.AddInt64(&amp;active, <span class="number">-1</span>)</span><br></pre></td></tr></table></figure>
+
+<p>但这里要非常克制。<br><code>atomic</code> 适合简单数值，不适合把复杂状态全塞进去硬控。</p>
+<p>一个很实用的工程判断是：</p>
+<ul>
+<li>共享的是流转中的事件，用 channel 收口</li>
+<li>共享的是可变对象，用 mutex</li>
+<li>共享的是极简单的计数，用 atomic</li>
+</ul>
+<h2 id="八、怎么用-go-test-race-看竞态，而不是靠猜"><a href="#八、怎么用-go-test-race-看竞态，而不是靠猜" class="headerlink" title="八、怎么用 go test -race 看竞态，而不是靠猜"></a>八、怎么用 <code>go test -race</code> 看竞态，而不是靠猜</h2><p>Go 的 race detector 不是万能，但它是排查竞态时的第一优先级工具之一。</p>
+<p>最常用的方式就是：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">go <span class="built_in">test</span> -race ./...</span><br></pre></td></tr></table></figure>
+
+<p>它解决的不是“让你更懂并发”，而是帮助你回答一个更具体的问题：</p>
+<p><strong>这段代码里，是否真的发生了未同步的并发访问。</strong></p>
+<p>你应该把它优先用在这些场景：</p>
+<ul>
+<li>汇总统计偶尔不对</li>
+<li>slice append 偶发丢数据</li>
+<li>map 偶发 panic 或结果怪异</li>
+<li>某个测试在 CI 才偶发失败</li>
+</ul>
+<p>但也要知道它的边界：</p>
+<ul>
+<li>跑不到的路径，它看不到</li>
+<li>时序极端复杂时，不一定每次都能撞到</li>
+<li>它能告诉你“这里有竞争”，但不会替你设计所有权边界</li>
+</ul>
+<p>所以 race detector 最适合做的是：</p>
+<ol>
+<li>先把怀疑点变成可执行测试</li>
+<li>再用 <code>-race</code> 验证是不是未同步访问</li>
+<li>最后从“谁拥有写权限”这个角度回头改设计</li>
+</ol>
+<h2 id="九、死锁到底是什么，别和“程序很慢”混为一谈"><a href="#九、死锁到底是什么，别和“程序很慢”混为一谈" class="headerlink" title="九、死锁到底是什么，别和“程序很慢”混为一谈"></a>九、死锁到底是什么，别和“程序很慢”混为一谈</h2><p>程序一旦卡住，常会被统称成死锁。<br>这不够准确。</p>
+<p>更工程化一点的说法是：</p>
+<p><strong>一组 goroutine 互相等待，导致系统无法继续推进。</strong></p>
+<p>它和“程序很慢”不一样：</p>
+<ul>
+<li>很慢，说明还能推进，只是推进得慢</li>
+<li>死锁，说明推进条件已经互相卡死了</li>
+</ul>
+<p>Go 里最典型的死锁报错你很可能见过：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">fatal error: all goroutines are asleep - deadlock!</span><br></pre></td></tr></table></figure>
+
+<p>先看一个最小错误例子：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	ch := <span class="built_in">make</span>(<span class="keyword">chan</span> <span class="type">int</span>)</span><br><span class="line">	ch &lt;- <span class="number">1</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这里的问题是：</p>
+<ul>
+<li>无缓冲 channel 发送必须等接收方</li>
+<li>当前 goroutine 自己在发送</li>
+<li>没有任何 goroutine 会来接收</li>
+<li>所以它会永远卡住</li>
+</ul>
+<p>这个例子很小，但真实项目里的死锁，本质上还是同一类问题：<br>某个阻塞动作永远等不到配对条件。</p>
+<h2 id="十、真实项目里最常见的死锁来源"><a href="#十、真实项目里最常见的死锁来源" class="headerlink" title="十、真实项目里最常见的死锁来源"></a>十、真实项目里最常见的死锁来源</h2><p>死锁最常见的来源通常不是语法陌生，而是协作边界混乱。</p>
+<h3 id="1-channel-没有人消费，发送方一直堵住"><a href="#1-channel-没有人消费，发送方一直堵住" class="headerlink" title="1. channel 没有人消费，发送方一直堵住"></a>1. channel 没有人消费，发送方一直堵住</h3><p>例如 worker 往 <code>results</code> 写，但汇总 goroutine 根本没启动，或者过早退出了。</p>
+<h3 id="2-channel-没有人关闭，接收方一直-range-不完"><a href="#2-channel-没有人关闭，接收方一直-range-不完" class="headerlink" title="2. channel 没有人关闭，接收方一直 range 不完"></a>2. channel 没有人关闭，接收方一直 <code>range</code> 不完</h3><p>例如：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">for</span> result := <span class="keyword">range</span> results &#123;</span><br><span class="line">	...</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>如果 <code>results</code> 永远不 close，这个循环就永远出不去。</p>
+<h3 id="3-WaitGroup-等待和-channel-关闭顺序写反"><a href="#3-WaitGroup-等待和-channel-关闭顺序写反" class="headerlink" title="3. WaitGroup 等待和 channel 关闭顺序写反"></a>3. <code>WaitGroup</code> 等待和 channel 关闭顺序写反</h3><p>这在 worker pool 里非常常见。</p>
+<p>错误写法通常像这样：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">wg.Wait()</span><br><span class="line"><span class="built_in">close</span>(results)</span><br></pre></td></tr></table></figure>
+
+<p>但如果某个 worker 在等着往 <code>results</code> 发送，而主 goroutine 又在 <code>wg.Wait()</code>，就可能互相卡住：</p>
+<ul>
+<li>worker 等结果被消费</li>
+<li>主 goroutine 等 worker 结束</li>
+<li>可真正负责消费结果的人并没有推进</li>
+</ul>
+<h3 id="4-锁顺序不一致"><a href="#4-锁顺序不一致" class="headerlink" title="4. 锁顺序不一致"></a>4. 锁顺序不一致</h3><p>例如 goroutine A 先拿 <code>muA</code> 再拿 <code>muB</code>，goroutine B 先拿 <code>muB</code> 再拿 <code>muA</code>。<br>这会把死锁从 channel 设计问题，变成锁顺序问题。</p>
+<h2 id="十一、先看一个更接近现场的死锁错误例子"><a href="#十一、先看一个更接近现场的死锁错误例子" class="headerlink" title="十一、先看一个更接近现场的死锁错误例子"></a>十一、先看一个更接近现场的死锁错误例子</h2><p>假设现在有一个巡检器，目标是让 worker 并发执行，然后由主 goroutine 收集结果。</p>
+<p>错误版本：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> <span class="string">&quot;sync&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	jobs := <span class="built_in">make</span>(<span class="keyword">chan</span> <span class="type">int</span>)</span><br><span class="line">	results := <span class="built_in">make</span>(<span class="keyword">chan</span> <span class="type">int</span>)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">var</span> wg sync.WaitGroup</span><br><span class="line">	<span class="keyword">for</span> i := <span class="number">0</span>; i &lt; <span class="number">2</span>; i++ &#123;</span><br><span class="line">		wg.Add(<span class="number">1</span>)</span><br><span class="line">		<span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">			<span class="keyword">defer</span> wg.Done()</span><br><span class="line">			<span class="keyword">for</span> job := <span class="keyword">range</span> jobs &#123;</span><br><span class="line">				results &lt;- job * <span class="number">2</span></span><br><span class="line">			&#125;</span><br><span class="line">		&#125;()</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> i := <span class="number">0</span>; i &lt; <span class="number">3</span>; i++ &#123;</span><br><span class="line">		jobs &lt;- i</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="built_in">close</span>(jobs)</span><br><span class="line"></span><br><span class="line">	wg.Wait()</span><br><span class="line">	<span class="built_in">close</span>(results)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> <span class="keyword">range</span> results &#123;</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这段代码的问题就在于顺序：</p>
+<ul>
+<li>worker 往 <code>results</code> 发送</li>
+<li>但主 goroutine 还没开始接收 <code>results</code></li>
+<li>主 goroutine 先去 <code>wg.Wait()</code></li>
+<li>worker 被 <code>results &lt;- ...</code> 卡住，<code>Done()</code> 也就执行不到</li>
+<li><code>wg.Wait()</code> 永远等不回来</li>
+</ul>
+<p>这就是典型的协作死锁。</p>
+<p>更稳的写法通常是：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">	wg.Wait()</span><br><span class="line">	<span class="built_in">close</span>(results)</span><br><span class="line">&#125;()</span><br><span class="line"></span><br><span class="line"><span class="keyword">for</span> result := <span class="keyword">range</span> results &#123;</span><br><span class="line">	_ = result</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这样谁负责关闭 <code>results</code>、谁负责消费 <code>results</code>，边界就清楚了。</p>
+<h2 id="十二、goroutine-泄漏是什么，和死锁有什么区别"><a href="#十二、goroutine-泄漏是什么，和死锁有什么区别" class="headerlink" title="十二、goroutine 泄漏是什么，和死锁有什么区别"></a>十二、goroutine 泄漏是什么，和死锁有什么区别</h2><p>goroutine 泄漏和死锁很容易被混成一件事。<br>它们经常一起出现，但不是一回事。</p>
+<p>goroutine 泄漏更接近这种状态：</p>
+<ul>
+<li>程序整体可能还在跑</li>
+<li>但某些 goroutine 已经失去业务价值</li>
+<li>它们却没有退出，还在阻塞、等待、轮询或持有资源</li>
+</ul>
+<p>所以死锁更像“系统推进不了”，而 goroutine 泄漏更像“系统还能推进，但后台一直积垃圾”。</p>
+<p>goroutine 泄漏常见的后果包括：</p>
+<ul>
+<li>goroutine 数量越来越多</li>
+<li>内存持续增长</li>
+<li>连接、timer、ticker、文件句柄没及时释放</li>
+<li>原本只是偶发超时，最后变成整体雪崩</li>
+</ul>
+<h2 id="十三、goroutine-泄漏最常见的四种来源"><a href="#十三、goroutine-泄漏最常见的四种来源" class="headerlink" title="十三、goroutine 泄漏最常见的四种来源"></a>十三、goroutine 泄漏最常见的四种来源</h2><h3 id="1-一直阻塞在-channel-发送"><a href="#1-一直阻塞在-channel-发送" class="headerlink" title="1. 一直阻塞在 channel 发送"></a>1. 一直阻塞在 channel 发送</h3><p>例如：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">worker</span><span class="params">(results <span class="keyword">chan</span>&lt;- Result, result Result)</span></span> &#123;</span><br><span class="line">	results &lt;- result</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>如果接收方提前退出，或者根本没人接收，这个 worker 就会一直卡住。</p>
+<h3 id="2-一直阻塞在-channel-接收"><a href="#2-一直阻塞在-channel-接收" class="headerlink" title="2. 一直阻塞在 channel 接收"></a>2. 一直阻塞在 channel 接收</h3><p>例如：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">for</span> task := <span class="keyword">range</span> jobs &#123;</span><br><span class="line">	...</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>如果 <code>jobs</code> 永远不 close，而外层也没用 <code>ctx.Done()</code> 提前退出，worker 就会一直挂着。</p>
+<h3 id="3-起了-ticker、timer、后台循环，却没有停止条件"><a href="#3-起了-ticker、timer、后台循环，却没有停止条件" class="headerlink" title="3. 起了 ticker、timer、后台循环，却没有停止条件"></a>3. 起了 ticker、timer、后台循环，却没有停止条件</h3><p>例如：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">watch</span><span class="params">()</span></span> &#123;</span><br><span class="line">	ticker := time.NewTicker(time.Second)</span><br><span class="line">	<span class="keyword">for</span> <span class="keyword">range</span> ticker.C &#123;</span><br><span class="line">		<span class="comment">// do work forever</span></span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>如果这个 goroutine 只服务一批短任务，那这就是典型泄漏。<br>即使这个 goroutine 后面能退出，正常写法里也应该记得在合适位置 <code>ticker.Stop()</code>。</p>
+<h3 id="4-调用了支持取消的-API，却根本没把取消信号传下去"><a href="#4-调用了支持取消的-API，却根本没把取消信号传下去" class="headerlink" title="4. 调用了支持取消的 API，却根本没把取消信号传下去"></a>4. 调用了支持取消的 API，却根本没把取消信号传下去</h3><p>例如上层已经超时返回了，但底层 HTTP 请求、数据库查询、内部 goroutine 还在继续跑。</p>
+<p>很多项目的“超时支持”其实只做到了这一半：</p>
+<ul>
+<li>外层函数返回了</li>
+<li>内层 goroutine 没停</li>
+</ul>
+<p>这不叫真正支持超时，只叫“主调方先撤了”。</p>
+<h2 id="十四、为什么“加了超时”仍然可能泄漏-goroutine"><a href="#十四、为什么“加了超时”仍然可能泄漏-goroutine" class="headerlink" title="十四、为什么“加了超时”仍然可能泄漏 goroutine"></a>十四、为什么“加了超时”仍然可能泄漏 goroutine</h2><p>这是 Go 并发里一个非常高频的误区。</p>
+<p>先看一个错误示例：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">RunWithTimeout</span><span class="params">(task <span class="keyword">func</span>()</span></span> <span class="type">error</span>, timeout time.Duration) <span class="type">error</span> &#123;</span><br><span class="line">	done := <span class="built_in">make</span>(<span class="keyword">chan</span> <span class="type">error</span>)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">		done &lt;- task()</span><br><span class="line">	&#125;()</span><br><span class="line"></span><br><span class="line">	<span class="keyword">select</span> &#123;</span><br><span class="line">	<span class="keyword">case</span> err := &lt;-done:</span><br><span class="line">		<span class="keyword">return</span> err</span><br><span class="line">	<span class="keyword">case</span> &lt;-time.After(timeout):</span><br><span class="line">		<span class="keyword">return</span> context.DeadlineExceeded</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>看到这里很容易以为：</p>
+<ul>
+<li>超时返回了</li>
+<li>问题解决了</li>
+</ul>
+<p>其实不一定。</p>
+<p>如果 <code>task()</code> 卡住了，或者它执行完后尝试 <code>done &lt;- task()</code> 时外层已经超时返回、没人再接这个 <code>done</code>，那个 goroutine 仍然可能挂住。</p>
+<p>这段代码至少有两个问题：</p>
+<ol>
+<li>没有把取消信号传给 <code>task</code></li>
+<li><code>done</code> 的发送和接收关系没有完整退出策略</li>
+</ol>
+<p>更稳的方向通常是：</p>
+<ul>
+<li>用 <code>context</code> 把取消信号传到内部</li>
+<li>worker 在发送结果时同时监听 <code>ctx.Done()</code></li>
+<li>下游操作也必须真正支持取消</li>
+</ul>
+<p>所以超时不是“函数早点 return”这么简单。<br>真正的目标是：<strong>超时发生后，所有相关 goroutine 都要有机会退出。</strong></p>
+<h2 id="十五、context-WithCancel-和-context-WithTimeout-分别解决什么问题"><a href="#十五、context-WithCancel-和-context-WithTimeout-分别解决什么问题" class="headerlink" title="十五、context.WithCancel 和 context.WithTimeout 分别解决什么问题"></a>十五、<code>context.WithCancel</code> 和 <code>context.WithTimeout</code> 分别解决什么问题</h2><p><code>context</code> 很容易被机械地一路传下去，但代码里常常说不清它到底在传什么。</p>
+<p>最重要的两个动作是：</p>
+<h3 id="1-context-WithCancel"><a href="#1-context-WithCancel" class="headerlink" title="1. context.WithCancel"></a>1. <code>context.WithCancel</code></h3><p>它解决的是：<br><strong>我需要主动广播“这一批任务别做了”。</strong></p>
+<p>例如：</p>
+<ul>
+<li>某个关键依赖已经失败，整批没有继续价值</li>
+<li>用户主动取消</li>
+<li>父任务结束，子任务要一起停</li>
+</ul>
+<h3 id="2-context-WithTimeout"><a href="#2-context-WithTimeout" class="headerlink" title="2. context.WithTimeout"></a>2. <code>context.WithTimeout</code></h3><p>它解决的是：<br><strong>这段操作最多只能占用这么久。</strong></p>
+<p>例如：</p>
+<ul>
+<li>单个接口探测最多 200ms</li>
+<li>整批巡检最多 3s</li>
+<li>外部依赖响应超过阈值就算失败</li>
+</ul>
+<p>你可以把它们先粗略理解成：</p>
+<ul>
+<li><code>WithCancel</code> 更像手动刹车</li>
+<li><code>WithTimeout</code> 更像自动超时刹车</li>
+</ul>
+<p>但要注意，<code>context</code> 真正有效的前提是：</p>
+<ul>
+<li>每一层都继续往下传</li>
+<li>阻塞点都监听 <code>ctx.Done()</code></li>
+<li>下游 API 真的接受并遵守这个 <code>ctx</code></li>
+</ul>
+<p>否则它就只是一个一路传递却没人理的参数。</p>
+<h2 id="十六、在并发代码里，取消信号到底应该落到哪些地方"><a href="#十六、在并发代码里，取消信号到底应该落到哪些地方" class="headerlink" title="十六、在并发代码里，取消信号到底应该落到哪些地方"></a>十六、在并发代码里，取消信号到底应该落到哪些地方</h2><p>如果只是把 <code>ctx</code> 放到函数签名里，却不在阻塞点监听，它基本没有意义。</p>
+<p>最关键的落点通常有四类：</p>
+<h3 id="1-worker-从-jobs-取任务时"><a href="#1-worker-从-jobs-取任务时" class="headerlink" title="1. worker 从 jobs 取任务时"></a>1. worker 从 jobs 取任务时</h3><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">select</span> &#123;</span><br><span class="line"><span class="keyword">case</span> &lt;-ctx.Done():</span><br><span class="line">	<span class="keyword">return</span></span><br><span class="line"><span class="keyword">case</span> task, ok := &lt;-jobs:</span><br><span class="line">	...</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="2-worker-往-results-发送结果时"><a href="#2-worker-往-results-发送结果时" class="headerlink" title="2. worker 往 results 发送结果时"></a>2. worker 往 results 发送结果时</h3><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">select</span> &#123;</span><br><span class="line"><span class="keyword">case</span> &lt;-ctx.Done():</span><br><span class="line">	<span class="keyword">return</span></span><br><span class="line"><span class="keyword">case</span> results &lt;- result:</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="3-调用外部依赖时"><a href="#3-调用外部依赖时" class="headerlink" title="3. 调用外部依赖时"></a>3. 调用外部依赖时</h3><p>例如 HTTP、数据库、RPC，都应该把 <code>ctx</code> 继续传进去。</p>
+<h3 id="4-后台定时循环里"><a href="#4-后台定时循环里" class="headerlink" title="4. 后台定时循环里"></a>4. 后台定时循环里</h3><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">for</span> &#123;</span><br><span class="line">	<span class="keyword">select</span> &#123;</span><br><span class="line">	<span class="keyword">case</span> &lt;-ctx.Done():</span><br><span class="line">		<span class="keyword">return</span></span><br><span class="line">	<span class="keyword">case</span> &lt;-ticker.C:</span><br><span class="line">		...</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>如果这四类位置漏掉任何一个，取消通常都只能做到“部分有效”。</p>
+<h2 id="十七、先搭一个更完整的并发巡检器骨架"><a href="#十七、先搭一个更完整的并发巡检器骨架" class="headerlink" title="十七、先搭一个更完整的并发巡检器骨架"></a>十七、先搭一个更完整的并发巡检器骨架</h2><p>下面把竞态、超时、取消、结果收集和退出边界放进一个更像实际项目的版本。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> checker</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">	<span class="string">&quot;context&quot;</span></span><br><span class="line">	<span class="string">&quot;errors&quot;</span></span><br><span class="line">	<span class="string">&quot;fmt&quot;</span></span><br><span class="line">	<span class="string">&quot;sync&quot;</span></span><br><span class="line">	<span class="string">&quot;time&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Task <span class="keyword">struct</span> &#123;</span><br><span class="line">	ID      <span class="type">string</span></span><br><span class="line">	Name    <span class="type">string</span></span><br><span class="line">	Timeout time.Duration</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Result <span class="keyword">struct</span> &#123;</span><br><span class="line">	TaskID   <span class="type">string</span></span><br><span class="line">	Name     <span class="type">string</span></span><br><span class="line">	Duration time.Duration</span><br><span class="line">	Err      <span class="type">error</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Summary <span class="keyword">struct</span> &#123;</span><br><span class="line">	Success <span class="type">int</span></span><br><span class="line">	Timeout <span class="type">int</span></span><br><span class="line">	Failed  <span class="type">int</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> ProbeFunc <span class="function"><span class="keyword">func</span><span class="params">(context.Context, Task)</span></span> <span class="type">error</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">RunBatch</span><span class="params">(ctx context.Context, tasks []Task, workers <span class="type">int</span>, probe ProbeFunc)</span></span> ([]Result, Summary, <span class="type">error</span>) &#123;</span><br><span class="line">	<span class="keyword">if</span> workers &lt;= <span class="number">0</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> <span class="literal">nil</span>, Summary&#123;&#125;, fmt.Errorf(<span class="string">&quot;workers must be greater than zero&quot;</span>)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	jobs := <span class="built_in">make</span>(<span class="keyword">chan</span> Task)</span><br><span class="line">	results := <span class="built_in">make</span>(<span class="keyword">chan</span> Result)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">var</span> workerWG sync.WaitGroup</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> i := <span class="number">0</span>; i &lt; workers; i++ &#123;</span><br><span class="line">		workerWG.Add(<span class="number">1</span>)</span><br><span class="line">		<span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">			<span class="keyword">defer</span> workerWG.Done()</span><br><span class="line"></span><br><span class="line">			<span class="keyword">for</span> &#123;</span><br><span class="line">				<span class="keyword">select</span> &#123;</span><br><span class="line">				<span class="keyword">case</span> &lt;-ctx.Done():</span><br><span class="line">					<span class="keyword">return</span></span><br><span class="line">				<span class="keyword">case</span> task, ok := &lt;-jobs:</span><br><span class="line">					<span class="keyword">if</span> !ok &#123;</span><br><span class="line">						<span class="keyword">return</span></span><br><span class="line">					&#125;</span><br><span class="line"></span><br><span class="line">					taskCtx := ctx</span><br><span class="line">					cancel := <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;&#125;</span><br><span class="line">					<span class="keyword">if</span> task.Timeout &gt; <span class="number">0</span> &#123;</span><br><span class="line">						taskCtx, cancel = context.WithTimeout(ctx, task.Timeout)</span><br><span class="line">					&#125;</span><br><span class="line"></span><br><span class="line">					start := time.Now()</span><br><span class="line">					err := probe(taskCtx, task)</span><br><span class="line">					cancel()</span><br><span class="line"></span><br><span class="line">					result := Result&#123;</span><br><span class="line">						TaskID:   task.ID,</span><br><span class="line">						Name:     task.Name,</span><br><span class="line">						Duration: time.Since(start),</span><br><span class="line">						Err:      err,</span><br><span class="line">					&#125;</span><br><span class="line"></span><br><span class="line">					<span class="keyword">select</span> &#123;</span><br><span class="line">					<span class="keyword">case</span> &lt;-ctx.Done():</span><br><span class="line">						<span class="keyword">return</span></span><br><span class="line">					<span class="keyword">case</span> results &lt;- result:</span><br><span class="line">					&#125;</span><br><span class="line">				&#125;</span><br><span class="line">			&#125;</span><br><span class="line">		&#125;()</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">		<span class="keyword">defer</span> <span class="built_in">close</span>(jobs)</span><br><span class="line">		<span class="keyword">for</span> _, task := <span class="keyword">range</span> tasks &#123;</span><br><span class="line">			<span class="keyword">select</span> &#123;</span><br><span class="line">			<span class="keyword">case</span> &lt;-ctx.Done():</span><br><span class="line">				<span class="keyword">return</span></span><br><span class="line">			<span class="keyword">case</span> jobs &lt;- task:</span><br><span class="line">			&#125;</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;()</span><br><span class="line"></span><br><span class="line">	<span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">		workerWG.Wait()</span><br><span class="line">		<span class="built_in">close</span>(results)</span><br><span class="line">	&#125;()</span><br><span class="line"></span><br><span class="line">	<span class="keyword">var</span> all []Result</span><br><span class="line">	<span class="keyword">var</span> summary Summary</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> result := <span class="keyword">range</span> results &#123;</span><br><span class="line">		all = <span class="built_in">append</span>(all, result)</span><br><span class="line"></span><br><span class="line">		<span class="keyword">switch</span> &#123;</span><br><span class="line">		<span class="keyword">case</span> result.Err == <span class="literal">nil</span>:</span><br><span class="line">			summary.Success++</span><br><span class="line">		<span class="keyword">case</span> errors.Is(result.Err, context.DeadlineExceeded):</span><br><span class="line">			summary.Timeout++</span><br><span class="line">		<span class="keyword">default</span>:</span><br><span class="line">			summary.Failed++</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> err := ctx.Err(); err != <span class="literal">nil</span> &amp;&amp; !errors.Is(err, context.Canceled) &#123;</span><br><span class="line">		<span class="keyword">return</span> all, summary, err</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> all, summary, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这个版本里有几件事很关键：</p>
+<ol>
+<li>worker 不直接改共享汇总对象，而是把结果发到 <code>results</code></li>
+<li>汇总只在主收集循环里做，所以没有多 goroutine 竞争写 <code>summary</code></li>
+<li>发任务时监听 <code>ctx.Done()</code>，整批取消时可以停</li>
+<li>worker 收任务和发结果时都监听 <code>ctx.Done()</code>，不会只退一半</li>
+<li><code>results</code> 的关闭由等待所有 worker 的专门 goroutine 负责，关闭责任清晰</li>
+<li>单任务 timeout 通过 <code>task.Timeout</code> 派生子 context</li>
+</ol>
+<p>这已经是一个可以承载很多实际排障动作的最小骨架了。</p>
+<h2 id="十八、这个小项目里最容易写错的几个地方"><a href="#十八、这个小项目里最容易写错的几个地方" class="headerlink" title="十八、这个小项目里最容易写错的几个地方"></a>十八、这个小项目里最容易写错的几个地方</h2><h3 id="1-让-worker-直接并发更新-summary"><a href="#1-让-worker-直接并发更新-summary" class="headerlink" title="1. 让 worker 直接并发更新 summary"></a>1. 让 worker 直接并发更新 <code>summary</code></h3><p>错误示例：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">	<span class="keyword">if</span> err == <span class="literal">nil</span> &#123;</span><br><span class="line">		summary.Success++</span><br><span class="line">	&#125;</span><br><span class="line">&#125;()</span><br></pre></td></tr></table></figure>
+
+<p>这会把原本单线程收口的统计，又变成并发写共享状态。</p>
+<h3 id="2-在多个地方关闭同一个-channel"><a href="#2-在多个地方关闭同一个-channel" class="headerlink" title="2. 在多个地方关闭同一个 channel"></a>2. 在多个地方关闭同一个 channel</h3><p>错误示例：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">close</span>(results)</span><br></pre></td></tr></table></figure>
+
+<p>如果多个 worker 或多个控制路径都可能关它，就会出现：</p>
+<ul>
+<li><code>close of closed channel</code></li>
+<li>关闭责任不清楚</li>
+<li>时序一复杂就炸</li>
+</ul>
+<p>更稳的原则是：</p>
+<p><strong>谁创建、谁聚合、谁最清楚什么时候不会再有发送，谁就负责关闭。</strong></p>
+<h3 id="3-忘记在派生-context-WithTimeout-后调用-cancel"><a href="#3-忘记在派生-context-WithTimeout-后调用-cancel" class="headerlink" title="3. 忘记在派生 context.WithTimeout 后调用 cancel"></a>3. 忘记在派生 <code>context.WithTimeout</code> 后调用 <code>cancel</code></h3><p>这不仅是风格问题。<br>不及时 <code>cancel()</code> 会让关联资源释放延后，尤其是大量短任务时会积出额外负担。</p>
+<h3 id="4-结果发送时不监听-ctx-Done"><a href="#4-结果发送时不监听-ctx-Done" class="headerlink" title="4. 结果发送时不监听 ctx.Done()"></a>4. 结果发送时不监听 <code>ctx.Done()</code></h3><p>错误示例：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">results &lt;- result</span><br></pre></td></tr></table></figure>
+
+<p>如果收集方已经退出，这里就会把 worker 卡死。</p>
+<h2 id="十九、并发代码最少该补哪些可观测性"><a href="#十九、并发代码最少该补哪些可观测性" class="headerlink" title="十九、并发代码最少该补哪些可观测性"></a>十九、并发代码最少该补哪些可观测性</h2><p>很多并发 bug 之所以难查，不是因为“太高级”，而是因为你根本看不到系统在等什么。</p>
+<p>并发代码最少应该补下面这些观测点。</p>
+<h3 id="1-带任务-ID-的结构化日志"><a href="#1-带任务-ID-的结构化日志" class="headerlink" title="1. 带任务 ID 的结构化日志"></a>1. 带任务 ID 的结构化日志</h3><p>至少要知道：</p>
+<ul>
+<li>哪个任务开始执行</li>
+<li>哪个任务结束</li>
+<li>是成功、失败还是超时</li>
+<li>取消来自整批取消，还是单任务超时</li>
+</ul>
+<p>如果日志里只有一句 <code>probe failed</code>，几乎没有排障价值。</p>
+<h3 id="2-批次维度和-worker-维度的计数"><a href="#2-批次维度和-worker-维度的计数" class="headerlink" title="2. 批次维度和 worker 维度的计数"></a>2. 批次维度和 worker 维度的计数</h3><p>例如：</p>
+<ul>
+<li>已提交任务数</li>
+<li>已完成任务数</li>
+<li>超时数</li>
+<li>活跃 worker 数</li>
+<li>当前 goroutine 数</li>
+</ul>
+<h3 id="3-关键阻塞点的耗时"><a href="#3-关键阻塞点的耗时" class="headerlink" title="3. 关键阻塞点的耗时"></a>3. 关键阻塞点的耗时</h3><p>例如：</p>
+<ul>
+<li>任务排队多久才开始执行</li>
+<li>单任务 probe 花了多久</li>
+<li>汇总是否被慢消费者拖住</li>
+</ul>
+<h3 id="4-goroutine-数量趋势"><a href="#4-goroutine-数量趋势" class="headerlink" title="4. goroutine 数量趋势"></a>4. goroutine 数量趋势</h3><p>最简单的最小版本至少可以先打：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">runtime.NumGoroutine()</span><br></pre></td></tr></table></figure>
+
+<p>如果批次结束后 goroutine 数量长期回不去，这就是很强的泄漏信号。</p>
+<h3 id="5-必要时接入-pprof"><a href="#5-必要时接入-pprof" class="headerlink" title="5. 必要时接入 pprof"></a>5. 必要时接入 <code>pprof</code></h3><p>当你已经怀疑：</p>
+<ul>
+<li>某些 goroutine 堵住了</li>
+<li>某些锁争用严重</li>
+<li>某些调用栈长期不退出</li>
+</ul>
+<p>就应该上 <code>pprof</code> 看 goroutine stack、block profile、mutex profile，而不是继续凭感觉猜。</p>
+<h2 id="二十、一个更实用的最小观测骨架"><a href="#二十、一个更实用的最小观测骨架" class="headerlink" title="二十、一个更实用的最小观测骨架"></a>二十、一个更实用的最小观测骨架</h2><p>先看一个很小但实用的状态对象：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Stats <span class="keyword">struct</span> &#123;</span><br><span class="line">	ActiveWorkers <span class="type">int64</span></span><br><span class="line">	Submitted     <span class="type">int64</span></span><br><span class="line">	Completed     <span class="type">int64</span></span><br><span class="line">	Timeout       <span class="type">int64</span></span><br><span class="line">	Failed        <span class="type">int64</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>worker 执行时：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">atomic.AddInt64(&amp;stats.ActiveWorkers, <span class="number">1</span>)</span><br><span class="line"><span class="keyword">defer</span> atomic.AddInt64(&amp;stats.ActiveWorkers, <span class="number">-1</span>)</span><br></pre></td></tr></table></figure>
+
+<p>提交任务时：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">atomic.AddInt64(&amp;stats.Submitted, <span class="number">1</span>)</span><br></pre></td></tr></table></figure>
+
+<p>结果归档时：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">atomic.AddInt64(&amp;stats.Completed, <span class="number">1</span>)</span><br></pre></td></tr></table></figure>
+
+<p>再配合周期性日志：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">log.Printf(</span><br><span class="line">	<span class="string">&quot;submitted=%d completed=%d active_workers=%d goroutines=%d&quot;</span>,</span><br><span class="line">	atomic.LoadInt64(&amp;stats.Submitted),</span><br><span class="line">	atomic.LoadInt64(&amp;stats.Completed),</span><br><span class="line">	atomic.LoadInt64(&amp;stats.ActiveWorkers),</span><br><span class="line">	runtime.NumGoroutine(),</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+
+<p>这套东西看起来很朴素，但已经足够帮你回答几个关键问题：</p>
+<ul>
+<li>任务是否在持续推进</li>
+<li>worker 是否卡住不下降</li>
+<li>goroutine 是否在批次结束后回收</li>
+<li>问题更像下游慢，还是更像退出路径没收干净</li>
+</ul>
+<h2 id="二十一、超时、取消和泄漏这三件事，最容易混淆在哪里"><a href="#二十一、超时、取消和泄漏这三件事，最容易混淆在哪里" class="headerlink" title="二十一、超时、取消和泄漏这三件事，最容易混淆在哪里"></a>二十一、超时、取消和泄漏这三件事，最容易混淆在哪里</h2><p>很多排障动作失败，是因为一开始就把三个不同问题混在一起了。</p>
+<h3 id="1-超时"><a href="#1-超时" class="headerlink" title="1. 超时"></a>1. 超时</h3><p>它关注的是：<br><strong>这件事多久还没完成，就该按失败处理。</strong></p>
+<h3 id="2-取消"><a href="#2-取消" class="headerlink" title="2. 取消"></a>2. 取消</h3><p>它关注的是：<br><strong>上游已经决定不需要这件事继续了。</strong></p>
+<h3 id="3-泄漏"><a href="#3-泄漏" class="headerlink" title="3. 泄漏"></a>3. 泄漏</h3><p>它关注的是：<br><strong>这件事虽然已经没有业务价值，但执行体还没退出。</strong></p>
+<p>这三件事的关系通常是：</p>
+<ul>
+<li>超时和取消应该推动 goroutine 退出</li>
+<li>如果退出路径没写完整，就会演化成泄漏</li>
+</ul>
+<p>所以当系统已经声称“支持超时”时，真正要再追问一句的是：</p>
+<p><strong>超时以后，相关 goroutine 和底层操作真的都停了吗？</strong></p>
+<h2 id="二十二、给这个小项目补几个最常见的错误示例"><a href="#二十二、给这个小项目补几个最常见的错误示例" class="headerlink" title="二十二、给这个小项目补几个最常见的错误示例"></a>二十二、给这个小项目补几个最常见的错误示例</h2><h3 id="错误示例一：共享切片并发-append"><a href="#错误示例一：共享切片并发-append" class="headerlink" title="错误示例一：共享切片并发 append"></a>错误示例一：共享切片并发 append</h3><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> results []Result</span><br><span class="line"></span><br><span class="line"><span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">	results = <span class="built_in">append</span>(results, result)</span><br><span class="line">&#125;()</span><br></pre></td></tr></table></figure>
+
+<p>这会造成：</p>
+<ul>
+<li>数据竞态</li>
+<li>底层数组扩容时更危险</li>
+<li>结果顺序和内容都不可信</li>
+</ul>
+<h3 id="错误示例二：结果通道没人消费，worker-全堵住"><a href="#错误示例二：结果通道没人消费，worker-全堵住" class="headerlink" title="错误示例二：结果通道没人消费，worker 全堵住"></a>错误示例二：结果通道没人消费，worker 全堵住</h3><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">for</span> _, task := <span class="keyword">range</span> tasks &#123;</span><br><span class="line">	jobs &lt;- task</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">wg.Wait()</span><br></pre></td></tr></table></figure>
+
+<p>如果 worker 在处理时要往 <code>results</code> 写，而接收方没启动，就会卡住。</p>
+<h3 id="错误示例三：只在外层返回超时，不在内部监听取消"><a href="#错误示例三：只在外层返回超时，不在内部监听取消" class="headerlink" title="错误示例三：只在外层返回超时，不在内部监听取消"></a>错误示例三：只在外层返回超时，不在内部监听取消</h3><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">probe</span><span class="params">(ctx context.Context, task Task)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">	time.Sleep(<span class="number">10</span> * time.Second)</span><br><span class="line">	<span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这段代码签名看起来支持 <code>ctx</code>，但实现里完全没用。<br>所以外层就算超时返回，内部还是照睡 10 秒。</p>
+<h3 id="错误示例四：后台-watcher-没有退出条件"><a href="#错误示例四：后台-watcher-没有退出条件" class="headerlink" title="错误示例四：后台 watcher 没有退出条件"></a>错误示例四：后台 watcher 没有退出条件</h3><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">	ticker := time.NewTicker(time.Second)</span><br><span class="line">	<span class="keyword">for</span> <span class="keyword">range</span> ticker.C &#123;</span><br><span class="line">		refresh()</span><br><span class="line">	&#125;</span><br><span class="line">&#125;()</span><br></pre></td></tr></table></figure>
+
+<p>如果这只是服务某一批巡检任务，它就是在悄悄泄漏。</p>
+<h2 id="二十三、怎么给并发问题补最小测试，而不是只靠手跑"><a href="#二十三、怎么给并发问题补最小测试，而不是只靠手跑" class="headerlink" title="二十三、怎么给并发问题补最小测试，而不是只靠手跑"></a>二十三、怎么给并发问题补最小测试，而不是只靠手跑</h2><p>并发问题如果只靠手工执行，通常很难稳定复现。<br>至少应该补下面几类测试。</p>
+<h3 id="1-基本成功路径测试"><a href="#1-基本成功路径测试" class="headerlink" title="1. 基本成功路径测试"></a>1. 基本成功路径测试</h3><p>验证：</p>
+<ul>
+<li>所有任务都能被处理</li>
+<li>结果数量正确</li>
+<li>汇总统计正确</li>
+</ul>
+<h3 id="2-取消测试"><a href="#2-取消测试" class="headerlink" title="2. 取消测试"></a>2. 取消测试</h3><p>验证：</p>
+<ul>
+<li>父 <code>context</code> 取消后，<code>RunBatch</code> 能及时返回</li>
+<li>worker 不会一直挂住</li>
+</ul>
+<h3 id="3-超时测试"><a href="#3-超时测试" class="headerlink" title="3. 超时测试"></a>3. 超时测试</h3><p>验证：</p>
+<ul>
+<li>单任务卡住时能按时返回超时</li>
+<li>超时结果会被正确计入汇总</li>
+</ul>
+<h3 id="4-竞态测试"><a href="#4-竞态测试" class="headerlink" title="4. 竞态测试"></a>4. 竞态测试</h3><p>用 <code>go test -race</code> 跑，验证：</p>
+<ul>
+<li>结果归档</li>
+<li>汇总统计</li>
+<li>共享状态读写</li>
+</ul>
+<p>下面给一个取消测试的最小示例：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> checker</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">	<span class="string">&quot;context&quot;</span></span><br><span class="line">	<span class="string">&quot;errors&quot;</span></span><br><span class="line">	<span class="string">&quot;testing&quot;</span></span><br><span class="line">	<span class="string">&quot;time&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestRunBatchCancel</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">	tasks := []Task&#123;</span><br><span class="line">		&#123;ID: <span class="string">&quot;t-1&quot;</span>, Name: <span class="string">&quot;slow-task&quot;</span>, Timeout: time.Second&#125;,</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	probe := <span class="function"><span class="keyword">func</span><span class="params">(ctx context.Context, task Task)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">		&lt;-ctx.Done()</span><br><span class="line">		<span class="keyword">return</span> ctx.Err()</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	ctx, cancel := context.WithCancel(context.Background())</span><br><span class="line"></span><br><span class="line">	done := <span class="built_in">make</span>(<span class="keyword">chan</span> <span class="type">error</span>, <span class="number">1</span>)</span><br><span class="line">	<span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">		_, _, err := RunBatch(ctx, tasks, <span class="number">1</span>, probe)</span><br><span class="line">		done &lt;- err</span><br><span class="line">	&#125;()</span><br><span class="line"></span><br><span class="line">	time.Sleep(<span class="number">20</span> * time.Millisecond)</span><br><span class="line">	cancel()</span><br><span class="line"></span><br><span class="line">	<span class="keyword">select</span> &#123;</span><br><span class="line">	<span class="keyword">case</span> err := &lt;-done:</span><br><span class="line">		<span class="keyword">if</span> err != <span class="literal">nil</span> &amp;&amp; !errors.Is(err, context.Canceled) &#123;</span><br><span class="line">			t.Fatalf(<span class="string">&quot;unexpected error: %v&quot;</span>, err)</span><br><span class="line">		&#125;</span><br><span class="line">	<span class="keyword">case</span> &lt;-time.After(<span class="number">200</span> * time.Millisecond):</span><br><span class="line">		t.Fatal(<span class="string">&quot;RunBatch did not return after cancel&quot;</span>)</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这个测试的重点不是写得多复杂，而是它在验证一件真实的工程边界：</p>
+<p><strong>上游取消后，批处理是否真的能退出。</strong></p>
+<p>再看一个超时测试的最小示例：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestRunBatchTimeout</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">	tasks := []Task&#123;</span><br><span class="line">		&#123;ID: <span class="string">&quot;t-1&quot;</span>, Name: <span class="string">&quot;timeout-task&quot;</span>, Timeout: <span class="number">30</span> * time.Millisecond&#125;,</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	probe := <span class="function"><span class="keyword">func</span><span class="params">(ctx context.Context, task Task)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">		<span class="keyword">select</span> &#123;</span><br><span class="line">		<span class="keyword">case</span> &lt;-time.After(<span class="number">200</span> * time.Millisecond):</span><br><span class="line">			<span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">		<span class="keyword">case</span> &lt;-ctx.Done():</span><br><span class="line">			<span class="keyword">return</span> ctx.Err()</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	results, summary, err := RunBatch(context.Background(), tasks, <span class="number">1</span>, probe)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;unexpected error: %v&quot;</span>, err)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(results) != <span class="number">1</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;expected 1 result, got %d&quot;</span>, <span class="built_in">len</span>(results))</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> !errors.Is(results[<span class="number">0</span>].Err, context.DeadlineExceeded) &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;expected deadline exceeded, got %v&quot;</span>, results[<span class="number">0</span>].Err)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> summary.Timeout != <span class="number">1</span> &#123;</span><br><span class="line">		t.Fatalf(<span class="string">&quot;expected timeout count 1, got %d&quot;</span>, summary.Timeout)</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="二十四、并发问题出现时，更实用的排查顺序是什么"><a href="#二十四、并发问题出现时，更实用的排查顺序是什么" class="headerlink" title="二十四、并发问题出现时，更实用的排查顺序是什么"></a>二十四、并发问题出现时，更实用的排查顺序是什么</h2><p>这一节很重要。<br>并发问题一出现，排查顺序很容易乱掉：</p>
+<ul>
+<li>先怀疑 Go 本身</li>
+<li>再怀疑机器性能</li>
+<li>然后拼命加日志</li>
+<li>最后连问题类别都没分清</li>
+</ul>
+<p>更实用的顺序通常是下面这样。</p>
+<h3 id="1-先判断症状属于哪一类"><a href="#1-先判断症状属于哪一类" class="headerlink" title="1. 先判断症状属于哪一类"></a>1. 先判断症状属于哪一类</h3><p>先问自己：</p>
+<ul>
+<li>是结果错了，还是程序卡了</li>
+<li>是偶发错，还是稳定卡</li>
+<li>是整体慢，还是批次结束后 goroutine 不回收</li>
+<li>是超时多，还是 CPU 很高，还是内存持续涨</li>
+</ul>
+<p>这一步的目标不是立刻定位，而是先分型：</p>
+<ul>
+<li>结果错，优先查竞态</li>
+<li>稳定卡，优先查死锁和阻塞关系</li>
+<li>跑完不回收，优先查 goroutine 泄漏</li>
+<li>超时很多，先分清下游慢还是取消没传透</li>
+</ul>
+<h3 id="2-先给系统加总超时，避免排查时无限挂住"><a href="#2-先给系统加总超时，避免排查时无限挂住" class="headerlink" title="2. 先给系统加总超时，避免排查时无限挂住"></a>2. 先给系统加总超时，避免排查时无限挂住</h3><p>如果连整体超时都没有，排查过程会很痛苦。<br>先让批处理有一个外层 deadline，保证问题至少能被收敛在可观察时间窗里。</p>
+<h3 id="3-用-go-test-race-或最小复现先排除竞态"><a href="#3-用-go-test-race-或最小复现先排除竞态" class="headerlink" title="3. 用 go test -race 或最小复现先排除竞态"></a>3. 用 <code>go test -race</code> 或最小复现先排除竞态</h3><p>只要结果有“偶尔错”“偶尔少”“偶尔 panic”，race detector 应该优先上。</p>
+<h3 id="4-看-goroutine-数和关键日志，判断有没有退出问题"><a href="#4-看-goroutine-数和关键日志，判断有没有退出问题" class="headerlink" title="4. 看 goroutine 数和关键日志，判断有没有退出问题"></a>4. 看 goroutine 数和关键日志，判断有没有退出问题</h3><p>重点看：</p>
+<ul>
+<li>批次结束后 goroutine 是否回落</li>
+<li>active worker 是否持续不归零</li>
+<li>某些任务是否只见开始不见结束</li>
+</ul>
+<h3 id="5-画出-channel-和关闭责任图"><a href="#5-画出-channel-和关闭责任图" class="headerlink" title="5. 画出 channel 和关闭责任图"></a>5. 画出 channel 和关闭责任图</h3><p>哪几个 channel：</p>
+<ul>
+<li>谁发送</li>
+<li>谁接收</li>
+<li>谁关闭</li>
+<li>哪些地方可能提前返回</li>
+</ul>
+<p>很多死锁和泄漏，画出来就已经暴露了。</p>
+<h3 id="6-再去看更细的阻塞栈和-profile"><a href="#6-再去看更细的阻塞栈和-profile" class="headerlink" title="6. 再去看更细的阻塞栈和 profile"></a>6. 再去看更细的阻塞栈和 profile</h3><p>如果上面还不够，就该看：</p>
+<ul>
+<li>goroutine stack</li>
+<li>block profile</li>
+<li>mutex profile</li>
+</ul>
+<p>而不是继续盲猜“是不是 goroutine 太多了”。</p>
+<h3 id="7-最后再优化并发度，而不是一开始就乱调-worker-数"><a href="#7-最后再优化并发度，而不是一开始就乱调-worker-数" class="headerlink" title="7. 最后再优化并发度，而不是一开始就乱调 worker 数"></a>7. 最后再优化并发度，而不是一开始就乱调 worker 数</h3><p>并发度当然重要，但它通常不是第一根因。<br>先把退出边界、阻塞关系、共享数据所有权理顺，再谈调参。</p>
+<h2 id="二十五、怎么从日志和现象初步判断问题类型"><a href="#二十五、怎么从日志和现象初步判断问题类型" class="headerlink" title="二十五、怎么从日志和现象初步判断问题类型"></a>二十五、怎么从日志和现象初步判断问题类型</h2><p>你不一定每次都能立刻上 profile。<br>这时先靠现象分型会更快。</p>
+<h3 id="更像竞态的信号"><a href="#更像竞态的信号" class="headerlink" title="更像竞态的信号"></a>更像竞态的信号</h3><ul>
+<li>统计值偶发不对</li>
+<li>本地一次正常，CI 偶发失败</li>
+<li>加日志以后问题消失或变形</li>
+<li><code>-race</code> 有告警</li>
+</ul>
+<h3 id="更像死锁的信号"><a href="#更像死锁的信号" class="headerlink" title="更像死锁的信号"></a>更像死锁的信号</h3><ul>
+<li>程序稳定卡在某一步</li>
+<li>没有新的完成日志</li>
+<li>worker 不再推进</li>
+<li>goroutine stack 大量停在 channel send&#x2F;receive 或 lock wait</li>
+</ul>
+<h3 id="更像-goroutine-泄漏的信号"><a href="#更像-goroutine-泄漏的信号" class="headerlink" title="更像 goroutine 泄漏的信号"></a>更像 goroutine 泄漏的信号</h3><ul>
+<li>请求都结束了，goroutine 数量还在涨</li>
+<li>周期性任务越来越多</li>
+<li>每批执行结束后仍然有老 goroutine 不退出</li>
+<li>内存、连接数、句柄数逐渐上升</li>
+</ul>
+<h3 id="更像取消没传透的信号"><a href="#更像取消没传透的信号" class="headerlink" title="更像取消没传透的信号"></a>更像取消没传透的信号</h3><ul>
+<li>上游已经超时返回</li>
+<li>下游过一会儿还在继续打印执行日志</li>
+<li>整批结束后后台探测还在跑</li>
+</ul>
+<p>这种按现象分型的方法，不会直接给你答案，但会帮你少走很多弯路。</p>
+<h2 id="二十六、工程里什么时候该用-channel，什么时候该用-mutex"><a href="#二十六、工程里什么时候该用-channel，什么时候该用-mutex" class="headerlink" title="二十六、工程里什么时候该用 channel，什么时候该用 mutex"></a>二十六、工程里什么时候该用 channel，什么时候该用 mutex</h2><p>这也是并发设计里非常容易走偏的地方。</p>
+<p>只记住一句“不要通过共享内存来通信，要通过通信来共享内存”后，代码就很容易把所有东西都改成 channel。<br>这会产生另一种复杂度。</p>
+<p>更务实的判断通常是：</p>
+<h3 id="更适合-channel-的场景"><a href="#更适合-channel-的场景" class="headerlink" title="更适合 channel 的场景"></a>更适合 channel 的场景</h3><ul>
+<li>任务分发</li>
+<li>结果汇聚</li>
+<li>事件流传递</li>
+<li>明确的一进一出或生产者消费者模型</li>
+</ul>
+<h3 id="更适合-mutex-的场景"><a href="#更适合-mutex-的场景" class="headerlink" title="更适合 mutex 的场景"></a>更适合 mutex 的场景</h3><ul>
+<li>共享缓存</li>
+<li>注册表</li>
+<li>连接池状态</li>
+<li>需要随机读写的共享对象</li>
+</ul>
+<p>不要把这件事理解成“哪种更高级”。<br>它本质上是：</p>
+<ul>
+<li>channel 更适合表达协作流转</li>
+<li>mutex 更适合保护共享状态</li>
+</ul>
+<p>如果你用错了，不一定编不过，但后面的维护成本会明显上升。</p>
+<h2 id="二十七、什么时候根本不该上并发"><a href="#二十七、什么时候根本不该上并发" class="headerlink" title="二十七、什么时候根本不该上并发"></a>二十七、什么时候根本不该上并发</h2><p>这一点也要说清楚。<br>不是所有任务都值得并发。</p>
+<p>下面这些情况就要很克制：</p>
+<h3 id="1-任务量很小，串行已经足够"><a href="#1-任务量很小，串行已经足够" class="headerlink" title="1. 任务量很小，串行已经足够"></a>1. 任务量很小，串行已经足够</h3><p>例如只有两三个本地内存操作，并发只会让代码更难懂。</p>
+<h3 id="2-下游本身不支持并发放大"><a href="#2-下游本身不支持并发放大" class="headerlink" title="2. 下游本身不支持并发放大"></a>2. 下游本身不支持并发放大</h3><p>例如数据库连接池很小、第三方接口限流很严。<br>这时盲目加 worker 只会更快把自己打死。</p>
+<h3 id="3-数据依赖强，顺序本身就是业务语义"><a href="#3-数据依赖强，顺序本身就是业务语义" class="headerlink" title="3. 数据依赖强，顺序本身就是业务语义"></a>3. 数据依赖强，顺序本身就是业务语义</h3><p>如果 B 明确依赖 A 的结果，那就别为了“更 Go”硬拆成并发。</p>
+<h3 id="4-团队现在连退出路径和排障手段都没准备好"><a href="#4-团队现在连退出路径和排障手段都没准备好" class="headerlink" title="4. 团队现在连退出路径和排障手段都没准备好"></a>4. 团队现在连退出路径和排障手段都没准备好</h3><p>这不是保守，而是现实。<br>并发放大吞吐，也会放大系统复杂度。</p>
+<h2 id="二十八、这类并发代码的使用边界和常见误用"><a href="#二十八、这类并发代码的使用边界和常见误用" class="headerlink" title="二十八、这类并发代码的使用边界和常见误用"></a>二十八、这类并发代码的使用边界和常见误用</h2><p>最后把边界再收紧一点。</p>
+<h3 id="适合这套模式的场景"><a href="#适合这套模式的场景" class="headerlink" title="适合这套模式的场景"></a>适合这套模式的场景</h3><ul>
+<li>固定 worker 数的批处理</li>
+<li>接口巡检</li>
+<li>任务执行器</li>
+<li>轻量级并发探测</li>
+</ul>
+<h3 id="不适合直接照抄的场景"><a href="#不适合直接照抄的场景" class="headerlink" title="不适合直接照抄的场景"></a>不适合直接照抄的场景</h3><ul>
+<li>强实时流式处理</li>
+<li>需要优先级调度的复杂队列</li>
+<li>跨进程分布式调度</li>
+<li>需要背压、重试、熔断、限流一起协同的大系统</li>
+</ul>
+<h3 id="常见误用"><a href="#常见误用" class="headerlink" title="常见误用"></a>常见误用</h3><ul>
+<li>以为 <code>context</code> 只要传了就算支持取消</li>
+<li>以为 buffered channel 就能解决所有阻塞</li>
+<li>以为 <code>go test -race</code> 过了就一定没有并发 bug</li>
+<li>以为 goroutine 泄漏只是“多几个协程没关系”</li>
+</ul>
+<p>真正稳的工程判断通常是：</p>
+<ul>
+<li>先把最小边界写对</li>
+<li>再补可观测性</li>
+<li>最后才谈并发度和性能优化</li>
+</ul>
+<h2 id="二十九、练习题"><a href="#二十九、练习题" class="headerlink" title="二十九、练习题"></a>二十九、练习题</h2><p>如果你想确认自己真的掌握了这篇文章，可以试着独立做下面几题：</p>
+<ol>
+<li>把文中的 <code>RunBatch</code> 改成支持失败阈值，例如失败超过 3 个就整批取消。</li>
+<li>给 <code>RunBatch</code> 增加队列等待时间统计，区分“排队超时”和“执行超时”。</li>
+<li>故意把 <code>summary</code> 改成由 worker 直接更新，然后用 <code>go test -race</code> 观察告警。</li>
+<li>故意删掉 <code>results</code> 发送时的 <code>select &lt;-ctx.Done()</code> 分支，构造一个接收方提前退出的测试，看 worker 是否泄漏。</li>
+<li>给巡检器增加一个周期性 watcher，然后正确地让它在批次结束时退出。</li>
+</ol>
+<p>这些练习的重点不是把代码写长，而是训练你把并发问题拆回：</p>
+<ul>
+<li>数据归属</li>
+<li>阻塞关系</li>
+<li>退出路径</li>
+<li>观测点</li>
+</ul>
+<h2 id="三十、结语"><a href="#三十、结语" class="headerlink" title="三十、结语"></a>三十、结语</h2><p>Go 并发真正难的地方，从来不是 goroutine、channel、<code>select</code> 这些语法本身，而是你能不能把四件事同时做对：</p>
+<ol>
+<li>共享数据的所有权</li>
+<li>阻塞关系的闭环</li>
+<li>超时和取消的传递</li>
+<li>问题发生后的可观测性</li>
+</ol>
+<p>如果这四件事没建立起来，并发代码就会进入一种很典型的失控状态：</p>
+<ul>
+<li>平时像能跑</li>
+<li>一上压力就出问题</li>
+<li>问题一来就很难复现</li>
+<li>修一次又引出另一种卡住</li>
+</ul>
+<p>所以学 Go 并发，不要只记“怎么开 goroutine”，而要优先记下面这套更实用的判断顺序：</p>
+<ol>
+<li>先明确谁拥有数据写权限</li>
+<li>再明确谁发送、谁接收、谁关闭 channel</li>
+<li>再保证每条路径都有退出条件</li>
+<li>再把 <code>context</code> 真的传到阻塞点</li>
+<li>最后补上 race、日志、goroutine 数和 profile 这些排障抓手</li>
+</ol>
+<p>当你能按这套顺序去写和排查，并发问题就会从“玄学 bug”，慢慢变成能拆、能测、能定位的工程问题。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Go/" rel="tag"># Go</a>
+              <a href="/tags/Go%E4%B8%93%E9%A2%98/" rel="tag"># Go专题</a>
+              <a href="/tags/%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80/" rel="tag"># 编程语言</a>
+              <a href="/tags/%E5%B9%B6%E5%8F%91/" rel="tag"># 并发</a>
+              <a href="/tags/goroutine/" rel="tag"># goroutine</a>
+              <a href="/tags/context/" rel="tag"># context</a>
+              <a href="/tags/%E7%AB%9E%E6%80%81%E6%9D%A1%E4%BB%B6/" rel="tag"># 竞态条件</a>
+              <a href="/tags/%E6%AD%BB%E9%94%81/" rel="tag"># 死锁</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2018/06/20/Python-10-Python%E5%81%9A%E6%8E%A5%E5%8F%A3%E5%B7%A5%E5%85%B7%E5%92%8C%E6%95%B0%E6%8D%AE%E5%A4%84%E7%90%86%E8%84%9A%E6%9C%AC%E6%97%B6%E4%BB%A3%E7%A0%81%E6%80%8E%E6%A0%B7%E5%86%99%E6%89%8D%E4%B8%8D%E4%BC%9A%E8%B6%8A%E5%86%99%E8%B6%8A%E4%B9%B1/" rel="prev" title="Python：做接口工具和数据处理脚本时，代码怎样写才不会越写越乱">
+                  <i class="fa fa-angle-left"></i> Python：做接口工具和数据处理脚本时，代码怎样写才不会越写越乱
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2018/06/27/Python-11-Python%E5%86%99HTTP%E6%8E%A5%E5%8F%A3%E5%91%BD%E4%BB%A4%E8%A1%8C%E5%B7%A5%E5%85%B7%E5%92%8C%E5%AE%9A%E6%97%B6%E4%BB%BB%E5%8A%A1%E6%97%B6%E7%9B%AE%E5%BD%95%E5%92%8C%E8%81%8C%E8%B4%A3%E6%80%8E%E4%B9%88%E6%8B%86/" rel="next" title="Python：写 HTTP 接口、命令行工具和定时任务时，目录和职责怎么拆">
+                  Python：写 HTTP 接口、命令行工具和定时任务时，目录和职责怎么拆 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

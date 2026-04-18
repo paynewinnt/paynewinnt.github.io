@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="前面几篇我一直在强调，移动端自动化不要一上来就把全部希望压在 UI 框架上，而应该先把 ADB、设备控制、日志采集、证据留存、并发治理这些基础能力打好。 但这并不意味着 Appium 不重要。 相反，在 Android 自动化里，只要你的目标是验证：  页面元素是否出现 用户真实操作路径是否可走通 核心业务流程的 UI 回归是否稳定 跨页面、跨控件交互是否符合预期  那 Appium 依然是一条非">
+<meta property="og:type" content="article">
+<meta property="og:title" content="移动端自动化：Appium 在 Android 自动化中的落地经验">
+<meta property="og:url" content="https://paynewinnt.github.io/2023/02/24/%E7%A7%BB%E5%8A%A8%E7%AB%AF%E8%87%AA%E5%8A%A8%E5%8C%96-06-Appium%E5%9C%A8Android%E8%87%AA%E5%8A%A8%E5%8C%96%E4%B8%AD%E7%9A%84%E8%90%BD%E5%9C%B0%E7%BB%8F%E9%AA%8C/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="前面几篇我一直在强调，移动端自动化不要一上来就把全部希望压在 UI 框架上，而应该先把 ADB、设备控制、日志采集、证据留存、并发治理这些基础能力打好。 但这并不意味着 Appium 不重要。 相反，在 Android 自动化里，只要你的目标是验证：  页面元素是否出现 用户真实操作路径是否可走通 核心业务流程的 UI 回归是否稳定 跨页面、跨控件交互是否符合预期  那 Appium 依然是一条非">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2023-02-24T12:30:00.000Z">
+<meta property="article:modified_time" content="2023-02-24T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="UI自动化">
+<meta property="article:tag" content="工程化">
+<meta property="article:tag" content="Appium">
+<meta property="article:tag" content="工程实践">
+<meta property="article:tag" content="排障">
+<meta property="article:tag" content="Android">
+<meta property="article:tag" content="移动端自动化">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2023/02/24/%E7%A7%BB%E5%8A%A8%E7%AB%AF%E8%87%AA%E5%8A%A8%E5%8C%96-06-Appium%E5%9C%A8Android%E8%87%AA%E5%8A%A8%E5%8C%96%E4%B8%AD%E7%9A%84%E8%90%BD%E5%9C%B0%E7%BB%8F%E9%AA%8C/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2023/02/24/%E7%A7%BB%E5%8A%A8%E7%AB%AF%E8%87%AA%E5%8A%A8%E5%8C%96-06-Appium%E5%9C%A8Android%E8%87%AA%E5%8A%A8%E5%8C%96%E4%B8%AD%E7%9A%84%E8%90%BD%E5%9C%B0%E7%BB%8F%E9%AA%8C/","path":"2023/02/24/移动端自动化-06-Appium在Android自动化中的落地经验/","title":"移动端自动化：Appium 在 Android 自动化中的落地经验"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>移动端自动化：Appium 在 Android 自动化中的落地经验 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81Appium-%E9%80%82%E5%90%88%E4%BB%80%E4%B9%88%EF%BC%8C%E4%B8%8D%E9%80%82%E5%90%88%E4%BB%80%E4%B9%88%EF%BC%8C%E5%BF%85%E9%A1%BB%E5%85%88%E8%AF%B4%E6%B8%85%E6%A5%9A"><span class="nav-number">1.</span> <span class="nav-text">一、Appium 适合什么，不适合什么，必须先说清楚</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%A0%B8%E5%BF%83%E4%B8%9A%E5%8A%A1%E4%B8%BB%E9%93%BE%E8%B7%AF%E5%9B%9E%E5%BD%92"><span class="nav-number">1.1.</span> <span class="nav-text">1. 核心业务主链路回归</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%85%B3%E9%94%AE%E9%A1%B5%E9%9D%A2-UI-%E5%86%92%E7%83%9F"><span class="nav-number">1.2.</span> <span class="nav-text">2. 关键页面 UI 冒烟</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E9%9C%80%E8%A6%81%E7%9C%9F%E5%AE%9E%E4%BA%A4%E4%BA%92%E9%A9%B1%E5%8A%A8%E7%9A%84%E9%97%AE%E9%A2%98"><span class="nav-number">1.3.</span> <span class="nav-text">3. 需要真实交互驱动的问题</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%B8%8D%E9%80%82%E5%90%88%E5%85%A8%E9%87%8F%E9%93%BA%E5%BC%80%E7%9A%84%E4%B8%9A%E5%8A%A1%E5%9B%9E%E5%BD%92"><span class="nav-number">1.4.</span> <span class="nav-text">4. 不适合全量铺开的业务回归</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E4%B8%8D%E9%80%82%E5%90%88%E6%9B%BF%E4%BB%A3%E6%8E%A5%E5%8F%A3%E9%AA%8C%E8%AF%81%E5%92%8C%E5%BA%95%E5%B1%82%E7%8A%B6%E6%80%81%E9%AA%8C%E8%AF%81"><span class="nav-number">1.5.</span> <span class="nav-text">5. 不适合替代接口验证和底层状态验证</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E4%B8%8D%E9%80%82%E5%90%88%E6%89%BF%E8%BD%BD%E6%89%80%E6%9C%89%E7%8E%AF%E5%A2%83%E5%BC%82%E5%B8%B8%E6%8E%92%E6%9F%A5"><span class="nav-number">1.6.</span> <span class="nav-text">6. 不适合承载所有环境异常排查</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81Appium-%E9%A1%B9%E7%9B%AE%E6%9C%80%E6%80%95%E7%9A%84%EF%BC%8C%E4%B8%8D%E6%98%AF%E8%B5%B7%E4%B8%8D%E6%9D%A5%EF%BC%8C%E8%80%8C%E6%98%AF%E2%80%9C%E8%B5%B7%E5%BE%97%E6%9D%A5%E4%BD%86%E8%B6%8A%E8%B7%91%E8%B6%8A%E8%84%86%E2%80%9D"><span class="nav-number">2.</span> <span class="nav-text">二、Appium 项目最怕的，不是起不来，而是“起得来但越跑越脆”</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%94%A8%E4%BE%8B%E7%B2%92%E5%BA%A6%E5%A4%AA%E7%BB%86%EF%BC%8C%E7%BB%B4%E6%8A%A4%E9%87%8F%E7%88%86%E7%82%B8"><span class="nav-number">2.1.</span> <span class="nav-text">1. 用例粒度太细，维护量爆炸</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E9%A1%B5%E9%9D%A2%E5%AF%B9%E8%B1%A1%E6%8A%BD%E8%B1%A1%E5%81%9A%E5%BE%97%E5%A4%AA%E6%9C%BA%E6%A2%B0"><span class="nav-number">2.2.</span> <span class="nav-text">2. 页面对象抽象做得太机械</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%8A%8A%E7%AD%89%E5%BE%85%E9%97%AE%E9%A2%98%E7%90%86%E8%A7%A3%E6%88%90%E2%80%9C%E5%A4%9A%E5%8A%A0%E5%87%A0%E4%B8%AA-sleep%E2%80%9D"><span class="nav-number">2.3.</span> <span class="nav-text">3. 把等待问题理解成“多加几个 sleep”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E8%AE%BE%E5%A4%87%E5%92%8C%E7%8E%AF%E5%A2%83%E9%97%AE%E9%A2%98%E6%B2%A1%E6%9C%89%E8%A2%AB%E9%9A%94%E7%A6%BB%E5%87%BA%E6%A1%86%E6%9E%B6%E5%B1%82"><span class="nav-number">2.4.</span> <span class="nav-text">4. 设备和环境问题没有被隔离出框架层</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E6%9B%B4%E6%8E%A8%E8%8D%90%E7%9A%84-Appium-%E8%90%BD%E5%9C%B0%E6%96%B9%E5%BC%8F%EF%BC%9A%E8%AE%A9%E5%AE%83%E5%8F%AA%E8%B4%9F%E8%B4%A3-UI-%E4%BA%A4%E4%BA%92%EF%BC%8C%E4%B8%8D%E8%B4%9F%E8%B4%A3%E4%B8%80%E5%88%87"><span class="nav-number">3.</span> <span class="nav-text">三、更推荐的 Appium 落地方式：让它只负责 UI 交互，不负责一切</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%AE%BE%E5%A4%87%E4%B8%8E%E7%8E%AF%E5%A2%83%E5%B1%82"><span class="nav-number">3.1.</span> <span class="nav-text">1. 设备与环境层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E9%A9%B1%E5%8A%A8%E4%B8%8E%E9%A1%B5%E9%9D%A2%E4%BA%A4%E4%BA%92%E5%B1%82"><span class="nav-number">3.2.</span> <span class="nav-text">2. 驱动与页面交互层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%B8%9A%E5%8A%A1%E5%9C%BA%E6%99%AF%E7%BC%96%E6%8E%92%E5%B1%82"><span class="nav-number">3.3.</span> <span class="nav-text">3. 业务场景编排层</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E5%85%83%E7%B4%A0%E5%AE%9A%E4%BD%8D%E7%AD%96%E7%95%A5%E5%86%B3%E5%AE%9A%E4%BA%86-Appium-%E9%A1%B9%E7%9B%AE-60-%E4%BB%A5%E4%B8%8A%E7%9A%84%E7%A8%B3%E5%AE%9A%E6%80%A7"><span class="nav-number">4.</span> <span class="nav-text">四、元素定位策略决定了 Appium 项目 60% 以上的稳定性</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%BC%98%E5%85%88%E4%BD%BF%E7%94%A8%E7%A8%B3%E5%AE%9A%E4%B8%9A%E5%8A%A1%E6%A0%87%E8%AF%86"><span class="nav-number">4.1.</span> <span class="nav-text">1. 优先使用稳定业务标识</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%B0%A8%E6%85%8E%E4%BD%BF%E7%94%A8%E6%96%87%E6%9C%AC%E5%AE%9A%E4%BD%8D"><span class="nav-number">4.2.</span> <span class="nav-text">2. 谨慎使用文本定位</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%B0%BD%E9%87%8F%E5%B0%91%E7%94%A8%E9%95%BF%E9%93%BE%E8%B7%AF-XPath"><span class="nav-number">4.3.</span> <span class="nav-text">3. 尽量少用长链路 XPath</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%AE%9A%E4%BD%8D%E5%A4%B1%E8%B4%A5%E4%BF%A1%E6%81%AF%E8%A6%81%E8%B6%B3%E5%A4%9F%E5%8F%AF%E8%AF%8A%E6%96%AD"><span class="nav-number">4.4.</span> <span class="nav-text">4. 定位失败信息要足够可诊断</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E7%AD%89%E5%BE%85%E6%9C%BA%E5%88%B6%E9%9C%80%E8%A6%81%E5%8D%95%E7%8B%AC%E8%AE%BE%E8%AE%A1%EF%BC%8C%E4%B8%8D%E8%83%BD%E6%8A%8A%E7%A8%B3%E5%AE%9A%E6%80%A7%E6%8A%BC%E7%BB%99-sleep"><span class="nav-number">5.</span> <span class="nav-text">五、等待机制需要单独设计，不能把稳定性押给 sleep</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E9%A1%B5%E9%9D%A2%E7%BA%A7%E7%AD%89%E5%BE%85"><span class="nav-number">5.1.</span> <span class="nav-text">1. 页面级等待</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%8A%A8%E4%BD%9C%E5%90%8E%E7%AD%89%E5%BE%85"><span class="nav-number">5.2.</span> <span class="nav-text">2. 动作后等待</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%9D%A1%E4%BB%B6%E5%A4%B1%E8%B4%A5%E5%90%8E%E7%9A%84%E8%A1%A5%E5%85%85%E8%AF%8A%E6%96%AD"><span class="nav-number">5.3.</span> <span class="nav-text">3. 条件失败后的补充诊断</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81Appium-%E8%90%BD%E5%9C%B0%E6%97%B6%EF%BC%8C%E6%9C%80%E8%AF%A5%E6%8E%A7%E5%88%B6%E7%9A%84%E6%98%AF-case-%E6%95%B0%E9%87%8F%EF%BC%8C%E4%B8%8D%E6%98%AF%E9%A9%B1%E5%8A%A8%E8%83%BD%E5%8A%9B"><span class="nav-number">6.</span> <span class="nav-text">六、Appium 落地时，最该控制的是 case 数量，不是驱动能力</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E6%88%91%E5%9C%A8-Android-Appium-%E8%90%BD%E5%9C%B0%E9%87%8C%E8%B8%A9%E8%BF%87%E7%9A%84%E5%87%A0%E4%B8%AA%E5%85%B8%E5%9E%8B%E5%9D%91"><span class="nav-number">7.</span> <span class="nav-text">七、我在 Android Appium 落地里踩过的几个典型坑</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9D%91-1%EF%BC%9A%E8%84%9A%E6%9C%AC%E5%A4%B1%E8%B4%A5%E7%9C%8B%E8%B5%B7%E6%9D%A5%E5%83%8F%E5%85%83%E7%B4%A0%E9%97%AE%E9%A2%98%EF%BC%8C%E5%AE%9E%E9%99%85%E6%98%AF%E8%AE%BE%E5%A4%87%E9%97%AE%E9%A2%98"><span class="nav-number">7.1.</span> <span class="nav-text">坑 1：脚本失败看起来像元素问题，实际是设备问题</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9D%91-2%EF%BC%9A%E9%A1%B5%E9%9D%A2%E5%AF%B9%E8%B1%A1%E8%B6%8A%E6%9D%A5%E8%B6%8A%E5%8E%9A%EF%BC%8C%E6%9C%80%E5%90%8E%E6%B2%A1%E4%BA%BA%E6%95%A2%E6%94%B9"><span class="nav-number">7.2.</span> <span class="nav-text">坑 2：页面对象越来越厚，最后没人敢改</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9D%91-3%EF%BC%9A%E4%B8%BA%E4%BA%86%E7%A8%B3%EF%BC%8C%E7%96%AF%E7%8B%82%E5%8A%A0-sleep%EF%BC%8C%E6%9C%80%E5%90%8E%E6%8A%8A%E9%97%AE%E9%A2%98%E8%97%8F%E8%B5%B7%E6%9D%A5"><span class="nav-number">7.3.</span> <span class="nav-text">坑 3：为了稳，疯狂加 sleep，最后把问题藏起来</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9D%91-4%EF%BC%9A%E6%8A%8A-Appium-%E5%BD%93%E6%88%90%E8%B7%A8%E7%AB%AF%E7%BB%9F%E4%B8%80%E7%AD%94%E6%A1%88"><span class="nav-number">7.4.</span> <span class="nav-text">坑 4：把 Appium 当成跨端统一答案</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E5%A6%82%E6%9E%9C%E8%A6%81%E6%8A%8A-Appium-%E6%8E%A5%E8%BF%9B%E5%9B%A2%E9%98%9F%E4%BD%93%E7%B3%BB%EF%BC%8C%E6%9B%B4%E7%9C%8B%E9%87%8D%E5%93%AA%E4%BA%9B%E8%83%BD%E5%8A%9B"><span class="nav-number">8.</span> <span class="nav-text">八、如果要把 Appium 接进团队体系，更看重哪些能力</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%A4%B1%E8%B4%A5%E6%97%B6%E6%9C%89%E6%B2%A1%E6%9C%89%E9%AB%98%E8%B4%A8%E9%87%8F%E8%AF%81%E6%8D%AE"><span class="nav-number">8.1.</span> <span class="nav-text">1. 失败时有没有高质量证据</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%9C%89%E6%B2%A1%E6%9C%89%E6%8A%8A%E8%AE%BE%E5%A4%87%E6%B2%BB%E7%90%86%E4%BB%8E-case-%E9%87%8C%E6%8A%BD%E5%87%BA%E5%8E%BB"><span class="nav-number">8.2.</span> <span class="nav-text">2. 有没有把设备治理从 case 里抽出去</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%9C%89%E6%B2%A1%E6%9C%89%E7%A8%B3%E5%AE%9A%E7%9A%84%E5%AE%9A%E4%BD%8D%E8%A7%84%E8%8C%83%E5%92%8C%E7%AD%89%E5%BE%85%E8%A7%84%E8%8C%83"><span class="nav-number">8.3.</span> <span class="nav-text">3. 有没有稳定的定位规范和等待规范</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%9C%89%E6%B2%A1%E6%9C%89%E6%98%8E%E7%A1%AE%E7%9A%84%E7%94%A8%E4%BE%8B%E9%80%89%E6%8B%A9%E6%A0%87%E5%87%86"><span class="nav-number">8.4.</span> <span class="nav-text">4. 有没有明确的用例选择标准</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E6%8E%92%E6%9F%A5-Appium-%E9%97%AE%E9%A2%98%E6%97%B6%EF%BC%8C%E5%8F%AF%E4%BB%A5%E6%8C%89%E4%BB%80%E4%B9%88%E9%A1%BA%E5%BA%8F%E7%9C%8B"><span class="nav-number">9.</span> <span class="nav-text">九、排查 Appium 问题时，可以按什么顺序看</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%85%88%E7%9C%8B%E8%AE%BE%E5%A4%87%E5%92%8C%E5%BA%94%E7%94%A8%E6%98%AF%E4%B8%8D%E6%98%AF%E8%BF%98%E6%B4%BB%E7%9D%80"><span class="nav-number">9.1.</span> <span class="nav-text">1. 先看设备和应用是不是还活着</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%86%8D%E7%9C%8B%E9%A1%B5%E9%9D%A2%E6%98%AF%E4%B8%8D%E6%98%AF%E5%88%B0%E4%BA%86%E9%A2%84%E6%9C%9F%E7%8A%B6%E6%80%81"><span class="nav-number">9.2.</span> <span class="nav-text">2. 再看页面是不是到了预期状态</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%86%8D%E7%9C%8B%E5%AE%9A%E4%BD%8D%E7%AD%96%E7%95%A5%E6%9C%AC%E8%BA%AB%E6%98%AF%E5%90%A6%E7%A8%B3%E5%AE%9A"><span class="nav-number">9.3.</span> <span class="nav-text">3. 再看定位策略本身是否稳定</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%9C%80%E5%90%8E%E6%89%8D%E7%9C%8B-case-%E9%80%BB%E8%BE%91"><span class="nav-number">9.4.</span> <span class="nav-text">4. 最后才看 case 逻辑</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%BB%93%E8%AF%AD"><span class="nav-number">10.</span> <span class="nav-text">结语</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">26</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">425</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2023/02/24/%E7%A7%BB%E5%8A%A8%E7%AB%AF%E8%87%AA%E5%8A%A8%E5%8C%96-06-Appium%E5%9C%A8Android%E8%87%AA%E5%8A%A8%E5%8C%96%E4%B8%AD%E7%9A%84%E8%90%BD%E5%9C%B0%E7%BB%8F%E9%AA%8C/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="移动端自动化：Appium 在 Android 自动化中的落地经验 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          移动端自动化：Appium 在 Android 自动化中的落地经验
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2023-02-24 20:30:00" itemprop="dateCreated datePublished" datetime="2023-02-24T20:30:00+08:00">2023-02-24</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/%E7%A7%BB%E5%8A%A8%E7%AB%AF%E8%87%AA%E5%8A%A8%E5%8C%96/" itemprop="url" rel="index"><span itemprop="name">移动端自动化</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>3.5k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>13 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>前面几篇我一直在强调，移动端自动化不要一上来就把全部希望压在 UI 框架上，而应该先把 <code>ADB</code>、设备控制、日志采集、证据留存、并发治理这些基础能力打好。</p>
+<p>但这并不意味着 <code>Appium</code> 不重要。</p>
+<p>相反，在 Android 自动化里，只要你的目标是验证：</p>
+<ul>
+<li>页面元素是否出现</li>
+<li>用户真实操作路径是否可走通</li>
+<li>核心业务流程的 UI 回归是否稳定</li>
+<li>跨页面、跨控件交互是否符合预期</li>
+</ul>
+<p>那 <code>Appium</code> 依然是一条非常现实、非常常用的方案。</p>
+<p>问题在于，对 <code>Appium</code> 的理解停在两个极端：</p>
+<ul>
+<li>一种是把它当万能框架，什么都想让它测</li>
+<li>另一种是跑了几次不稳定后，就直接得出“Appium 不适合落地”</li>
+</ul>
+<p>这两个结论都不够准确。</p>
+<p>所以这篇文章我想讲的是：</p>
+<p><strong>Appium 在 Android 自动化里到底该怎么落地，才能真正服务项目，而不是沦为一套 demo 级脚本。</strong></p>
+<h2 id="一、Appium-适合什么，不适合什么，必须先说清楚"><a href="#一、Appium-适合什么，不适合什么，必须先说清楚" class="headerlink" title="一、Appium 适合什么，不适合什么，必须先说清楚"></a>一、Appium 适合什么，不适合什么，必须先说清楚</h2><p>的 Appium 项目之所以后面越来越痛苦，第一步就错了：<strong>适用边界没定义。</strong></p>
+<p>如果边界不清楚，最后就会出现两类问题：</p>
+<ul>
+<li>简单问题被过度框架化</li>
+<li>不适合 UI 自动化的问题也被硬塞给 Appium</li>
+</ul>
+<p>更倾向把 Appium 的适用场景限定在下面几类。</p>
+<h3 id="1-核心业务主链路回归"><a href="#1-核心业务主链路回归" class="headerlink" title="1. 核心业务主链路回归"></a>1. 核心业务主链路回归</h3><p>比如：</p>
+<ul>
+<li>登录</li>
+<li>下单</li>
+<li>支付确认</li>
+<li>提交工单</li>
+<li>关键审批流</li>
+</ul>
+<p>这类流程的特点是：</p>
+<ul>
+<li>真实用户会反复走</li>
+<li>一旦出问题，业务影响大</li>
+<li>单纯接口自动化无法覆盖完整交互链路</li>
+</ul>
+<h3 id="2-关键页面-UI-冒烟"><a href="#2-关键页面-UI-冒烟" class="headerlink" title="2. 关键页面 UI 冒烟"></a>2. 关键页面 UI 冒烟</h3><p>比如：</p>
+<ul>
+<li>首页是否能正常加载</li>
+<li>核心入口是否可点击</li>
+<li>重要页面是否出现空白或闪退</li>
+</ul>
+<p>这类场景不需要覆盖得很深，但适合用 Appium 做“页面还活着”的快速校验。</p>
+<h3 id="3-需要真实交互驱动的问题"><a href="#3-需要真实交互驱动的问题" class="headerlink" title="3. 需要真实交互驱动的问题"></a>3. 需要真实交互驱动的问题</h3><p>比如：</p>
+<ul>
+<li>输入框、下拉框、弹窗交互</li>
+<li>页面跳转和返回链路</li>
+<li>WebView 与 Native 混合页面切换</li>
+<li>手势触发的关键交互</li>
+</ul>
+<p>这类问题如果只靠 ADB 或接口自动化，覆盖不到真正的用户行为。</p>
+<p>但 Appium 也有明确不适合的地方。</p>
+<h3 id="4-不适合全量铺开的业务回归"><a href="#4-不适合全量铺开的业务回归" class="headerlink" title="4. 不适合全量铺开的业务回归"></a>4. 不适合全量铺开的业务回归</h3><p>如果一个业务流程包含大量动态内容、频繁改版、控件不稳定，而你又希望把它全量自动化，Appium 的维护成本会迅速失控。</p>
+<h3 id="5-不适合替代接口验证和底层状态验证"><a href="#5-不适合替代接口验证和底层状态验证" class="headerlink" title="5. 不适合替代接口验证和底层状态验证"></a>5. 不适合替代接口验证和底层状态验证</h3><p>比如：</p>
+<ul>
+<li>接口字段断言</li>
+<li>数据落库校验</li>
+<li>服务端业务规则验证</li>
+</ul>
+<p>这类事情应该交给接口自动化或后端验证层，不应该让 UI 自动化硬扛。</p>
+<h3 id="6-不适合承载所有环境异常排查"><a href="#6-不适合承载所有环境异常排查" class="headerlink" title="6. 不适合承载所有环境异常排查"></a>6. 不适合承载所有环境异常排查</h3><p>一看到 Appium 失败，就先从 locator 或控件问题猜起。<br>实际上相当一部分失败来自：</p>
+<ul>
+<li>设备不稳</li>
+<li>页面加载慢</li>
+<li>权限弹窗挡住</li>
+<li>网络环境问题</li>
+<li>测试账号状态脏</li>
+</ul>
+<p>这些问题本质上不属于 Appium 框架本身，但会直接表现成“元素找不到”。</p>
+<h2 id="二、Appium-项目最怕的，不是起不来，而是“起得来但越跑越脆”"><a href="#二、Appium-项目最怕的，不是起不来，而是“起得来但越跑越脆”" class="headerlink" title="二、Appium 项目最怕的，不是起不来，而是“起得来但越跑越脆”"></a>二、Appium 项目最怕的，不是起不来，而是“起得来但越跑越脆”</h2><p>第一次接触 Appium 时，几天内就能把 demo 跑通：</p>
+<ul>
+<li>安装 Appium Server</li>
+<li>连设备</li>
+<li>启应用</li>
+<li>定位元素</li>
+<li>点几下按钮</li>
+</ul>
+<p>但真正的难点从来不在这里。<br>真正难的是：<strong>为什么三周以后，这套脚本开始越来越慢、越来越脆、越来越难维护。</strong></p>
+<p>我见过最常见的几个原因。</p>
+<h3 id="1-用例粒度太细，维护量爆炸"><a href="#1-用例粒度太细，维护量爆炸" class="headerlink" title="1. 用例粒度太细，维护量爆炸"></a>1. 用例粒度太细，维护量爆炸</h3><p>如果完全照着手工用例去拆，就很容易把每个页面、每个按钮、每个文案都写成独立 UI case。<br>这样短期看覆盖率很高，长期看则几乎不可维护。</p>
+<p>因为 Appium 的稳定性成本天然高于接口自动化，你不应该用它去堆数量，而应该用它去守住关键链路。</p>
+<h3 id="2-页面对象抽象做得太机械"><a href="#2-页面对象抽象做得太机械" class="headerlink" title="2. 页面对象抽象做得太机械"></a>2. 页面对象抽象做得太机械</h3><p>一上来就套标准 Page Object，但最后演化成：</p>
+<ul>
+<li>页面对象很厚</li>
+<li>业务逻辑和页面定位混在一起</li>
+<li>等待逻辑散落到各个方法里</li>
+</ul>
+<p>结果是改一个页面，不只要改 locator，还要顺着页面类一路修逻辑。</p>
+<h3 id="3-把等待问题理解成“多加几个-sleep”"><a href="#3-把等待问题理解成“多加几个-sleep”" class="headerlink" title="3. 把等待问题理解成“多加几个 sleep”"></a>3. 把等待问题理解成“多加几个 sleep”</h3><p>这是 Appium 项目失控最快的路径之一。<br>一开始脚本不稳，就有人加 <code>sleep(2)</code>；再不稳，再加 <code>sleep(5)</code>；最后所有 case 都在等。</p>
+<p>结果通常是：</p>
+<ul>
+<li>执行越来越慢</li>
+<li>依然不稳</li>
+<li>真正的性能问题被 sleep 掩盖掉</li>
+</ul>
+<h3 id="4-设备和环境问题没有被隔离出框架层"><a href="#4-设备和环境问题没有被隔离出框架层" class="headerlink" title="4. 设备和环境问题没有被隔离出框架层"></a>4. 设备和环境问题没有被隔离出框架层</h3><p>如果脚本层直接面对：</p>
+<ul>
+<li>权限弹窗</li>
+<li>设备解锁</li>
+<li>应用重装</li>
+<li>崩溃留证</li>
+<li>设备回收</li>
+</ul>
+<p>那用例层会非常脏。<br>以为自己是在写 UI 自动化，其实是在用 test case 充当设备治理脚本。</p>
+<h2 id="三、更推荐的-Appium-落地方式：让它只负责-UI-交互，不负责一切"><a href="#三、更推荐的-Appium-落地方式：让它只负责-UI-交互，不负责一切" class="headerlink" title="三、更推荐的 Appium 落地方式：让它只负责 UI 交互，不负责一切"></a>三、更推荐的 Appium 落地方式：让它只负责 UI 交互，不负责一切</h2><p>如果要从头搭一套 Android Appium 自动化，不适合让 Appium 承担全部职责。</p>
+<p>更倾向把整套能力拆成三层。</p>
+<h3 id="1-设备与环境层"><a href="#1-设备与环境层" class="headerlink" title="1. 设备与环境层"></a>1. 设备与环境层</h3><p>职责：</p>
+<ul>
+<li>设备连通性检查</li>
+<li>安装、卸载、清数据</li>
+<li>权限处理</li>
+<li>截图、录屏、日志采集</li>
+<li>失败恢复</li>
+</ul>
+<p>这一层更适合由 <code>ADB</code> 能力和设备管理层负责。</p>
+<h3 id="2-驱动与页面交互层"><a href="#2-驱动与页面交互层" class="headerlink" title="2. 驱动与页面交互层"></a>2. 驱动与页面交互层</h3><p>职责：</p>
+<ul>
+<li>创建和销毁 Appium session</li>
+<li>元素定位</li>
+<li>页面动作封装</li>
+<li>基础等待机制</li>
+</ul>
+<p>这一层才是 Appium 最擅长的部分。</p>
+<h3 id="3-业务场景编排层"><a href="#3-业务场景编排层" class="headerlink" title="3. 业务场景编排层"></a>3. 业务场景编排层</h3><p>职责：</p>
+<ul>
+<li>组织业务流程</li>
+<li>调用页面动作</li>
+<li>做断言</li>
+<li>与接口、数据库或 mock 能力联动</li>
+</ul>
+<p>这样做的最大好处是：</p>
+<ul>
+<li>Appium 只做自己擅长的 UI 驱动</li>
+<li>设备治理不会污染用例</li>
+<li>场景逻辑不会直接绑死在页面对象上</li>
+</ul>
+<p>如果三层不拆，后面任何一个问题都会让代码越来越缠。</p>
+<h2 id="四、元素定位策略决定了-Appium-项目-60-以上的稳定性"><a href="#四、元素定位策略决定了-Appium-项目-60-以上的稳定性" class="headerlink" title="四、元素定位策略决定了 Appium 项目 60% 以上的稳定性"></a>四、元素定位策略决定了 Appium 项目 60% 以上的稳定性</h2><p>很多 Appium 项目后期维护成本高，本质上不是框架选型问题，而是定位策略从一开始就不稳。</p>
+<p>定位优先级通常可以先定成下面这样：</p>
+<h3 id="1-优先使用稳定业务标识"><a href="#1-优先使用稳定业务标识" class="headerlink" title="1. 优先使用稳定业务标识"></a>1. 优先使用稳定业务标识</h3><p>如果应用支持明确的资源 ID、测试专用标识或稳定 accessibility 标识，这是最优解。</p>
+<p>原因很简单：</p>
+<ul>
+<li>可读性好</li>
+<li>变化可控</li>
+<li>不容易被布局调整误伤</li>
+</ul>
+<h3 id="2-谨慎使用文本定位"><a href="#2-谨慎使用文本定位" class="headerlink" title="2. 谨慎使用文本定位"></a>2. 谨慎使用文本定位</h3><p>文本定位不是不能用，但非常容易受这些因素影响：</p>
+<ul>
+<li>文案调整</li>
+<li>多语言</li>
+<li>A&#x2F;B 实验</li>
+<li>动态文案拼接</li>
+</ul>
+<p>它适合做辅助，不适合做大规模主定位方式。</p>
+<h3 id="3-尽量少用长链路-XPath"><a href="#3-尽量少用长链路-XPath" class="headerlink" title="3. 尽量少用长链路 XPath"></a>3. 尽量少用长链路 XPath</h3><p>这是最典型的“能跑，但后面会持续还债”的定位方式。<br>页面结构稍微一改，整条 XPath 就可能失效。</p>
+<p>XPath 不是完全禁用，但应该只在确实没有更好锚点时谨慎使用。</p>
+<h3 id="4-定位失败信息要足够可诊断"><a href="#4-定位失败信息要足够可诊断" class="headerlink" title="4. 定位失败信息要足够可诊断"></a>4. 定位失败信息要足够可诊断</h3><p>如果元素找不到时，框架只抛一句 <code>NoSuchElementException</code>，排查价值很低。<br>更有价值的做法是同时输出：</p>
+<ul>
+<li>当前页面标识</li>
+<li>定位器信息</li>
+<li>当前截图</li>
+<li>失败前等待时长</li>
+<li>必要时输出页面层级快照</li>
+</ul>
+<p>这样才能快速判断到底是页面没到、定位不稳，还是环境问题。</p>
+<h2 id="五、等待机制需要单独设计，不能把稳定性押给-sleep"><a href="#五、等待机制需要单独设计，不能把稳定性押给-sleep" class="headerlink" title="五、等待机制需要单独设计，不能把稳定性押给 sleep"></a>五、等待机制需要单独设计，不能把稳定性押给 sleep</h2><p>Appium 在真实业务里的很多脆弱性，表面上看是“定位不到”，本质上其实是等待机制设计不合理。</p>
+<p>更倾向把等待分成三类。</p>
+<h3 id="1-页面级等待"><a href="#1-页面级等待" class="headerlink" title="1. 页面级等待"></a>1. 页面级等待</h3><p>比如：</p>
+<ul>
+<li>页面主元素出现</li>
+<li>页面 loading 消失</li>
+<li>关键区域可交互</li>
+</ul>
+<p>这类等待用来确认“页面已经可测”。</p>
+<h3 id="2-动作后等待"><a href="#2-动作后等待" class="headerlink" title="2. 动作后等待"></a>2. 动作后等待</h3><p>比如：</p>
+<ul>
+<li>点击提交后等待结果页出现</li>
+<li>切换 tab 后等待内容区域刷新</li>
+<li>提交表单后等待 toast 或提示框出现</li>
+</ul>
+<p>这类等待要和具体动作绑定，而不是散落在 case 里。</p>
+<h3 id="3-条件失败后的补充诊断"><a href="#3-条件失败后的补充诊断" class="headerlink" title="3. 条件失败后的补充诊断"></a>3. 条件失败后的补充诊断</h3><p>如果等待超时，不应该只返回失败，而应该补充：</p>
+<ul>
+<li>截图</li>
+<li>当前 Activity</li>
+<li>页面层级</li>
+<li>关键日志窗口</li>
+</ul>
+<p>这样等待机制本身也能成为排障入口。</p>
+<h2 id="六、Appium-落地时，最该控制的是-case-数量，不是驱动能力"><a href="#六、Appium-落地时，最该控制的是-case-数量，不是驱动能力" class="headerlink" title="六、Appium 落地时，最该控制的是 case 数量，不是驱动能力"></a>六、Appium 落地时，最该控制的是 case 数量，不是驱动能力</h2><p>这是 容易反直觉的一点。<br>他们往往会先追求“支持更多动作、更复杂手势、更全的页面能力”，但真正更关键的是：<strong>不要让 Appium case 膨胀失控。</strong></p>
+<p>更倾向的策略是：</p>
+<ul>
+<li>用 Appium 守核心链路</li>
+<li>用接口自动化守业务规则</li>
+<li>用 ADB 和日志能力守环境和证据</li>
+<li>用人工探索补复杂体验问题</li>
+</ul>
+<p>这样 Appium 的价值会更清晰。</p>
+<p>如果把所有验证都压到 Appium 上，短期像是在提高自动化覆盖，长期其实是在堆维护债。</p>
+<h2 id="七、我在-Android-Appium-落地里踩过的几个典型坑"><a href="#七、我在-Android-Appium-落地里踩过的几个典型坑" class="headerlink" title="七、我在 Android Appium 落地里踩过的几个典型坑"></a>七、我在 Android Appium 落地里踩过的几个典型坑</h2><h3 id="坑-1：脚本失败看起来像元素问题，实际是设备问题"><a href="#坑-1：脚本失败看起来像元素问题，实际是设备问题" class="headerlink" title="坑 1：脚本失败看起来像元素问题，实际是设备问题"></a>坑 1：脚本失败看起来像元素问题，实际是设备问题</h3><p>现象：</p>
+<ul>
+<li>元素找不到</li>
+<li>点击无响应</li>
+<li>session 偶发中断</li>
+</ul>
+<p>最后查下来往往是：</p>
+<ul>
+<li>设备锁屏了</li>
+<li>权限弹窗挡住了页面</li>
+<li>应用实际已经闪退</li>
+<li>设备连接状态不稳</li>
+</ul>
+<p>如果没有把设备健康检查和失败留证做好，这类问题很容易被误判成 locator 不稳定。</p>
+<h3 id="坑-2：页面对象越来越厚，最后没人敢改"><a href="#坑-2：页面对象越来越厚，最后没人敢改" class="headerlink" title="坑 2：页面对象越来越厚，最后没人敢改"></a>坑 2：页面对象越来越厚，最后没人敢改</h3><p>现象：</p>
+<ul>
+<li>一个页面类几百行甚至上千行</li>
+<li>定位、动作、断言、业务流程全写在一起</li>
+<li>改一个控件可能影响多条链路</li>
+</ul>
+<p>这类问题本质上是抽象层次没控住。<br>页面层应该主要关注“页面如何交互”，不应该背太多业务编排逻辑。</p>
+<h3 id="坑-3：为了稳，疯狂加-sleep，最后把问题藏起来"><a href="#坑-3：为了稳，疯狂加-sleep，最后把问题藏起来" class="headerlink" title="坑 3：为了稳，疯狂加 sleep，最后把问题藏起来"></a>坑 3：为了稳，疯狂加 sleep，最后把问题藏起来</h3><p>这类问题非常普遍。<br>表面上看用例通过率提高了，实际发生的是：</p>
+<ul>
+<li>脚本变慢</li>
+<li>随机问题还在</li>
+<li>真正的加载瓶颈被掩盖</li>
+</ul>
+<p>最后你得到的是一套“看起来稳定、实际信息量很低”的自动化。</p>
+<h3 id="坑-4：把-Appium-当成跨端统一答案"><a href="#坑-4：把-Appium-当成跨端统一答案" class="headerlink" title="坑 4：把 Appium 当成跨端统一答案"></a>坑 4：把 Appium 当成跨端统一答案</h3><p>Appium 的优势之一确实是跨端思路相对统一，但这不等于 Android 和 iOS 可以用完全一样的落地策略。</p>
+<p>例如：</p>
+<ul>
+<li>控件树差异</li>
+<li>权限模型差异</li>
+<li>WebView 行为差异</li>
+<li>系统弹窗处理差异</li>
+</ul>
+<p>如果一开始就强行要求“一套脚本思路覆盖两端”，往往会把 Android 端本可以做得很稳的能力也拖复杂。</p>
+<h2 id="八、如果要把-Appium-接进团队体系，更看重哪些能力"><a href="#八、如果要把-Appium-接进团队体系，更看重哪些能力" class="headerlink" title="八、如果要把 Appium 接进团队体系，更看重哪些能力"></a>八、如果要把 Appium 接进团队体系，更看重哪些能力</h2><p>如果一个团队准备长期维护 Android Appium 自动化，更看重的不是“有没有写出几十个 case”，而是下面几件事有没有补齐。</p>
+<h3 id="1-失败时有没有高质量证据"><a href="#1-失败时有没有高质量证据" class="headerlink" title="1. 失败时有没有高质量证据"></a>1. 失败时有没有高质量证据</h3><p>至少包括：</p>
+<ul>
+<li>截图</li>
+<li>日志</li>
+<li>当前 Activity</li>
+<li>设备信息</li>
+<li>失败步骤上下文</li>
+</ul>
+<h3 id="2-有没有把设备治理从-case-里抽出去"><a href="#2-有没有把设备治理从-case-里抽出去" class="headerlink" title="2. 有没有把设备治理从 case 里抽出去"></a>2. 有没有把设备治理从 case 里抽出去</h3><p>如果每个 case 都在自己处理：</p>
+<ul>
+<li>解锁</li>
+<li>权限弹窗</li>
+<li>安装应用</li>
+<li>清理环境</li>
+</ul>
+<p>那这套自动化很快就会失控。</p>
+<h3 id="3-有没有稳定的定位规范和等待规范"><a href="#3-有没有稳定的定位规范和等待规范" class="headerlink" title="3. 有没有稳定的定位规范和等待规范"></a>3. 有没有稳定的定位规范和等待规范</h3><p>没有这两套规范，脚本数量一多就会出现明显风格漂移，不同人写出来的 case 稳定性差异会非常大。</p>
+<h3 id="4-有没有明确的用例选择标准"><a href="#4-有没有明确的用例选择标准" class="headerlink" title="4. 有没有明确的用例选择标准"></a>4. 有没有明确的用例选择标准</h3><p>Appium 最怕的不是数量少，而是数量太多却没有重点。<br>如果团队不能说明“为什么这条链路值得 UI 自动化”，那很可能不该写。</p>
+<h2 id="九、排查-Appium-问题时，可以按什么顺序看"><a href="#九、排查-Appium-问题时，可以按什么顺序看" class="headerlink" title="九、排查 Appium 问题时，可以按什么顺序看"></a>九、排查 Appium 问题时，可以按什么顺序看</h2><p>一看到 Appium 报错就先去看 locator，是很常见的反应。<br>但更倾向按下面顺序排查。</p>
+<h3 id="1-先看设备和应用是不是还活着"><a href="#1-先看设备和应用是不是还活着" class="headerlink" title="1. 先看设备和应用是不是还活着"></a>1. 先看设备和应用是不是还活着</h3><p>确认：</p>
+<ul>
+<li>设备是否在线</li>
+<li>应用是否在前台</li>
+<li>是否有 crash 或权限弹窗</li>
+</ul>
+<h3 id="2-再看页面是不是到了预期状态"><a href="#2-再看页面是不是到了预期状态" class="headerlink" title="2. 再看页面是不是到了预期状态"></a>2. 再看页面是不是到了预期状态</h3><p>确认：</p>
+<ul>
+<li>页面主元素是否出现</li>
+<li>loading 是否结束</li>
+<li>页面切换是否真的完成</li>
+</ul>
+<h3 id="3-再看定位策略本身是否稳定"><a href="#3-再看定位策略本身是否稳定" class="headerlink" title="3. 再看定位策略本身是否稳定"></a>3. 再看定位策略本身是否稳定</h3><p>确认：</p>
+<ul>
+<li>是否用了脆弱 XPath</li>
+<li>文本是否动态变化</li>
+<li>定位器是否过于依赖布局层级</li>
+</ul>
+<h3 id="4-最后才看-case-逻辑"><a href="#4-最后才看-case-逻辑" class="headerlink" title="4. 最后才看 case 逻辑"></a>4. 最后才看 case 逻辑</h3><p>因为很多所谓“case 逻辑错”，前面三步已经能发现其实是环境问题、页面状态问题，或者等待机制问题。</p>
+<h2 id="结语"><a href="#结语" class="headerlink" title="结语"></a>结语</h2><p>Appium 在 Android 自动化里并不是没用，也不是万能。<br>它真正有价值的前提是：你把它放在合适的位置上。</p>
+<p>更关键的是一套真正能落地的 Android Appium 自动化，至少要做到：</p>
+<ul>
+<li>只覆盖值得做 UI 自动化的关键链路</li>
+<li>让 Appium 专注于页面交互，不背设备治理的锅</li>
+<li>有稳定的定位和等待策略</li>
+<li>失败时有足够强的证据链支撑排障</li>
+<li>和 ADB、日志、设备管理能力形成协同，而不是互相替代</li>
+</ul>
+<p>如果这些基础都没打好，Appium 很容易从“提高回归效率的工具”变成“持续制造维护成本的系统”；<br>但如果边界清楚、分层清楚、治理到位，它依然是 Android 自动化里非常实用的一环。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/UI%E8%87%AA%E5%8A%A8%E5%8C%96/" rel="tag"># UI自动化</a>
+              <a href="/tags/%E5%B7%A5%E7%A8%8B%E5%8C%96/" rel="tag"># 工程化</a>
+              <a href="/tags/Appium/" rel="tag"># Appium</a>
+              <a href="/tags/%E5%B7%A5%E7%A8%8B%E5%AE%9E%E8%B7%B5/" rel="tag"># 工程实践</a>
+              <a href="/tags/%E6%8E%92%E9%9A%9C/" rel="tag"># 排障</a>
+              <a href="/tags/Android/" rel="tag"># Android</a>
+              <a href="/tags/%E7%A7%BB%E5%8A%A8%E7%AB%AF%E8%87%AA%E5%8A%A8%E5%8C%96/" rel="tag"># 移动端自动化</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2023/02/03/%E7%A7%BB%E5%8A%A8%E7%AB%AF%E8%87%AA%E5%8A%A8%E5%8C%96-05-%E5%A4%9A%E8%AE%BE%E5%A4%87%E5%B9%B6%E5%8F%91%E6%B5%8B%E8%AF%95%E6%80%8E%E4%B9%88%E7%AE%A1%E7%90%86%E6%89%8D%E4%B8%8D%E4%BC%9A%E6%8A%8A%E7%9C%9F%E6%9C%BA%E7%8E%AF%E5%A2%83%E8%B7%91%E5%B4%A9/" rel="prev" title="移动端自动化：多设备并发测试怎么管理才不会把真机环境跑崩">
+                  <i class="fa fa-angle-left"></i> 移动端自动化：多设备并发测试怎么管理才不会把真机环境跑崩
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2023/03/14/%E7%A7%BB%E5%8A%A8%E7%AB%AF%E8%87%AA%E5%8A%A8%E5%8C%96-07-Appium%E5%9C%A8iOS%E8%87%AA%E5%8A%A8%E5%8C%96%E4%B8%AD%E7%9A%84%E5%B8%B8%E8%A7%81%E9%97%AE%E9%A2%98/" rel="next" title="移动端自动化：Appium 在 iOS 自动化中的常见问题">
+                  移动端自动化：Appium 在 iOS 自动化中的常见问题 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">715k</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">43:22</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>
