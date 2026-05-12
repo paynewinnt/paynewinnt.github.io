@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="稳定性测试报告不是日志包目录，也不是缺陷列表截图，更不是把 Monkey 时长、Crash 数、ANR 数拼在一起的周报。它最终要回答一个版本问题：当前构建能不能继续流转，能不能灰度，能不能量产，不能的话阻断在哪里，能的话还带着哪些风险。报告写不出这个判断，测试做得再辛苦，也很难在评审会上产生决策价值。 Android 稳定性报告尤其容易写散。因为输入材料太多：长稳结果、专项结果、Monkey、业">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Android稳定性-46-Android 稳定性测试报告怎么写才有决策价值">
+<meta property="og:url" content="https://paynewinnt.github.io/2026/04/02/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-46-Android%E7%A8%B3%E5%AE%9A%E6%80%A7%E6%B5%8B%E8%AF%95%E6%8A%A5%E5%91%8A%E6%80%8E%E4%B9%88%E5%86%99%E6%89%8D%E6%9C%89%E5%86%B3%E7%AD%96%E4%BB%B7%E5%80%BC/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="稳定性测试报告不是日志包目录，也不是缺陷列表截图，更不是把 Monkey 时长、Crash 数、ANR 数拼在一起的周报。它最终要回答一个版本问题：当前构建能不能继续流转，能不能灰度，能不能量产，不能的话阻断在哪里，能的话还带着哪些风险。报告写不出这个判断，测试做得再辛苦，也很难在评审会上产生决策价值。 Android 稳定性报告尤其容易写散。因为输入材料太多：长稳结果、专项结果、Monkey、业">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-04-02T12:30:00.000Z">
+<meta property="article:modified_time" content="2026-04-02T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="Android稳定性">
+<meta property="article:tag" content="Android">
+<meta property="article:tag" content="稳定性测试">
+<meta property="article:tag" content="测试报告">
+<meta property="article:tag" content="质量度量">
+<meta property="article:tag" content="版本决策">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2026/04/02/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-46-Android%E7%A8%B3%E5%AE%9A%E6%80%A7%E6%B5%8B%E8%AF%95%E6%8A%A5%E5%91%8A%E6%80%8E%E4%B9%88%E5%86%99%E6%89%8D%E6%9C%89%E5%86%B3%E7%AD%96%E4%BB%B7%E5%80%BC/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2026/04/02/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-46-Android%E7%A8%B3%E5%AE%9A%E6%80%A7%E6%B5%8B%E8%AF%95%E6%8A%A5%E5%91%8A%E6%80%8E%E4%B9%88%E5%86%99%E6%89%8D%E6%9C%89%E5%86%B3%E7%AD%96%E4%BB%B7%E5%80%BC/","path":"2026/04/02/Android稳定性-46-Android稳定性测试报告怎么写才有决策价值/","title":"Android稳定性-46-Android 稳定性测试报告怎么写才有决策价值"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>Android稳定性-46-Android 稳定性测试报告怎么写才有决策价值 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E6%8A%A5%E5%91%8A%E8%AF%BB%E8%80%85%E4%B8%8D%E5%90%8C%EF%BC%8C%E4%BF%A1%E6%81%AF%E5%B1%82%E7%BA%A7%E4%B9%9F%E4%B8%8D%E5%90%8C"><span class="nav-number">1.</span> <span class="nav-text">一、报告读者不同，信息层级也不同</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E6%8A%A5%E5%91%8A%E9%A6%96%E9%A1%B5%E5%BA%94%E8%AF%A5%E5%9B%9E%E7%AD%94%E7%9A%84%E5%85%AD%E4%B8%AA%E9%97%AE%E9%A2%98"><span class="nav-number">2.</span> <span class="nav-text">二、报告首页应该回答的六个问题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E6%8C%87%E6%A0%87%E5%8F%A3%E5%BE%84%E8%A6%81%E5%86%99%E5%BE%97%E8%83%BD%E5%A4%8D%E7%AE%97"><span class="nav-number">3.</span> <span class="nav-text">三、指标口径要写得能复算</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E8%A6%86%E7%9B%96%E8%8C%83%E5%9B%B4%E8%A6%81%E5%86%99%E7%9C%9F%E5%AE%9E%EF%BC%8C%E4%B8%8D%E8%A6%81%E5%86%99%E6%BC%82%E4%BA%AE"><span class="nav-number">4.</span> <span class="nav-text">四、覆盖范围要写真实，不要写漂亮</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81Top-Issue-%E8%A6%81%E6%8C%89%E7%89%88%E6%9C%AC%E9%A3%8E%E9%99%A9%E6%8E%92%E5%BA%8F"><span class="nav-number">5.</span> <span class="nav-text">五、Top Issue 要按版本风险排序</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E5%AE%8C%E6%95%B4%E6%A1%88%E4%BE%8B%EF%BC%9A%E4%B8%80%E4%BB%BD%E6%8A%A5%E5%91%8A%E5%A6%82%E4%BD%95%E6%94%B9%E5%8F%98%E5%8F%91%E5%B8%83%E7%BB%93%E8%AE%BA"><span class="nav-number">6.</span> <span class="nav-text">六、完整案例：一份报告如何改变发布结论</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E5%91%BD%E4%BB%A4%E5%92%8C%E8%AF%81%E6%8D%AE%E5%8C%85%E8%A6%81%E5%8F%AF%E8%BF%BD%E6%BA%AF"><span class="nav-number">7.</span> <span class="nav-text">七、命令和证据包要可追溯</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E5%B8%B8%E8%A7%81%E8%AF%AF%E5%88%A4"><span class="nav-number">8.</span> <span class="nav-text">八、常见误判</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E6%A3%80%E6%9F%A5%E6%B8%85%E5%8D%95"><span class="nav-number">9.</span> <span class="nav-text">九、检查清单</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E8%BE%93%E5%87%BA%E7%89%A9%E6%A8%A1%E6%9D%BF"><span class="nav-number">10.</span> <span class="nav-text">十、输出物模板</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E5%B0%8F%E7%BB%93"><span class="nav-number">11.</span> <span class="nav-text">十一、小结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E6%8A%A5%E5%91%8A%E9%87%8C%E7%9A%84%E9%81%97%E7%95%99%E9%A3%8E%E9%99%A9%E8%A6%81%E5%8F%AF%E7%AE%A1%E7%90%86"><span class="nav-number">12.</span> <span class="nav-text">十二、报告里的遗留风险要可管理</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81%E4%BF%AE%E5%A4%8D%E9%AA%8C%E8%AF%81%E7%AB%A0%E8%8A%82%E4%B8%8D%E8%83%BD%E5%8F%AA%E5%86%99%E9%80%9A%E8%BF%87"><span class="nav-number">13.</span> <span class="nav-text">十三、修复验证章节不能只写通过</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81%E4%B8%8D%E5%90%8C%E9%98%B6%E6%AE%B5%E7%9A%84%E6%8A%A5%E5%91%8A%E9%87%8D%E7%82%B9%E4%B8%8D%E5%90%8C"><span class="nav-number">14.</span> <span class="nav-text">十四、不同阶段的报告重点不同</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%94%E3%80%81%E6%8A%A5%E5%91%8A%E8%B4%A8%E9%87%8F%E4%B9%9F%E9%9C%80%E8%A6%81%E5%A4%8D%E7%9B%98"><span class="nav-number">15.</span> <span class="nav-text">十五、报告质量也需要复盘</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AD%E3%80%81%E6%8A%A5%E5%91%8A%E8%AF%84%E5%AE%A1%E4%BC%9A%E4%B8%8A%E6%80%8E%E4%B9%88%E8%AE%B2"><span class="nav-number">16.</span> <span class="nav-text">十六、报告评审会上怎么讲</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%83%E3%80%81%E9%9D%A2%E5%90%91%E7%AE%A1%E7%90%86%E5%B1%82%E7%9A%84%E6%91%98%E8%A6%81%E4%B8%8D%E8%A6%81%E6%8A%80%E6%9C%AF%E5%8C%96%E8%BF%87%E5%BA%A6"><span class="nav-number">17.</span> <span class="nav-text">十七、面向管理层的摘要不要技术化过度</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AB%E3%80%81%E6%8A%A5%E5%91%8A%E4%B8%AD%E7%9A%84%E5%9B%BE%E8%A1%A8%E8%A6%81%E5%B0%91%E8%80%8C%E5%87%86"><span class="nav-number">18.</span> <span class="nav-text">十八、报告中的图表要少而准</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B9%9D%E3%80%81%E6%8A%A5%E5%91%8A%E5%8F%91%E5%87%BA%E5%90%8E%E7%9A%84%E5%8F%98%E6%9B%B4%E7%AE%A1%E7%90%86"><span class="nav-number">19.</span> <span class="nav-text">十九、报告发出后的变更管理</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E3%80%81%E4%BB%8E%E6%8A%A5%E5%91%8A%E5%8F%8D%E6%8E%A8%E6%B5%8B%E8%AF%95%E6%96%B9%E6%A1%88"><span class="nav-number">20.</span> <span class="nav-text">二十、从报告反推测试方案</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%80%E3%80%81%E6%8A%A5%E5%91%8A%E4%B8%AD%E7%9A%84%E8%B4%A3%E4%BB%BB%E8%BE%B9%E7%95%8C"><span class="nav-number">21.</span> <span class="nav-text">二十一、报告中的责任边界</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">298</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">27</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">513</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2026/04/02/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-46-Android%E7%A8%B3%E5%AE%9A%E6%80%A7%E6%B5%8B%E8%AF%95%E6%8A%A5%E5%91%8A%E6%80%8E%E4%B9%88%E5%86%99%E6%89%8D%E6%9C%89%E5%86%B3%E7%AD%96%E4%BB%B7%E5%80%BC/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="Android稳定性-46-Android 稳定性测试报告怎么写才有决策价值 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Android稳定性-46-Android 稳定性测试报告怎么写才有决策价值
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2026-04-02 20:30:00" itemprop="dateCreated datePublished" datetime="2026-04-02T20:30:00+08:00">2026-04-02</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/Android%E7%A8%B3%E5%AE%9A%E6%80%A7/" itemprop="url" rel="index"><span itemprop="name">Android稳定性</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>7.2k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>26 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>稳定性测试报告不是日志包目录，也不是缺陷列表截图，更不是把 Monkey 时长、Crash 数、ANR 数拼在一起的周报。它最终要回答一个版本问题：当前构建能不能继续流转，能不能灰度，能不能量产，不能的话阻断在哪里，能的话还带着哪些风险。报告写不出这个判断，测试做得再辛苦，也很难在评审会上产生决策价值。</p>
+<p>Android 稳定性报告尤其容易写散。因为输入材料太多：长稳结果、专项结果、Monkey、业务遍历、功耗、温升、内存、I&#x2F;O、重启、ANR、Crash、Native Crash、Watchdog、Top Issue、设备离线、脚本失败、日志缺失、修复验证。每一块都有数据，但评审会关心的不是数据总量，而是这些数据能否支持版本结论。</p>
+<p>这篇文章讲稳定性测试报告该怎么组织。重点是报告结构、风险分级、证据摘要、指标口径、完整案例、命令、表格、常见误判、检查清单、输出物模板和小结。写报告不是文字工作，它是稳定性测试最后一次把事实、风险和行动项对齐的工程动作。</p>
+<h2 id="一、报告读者不同，信息层级也不同"><a href="#一、报告读者不同，信息层级也不同" class="headerlink" title="一、报告读者不同，信息层级也不同"></a>一、报告读者不同，信息层级也不同</h2><p>稳定性报告至少有四类读者。项目负责人关心能不能按计划发布，风险是否可控。研发负责人关心哪些模块需要修，修复优先级是什么。测试负责人关心覆盖是否足够，结论是否可信。管理者关心质量趋势、资源投入和发布建议。把所有日志细节放在第一页，会让每个人都找不到自己需要的信息。</p>
+<p>报告应该分层。第一页给版本结论和阻断风险；第二层给指标概览、覆盖范围和趋势；第三层给 Top Issue、根因进展和修复验证；最后才是详细证据、命令输出、日志路径和附件。这样读者可以按需要下钻，而不是被迫在几十页材料里找结论。</p>
+<p>报告语言也要区分事实和判断。事实是“20 台设备运行 72 小时，3 台出现 system_server Watchdog，发生在版本 V2026.04.02”。判断是“该问题影响整机可用性，复现率 15%，当前无修复，不建议准入通过”。很多报告把事实写很多，判断写得很弱，评审会就会继续追问。</p>
+<p>如果测试负责人对结论没有把握，也要明确写出不确定性来自哪里：日志缺失、复现不足、设备样本少、修复未合入、基线数据不足。模糊不是问题，隐藏模糊才是问题。</p>
+<h2 id="二、报告首页应该回答的六个问题"><a href="#二、报告首页应该回答的六个问题" class="headerlink" title="二、报告首页应该回答的六个问题"></a>二、报告首页应该回答的六个问题</h2><p>稳定性报告首页建议只放六个问题的答案。第一，测了哪个版本，覆盖哪些设备和场景。第二，测试完成度是多少，有没有无效样本。第三，关键指标相对基线是改善、持平还是退化。第四，当前阻断项有哪些。第五，遗留风险有哪些，是否有规避或灰度观察方案。第六，测试建议是什么。</p>
+<p>这六个问题决定报告是否能用于决策。比如“长稳通过率 95%”听起来不错，但如果失败的 5% 是 Watchdog 重启，结论可能仍然是阻断；“Crash 数 0”也不代表稳定，如果功耗待机掉电退化三倍，同样可能影响灰度。</p>
+<p>首页不要堆命令输出。可以用一个摘要表承载核心信息：</p>
+<table>
+<thead>
+<tr>
+<th>项目</th>
+<th>结果</th>
+<th>基线对比</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>长稳 72h</td>
+<td>20 台完成 18 台，2 台 Watchdog</td>
+<td>基线 0 台</td>
+<td>阻断</td>
+</tr>
+<tr>
+<td>Monkey 12h</td>
+<td>Crash 0，ANR 1</td>
+<td>持平</td>
+<td>通过但跟踪</td>
+</tr>
+<tr>
+<td>功耗待机 8h</td>
+<td>掉电 11%</td>
+<td>基线 4%</td>
+<td>阻断</td>
+</tr>
+<tr>
+<td>相机专项</td>
+<td>录像保存失败 3&#x2F;50</td>
+<td>新增</td>
+<td>高风险</td>
+</tr>
+<tr>
+<td>设备离线</td>
+<td>1 台 USB 断连</td>
+<td>环境问题</td>
+<td>样本剔除</td>
+</tr>
+</tbody></table>
+<p>摘要表后面接一句清楚建议：当前版本不建议进入灰度，需修复 Watchdog 和待机功耗退化，并完成同条件复测。这样的首页比二十页截图更有力量。</p>
+<h2 id="三、指标口径要写得能复算"><a href="#三、指标口径要写得能复算" class="headerlink" title="三、指标口径要写得能复算"></a>三、指标口径要写得能复算</h2><p>报告里的每个指标都要能复算。Crash 率的分母是什么，是设备数、小时数、用例次数还是用户会话？ANR 是系统 ANR、应用 ANR，还是测试脚本超时？长稳通过率是否剔除了设备离线和脚本异常？功耗掉电是系统电量百分比还是电源仪？温升取哪个传感器？帧率统计是平均 FPS 还是 P95 帧耗时？</p>
+<p>口径不清会导致评审争议。研发可能认为某台设备 USB 断连不应计入失败，测试可能认为它导致场景中断必须计入风险。项目可能看到“通过率 90%”以为可以放行，但实际失败项全是重启。报告要把口径写在指标旁边，而不是放到没人看的附录。</p>
+<p>下面这张口径表可以作为稳定性报告固定章节：</p>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>分母</th>
+<th>失败定义</th>
+<th>剔除规则</th>
+<th>数据来源</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>长稳通过率</td>
+<td>有效设备数</td>
+<td>Crash、ANR、重启、卡死、关键用例失败</td>
+<td>明确硬件&#x2F;线缆故障可剔除</td>
+<td>平台任务记录、日志</td>
+</tr>
+<tr>
+<td>Crash 数</td>
+<td>进程崩溃事件</td>
+<td>Java&#x2F;Native 崩溃</td>
+<td>预置已知三方崩溃单列</td>
+<td>logcat、tombstone</td>
+</tr>
+<tr>
+<td>ANR 数</td>
+<td>ANR 事件</td>
+<td>系统生成 ANR</td>
+<td>脚本等待超时不直接计入</td>
+<td>traces、dropbox</td>
+</tr>
+<tr>
+<td>重启数</td>
+<td>非预期重启</td>
+<td>kernel panic、watchdog、userspace reboot</td>
+<td>手动重启剔除</td>
+<td>pstore、reboot reason</td>
+</tr>
+<tr>
+<td>功耗退化</td>
+<td>同条件测试轮次</td>
+<td>超过基线阈值</td>
+<td>条件不一致重测</td>
+<td>batterystats、电源仪</td>
+</tr>
+</tbody></table>
+<p>能复算的报告更容易被信任。即使结论严厉，研发也知道如何验证；即使结论放行，项目也知道风险边界。</p>
+<h2 id="四、覆盖范围要写真实，不要写漂亮"><a href="#四、覆盖范围要写真实，不要写漂亮" class="headerlink" title="四、覆盖范围要写真实，不要写漂亮"></a>四、覆盖范围要写真实，不要写漂亮</h2><p>很多报告喜欢写“已完成全量稳定性测试”，但真正追问时才发现某些设备没跑满，某些场景跳过，某些日志缺失，某些失败样本被算作环境问题。覆盖范围写得漂亮但不真实，会直接伤害报告可信度。</p>
+<p>覆盖范围要包括设备、版本、场景、时长、脚本、数据集、网络、账号、特殊配置。比如 20 台设备跑 72 小时，其中 18 台有效，1 台 USB 断连，1 台刷机失败；相机专项覆盖拍照、录像、前后台切换、低存储，但没有覆盖弱网云同步；功耗专项覆盖灭屏待机和视频播放，没有覆盖导航。</p>
+<p>报告里可以用覆盖矩阵：</p>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>设备数</th>
+<th>时长&#x2F;次数</th>
+<th>有效样本</th>
+<th>未覆盖原因</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>72h 长稳</td>
+<td>20</td>
+<td>1440 设备小时</td>
+<td>18 台</td>
+<td>2 台环境无效</td>
+<td>有阻断</td>
+</tr>
+<tr>
+<td>Monkey</td>
+<td>10</td>
+<td>每台 12h</td>
+<td>10 台</td>
+<td>无</td>
+<td>通过</td>
+</tr>
+<tr>
+<td>相机专项</td>
+<td>5</td>
+<td>50 轮</td>
+<td>5 台</td>
+<td>无</td>
+<td>高风险</td>
+</tr>
+<tr>
+<td>灭屏待机</td>
+<td>6</td>
+<td>8h</td>
+<td>6 台</td>
+<td>无</td>
+<td>阻断</td>
+</tr>
+<tr>
+<td>弱网导航</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>实验室排期冲突</td>
+<td>未评估</td>
+</tr>
+</tbody></table>
+<p>“未覆盖”不是丢脸的信息。它能帮助版本评审决定是否补测、灰度观察还是接受风险。真正危险的是未覆盖却写成已通过。</p>
+<h2 id="五、Top-Issue-要按版本风险排序"><a href="#五、Top-Issue-要按版本风险排序" class="headerlink" title="五、Top Issue 要按版本风险排序"></a>五、Top Issue 要按版本风险排序</h2><p>Top Issue 不是缺陷系统里优先级最高的前几个单子，而是对版本决策影响最大的风险列表。一个偶发 UI 文案崩溃可能优先级高，但不一定阻断；一个 2&#x2F;20 的 Watchdog 重启可能复现率不高，却足以阻断准入。报告要按影响范围、严重程度、复现概率、修复状态、验证状态和规避方案排序。</p>
+<p>建议 Top Issue 表包含这些字段：</p>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>问题</th>
+<th>严重程度</th>
+<th>复现</th>
+<th>影响范围</th>
+<th>当前状态</th>
+<th>版本建议</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>STAB-1024</td>
+<td>system_server Watchdog</td>
+<td>S0</td>
+<td>3&#x2F;20</td>
+<td>整机不可用</td>
+<td>定位中</td>
+<td>阻断</td>
+</tr>
+<tr>
+<td>STAB-1031</td>
+<td>灭屏待机掉电 11%</td>
+<td>S1</td>
+<td>6&#x2F;6</td>
+<td>续航退化</td>
+<td>修复待验证</td>
+<td>阻断</td>
+</tr>
+<tr>
+<td>STAB-1040</td>
+<td>消息列表滑动掉帧</td>
+<td>S2</td>
+<td>8&#x2F;10</td>
+<td>高频路径</td>
+<td>已修复</td>
+<td>回归中</td>
+</tr>
+<tr>
+<td>STAB-1046</td>
+<td>相机保存失败</td>
+<td>S1</td>
+<td>3&#x2F;50</td>
+<td>相机核心场景</td>
+<td>有规避</td>
+<td>灰度限制</td>
+</tr>
+</tbody></table>
+<p>每个 Top Issue 后面都要有简短证据摘要，而不是只贴链接。评审者不一定会点开每个缺陷单，报告要让他在一页内知道为什么这个问题排在这里。</p>
+<p>Top Issue 还要维护变化。上一轮阻断项是否关闭，新问题是否新增，修复是否引入回归，风险是否从阻断降为灰度观察。没有变化信息，报告就无法呈现版本质量是否收敛。</p>
+<h2 id="六、完整案例：一份报告如何改变发布结论"><a href="#六、完整案例：一份报告如何改变发布结论" class="headerlink" title="六、完整案例：一份报告如何改变发布结论"></a>六、完整案例：一份报告如何改变发布结论</h2><p>某项目原计划周五进入 5% 灰度。周三晚上稳定性测试完成后，初版报告只写了“长稳完成 90%，Crash 0，ANR 2，问题跟踪中”，项目经理倾向按计划灰度。测试负责人复查原始数据后发现，这个结论太粗：两台未完成设备并不是普通失败，其中一台发生 Watchdog 重启，另一台在低存储场景 system_server 无响应；同时功耗专项显示灭屏 8 小时掉电从基线 4% 退化到 11%。</p>
+<p>报告被重写成决策版。首页明确写：当前版本不建议灰度，理由是两个阻断风险未关闭。第一，Watchdog 重启 1&#x2F;20，pstore 指向 system_server 主线程等待，根因未确认。第二，灭屏待机掉电 6&#x2F;6 超阈值，batterystats 指向后台同步持锁，修复未合入。Crash 0 和大部分长稳完成被保留为事实，但不再作为放行结论。</p>
+<p>重写后的报告还补了覆盖矩阵：20 台长稳中 18 台有效，2 台环境问题剔除；Watchdog 发生在有效样本中，不可剔除。功耗专项条件写清楚：25°C，Wi-Fi，插 SIM，刷机静置 2 小时，基线同台对比。Top Issue 表给出责任 owner、下一步动作和复测要求。</p>
+<p>发布评审最终决定推迟灰度 2 天。研发当天修复后台同步持锁，系统团队继续排查 Watchdog；测试完成 24 小时冒烟和 8 小时待机复测后，功耗恢复，Watchdog 未复现，但因样本时长不足，灰度从 5% 改为 1%，并加入重启率和待机掉电监控。这个案例说明，报告不是形式文档，它会直接改变发布策略。</p>
+<h2 id="七、命令和证据包要可追溯"><a href="#七、命令和证据包要可追溯" class="headerlink" title="七、命令和证据包要可追溯"></a>七、命令和证据包要可追溯</h2><p>报告正文不需要塞满命令输出，但证据包必须可追溯。每个结论都应该能找到原始日志、采集命令、设备编号、时间窗口和分析脚本版本。否则修复验证时很难比较，复盘时也无法确认当时判断是否合理。</p>
+<p>建议证据目录结构如下：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line">stability_report_V2026.04.02/</span><br><span class="line">  summary.md</span><br><span class="line">  devices.csv</span><br><span class="line">  metrics/</span><br><span class="line">    longrun_result.csv</span><br><span class="line">    power_standby.csv</span><br><span class="line">    jank_framestats.csv</span><br><span class="line">  issues/</span><br><span class="line">    STAB-1024_watchdog/</span><br><span class="line">      timeline.md</span><br><span class="line">      logcat.txt</span><br><span class="line">      bugreport.zip</span><br><span class="line">      pstore/</span><br><span class="line">    STAB-1031_power/</span><br><span class="line">      batterystats.txt</span><br><span class="line">      temp_curve.csv</span><br><span class="line">      condition.md</span><br><span class="line">  scripts/</span><br><span class="line">    collect_version.txt</span><br><span class="line">    parser_version.txt</span><br></pre></td></tr></table></figure>
+
+<p>常用采集命令也可以放在报告附录，方便复测同学复用。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">adb shell getprop ro.build.fingerprint</span><br><span class="line">adb shell getprop ro.boot.bootreason</span><br><span class="line">adb shell logcat -b all -v threadtime -d</span><br><span class="line">adb bugreport bugreport.zip</span><br><span class="line">adb shell dumpsys batterystats</span><br><span class="line">adb shell dumpsys meminfo</span><br><span class="line">adb shell dumpsys cpuinfo</span><br><span class="line">adb shell <span class="built_in">ls</span> -lt /data/anr /data/tombstones /data/system/dropbox 2&gt;/dev/null</span><br></pre></td></tr></table></figure>
+
+<p>证据包命名要避免“新建文件夹”“日志1”这种不可追溯名称。推荐使用版本、设备、场景、时间和问题 ID。报告里引用证据时写相对路径，评审后也能查到。</p>
+<h2 id="八、常见误判"><a href="#八、常见误判" class="headerlink" title="八、常见误判"></a>八、常见误判</h2><table>
+<thead>
+<tr>
+<th>误判</th>
+<th>后果</th>
+<th>修正方式</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Crash 0 就建议放行</td>
+<td>忽略重启、功耗、卡死、温升</td>
+<td>首页按风险而不是单指标下结论</td>
+</tr>
+<tr>
+<td>把环境失败全部剔除</td>
+<td>通过率虚高</td>
+<td>写明剔除理由和证据</td>
+</tr>
+<tr>
+<td>缺陷列表等于报告</td>
+<td>没有版本判断</td>
+<td>增加风险摘要和发布建议</td>
+</tr>
+<tr>
+<td>只写当前结果不写基线</td>
+<td>无法判断退化</td>
+<td>固定同条件对比</td>
+</tr>
+<tr>
+<td>附件很多但正文没证据</td>
+<td>评审无法快速判断</td>
+<td>每个结论写 2 到 4 条关键证据</td>
+</tr>
+<tr>
+<td>遗留问题没有 owner 和日期</td>
+<td>风险无法闭环</td>
+<td>给出责任人、动作和验证条件</td>
+</tr>
+</tbody></table>
+<p>这些误判会让报告看起来完整，实际无法用于决策。稳定性报告最重要的不是页数，而是结论、证据和行动项之间是否闭合。</p>
+<h2 id="九、检查清单"><a href="#九、检查清单" class="headerlink" title="九、检查清单"></a>九、检查清单</h2><ul>
+<li>首页是否明确写出发布建议。</li>
+<li>是否列出版本、设备、场景、时长和有效样本。</li>
+<li>是否说明指标口径、剔除规则和数据来源。</li>
+<li>是否给出基线对比和趋势变化。</li>
+<li>是否按版本风险排序 Top Issue。</li>
+<li>每个阻断项是否有证据摘要、owner、下一步和复测要求。</li>
+<li>遗留风险是否有灰度监控或规避方案。</li>
+<li>未覆盖场景是否被显式列出。</li>
+<li>证据包路径是否可追溯。</li>
+<li>报告结论是否能被另一名同学按原始数据复算。</li>
+</ul>
+<p>这份清单适合在报告发出前自查。尤其是“未覆盖场景”和“剔除规则”，很多争议都来自这两个地方。</p>
+<h2 id="十、输出物模板"><a href="#十、输出物模板" class="headerlink" title="十、输出物模板"></a>十、输出物模板</h2><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line"># Android 稳定性测试报告</span><br><span class="line"></span><br><span class="line">版本：V2026.04.02</span><br><span class="line">测试周期：2026-04-01 10:00 ~ 2026-04-02 18:00</span><br><span class="line">测试负责人：</span><br><span class="line">报告结论：不建议进入灰度</span><br><span class="line"></span><br><span class="line">## 1. 决策摘要</span><br><span class="line">阻断项：</span><br><span class="line">  1. STAB-1024 system_server Watchdog，3/20，根因未确认。</span><br><span class="line">  2. STAB-1031 灭屏待机掉电 11%，6/6，修复待验证。</span><br><span class="line">放行条件：</span><br><span class="line">  Watchdog 修复或 72h 同条件无复现；功耗修复后 3 轮 8h 待机达标。</span><br><span class="line"></span><br><span class="line">## 2. 覆盖范围</span><br><span class="line">设备、场景、时长、有效样本、未覆盖项。</span><br><span class="line"></span><br><span class="line">## 3. 指标概览</span><br><span class="line">长稳、Crash、ANR、重启、功耗、温升、帧率、离线率。</span><br><span class="line"></span><br><span class="line">## 4. Top Issue</span><br><span class="line">问题、影响、证据、owner、状态、下一步。</span><br><span class="line"></span><br><span class="line">## 5. 遗留风险</span><br><span class="line">可接受风险、灰度监控、回滚条件。</span><br><span class="line"></span><br><span class="line">## 6. 附件</span><br><span class="line">证据包路径、日志索引、采集命令、原始 CSV。</span><br></pre></td></tr></table></figure>
+
+<p>模板只是骨架，不能机械填空。每个版本的风险重点不同，报告篇幅也应该跟着变。没有阻断项时，重点写覆盖和趋势；阻断项很多时，重点写排序和行动；灰度阶段，重点写线上监控和回滚条件。</p>
+<h2 id="十一、小结"><a href="#十一、小结" class="headerlink" title="十一、小结"></a>十一、小结</h2><h2 id="十二、报告里的遗留风险要可管理"><a href="#十二、报告里的遗留风险要可管理" class="headerlink" title="十二、报告里的遗留风险要可管理"></a>十二、报告里的遗留风险要可管理</h2><p>很多版本最终都不是零风险发布。稳定性报告要把遗留风险写成可管理对象，而不是简单列几个“已知问题”。可管理的遗留风险至少包含影响范围、触发条件、用户后果、当前规避、线上监控、回滚条件和下一版本计划。缺少这些字段，所谓遗留只是把问题推迟到线上。</p>
+<p>例如“相机偶发保存失败”不能作为遗留描述。更合适的写法是：低存储剩余 800 MB 以下，连续录像 20 分钟后保存失败 2&#x2F;50；普通存储空间未复现；当前规避是低存储提示提前到 2 GB 并禁止继续录像；灰度监控保存失败率和低存储用户占比；若失败率超过 0.3% 或出现数据丢失投诉则回滚。这样的风险虽然未必完全修完，但项目能判断是否接受。</p>
+<p>遗留风险还要和 owner 绑定。报告里要写清楚谁负责线上监控，谁负责下一版本修复，谁负责灰度期间每日回看，谁有权触发回滚。稳定性风险如果没有人每天看，很快就会从“可接受”变成“没人负责”。</p>
+<h2 id="十三、修复验证章节不能只写通过"><a href="#十三、修复验证章节不能只写通过" class="headerlink" title="十三、修复验证章节不能只写通过"></a>十三、修复验证章节不能只写通过</h2><p>稳定性报告里最容易被写薄的是修复验证。很多报告只写“问题已修复，复测通过”，但没有说明复测条件是否覆盖原场景、样本是否足够、是否验证副作用、是否观察足够长时间。对于重启、Watchdog、功耗、长稳后期卡顿这类问题，短时间冒烟通过不能等同于风险关闭。</p>
+<p>修复验证建议写四件事。第一，修复内容摘要，不需要贴代码，但要说明策略变化。第二，复测覆盖，包括设备数、时长、场景、数据量和环境。第三，结果对比，包括修复前后关键指标。第四，残余风险，比如样本不足、只验证了一个型号、线上仍需观察。这样写既能支持关闭问题，也能保留必要谨慎。</p>
+<p>如果修复还没合入，报告要把“待验证”单列，不要混在已关闭问题里。待验证问题对版本的影响取决于合入时间和复测成本。比如一个功耗修复需要 3 轮 8 小时待机验证，今天晚上才合入，就不应该在明早准入报告里写成已解决。</p>
+<h2 id="十四、不同阶段的报告重点不同"><a href="#十四、不同阶段的报告重点不同" class="headerlink" title="十四、不同阶段的报告重点不同"></a>十四、不同阶段的报告重点不同</h2><p>方案评审阶段的报告重点是覆盖设计和风险预案，准入阶段的报告重点是阻断项和覆盖完成度，灰度阶段的报告重点是线上指标和回滚条件，量产复盘阶段的报告重点是问题闭环和预防措施。用同一套模板写所有阶段，容易出现信息错位。</p>
+<p>准入前，报告应该更严厉：样本不足、阻断项未关、关键场景未测，都要明确影响发布。灰度中，报告应该更关注趋势：崩溃率、重启率、功耗投诉、核心路径失败率是否在阈值内。量产后，报告要沉淀资产：哪些问题逃逸，哪些门禁缺失，哪些工具需要补。</p>
+<p>因此模板只是起点。测试负责人要根据阶段删减内容，而不是机械填满所有章节。读者在准入会上最想看到的是能不能放行，在复盘会上才需要完整展开原因和改进。</p>
+<h2 id="十五、报告质量也需要复盘"><a href="#十五、报告质量也需要复盘" class="headerlink" title="十五、报告质量也需要复盘"></a>十五、报告质量也需要复盘</h2><p>稳定性问题复盘时，团队通常会复盘代码根因，却很少复盘报告质量。实际上很多发布风险不是完全没测到，而是测到了但报告没有写清楚，或者写清楚了但没有形成行动。报告复盘可以问几个问题：阻断风险是否提前出现在日报里，最终报告是否明确建议，评审是否理解风险，遗留项是否有监控，修复验证是否足够。</p>
+<p>如果一个问题在线上爆发，而线下报告里已经有弱信号，就要检查当时为什么没有升级。是指标阈值不合理，还是报告排序不突出，还是 owner 没有动作，还是项目接受风险时没有回滚条件。把这些问题沉淀下来，下一版报告就会更有力量。</p>
+<p>报告本身也可以平台化。指标自动生成、问题单自动关联、证据包自动索引、Top Issue 状态自动同步、遗留风险自动提醒，都能减少人工错误。但平台只能提供材料，最终的风险判断仍然需要测试负责人负责。</p>
+<h2 id="十六、报告评审会上怎么讲"><a href="#十六、报告评审会上怎么讲" class="headerlink" title="十六、报告评审会上怎么讲"></a>十六、报告评审会上怎么讲</h2><p>报告写得好，还要讲得清楚。稳定性评审会通常时间有限，测试负责人不应该从第一页逐字念到最后一页，而应该先讲结论，再讲阻断项，再讲是否有放行条件。建议开场三分钟完成：当前版本建议、主要风险、需要会议决策的事项。后面的数据只在有人追问时展开。</p>
+<p>讲阻断项时，要避免陷入技术细节过深。比如 Watchdog 问题可以先讲影响：整机不可用，3&#x2F;20 复现，根因未确认，暂无规避，因此建议阻断。再讲证据：pstore、traces、时间窗口、复测状态。最后讲需要谁做什么：系统服务 owner 今天给定位结论，测试保留现场并补 24 小时复测。这样的顺序比先贴一页堆栈更适合评审。</p>
+<p>如果报告建议条件通过，也要把条件讲成可执行条款。比如“允许 1% 灰度，但必须满足三个条件：修复包进入 rc3，完成 10 台 24 小时无重启，灰度监控重启率超过 0.05% 立即暂停”。没有条件的“建议谨慎灰度”没有实际约束力。</p>
+<p>评审会结束后，报告要更新会议结论。哪些风险被接受，接受人是谁，灰度比例是多少，回滚阈值是什么，哪些问题改为下版本修复，都要写回报告或会议纪要。否则后续复盘时很难分清是测试没有提示，还是项目接受了风险。</p>
+<h2 id="十七、面向管理层的摘要不要技术化过度"><a href="#十七、面向管理层的摘要不要技术化过度" class="headerlink" title="十七、面向管理层的摘要不要技术化过度"></a>十七、面向管理层的摘要不要技术化过度</h2><p>稳定性报告有时需要给管理层或跨部门同步。这个版本的摘要不应充满 <code>traces</code>、<code>pstore</code>、<code>wakelock</code> 这些细节，而要翻译成业务影响：是否会重启，是否会明显耗电，是否影响核心场景，是否需要推迟节点，是否有回滚方案。技术证据仍然保留在正文和附件里，但摘要要让非技术读者做判断。</p>
+<p>例如“system_server Watchdog 3&#x2F;20”可以写成“整机无响应并自动重启，当前样本复现率 15%，尚无修复，不建议发布”；“partial wakelock 4h12m”可以写成“灭屏后后台服务持续唤醒，待机掉电约为基线 3 倍，预计影响续航口碑”。这样并不是降低专业性，而是把专业证据转成决策语言。</p>
+<p>管理层摘要还要避免过度乐观。Crash 率低、用例通过率高，如果同时存在重启和功耗阻断，就不能写“整体质量良好”。可以写“基础功能稳定，但存在两个发布阻断风险”。这样的表达更准确，也能避免项目只截取好看的指标。</p>
+<h2 id="十八、报告中的图表要少而准"><a href="#十八、报告中的图表要少而准" class="headerlink" title="十八、报告中的图表要少而准"></a>十八、报告中的图表要少而准</h2><p>图表不是越多越好。稳定性报告里最有价值的图表通常只有几类：版本指标趋势、覆盖矩阵、Top Issue 状态、关键问题时间线、修复前后对比。每张图都应该服务一个判断。如果一张图不能改变读者对风险的理解，就可以放到附件。</p>
+<p>趋势图要标出版本节点和修复点。比如待机掉电曲线中标出后台同步修复合入时间，Watchdog 趋势中标出系统服务补丁合入时间，帧率趋势中标出数据库优化版本。否则读者只能看到数字变化，看不到变化与工程动作的关系。</p>
+<p>覆盖图要标出无效样本。很多报告只画完成百分比，不画日志缺失、设备离线和脚本失败，结果看起来覆盖很满，实际上有效证据不足。图表要诚实反映质量，不要只追求好看。</p>
+<p>关键问题时间线可以一页讲清楚复杂问题：用户动作、资源变化、异常日志、线程等待、系统后果、修复验证。对于跨团队争议大的问题，这类图比长篇文字更有效。</p>
+<h2 id="十九、报告发出后的变更管理"><a href="#十九、报告发出后的变更管理" class="headerlink" title="十九、报告发出后的变更管理"></a>十九、报告发出后的变更管理</h2><p>稳定性报告发出以后，版本状态仍可能变化。修复包可能合入，复测可能失败，灰度比例可能调整，某个遗留风险可能被项目接受。报告如果发出后就不再更新，很快会和真实状态脱节。建议报告保留版本号或更新时间，每次关键变化后追加变更记录。</p>
+<p>变更记录可以很简单：时间、变化内容、影响结论、责任人。例如“2026-04-02 22:30，STAB-1031 功耗修复进入 rc3，待 3 轮 8h 复测，发布建议仍为不通过”；“2026-04-03 11:00，Watchdog 复测 10 台 24h 未复现，但原问题发生在 48h 后，建议继续观察”。这种记录能避免多人手里拿着不同版本的结论。</p>
+<p>如果报告结论从阻断改为条件通过，必须写明改变依据。是根因确认了，修复验证完成了，还是项目接受风险了？这三种含义完全不同。根因确认但未修复，不能等同于通过；项目接受风险，也不能写成质量已达标。报告要忠实记录决策依据。</p>
+<h2 id="二十、从报告反推测试方案"><a href="#二十、从报告反推测试方案" class="headerlink" title="二十、从报告反推测试方案"></a>二十、从报告反推测试方案</h2><p>一份成熟的稳定性报告，应该能反推下一轮测试方案。哪些指标争议大，说明口径需要前置；哪些证据缺失，说明采集脚本要补；哪些问题到最后才发现，说明日报阈值不够敏感；哪些修复验证耗时长，说明准入排期要提前预留。</p>
+<p>例如本轮报告里功耗风险花了两天才确认，是因为没有日常待机基线，下一轮就应该把 8 小时待机放进 nightly；本轮 Watchdog 缺少 pstore，是因为设备重启后继续跑覆盖了现场，下一轮就要让平台在重启后自动冻结任务；本轮卡顿争议大，是因为只有视频没有 Perfetto，下一轮就要为高频路径加轻量 trace。</p>
+<p>报告不是测试工作的终点。它应该产出三类后续资产：测试方案调整、平台能力需求、版本准入规则更新。这样每次稳定性问题都能让体系变强，而不是下个版本重新踩同一个坑。</p>
+<h2 id="二十一、报告中的责任边界"><a href="#二十一、报告中的责任边界" class="headerlink" title="二十一、报告中的责任边界"></a>二十一、报告中的责任边界</h2><p>稳定性报告要敢于写责任边界，但不要把责任边界写成甩锅。比如“当前证据指向后台同步持锁，Power 模块负责修复策略；测试负责提供同条件复测和灰度指标；项目负责决定是否推迟灰度”。这种边界能帮助协作。相反，如果只写“研发分析”，所有模块都可能认为不是自己。</p>
+<p>责任边界还包括测试自己的问题。设备离线、日志缺失、脚本误判、样本不足，都应该在报告中如实说明。承认测试侧限制不会削弱报告可信度，反而能让评审知道哪些结论可靠，哪些结论需要补测。稳定性报告不是为了证明测试无错，而是为了让版本判断尽量接近事实。</p>
+<p>当多个模块共同造成风险时，报告要写组合关系。比如低存储卡死既有产品 debug 日志过量，也有测试证据目录无限增长，还有系统低存储保护不足。只写其中一个 owner，会导致修复不完整。组合风险要拆成多个行动项，并明确谁负责总体验证。</p>
+<p>报告还要写清楚“不做什么”。例如当前版本不再扩大 Monkey 样本，而是优先验证 Watchdog；不再追加新专项，而是保留设备复测功耗；不建议在根因未明前刷掉问题设备。排除项能减少资源被临时打散，也能让项目理解测试安排不是随意取舍。</p>
+<p>这些取舍要写进报告正文，而不是只留在会议口头结论里，后续换人接手时才不会重新争论。</p>
+<p>对发布节奏紧张的项目来说，清楚写出取舍本身就是风险控制的一部分。</p>
+<p>这点很关键。</p>
+<p>稳定性测试报告的价值不在于证明测试做了很多事，而在于帮助团队做正确的版本选择。它要把覆盖、指标、趋势、问题、证据和建议组织成一个清楚的决策链。</p>
+<p>写报告时始终记住三点：事实要能复算，风险要能排序，建议要能执行。做到这三点，报告就不会只是项目归档材料，而会成为准入、灰度和量产评审里真正有用的质量输入。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Android%E7%A8%B3%E5%AE%9A%E6%80%A7/" rel="tag"># Android稳定性</a>
+              <a href="/tags/Android/" rel="tag"># Android</a>
+              <a href="/tags/%E7%A8%B3%E5%AE%9A%E6%80%A7%E6%B5%8B%E8%AF%95/" rel="tag"># 稳定性测试</a>
+              <a href="/tags/%E6%B5%8B%E8%AF%95%E6%8A%A5%E5%91%8A/" rel="tag"># 测试报告</a>
+              <a href="/tags/%E8%B4%A8%E9%87%8F%E5%BA%A6%E9%87%8F/" rel="tag"># 质量度量</a>
+              <a href="/tags/%E7%89%88%E6%9C%AC%E5%86%B3%E7%AD%96/" rel="tag"># 版本决策</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2026/03/31/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-45-Android%E5%B8%A7%E7%8E%87%E5%8D%A1%E9%A1%BF%E5%92%8C%E5%93%8D%E5%BA%94%E5%BB%B6%E8%BF%9F%E4%BB%8E%E7%94%A8%E6%88%B7%E6%84%9F%E7%9F%A5%E5%88%B0%E7%B3%BB%E7%BB%9F%E6%97%B6%E9%97%B4%E7%BA%BF/" rel="prev" title="Android稳定性-45-Android 帧率、卡顿和响应延迟：从用户感知到系统时间线">
+                  <i class="fa fa-angle-left"></i> Android稳定性-45-Android 帧率、卡顿和响应延迟：从用户感知到系统时间线
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2026/04/04/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-47-Android%E7%A8%B3%E5%AE%9A%E6%80%A7%E6%97%A5%E6%8A%A5%E6%80%8E%E4%B9%88%E5%86%99%E9%95%BF%E7%A8%B3%E8%BF%9B%E5%BA%A6%E5%BC%82%E5%B8%B8%E8%B6%8B%E5%8A%BF%E5%92%8C%E9%98%BB%E5%A1%9E%E9%A3%8E%E9%99%A9/" rel="next" title="Android稳定性-47-Android 稳定性日报怎么写：长稳进度、异常趋势和阻塞风险">
+                  Android稳定性-47-Android 稳定性日报怎么写：长稳进度、异常趋势和阻塞风险 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">1.1m</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">66:02</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="做 Android 稳定性测试时，I&#x2F;O 阻塞是很容易被低估的一类问题。它不像 Java Crash 那样有清晰堆栈，也不像重启那样有明显边界。很多时候，测试同学看到的是“系统变慢”“相机打不开”“桌面无响应”“设置页卡住”“日志停止刷新”，而设备内部真正发生的是写盘队列堆积、文件系统等待、数据库事务卡住、日志服务反压、system_server 里的关键线程被同步 I&#x2F;O 拖">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Android稳定性-43-Android I&#x2F;O 阻塞稳定性问题：存储满、fsync、blocked thread 与系统卡死">
+<meta property="og:url" content="https://paynewinnt.github.io/2026/03/27/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-43-AndroidIO%E9%98%BB%E5%A1%9E%E7%A8%B3%E5%AE%9A%E6%80%A7%E9%97%AE%E9%A2%98%E5%AD%98%E5%82%A8%E6%BB%A1fsyncblockedthread%E4%B8%8E%E7%B3%BB%E7%BB%9F%E5%8D%A1%E6%AD%BB/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="做 Android 稳定性测试时，I&#x2F;O 阻塞是很容易被低估的一类问题。它不像 Java Crash 那样有清晰堆栈，也不像重启那样有明显边界。很多时候，测试同学看到的是“系统变慢”“相机打不开”“桌面无响应”“设置页卡住”“日志停止刷新”，而设备内部真正发生的是写盘队列堆积、文件系统等待、数据库事务卡住、日志服务反压、system_server 里的关键线程被同步 I&#x2F;O 拖">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-03-27T12:30:00.000Z">
+<meta property="article:modified_time" content="2026-03-27T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="Android稳定性">
+<meta property="article:tag" content="Android">
+<meta property="article:tag" content="稳定性测试">
+<meta property="article:tag" content="ANR">
+<meta property="article:tag" content="I&#x2F;O">
+<meta property="article:tag" content="fsync">
+<meta property="article:tag" content="系统卡死">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2026/03/27/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-43-AndroidIO%E9%98%BB%E5%A1%9E%E7%A8%B3%E5%AE%9A%E6%80%A7%E9%97%AE%E9%A2%98%E5%AD%98%E5%82%A8%E6%BB%A1fsyncblockedthread%E4%B8%8E%E7%B3%BB%E7%BB%9F%E5%8D%A1%E6%AD%BB/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2026/03/27/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-43-AndroidIO%E9%98%BB%E5%A1%9E%E7%A8%B3%E5%AE%9A%E6%80%A7%E9%97%AE%E9%A2%98%E5%AD%98%E5%82%A8%E6%BB%A1fsyncblockedthread%E4%B8%8E%E7%B3%BB%E7%BB%9F%E5%8D%A1%E6%AD%BB/","path":"2026/03/27/Android稳定性-43-AndroidIO阻塞稳定性问题存储满fsyncblockedthread与系统卡死/","title":"Android稳定性-43-Android I/O 阻塞稳定性问题：存储满、fsync、blocked thread 与系统卡死"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>Android稳定性-43-Android I/O 阻塞稳定性问题：存储满、fsync、blocked thread 与系统卡死 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E5%85%88%E6%8A%8A-I-O-%E9%98%BB%E5%A1%9E%E5%BD%93%E6%88%90%E6%95%B4%E6%9C%BA%E9%A3%8E%E9%99%A9%E7%9C%8B"><span class="nav-number">1.</span> <span class="nav-text">一、先把 I&#x2F;O 阻塞当成整机风险看</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81I-O-%E9%98%BB%E5%A1%9E%E5%B8%B8%E8%A7%81%E8%A7%A6%E5%8F%91%E6%BA%90"><span class="nav-number">2.</span> <span class="nav-text">二、I&#x2F;O 阻塞常见触发源</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E7%8E%B0%E8%B1%A1%E5%88%86%E5%B1%82%EF%BC%9A%E4%BB%8E%E7%94%A8%E6%88%B7%E5%8A%A8%E4%BD%9C%E5%88%B0%E5%86%85%E6%A0%B8%E7%AD%89%E5%BE%85"><span class="nav-number">3.</span> <span class="nav-text">三、现象分层：从用户动作到内核等待</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E5%9F%BA%E7%A1%80%E5%91%BD%E4%BB%A4%EF%BC%9A%E5%85%88%E6%8A%8A%E7%8E%B0%E5%9C%BA%E7%95%99%E4%BD%8F"><span class="nav-number">4.</span> <span class="nav-text">四、基础命令：先把现场留住</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E5%85%B3%E9%94%AE%E6%8C%87%E6%A0%87%E8%A1%A8%EF%BC%9A%E5%93%AA%E4%BA%9B%E6%95%B0%E5%AD%97%E5%80%BC%E5%BE%97%E8%BF%9B%E6%8A%A5%E5%91%8A"><span class="nav-number">5.</span> <span class="nav-text">五、关键指标表：哪些数字值得进报告</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E5%AE%8C%E6%95%B4%E6%A1%88%E4%BE%8B%EF%BC%9A%E4%BD%8E%E5%AD%98%E5%82%A8%E5%8F%A0%E5%8A%A0%E6%97%A5%E5%BF%97%E8%86%A8%E8%83%80%E5%AF%BC%E8%87%B4%E7%B3%BB%E7%BB%9F%E5%8D%A1%E6%AD%BB"><span class="nav-number">6.</span> <span class="nav-text">六、完整案例：低存储叠加日志膨胀导致系统卡死</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E5%AD%98%E5%82%A8%E6%BB%A1%E6%B5%8B%E8%AF%95%E4%B8%8D%E8%83%BD%E5%8F%AA%E9%9D%A0%E6%89%8B%E5%B7%A5%E5%A1%9E%E6%96%87%E4%BB%B6"><span class="nav-number">7.</span> <span class="nav-text">七、存储满测试不能只靠手工塞文件</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81fsync-%E5%92%8C%E6%95%B0%E6%8D%AE%E5%BA%93%E7%AD%89%E5%BE%85%E6%80%8E%E4%B9%88%E5%88%A4%E6%96%AD"><span class="nav-number">8.</span> <span class="nav-text">八、fsync 和数据库等待怎么判断</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81blocked-thread-%E4%B8%8E-system-server-%E9%A3%8E%E9%99%A9"><span class="nav-number">9.</span> <span class="nav-text">九、blocked thread 与 system_server 风险</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E5%B8%B8%E8%A7%81%E8%AF%AF%E5%88%A4"><span class="nav-number">10.</span> <span class="nav-text">十、常见误判</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E6%A3%80%E6%9F%A5%E6%B8%85%E5%8D%95"><span class="nav-number">11.</span> <span class="nav-text">十一、检查清单</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E8%BE%93%E5%87%BA%E7%89%A9%E6%A8%A1%E6%9D%BF"><span class="nav-number">12.</span> <span class="nav-text">十二、输出物模板</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81%E5%B0%8F%E7%BB%93"><span class="nav-number">13.</span> <span class="nav-text">十三、小结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81%E5%A4%8D%E6%B5%8B%E6%97%B6%E8%A6%81%E8%AF%81%E6%98%8E%E5%8E%8B%E5%8A%9B%E5%B7%B2%E7%BB%8F%E6%B6%88%E5%A4%B1"><span class="nav-number">14.</span> <span class="nav-text">十四、复测时要证明压力已经消失</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">298</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">27</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">513</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2026/03/27/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-43-AndroidIO%E9%98%BB%E5%A1%9E%E7%A8%B3%E5%AE%9A%E6%80%A7%E9%97%AE%E9%A2%98%E5%AD%98%E5%82%A8%E6%BB%A1fsyncblockedthread%E4%B8%8E%E7%B3%BB%E7%BB%9F%E5%8D%A1%E6%AD%BB/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="Android稳定性-43-Android I&#x2F;O 阻塞稳定性问题：存储满、fsync、blocked thread 与系统卡死 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Android稳定性-43-Android I/O 阻塞稳定性问题：存储满、fsync、blocked thread 与系统卡死
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2026-03-27 20:30:00" itemprop="dateCreated datePublished" datetime="2026-03-27T20:30:00+08:00">2026-03-27</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/Android%E7%A8%B3%E5%AE%9A%E6%80%A7/" itemprop="url" rel="index"><span itemprop="name">Android稳定性</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>6.2k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>22 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>做 Android 稳定性测试时，I&#x2F;O 阻塞是很容易被低估的一类问题。它不像 Java Crash 那样有清晰堆栈，也不像重启那样有明显边界。很多时候，测试同学看到的是“系统变慢”“相机打不开”“桌面无响应”“设置页卡住”“日志停止刷新”，而设备内部真正发生的是写盘队列堆积、文件系统等待、数据库事务卡住、日志服务反压、system_server 里的关键线程被同步 I&#x2F;O 拖住。</p>
+<p>I&#x2F;O 问题麻烦的地方在于它经常穿透多层：业务写数据库，Framework 写 settings，system_server 落盘状态，vold 处理卷状态，logd 持续刷日志，底层文件系统还可能因为剩余空间、擦写放大、坏块管理、加密、fsync 策略而变慢。单看一段 logcat，很容易把它误判成 App 逻辑慢；单看 CPU，又会发现负载并不高；单看 ANR，则只能看到某个线程停在 <code>fsync</code>、<code>open</code>、<code>rename</code> 或 Binder 返回之前。</p>
+<p>这篇文章只讨论稳定性测试视角下应该怎样识别、复现、记录和推动 I&#x2F;O 阻塞问题。重点不放在文件系统理论，而放在整机测试里最常见的几条链路：存储空间不足、频繁同步写、数据库和日志争抢、blocked thread、system_server 卡死、长稳后期资源退化。文章会给出一个完整案例，也会列出命令、表格、误判、检查清单和输出物模板，方便直接放进专项方案或问题复盘里使用。</p>
+<h2 id="一、先把-I-O-阻塞当成整机风险看"><a href="#一、先把-I-O-阻塞当成整机风险看" class="headerlink" title="一、先把 I&#x2F;O 阻塞当成整机风险看"></a>一、先把 I&#x2F;O 阻塞当成整机风险看</h2><p>很多团队第一次遇到 I&#x2F;O 阻塞时，会把它归到某个应用的问题里：某个 App 启动慢，某个页面保存失败，某次 Monkey 跑出 ANR。这样做不是完全错误，但容易漏掉更大的风险。如果同一时间窗口里多个进程都出现写入慢、Binder 超时、<code>Input dispatching timed out</code>、<code>system_server</code> 线程等待，那么问题就不再是单个模块的体验缺陷，而是整机稳定性风险。</p>
+<p>判断 I&#x2F;O 是否影响整机，至少要看三件事。第一，现象是不是跨应用出现，比如桌面、设置、相机、文件管理和被测业务都变慢。第二，异常前后是否有共同资源变化，比如 <code>/data</code> 剩余空间接近阈值、日志目录膨胀、数据库频繁 checkpoint、后台抓取脚本大量拉取文件。第三，系统关键线程是否出现等待，尤其是 <code>system_server</code>、<code>surfaceflinger</code>、<code>systemui</code>、<code>logd</code>、<code>vold</code> 这些进程。</p>
+<p>I&#x2F;O 阻塞的用户感知通常很分散。点击无响应可能来自主线程等待数据库；锁屏慢可能来自写入系统设置；拍照失败可能来自媒体库和相机文件落盘；安装应用失败可能来自包管理扫描和 dexopt；长稳中突然大面积 ANR 可能是日志写入、截图保存、bugreport 抓取和业务写盘叠加。测试报告里如果只写“操作卡顿”，研发很难知道该从哪里进入。</p>
+<p>所以在问题单里要把现象写成链路：什么时候开始变慢，哪个动作触发，哪些进程同时受影响，磁盘空间和 I&#x2F;O 等待如何变化，关键线程停在哪里。这样写的价值不只是让开发定位更快，也能让版本评审判断它是否需要阻断。</p>
+<h2 id="二、I-O-阻塞常见触发源"><a href="#二、I-O-阻塞常见触发源" class="headerlink" title="二、I&#x2F;O 阻塞常见触发源"></a>二、I&#x2F;O 阻塞常见触发源</h2><p>Android 设备上的 I&#x2F;O 触发源比很多人想象得多。最直观的是业务写文件，比如录制视频、保存图片、下载升级包、导入大量联系人、即时通讯同步消息。更隐蔽的是系统自己的持久化行为：<code>settings</code> 写配置，<code>PackageManager</code> 写包状态，<code>ActivityManager</code> 写进程记录，<code>DropBoxManager</code> 写异常，<code>statsd</code> 写统计，<code>logd</code> 写日志，<code>vold</code> 处理存储卷状态。</p>
+<p>长稳测试里还有一类人为放大的触发源。自动化脚本为了保留证据，可能高频截图、录屏、拉日志、压缩目录、执行 bugreport。单次看都合理，但多台设备并发跑几天后，证据采集本身可能成为 I&#x2F;O 压力源。尤其是把大文件直接写到 <code>/sdcard</code>，再由 MTP、ADB 或同步程序读取，会和业务测试争抢同一存储。</p>
+<p>低存储场景也不能只理解成“空间不够”。当剩余空间逼近系统阈值时，应用写入会失败，数据库事务会变慢，文件系统元数据操作会频繁失败重试，系统清理策略可能启动，媒体扫描可能反复处理临界状态。表面现象往往不是一个明确的 <code>No space left on device</code>，而是连续卡顿、随机 ANR、保存失败和系统服务超时混在一起。</p>
+<p>另一类触发源是同步写策略。某些模块为了保证数据不丢，会在主路径里频繁调用 <code>fsync</code> 或等价同步接口。少量写入时看不出问题，遇到低端闪存、温升降频、后台日志暴增、数据库 checkpoint、OTA 后迁移时，延迟会被放大。稳定性测试要关心的不是“能不能写成功”，而是写入是否把用户路径和系统关键线程拖进不可接受的等待。</p>
+<h2 id="三、现象分层：从用户动作到内核等待"><a href="#三、现象分层：从用户动作到内核等待" class="headerlink" title="三、现象分层：从用户动作到内核等待"></a>三、现象分层：从用户动作到内核等待</h2><p>定位 I&#x2F;O 阻塞时，可以把现象分成四层。第一层是用户感知：点击后几秒没有反馈、滑动停顿、拍照转圈、安装卡住、桌面无响应。第二层是进程表现：目标进程 ANR、<code>systemui</code> 卡住、<code>system_server</code> Watchdog、日志大量出现超时。第三层是资源状态：<code>iowait</code> 升高、读写吞吐异常、剩余空间不足、进程处于 <code>D</code> 状态。第四层是等待点：线程栈停在 <code>fsync</code>、<code>sync_file_range</code>、<code>openat</code>、<code>rename</code>、<code>SQLiteConnection</code>、<code>FileOutputStream</code> 或 Binder 返回之前。</p>
+<p>这四层不是顺序执行的定位步骤，而是记录问题时必须尽量补齐的证据面。只写用户感知，问题会变成体验争论；只贴线程栈，缺少影响范围；只给资源曲线，无法归因到业务动作；只给命令输出，评审不知道版本风险。</p>
+<p>一个比较实用的写法是把时间线固定下来。例如 21:13:20 自动化脚本进入相机录像，21:14:02 <code>/data</code> 剩余空间低于 500 MB，21:14:37 相机保存视频失败，21:14:50 <code>systemui</code> 首次出现输入超时，21:15:10 <code>system_server</code> 某线程停在写 settings，21:16:30 多个 App ANR。这样的记录能把随机现象变成可讨论的工程事实。</p>
+<p>如果设备支持 Perfetto 或 ftrace，I&#x2F;O 线程、调度延迟和 Binder 等待可以放进同一条时间线；如果不具备条件，最少也要把 logcat、top、df、dumpsys、traces 和测试脚本日志按同一时钟对齐。稳定性问题常常不是缺少日志，而是缺少能互相解释的时间窗口。</p>
+<h2 id="四、基础命令：先把现场留住"><a href="#四、基础命令：先把现场留住" class="headerlink" title="四、基础命令：先把现场留住"></a>四、基础命令：先把现场留住</h2><p>I&#x2F;O 阻塞类问题最怕事后只有一句“当时很卡”。现场采集要尽量轻量，避免采集动作继续压垮设备。下面这组命令适合在复现中分阶段执行，先拿状态，再决定是否抓更重的证据。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">adb shell <span class="built_in">date</span></span><br><span class="line">adb shell <span class="built_in">df</span> -h</span><br><span class="line">adb shell <span class="built_in">df</span> -i</span><br><span class="line">adb shell top -H -b -n 1</span><br><span class="line">adb shell <span class="built_in">cat</span> /proc/meminfo</span><br><span class="line">adb shell <span class="built_in">cat</span> /proc/pressure/io 2&gt;/dev/null</span><br><span class="line">adb shell <span class="built_in">cat</span> /proc/diskstats</span><br><span class="line">adb shell ps -A -o PID,PPID,USER,STAT,NAME</span><br><span class="line">adb shell logcat -b all -v threadtime -d &gt; logcat_io_window.txt</span><br><span class="line">adb bugreport bugreport-io.zip</span><br></pre></td></tr></table></figure>
+
+<p>如果怀疑某个进程被写盘拖住，可以进一步看线程和栈。不同版本可用能力不同，命令要按设备权限调整。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">adb shell pidof system_server</span><br><span class="line">adb shell ps -T -p $(adb shell pidof system_server | <span class="built_in">tr</span> -d <span class="string">&#x27;\r&#x27;</span>)</span><br><span class="line">adb shell <span class="built_in">kill</span> -3 $(adb shell pidof com.example.app | <span class="built_in">tr</span> -d <span class="string">&#x27;\r&#x27;</span>)</span><br><span class="line">adb shell <span class="built_in">cat</span> /data/anr/traces.txt 2&gt;/dev/null</span><br><span class="line">adb shell <span class="built_in">ls</span> -lt /data/anr /data/tombstones /data/system/dropbox 2&gt;/dev/null</span><br><span class="line">adb shell dumpsys activity anr</span><br><span class="line">adb shell dumpsys dropbox --<span class="built_in">print</span></span><br></pre></td></tr></table></figure>
+
+<p>如果怀疑空间打满或日志膨胀，需要看目录级别的增长。量产 user 版本权限受限时，至少保留 <code>df</code>、应用私有目录大小、外部存储目录和测试脚本生成物。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">adb shell <span class="built_in">du</span> -h -d 1 /sdcard 2&gt;/dev/null | <span class="built_in">sort</span> -h</span><br><span class="line">adb shell <span class="built_in">du</span> -h -d 1 /data/local/tmp 2&gt;/dev/null | <span class="built_in">sort</span> -h</span><br><span class="line">adb shell <span class="built_in">ls</span> -lh /sdcard/Movies /sdcard/Pictures /sdcard/Download 2&gt;/dev/null</span><br><span class="line">adb shell dumpsys diskstats</span><br><span class="line">adb shell dumpsys storaged</span><br><span class="line">adb shell dumpsys package com.example.app | sed -n <span class="string">&#x27;/dataDir/,+3p&#x27;</span></span><br></pre></td></tr></table></figure>
+
+<p>命令不是越多越好。现场已经明显卡死时，优先执行不会生成大文件的状态命令；bugreport、Perfetto、目录压缩要放在设备还能承受的时候。如果每次复现都靠抓完整 bugreport 才能看到线索，测试方案本身就需要优化。</p>
+<h2 id="五、关键指标表：哪些数字值得进报告"><a href="#五、关键指标表：哪些数字值得进报告" class="headerlink" title="五、关键指标表：哪些数字值得进报告"></a>五、关键指标表：哪些数字值得进报告</h2><p>I&#x2F;O 问题的报告不应该堆满所有命令输出，而要把能支持判断的数字摘出来。下面这张表可以作为问题单或专项报告的核心数据区。</p>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>推荐采集方式</th>
+<th>观察重点</th>
+<th>风险信号</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>/data</code> 剩余空间</td>
+<td><code>df -h /data</code></td>
+<td>异常前后的剩余量和下降速度</td>
+<td>接近系统保留阈值、短时间快速下降</td>
+</tr>
+<tr>
+<td>inode 使用率</td>
+<td><code>df -i</code></td>
+<td>小文件是否耗尽 inode</td>
+<td>空间还有但创建文件失败</td>
+</tr>
+<tr>
+<td>I&#x2F;O pressure</td>
+<td><code>/proc/pressure/io</code></td>
+<td><code>some</code>、<code>full</code> 是否持续升高</td>
+<td>长时间等待 I&#x2F;O 导致调度受影响</td>
+</tr>
+<tr>
+<td>线程状态</td>
+<td><code>top -H</code>、<code>ps -T</code></td>
+<td>是否有大量 <code>D</code> 状态线程</td>
+<td>关键进程不可中断等待</td>
+</tr>
+<tr>
+<td>ANR 等待点</td>
+<td><code>/data/anr/traces</code></td>
+<td>主线程、Binder 线程、锁等待</td>
+<td>栈停在文件、数据库、同步写</td>
+</tr>
+<tr>
+<td>写入目录</td>
+<td><code>du</code>、脚本日志</td>
+<td>哪些目录增长最快</td>
+<td>日志、截图、录屏、缓存失控</td>
+</tr>
+<tr>
+<td>文件系统错误</td>
+<td>kernel log、bugreport</td>
+<td>是否有 ext4&#x2F;f2fs 错误</td>
+<td>需要转内核或存储驱动排查</td>
+</tr>
+</tbody></table>
+<p>这张表的价值在于把“卡”变成可比较的版本数据。比如同一套长稳脚本，版本 A 运行 48 小时后 <code>/data</code> 还剩 18 GB，版本 B 只剩 2 GB；版本 A 没有 <code>D</code> 状态线程，版本 B 在异常窗口里 <code>logd</code>、相机进程、业务进程都有等待；版本 A 的 ANR 栈停在业务锁，版本 B 停在数据库同步写。这样的对比比单独贴一份 traces 更有说服力。</p>
+<p>指标也要避免绝对化。<code>iowait</code> 不高不代表没有 I&#x2F;O 阻塞，因为问题可能集中在单个同步写路径；剩余空间足够也不代表文件系统没有问题，因为目录扫描、元数据、加密和单文件写入都可能拖慢；没有 ANR 也不代表风险低，因为系统可能只是每次卡 2 秒，没有触发阈值，却已经严重影响用户体验。</p>
+<h2 id="六、完整案例：低存储叠加日志膨胀导致系统卡死"><a href="#六、完整案例：低存储叠加日志膨胀导致系统卡死" class="headerlink" title="六、完整案例：低存储叠加日志膨胀导致系统卡死"></a>六、完整案例：低存储叠加日志膨胀导致系统卡死</h2><p>某项目在准入长稳阶段发现 20 台设备里有 4 台在第 3 天凌晨出现桌面无响应。表面现象是 Monkey 停在桌面，脚本日志显示 ADB 还能连上，但 <code>input keyevent HOME</code> 延迟 8 到 15 秒。最初问题被归到 “Launcher 偶发 ANR”，因为 <code>/data/anr</code> 里确实有桌面 ANR。后来复查时间线才发现，桌面只是第一个被用户路径打中的进程，真正的压力来自日志和录屏文件。</p>
+<p>测试环境里，脚本每 5 分钟截一次屏，每小时保存一段 60 秒录屏，异常时抓一次 <code>logcat -d</code>。新版本为了排查另一个问题，把某个 Native 模块日志级别打开到了 debug，日志量比基线版本增加了约 6 倍。前两天设备表现正常，到第三天凌晨 <code>/sdcard/TestEvidence</code> 已经超过 28 GB，<code>/data</code> 剩余空间跌到 700 MB 左右。此时业务 App 仍在做本地数据库写入，相机模块也在保存压力测试图片。</p>
+<p>异常窗口里，<code>df -h</code> 显示 <code>/data</code> 使用率 97%；<code>top -H</code> 里多个进程出现 <code>D</code> 状态；<code>traces</code> 里桌面主线程等待 Binder 返回，Binder 对端是 <code>system_server</code>；<code>system_server</code> 的一个线程停在写入系统状态文件，另一个线程正在处理包状态更新；<code>logd</code> 有明显积压。内核日志没有文件系统损坏，但能看到多次写入失败和空间不足相关提示。</p>
+<p>最后根因被拆成两部分：产品版本引入了过量 debug 日志，测试脚本没有对证据目录设置容量上限。修复也分两条走。研发关闭默认 debug 日志并限制单文件大小；测试平台改成按设备设置证据目录上限，超过阈值只保留最近 N 个窗口，并把 <code>/data</code> 剩余空间低于 2 GB 作为强制停止条件。复测 72 小时后，没有再出现桌面无响应，日志目录增长曲线回到基线范围。</p>
+<p>这个案例的关键不是找到“谁写满了磁盘”这么简单，而是把版本改动、测试脚本、系统状态和用户现象放到一条线上。否则问题很容易在 Launcher、Monkey、日志模块、测试平台之间来回流转。</p>
+<h2 id="七、存储满测试不能只靠手工塞文件"><a href="#七、存储满测试不能只靠手工塞文件" class="headerlink" title="七、存储满测试不能只靠手工塞文件"></a>七、存储满测试不能只靠手工塞文件</h2><p>低存储专项经常被做成一个很粗糙的动作：用 <code>dd</code> 塞满 <code>/sdcard</code>，然后跑几条用例。这样能发现一部分保存失败，但覆盖不了真实系统进入低存储状态的路径。真实用户的存储压力通常来自照片、视频、聊天缓存、下载文件、应用缓存和系统日志混合增长，目录分布、文件大小、写入频率都不一样。</p>
+<p>更合理的做法是分三个阶段。第一阶段验证阈值：让剩余空间分别停在 10 GB、5 GB、2 GB、1 GB、500 MB，观察系统提示、应用保存、安装更新、相机录像、日志写入是否符合预期。第二阶段验证持续增长：让后台以固定速度写入文件，同时跑业务遍历，看系统有没有提前预警和清理。第三阶段验证恢复：删除大文件后，应用和系统服务能不能恢复，不要只验证异常出现。</p>
+<p>示例命令可以这样组织，注意要给设备和脚本留退出通道，不要把 userdebug 设备写到完全不可操作。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">adb shell <span class="built_in">mkdir</span> -p /sdcard/io_fill</span><br><span class="line">adb shell <span class="string">&quot;df -h /data&quot;</span></span><br><span class="line">adb shell <span class="string">&quot;dd if=/dev/zero of=/sdcard/io_fill/fill_1.bin bs=10M count=100&quot;</span></span><br><span class="line">adb shell <span class="string">&quot;sync&quot;</span></span><br><span class="line">adb shell <span class="string">&quot;df -h /data&quot;</span></span><br><span class="line">adb shell <span class="string">&quot;rm -f /sdcard/io_fill/fill_1.bin&quot;</span></span><br><span class="line">adb shell <span class="string">&quot;sync&quot;</span></span><br></pre></td></tr></table></figure>
+
+<p>如果要做连续压力，可以让脚本每轮写一个固定大小文件，写完记录时间、剩余空间、业务动作结果和系统日志关键字。不要只记录最终是否失败，因为很多低存储问题的价值在于阈值附近的退化速度。</p>
+<h2 id="八、fsync-和数据库等待怎么判断"><a href="#八、fsync-和数据库等待怎么判断" class="headerlink" title="八、fsync 和数据库等待怎么判断"></a>八、fsync 和数据库等待怎么判断</h2><p><code>fsync</code> 本身不是错误。系统和应用需要它保证关键数据落盘，比如数据库事务、配置更新、崩溃日志、媒体文件索引。问题出在调用频率、调用位置和等待时间。如果一个用户点击路径每次都同步写多次，或者在主线程上等待数据库落盘，那么闪存稍慢、空间稍低、温度稍高时就可能变成稳定性问题。</p>
+<p>从 traces 看，Java 层可能出现 <code>java.io.FileDescriptor.sync</code>、<code>SQLiteConnection.nativeExecuteForChangedRowCount</code>、<code>SharedPreferencesImpl.writeToFile</code>、<code>FileOutputStream.write</code> 等等待点。Native 层可能看到 <code>fsync</code>、<code>fdatasync</code>、<code>pwrite</code>、<code>rename</code>、<code>openat</code>。如果栈里还有锁等待，要继续判断锁的持有者是不是正在做 I&#x2F;O，否则容易把问题误写成单纯锁竞争。</p>
+<p>数据库问题要特别看事务边界。一次业务动作里反复打开数据库、逐条写入、每条提交，和批量事务提交的表现完全不同。稳定性测试不需要替研发设计代码，但可以在报告里明确写出：卡顿窗口内主线程等待 SQLite 写入，写入发生在用户点击后 200 ms 内，单次等待超过 ANR 前 4 秒，复现概率 7&#x2F;10，关闭某项日志后等待下降。这种证据足以推动模块 owner 深入代码。</p>
+<p>如果设备允许，可以结合 Perfetto 看 <code>sched</code>、<code>disk</code>、<code>binder</code>、<code>am</code>、<code>wm</code> 等轨道。看不到底层块设备细节时，也可以用多次 traces、logcat 时间戳和业务埋点近似确认。不要因为缺少完美工具就停止定位，先把等待关系说清楚。</p>
+<h2 id="九、blocked-thread-与-system-server-风险"><a href="#九、blocked-thread-与-system-server-风险" class="headerlink" title="九、blocked thread 与 system_server 风险"></a>九、blocked thread 与 system_server 风险</h2><p><code>system_server</code> 里的 I&#x2F;O 等待比普通 App 更危险，因为它承载 Activity、Window、Package、Power、Input、Clipboard、Alarm 等大量服务。单个服务写盘变慢，可能通过锁、Binder 或消息队列影响多个用户路径。很多整机卡死最终都能看到 <code>system_server</code> 线程等待，但要小心：它可能是根因，也可能是被别的模块拖住。</p>
+<p>分析 <code>system_server</code> 时要关注三类线程。第一类是主线程或关键 Handler 线程，如果它们长时间处理 I&#x2F;O，风险最高。第二类是 Binder 线程池，如果大量 Binder 线程被同步请求占满，外部 App 调系统能力会排队。第三类是服务内部工作线程，比如 Package、UsageStats、DropBox、BatteryStats、Settings 等，它们写入慢时可能反向影响调用方。</p>
+<p>常用命令如下：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">adb shell pidof system_server</span><br><span class="line">adb shell ps -T -p $(adb shell pidof system_server | <span class="built_in">tr</span> -d <span class="string">&#x27;\r&#x27;</span>)</span><br><span class="line">adb shell <span class="built_in">kill</span> -3 $(adb shell pidof system_server | <span class="built_in">tr</span> -d <span class="string">&#x27;\r&#x27;</span>)</span><br><span class="line">adb shell <span class="built_in">sleep</span> 3</span><br><span class="line">adb shell <span class="built_in">ls</span> -lt /data/anr 2&gt;/dev/null</span><br><span class="line">adb shell dumpsys activity service com.android.server.DropBoxManagerService 2&gt;/dev/null</span><br><span class="line">adb shell dumpsys package --checkin 2&gt;/dev/null | <span class="built_in">head</span></span><br></pre></td></tr></table></figure>
+
+<p>报告里不要只贴 <code>system_server</code> 栈，要写清楚它影响了什么。例如：Launcher 通过 Binder 请求启动 Activity，等待 ActivityTaskManager 返回；同一窗口内 Settings 写入卡住，PackageManager 正在扫描目录；多个 App 的 ANR 都指向系统服务响应慢。这样才能把问题从“某个 App 卡住”升级为“系统服务存在阻塞风险”。</p>
+<h2 id="十、常见误判"><a href="#十、常见误判" class="headerlink" title="十、常见误判"></a>十、常见误判</h2><table>
+<thead>
+<tr>
+<th>误判</th>
+<th>为什么容易发生</th>
+<th>更稳妥的判断方式</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>看到 Launcher ANR 就归桌面</td>
+<td>用户停在桌面时最容易触发桌面 ANR</td>
+<td>看同窗口其他进程和 system_server 栈</td>
+</tr>
+<tr>
+<td>CPU 不高就排除系统问题</td>
+<td>I&#x2F;O 等待时 CPU 可能并不忙</td>
+<td>看线程状态、pressure、等待栈</td>
+</tr>
+<tr>
+<td>空间没满就排除低存储</td>
+<td>阈值、inode、目录膨胀都可能造成失败</td>
+<td>同时看 <code>df -h</code>、<code>df -i</code>、目录增长</td>
+</tr>
+<tr>
+<td>有 <code>fsync</code> 就要求删除同步写</td>
+<td>关键数据需要持久化</td>
+<td>判断调用位置、频率和等待时间</td>
+</tr>
+<tr>
+<td>bugreport 抓不到就认为不可定位</td>
+<td>抓取动作可能改变现场</td>
+<td>用轻量命令和脚本日志补时间线</td>
+</tr>
+<tr>
+<td>只看被测 App</td>
+<td>I&#x2F;O 压力经常来自日志、系统服务和脚本</td>
+<td>把测试环境生成物也纳入审计</td>
+</tr>
+</tbody></table>
+<p>这些误判背后都有同一个问题：把单点证据当成完整结论。I&#x2F;O 阻塞很少靠一条日志定案，它更依赖多份证据互相支撑。测试同学的价值就在于把这些证据按时间、进程和资源关系组织起来。</p>
+<h2 id="十一、检查清单"><a href="#十一、检查清单" class="headerlink" title="十一、检查清单"></a>十一、检查清单</h2><ul>
+<li>是否记录异常前后 10 分钟的精确时间窗口。</li>
+<li>是否保存 <code>/data</code>、<code>/sdcard</code>、关键证据目录的空间变化。</li>
+<li>是否检查 inode、目录数量和单目录大文件。</li>
+<li>是否采集目标进程、<code>system_server</code>、<code>systemui</code> 的线程状态。</li>
+<li>是否查看 ANR traces 里的等待点和 Binder 对端。</li>
+<li>是否排查测试脚本自己的截图、录屏、日志是否过量。</li>
+<li>是否确认异常是单机、批量、单版本还是跨版本。</li>
+<li>是否区分写入失败、写入慢、同步等待和文件系统错误。</li>
+<li>是否复测删除大文件或关闭高频日志后的恢复情况。</li>
+<li>是否给出版本风险结论，而不是只写“建议开发分析”。</li>
+</ul>
+<p>这份清单适合放在问题单尾部，也适合做成测试平台的自动审计项。特别是证据目录大小、剩余空间阈值和日志增长速度，完全可以由平台每天巡检，不必等到设备卡死后再人工补救。</p>
+<h2 id="十二、输出物模板"><a href="#十二、输出物模板" class="headerlink" title="十二、输出物模板"></a>十二、输出物模板</h2><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line">问题标题：</span><br><span class="line">  [I/O][长稳] 版本 V2026.03.27 低存储叠加日志膨胀导致桌面和业务应用无响应</span><br><span class="line"></span><br><span class="line">影响范围：</span><br><span class="line">  型号：X1 8+256G</span><br><span class="line">  版本：V2026.03.27 nightly</span><br><span class="line">  场景：72 小时长稳，Monkey + 相机录像 + 后台日志采集</span><br><span class="line">  复现：4/20 台，第 53 到 61 小时出现</span><br><span class="line"></span><br><span class="line">用户现象：</span><br><span class="line">  点击 HOME、设置、相机均出现 8 秒以上无反馈，部分设备产生 Launcher 和业务 App ANR。</span><br><span class="line"></span><br><span class="line">关键证据：</span><br><span class="line">  1. 21:14:02 /data 剩余 700 MB，/sdcard/TestEvidence 28 GB。</span><br><span class="line">  2. 21:14:50 多个进程出现 D 状态，logd 写入积压。</span><br><span class="line">  3. 21:15:10 system_server 线程等待系统状态写入，Launcher Binder 请求超时。</span><br><span class="line">  4. 关闭 debug 日志并限制证据目录后，72 小时复测未复现。</span><br><span class="line"></span><br><span class="line">根因判断：</span><br><span class="line">  版本新增 Native debug 日志导致写盘量异常；测试平台未设置证据保留上限，低存储后放大系统写入等待。</span><br><span class="line"></span><br><span class="line">处理建议：</span><br><span class="line">  研发关闭默认 debug 日志并限制日志轮转；测试平台增加目录上限、低存储停止线和日报告警。</span><br><span class="line"></span><br><span class="line">版本结论：</span><br><span class="line">  当前构建不建议准入长稳通过，需完成修复并提供 72 小时复测数据。</span><br></pre></td></tr></table></figure>
+
+<p>模板里的每个字段都服务于评审：影响范围决定优先级，用户现象决定严重程度，关键证据决定可信度，根因判断决定归属，处理建议决定下一步，版本结论决定是否放行。没有这些字段，I&#x2F;O 问题很容易在口头同步里失真。</p>
+<h2 id="十三、小结"><a href="#十三、小结" class="headerlink" title="十三、小结"></a>十三、小结</h2><h2 id="十四、复测时要证明压力已经消失"><a href="#十四、复测时要证明压力已经消失" class="headerlink" title="十四、复测时要证明压力已经消失"></a>十四、复测时要证明压力已经消失</h2><p>I&#x2F;O 问题修复后，不能只看原用例不再 ANR。更可靠的复测要证明压力源、等待点和用户现象都已经消失。比如日志膨胀类问题，复测时要同时看目录增长速度、剩余空间曲线、<code>logd</code> 状态和前台操作响应；数据库同步写问题，复测时要看主线程等待是否缩短、帧耗时是否恢复、事务数量是否下降；低存储问题，复测时要看阈值提示、写入失败处理和删除文件后的恢复。</p>
+<p>复测报告里可以保留一张“修复前后对照表”。同样运行 72 小时，修复前 <code>/data</code> 从 18 GB 降到 700 MB，修复后仍保留 14 GB；修复前 <code>system_server</code> 线程多次停在写入等待，修复后未再出现同类栈；修复前桌面和相机都有无响应，修复后关键路径最长响应 1.2 秒。这样的对照比一句“复测通过”更适合进入准入评审。</p>
+<p>还要关注副作用。限制日志大小以后，异常现场是否仍能定位？批量写数据库以后，异常断电是否会丢关键状态？低存储停止测试以后，是否影响长稳覆盖？稳定性修复经常在“减少压力”和“保留证据”之间取平衡，测试需要把新策略的边界也写进复测结论。</p>
+<p>I&#x2F;O 阻塞不是某个命令能单独解决的问题。它通常由业务写盘、系统持久化、日志策略、存储状态、测试脚本和底层文件系统共同构成。稳定性测试要做的，是把这些因素放进同一个时间窗口里，让现象、资源、线程和版本变更能够互相解释。</p>
+<p>真正有价值的 I&#x2F;O 问题报告，应该能回答四个问题：用户到底受到了什么影响，哪些进程和系统资源在同一时间异常，最可能的写入来源是什么，版本应该阻断、灰度观察还是普通遗留。只要这四个问题说清楚，后续无论交给应用、Framework、系统服务、内核还是测试平台，都不会变成无方向的日志转发。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Android%E7%A8%B3%E5%AE%9A%E6%80%A7/" rel="tag"># Android稳定性</a>
+              <a href="/tags/Android/" rel="tag"># Android</a>
+              <a href="/tags/%E7%A8%B3%E5%AE%9A%E6%80%A7%E6%B5%8B%E8%AF%95/" rel="tag"># 稳定性测试</a>
+              <a href="/tags/ANR/" rel="tag"># ANR</a>
+              <a href="/tags/I-O/" rel="tag"># I/O</a>
+              <a href="/tags/fsync/" rel="tag"># fsync</a>
+              <a href="/tags/%E7%B3%BB%E7%BB%9F%E5%8D%A1%E6%AD%BB/" rel="tag"># 系统卡死</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2026/03/25/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-42-AndroidCPU%E9%AB%98%E8%B4%9F%E8%BD%BD%E4%B8%8E%E5%8D%A1%E9%A1%BFtopcpuinfoPerfetto%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E4%B8%B2%E8%B5%B7%E6%9D%A5/" rel="prev" title="Android稳定性-42-Android CPU 高负载与卡顿：top、cpuinfo、Perfetto 应该怎么串起来">
+                  <i class="fa fa-angle-left"></i> Android稳定性-42-Android CPU 高负载与卡顿：top、cpuinfo、Perfetto 应该怎么串起来
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2026/03/29/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-44-Android%E5%8A%9F%E8%80%97%E4%B8%8E%E6%B8%A9%E5%8D%87%E5%BC%82%E5%B8%B8batterystatswakelock%E9%99%8D%E9%A2%91%E5%92%8C%E5%90%8E%E5%8F%B0%E8%A1%8C%E4%B8%BA/" rel="next" title="Android稳定性-44-Android 功耗与温升异常：batterystats、wakelock、降频和后台行为">
+                  Android稳定性-44-Android 功耗与温升异常：batterystats、wakelock、降频和后台行为 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">1.1m</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">66:02</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

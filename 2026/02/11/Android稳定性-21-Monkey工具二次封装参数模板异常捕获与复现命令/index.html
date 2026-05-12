@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="Monkey 的价值不是“随机乱点”，而是在可控制的随机输入下暴露生命周期、窗口、权限、焦点和异常恢复问题。二次封装的目标也不是把命令包得看不懂，而是让参数模板可复用、异常捕获可解释、复现命令可复制。这篇文章从稳定性测试视角展开，不把它写成工具说明书，而是把问题背景、测试位置、平台设计、命令入口、案例复盘和输出模板放在同一条链路里。读完后，应该能直接拿去设计任务、评审失败、补齐日志和提交缺陷。 一">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Android稳定性-21-Monkey 工具二次封装：参数模板、异常捕获与复现命令">
+<meta property="og:url" content="https://paynewinnt.github.io/2026/02/11/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-21-Monkey%E5%B7%A5%E5%85%B7%E4%BA%8C%E6%AC%A1%E5%B0%81%E8%A3%85%E5%8F%82%E6%95%B0%E6%A8%A1%E6%9D%BF%E5%BC%82%E5%B8%B8%E6%8D%95%E8%8E%B7%E4%B8%8E%E5%A4%8D%E7%8E%B0%E5%91%BD%E4%BB%A4/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="Monkey 的价值不是“随机乱点”，而是在可控制的随机输入下暴露生命周期、窗口、权限、焦点和异常恢复问题。二次封装的目标也不是把命令包得看不懂，而是让参数模板可复用、异常捕获可解释、复现命令可复制。这篇文章从稳定性测试视角展开，不把它写成工具说明书，而是把问题背景、测试位置、平台设计、命令入口、案例复盘和输出模板放在同一条链路里。读完后，应该能直接拿去设计任务、评审失败、补齐日志和提交缺陷。 一">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-02-11T12:30:00.000Z">
+<meta property="article:modified_time" content="2026-02-11T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="Android稳定性">
+<meta property="article:tag" content="Android">
+<meta property="article:tag" content="稳定性测试">
+<meta property="article:tag" content="Monkey">
+<meta property="article:tag" content="异常捕获">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2026/02/11/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-21-Monkey%E5%B7%A5%E5%85%B7%E4%BA%8C%E6%AC%A1%E5%B0%81%E8%A3%85%E5%8F%82%E6%95%B0%E6%A8%A1%E6%9D%BF%E5%BC%82%E5%B8%B8%E6%8D%95%E8%8E%B7%E4%B8%8E%E5%A4%8D%E7%8E%B0%E5%91%BD%E4%BB%A4/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2026/02/11/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-21-Monkey%E5%B7%A5%E5%85%B7%E4%BA%8C%E6%AC%A1%E5%B0%81%E8%A3%85%E5%8F%82%E6%95%B0%E6%A8%A1%E6%9D%BF%E5%BC%82%E5%B8%B8%E6%8D%95%E8%8E%B7%E4%B8%8E%E5%A4%8D%E7%8E%B0%E5%91%BD%E4%BB%A4/","path":"2026/02/11/Android稳定性-21-Monkey工具二次封装参数模板异常捕获与复现命令/","title":"Android稳定性-21-Monkey 工具二次封装：参数模板、异常捕获与复现命令"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>Android稳定性-21-Monkey 工具二次封装：参数模板、异常捕获与复现命令 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E5%85%B7%E4%BD%93%E9%97%AE%E9%A2%98%E8%83%8C%E6%99%AF%EF%BC%9A%E5%85%88%E6%8A%8A%E8%BF%99%E7%B1%BB%E9%97%AE%E9%A2%98%E6%94%BE%E5%88%B0%E7%A8%B3%E5%AE%9A%E6%80%A7%E8%AF%AD%E5%A2%83%E9%87%8C"><span class="nav-number">1.</span> <span class="nav-text">一、具体问题背景：先把这类问题放到稳定性语境里</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E5%AE%83%E5%9C%A8%E7%A8%B3%E5%AE%9A%E6%80%A7%E6%B5%8B%E8%AF%95%E4%B8%AD%E7%9A%84%E4%BD%8D%E7%BD%AE"><span class="nav-number">2.</span> <span class="nav-text">二、它在稳定性测试中的位置</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E6%B5%8B%E8%AF%95%E5%AF%B9%E8%B1%A1%E5%92%8C%E8%BE%B9%E7%95%8C%E8%A6%81%E5%85%88%E5%86%99%E6%B8%85%E6%A5%9A"><span class="nav-number">3.</span> <span class="nav-text">三、测试对象和边界要先写清楚</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E5%B7%A5%E5%85%B7%E6%88%96%E5%B9%B3%E5%8F%B0%E7%9A%84%E6%9C%80%E5%B0%8F%E8%AE%BE%E8%AE%A1"><span class="nav-number">4.</span> <span class="nav-text">四、工具或平台的最小设计</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E4%BB%BB%E5%8A%A1%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F%E5%A6%82%E4%BD%95%E7%BB%84%E7%BB%87"><span class="nav-number">5.</span> <span class="nav-text">五、任务生命周期如何组织</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E5%85%B3%E9%94%AE%E5%91%BD%E4%BB%A4%E5%92%8C%E6%97%A5%E5%BF%97%E5%85%A5%E5%8F%A3"><span class="nav-number">6.</span> <span class="nav-text">六、关键命令和日志入口</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E7%BB%93%E6%9E%9C%E7%9B%AE%E5%BD%95%E5%92%8C%E8%AF%81%E6%8D%AE%E5%BD%92%E6%A1%A3"><span class="nav-number">7.</span> <span class="nav-text">七、结果目录和证据归档</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E8%A1%A8%E6%A0%BC%E5%8C%96%E6%8B%86%E8%A7%A3%E6%A0%B8%E5%BF%83%E5%B7%AE%E5%BC%82"><span class="nav-number">8.</span> <span class="nav-text">八、表格化拆解核心差异</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E5%AE%8C%E6%95%B4%E6%A1%88%E4%BE%8B%EF%BC%9A%E4%BB%8E%E7%8E%B0%E8%B1%A1%E5%88%B0%E7%BB%93%E8%AE%BA"><span class="nav-number">9.</span> <span class="nav-text">九、完整案例：从现象到结论</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E5%B8%B8%E8%A7%81%E8%AF%AF%E5%88%A4%E5%92%8C%E6%8E%92%E9%99%A4%E9%A1%BA%E5%BA%8F"><span class="nav-number">10.</span> <span class="nav-text">十、常见误判和排除顺序</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E6%A3%80%E6%9F%A5%E6%B8%85%E5%8D%95"><span class="nav-number">11.</span> <span class="nav-text">十一、检查清单</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E8%BE%93%E5%87%BA%E7%89%A9%E6%A8%A1%E6%9D%BF"><span class="nav-number">12.</span> <span class="nav-text">十二、输出物模板</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81%E5%92%8C%E5%85%B6%E4%BB%96%E7%A8%B3%E5%AE%9A%E6%80%A7%E8%83%BD%E5%8A%9B%E7%9A%84%E9%85%8D%E5%90%88"><span class="nav-number">13.</span> <span class="nav-text">十三、和其他稳定性能力的配合</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81%E8%90%BD%E5%9C%B0%E6%97%B6%E7%9A%84%E5%88%86%E9%98%B6%E6%AE%B5%E8%B7%AF%E7%BA%BF"><span class="nav-number">14.</span> <span class="nav-text">十四、落地时的分阶段路线</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%94%E3%80%81%E8%AF%84%E5%AE%A1%E5%8F%A3%E5%BE%84%E5%92%8C%E7%BC%BA%E9%99%B7%E6%8F%90%E4%BA%A4%E6%A0%87%E5%87%86"><span class="nav-number">15.</span> <span class="nav-text">十五、评审口径和缺陷提交标准</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AD%E3%80%81%E5%B0%8F%E7%BB%93"><span class="nav-number">16.</span> <span class="nav-text">十六、小结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%83%E3%80%81%E9%99%84%E5%BD%95%EF%BC%9A%E5%BB%BA%E8%AE%AE%E7%9A%84%E7%9B%AE%E5%BD%95%E7%BB%93%E6%9E%84"><span class="nav-number">17.</span> <span class="nav-text">十七、附录：建议的目录结构</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AB%E3%80%81%E9%99%84%E5%BD%95%EF%BC%9Aresult-json-%E7%A4%BA%E4%BE%8B"><span class="nav-number">18.</span> <span class="nav-text">十八、附录：result.json 示例</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B9%9D%E3%80%81%E5%9C%BA%E6%99%AF%E7%9F%A9%E9%98%B5%E6%80%8E%E4%B9%88%E8%AE%BE%E8%AE%A1"><span class="nav-number">19.</span> <span class="nav-text">十九、场景矩阵怎么设计</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E3%80%81%E5%85%B3%E9%94%AE%E5%AD%97%E6%AE%B5%E5%91%BD%E5%90%8D%E5%BB%BA%E8%AE%AE"><span class="nav-number">20.</span> <span class="nav-text">二十、关键字段命名建议</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%80%E3%80%81%E6%97%A5%E5%BF%97%E5%85%B3%E9%94%AE%E5%AD%97%E5%92%8C%E8%A7%A6%E5%8F%91%E5%8A%A8%E4%BD%9C"><span class="nav-number">21.</span> <span class="nav-text">二十一、日志关键字和触发动作</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%8C%E3%80%81%E5%A4%B1%E8%B4%A5%E5%88%86%E7%BA%A7%E5%BB%BA%E8%AE%AE"><span class="nav-number">22.</span> <span class="nav-text">二十二、失败分级建议</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%89%E3%80%81%E5%A4%8D%E8%B7%91%E7%AD%96%E7%95%A5"><span class="nav-number">23.</span> <span class="nav-text">二十三、复跑策略</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%9B%9B%E3%80%81%E5%B9%B3%E5%8F%B0%E9%85%8D%E7%BD%AE%E7%A4%BA%E4%BE%8B"><span class="nav-number">24.</span> <span class="nav-text">二十四、平台配置示例</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%94%E3%80%81%E4%BA%BA%E5%B7%A5%E8%AF%84%E5%AE%A1%E6%97%B6%E8%A6%81%E9%97%AE%E7%9A%84%E9%97%AE%E9%A2%98"><span class="nav-number">25.</span> <span class="nav-text">二十五、人工评审时要问的问题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%85%AD%E3%80%81%E9%9D%A2%E5%90%91%E7%BC%BA%E9%99%B7%E7%B3%BB%E7%BB%9F%E7%9A%84%E6%91%98%E8%A6%81%E5%86%99%E6%B3%95"><span class="nav-number">26.</span> <span class="nav-text">二十六、面向缺陷系统的摘要写法</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%83%E3%80%81%E5%A6%82%E4%BD%95%E9%81%BF%E5%85%8D%E6%8A%A5%E5%91%8A%E5%8F%98%E6%88%90%E6%B5%81%E6%B0%B4%E8%B4%A6"><span class="nav-number">27.</span> <span class="nav-text">二十七、如何避免报告变成流水账</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%85%AB%E3%80%81%E5%9B%A2%E9%98%9F%E5%8D%8F%E4%BD%9C%E5%88%86%E5%B7%A5"><span class="nav-number">28.</span> <span class="nav-text">二十八、团队协作分工</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B9%9D%E3%80%81%E9%95%BF%E6%9C%9F%E7%BB%B4%E6%8A%A4%E6%8C%87%E6%A0%87"><span class="nav-number">29.</span> <span class="nav-text">二十九、长期维护指标</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E5%8D%81%E3%80%81%E6%9C%80%E5%90%8E%E7%9A%84%E8%90%BD%E5%9C%B0%E6%8F%90%E9%86%92"><span class="nav-number">30.</span> <span class="nav-text">三十、最后的落地提醒</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">298</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">27</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">513</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2026/02/11/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-21-Monkey%E5%B7%A5%E5%85%B7%E4%BA%8C%E6%AC%A1%E5%B0%81%E8%A3%85%E5%8F%82%E6%95%B0%E6%A8%A1%E6%9D%BF%E5%BC%82%E5%B8%B8%E6%8D%95%E8%8E%B7%E4%B8%8E%E5%A4%8D%E7%8E%B0%E5%91%BD%E4%BB%A4/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="Android稳定性-21-Monkey 工具二次封装：参数模板、异常捕获与复现命令 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Android稳定性-21-Monkey 工具二次封装：参数模板、异常捕获与复现命令
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2026-02-11 20:30:00" itemprop="dateCreated datePublished" datetime="2026-02-11T20:30:00+08:00">2026-02-11</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/Android%E7%A8%B3%E5%AE%9A%E6%80%A7/" itemprop="url" rel="index"><span itemprop="name">Android稳定性</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>8.6k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>31 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>Monkey 的价值不是“随机乱点”，而是在可控制的随机输入下暴露生命周期、窗口、权限、焦点和异常恢复问题。二次封装的目标也不是把命令包得看不懂，而是让参数模板可复用、异常捕获可解释、复现命令可复制。<br>这篇文章从稳定性测试视角展开，不把它写成工具说明书，而是把问题背景、测试位置、平台设计、命令入口、案例复盘和输出模板放在同一条链路里。<br>读完后，应该能直接拿去设计任务、评审失败、补齐日志和提交缺陷。</p>
+<h2 id="一、具体问题背景：先把这类问题放到稳定性语境里"><a href="#一、具体问题背景：先把这类问题放到稳定性语境里" class="headerlink" title="一、具体问题背景：先把这类问题放到稳定性语境里"></a>一、具体问题背景：先把这类问题放到稳定性语境里</h2><p>原生命令适合临时验证，但不适合团队长期使用。缺少模板时，不同同学会用不同 seed、throttle、包名和忽略开关，结果很难比较。<br>Monkey 失败最怕只留下最后几行日志。真正有价值的是 seed、事件数、执行阶段、崩溃前窗口、ANR trace、屏幕截图和完整复现命令。<br>二次封装要尊重 Monkey 的边界：它发现稳定性问题，不验证复杂业务正确性。</p>
+<p>从稳定性视角看，这里要先回答三个问题：</p>
+<ul>
+<li>这个能力解决的是准入、执行、监控、恢复还是归档。</li>
+<li>它的失败是否会污染后续任务。</li>
+<li>它留下的证据能不能支持别人复盘。</li>
+</ul>
+<h2 id="二、它在稳定性测试中的位置"><a href="#二、它在稳定性测试中的位置" class="headerlink" title="二、它在稳定性测试中的位置"></a>二、它在稳定性测试中的位置</h2><p>建议把它放在下面这些测试位置：</p>
+<ul>
+<li>新版本冒烟：小事件数快速扫 crash、权限弹窗和启动问题。</li>
+<li>夜间长稳：固定 seed 策略加长事件数，配合资源监控。</li>
+<li>专项回归：针对某包、某页面或某权限状态复跑。</li>
+<li>问题复现：保留原 seed、事件配比、throttle 和前置状态。</li>
+</ul>
+<p>位置定义清楚后，测试目标才不会漂移。比如准入任务追求快速发现阻塞问题，长稳任务追求长时间趋势和偶现故障，回归任务追求同条件复现。</p>
+<h2 id="三、测试对象和边界要先写清楚"><a href="#三、测试对象和边界要先写清楚" class="headerlink" title="三、测试对象和边界要先写清楚"></a>三、测试对象和边界要先写清楚</h2><p>Monkey 二次封装 的边界必须在任务启动前写清楚。边界不是一句“跑稳定性”，而是明确哪些现象归产品问题，哪些现象归环境问题，哪些现象只作为观察信号。</p>
+<p>建议把测试对象拆成四层：</p>
+<ul>
+<li>被测版本：system、vendor、boot、apk、配置文件和测试数据。</li>
+<li>被测设备：型号、内存规格、屏幕规格、网络形态、root 状态和实验室机位。</li>
+<li>被测动作：启动、切换、输入、压力、恢复、采样。</li>
+<li>判定规则：通过、失败、阻塞、环境异常、需人工复核。</li>
+</ul>
+<p>对于 Monkey 二次封装，最危险的不是少跑一个命令，而是没有定义“这个命令的结果如何影响结论”。例如同样是超时，可能代表产品卡死，也可能代表设备离线、host 磁盘阻塞或网络不可用。脚本必须把这些状态分开记录。</p>
+<p>落地时可以给每个任务增加 <code>scope.yaml</code>，里面写清楚目标、前置条件、排除项和失败等级。这样后续接入平台、复跑和评审时不会反复解释同一个问题。</p>
+<h2 id="四、工具或平台的最小设计"><a href="#四、工具或平台的最小设计" class="headerlink" title="四、工具或平台的最小设计"></a>四、工具或平台的最小设计</h2><p>Monkey 二次封装 的平台设计要从最小闭环开始，不要第一天就追求完整大屏。一个可用闭环至少包含采集层、执行层、判定层和归档层。</p>
+<p>最小设计可以这样拆：</p>
+<ul>
+<li>Agent：运行在 host 上，负责 adb、日志采集、心跳和本地缓存。</li>
+<li>Runner：读取任务配置，控制阶段流转，处理超时和中断。</li>
+<li>Collector：按失败类型抓取证据，不参与业务判断。</li>
+<li>Analyzer：从日志和结构化结果中提取失败类型。</li>
+<li>Reporter：生成 Markdown、JSON 和可提交缺陷摘要。</li>
+</ul>
+<p>平台内部要避免隐式状态。每个阶段都要能从磁盘上的 manifest 恢复：任务参数、设备 serial、开始时间、当前阶段、已采集证据和最后一次心跳。长稳任务经常跨夜，进程重启或 host 短暂异常不应该让整轮结果完全丢失。</p>
+<p>如果团队规模较小，可以先不做中心服务，但目录结构和 JSON schema 必须先稳定下来。后面从本地脚本升级到 Web 平台时，成本主要在界面和调度，不会重新定义证据格式。</p>
+<h2 id="五、任务生命周期如何组织"><a href="#五、任务生命周期如何组织" class="headerlink" title="五、任务生命周期如何组织"></a>五、任务生命周期如何组织</h2><p>建议把 Monkey 二次封装 的每次执行都拆成固定生命周期：<code>precheck</code>、<code>prepare</code>、<code>execute</code>、<code>monitor</code>、<code>collect</code>、<code>recover</code>、<code>report</code>。这些阶段不是形式主义，而是为了让失败发生时可以准确落点。</p>
+<p>各阶段职责如下：</p>
+<ul>
+<li><code>precheck</code>：确认设备、版本、网络、供电、磁盘空间和 adb 状态。</li>
+<li><code>prepare</code>：安装包、授权、清日志、设置系统状态和写入任务参数。</li>
+<li><code>execute</code>：执行核心测试动作，只做必要控制。</li>
+<li><code>monitor</code>：采集心跳、异常关键字、资源和环境指标。</li>
+<li><code>collect</code>：失败或结束后固化证据。</li>
+<li><code>recover</code>：按策略恢复设备或隔离设备。</li>
+<li><code>report</code>：输出结构化结果和人工可读报告。</li>
+</ul>
+<p>稳定性脚本最容易出问题的地方，是在 <code>execute</code> 里顺手做了采集和恢复，在 <code>collect</code> 里又顺手改了设备状态。这样一旦失败，现场被谁改变过很难说清。阶段拆开后，日志会稍微多一些，但复盘成本会明显下降。</p>
+<p>每个阶段都应记录开始时间、结束时间、耗时、输入、输出和状态。即使阶段失败，也要写出阶段级结果，而不是直接让脚本退出。</p>
+<h2 id="六、关键命令和日志入口"><a href="#六、关键命令和日志入口" class="headerlink" title="六、关键命令和日志入口"></a>六、关键命令和日志入口</h2><p>下面这些命令是排查和平台封装时最常用的入口。实际使用时要统一增加 serial、timeout、返回码记录和输出文件路径。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">adb -s &lt;serial&gt; shell monkey -p &lt;package&gt; --throttle 300 -s 10086 -v -v 50000</span><br><span class="line">adb -s &lt;serial&gt; shell monkey -p &lt;package&gt; --pct-touch 45 --pct-motion 20 --pct-nav 5 --pct-majornav 10 --pct-appswitch 5 --pct-syskeys 0 --throttle 200 -s &lt;seed&gt; -v 100000</span><br><span class="line">adb -s &lt;serial&gt; logcat -b all -v threadtime</span><br><span class="line">adb -s &lt;serial&gt; shell dumpsys activity top</span><br><span class="line">adb -s &lt;serial&gt; shell dumpsys window windows</span><br><span class="line">adb -s &lt;serial&gt; shell <span class="built_in">cat</span> /data/anr/traces.txt</span><br><span class="line">adb -s &lt;serial&gt; bugreport ./bugreport-monkey.zip</span><br></pre></td></tr></table></figure>
+<p>命令输出不要只打印在终端里。每条关键命令都应该保存 stdout、stderr、exit code 和耗时，便于后续判断是设备异常、命令异常还是产品异常。</p>
+<h2 id="七、结果目录和证据归档"><a href="#七、结果目录和证据归档" class="headerlink" title="七、结果目录和证据归档"></a>七、结果目录和证据归档</h2><p>证据归档建议至少包含这些文件或目录：</p>
+<ul>
+<li>monkey_stdout.txt：Monkey 原始输出，包含 seed、event count、crash&#x2F;ANR 提示。</li>
+<li>logcat_all.txt：从任务开始到失败后的完整日志。</li>
+<li>anr_traces.txt：ANR 时主线程和关键线程堆栈。</li>
+<li>window_state.txt：失败时焦点窗口、当前 Activity、输入焦点。</li>
+<li>reproduce.sh：封装后的最小复现命令。</li>
+</ul>
+<p>日志入口要和报告中的结论互相引用。报告里写“发生 ANR”，就必须能跳到对应 logcat、traces、时间点和设备状态。</p>
+<h2 id="八、表格化拆解核心差异"><a href="#八、表格化拆解核心差异" class="headerlink" title="八、表格化拆解核心差异"></a>八、表格化拆解核心差异</h2><table>
+<thead>
+<tr>
+<th>模板</th>
+<th>适用场景</th>
+<th>关键参数</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>smoke</td>
+<td>版本冒烟</td>
+<td>1000 到 5000 事件、较大 throttle、快速失败</td>
+</tr>
+<tr>
+<td>nightly</td>
+<td>夜间长稳</td>
+<td>50000 以上事件、固定 seed、完整日志</td>
+</tr>
+<tr>
+<td>stress</td>
+<td>输入压力</td>
+<td>低 throttle、提高 touch&#x2F;motion 比例</td>
+</tr>
+<tr>
+<td>navigation</td>
+<td>页面切换</td>
+<td>提高 app switch 和 major nav，禁用 syskeys</td>
+</tr>
+<tr>
+<td>regression</td>
+<td>问题回归</td>
+<td>复用原 seed、原事件数、原前置状态</td>
+</tr>
+</tbody></table>
+<p>表格的意义是帮助评审快速判断职责边界。稳定性结论经常跨 App、Framework、vendor、环境和脚本，表格化拆解能减少口头争论。</p>
+<h2 id="九、完整案例：从现象到结论"><a href="#九、完整案例：从现象到结论" class="headerlink" title="九、完整案例：从现象到结论"></a>九、完整案例：从现象到结论</h2><p>某版本 Monkey 8 万事件后出现 ANR。原始报告只有“ANR in com.demo”。封装后重新执行同 seed，任务在失败时抓到 dumpsys window 显示权限弹窗覆盖目标 Activity，logcat 中 ActivityTaskManager 正在频繁切换前后台，traces 显示主线程等待同步初始化。最终确认不是 Monkey 随机性问题，而是应用在权限弹窗返回后重复初始化资源导致主线程锁等待。复现命令固定 seed 后三次复现两次，满足提交缺陷条件。</p>
+<p>这个案例的关键不在于最后归因，而在于证据链完整：现象、时间线、设备状态、日志入口、复现条件和排除项都能对上。稳定性问题只要缺少其中一环，就容易退回“偶现待观察”。</p>
+<h2 id="十、常见误判和排除顺序"><a href="#十、常见误判和排除顺序" class="headerlink" title="十、常见误判和排除顺序"></a>十、常见误判和排除顺序</h2><p>常见误判包括：</p>
+<ul>
+<li>seed 相同就一定复现：前置状态、版本、权限、数据、温度和网络也必须一致。</li>
+<li>–ignore-crashes 可以提高稳定性：它只会让任务继续跑，不能让 crash 不存在。</li>
+<li>事件数越大越好：没有阶段日志和资源监控时，超大事件数会降低定位效率。</li>
+<li>看到 ANR 就一定是 App 问题：输入系统、窗口焦点、系统负载也可能导致应用无响应。</li>
+</ul>
+<p>排除顺序建议从环境和脚本开始，再看产品日志。这样不是降低产品问题优先级，而是避免把不可复现的环境噪声提交给开发。</p>
+<h2 id="十一、检查清单"><a href="#十一、检查清单" class="headerlink" title="十一、检查清单"></a>十一、检查清单</h2><p>执行前和提交报告前，可以逐项检查：</p>
+<ul>
+<li>每次执行记录 seed、事件数、throttle、pct 参数和目标包。</li>
+<li>执行前固定前置状态：清数据或保留数据必须明确。</li>
+<li>失败时自动停止继续注入，先采集现场。</li>
+<li>复现命令不依赖平台内部变量，开发能直接运行。</li>
+<li>模板参数有版本管理，报告引用模板版本。</li>
+<li>忽略 crash&#x2F;timeout&#x2F;security-exception 的开关必须显式写入报告。</li>
+</ul>
+<p>检查清单最好放进仓库，跟随脚本一起评审。只放在个人笔记里的清单，很快会和实际平台脱节。</p>
+<h2 id="十二、输出物模板"><a href="#十二、输出物模板" class="headerlink" title="十二、输出物模板"></a>十二、输出物模板</h2><p>建议输出物模板如下：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Monkey 输出物：config.yaml、monkey_stdout.txt、logcat_all.txt、failure_summary.md、reproduce.sh、artifacts_index.json、screen.png、dumpsys_activity.txt、dumpsys_window.txt、anr_traces.txt。</span><br></pre></td></tr></table></figure>
+<p>模板字段可以按团队情况扩展，但不要删除版本、设备、任务、时间、判定、证据和复现方式这些核心字段。</p>
+<h2 id="十三、和其他稳定性能力的配合"><a href="#十三、和其他稳定性能力的配合" class="headerlink" title="十三、和其他稳定性能力的配合"></a>十三、和其他稳定性能力的配合</h2><p>Monkey 二次封装 不应该单独存在。它通常要和 Monkey、UI Automator、资源监控、无人值守环境、兼容性准入和缺陷管理配合。</p>
+<p>典型组合方式：</p>
+<ul>
+<li>Monkey 负责随机输入压力，资源监控负责解释失败前系统状态。</li>
+<li>UI Automator 负责进入业务场景和恢复页面，底层工具链负责采集证据。</li>
+<li>多设备调度负责扩大样本，结果归档负责避免证据丢失。</li>
+<li>CTS&#x2F;VTS 负责确认基础契约，长稳任务负责验证真实使用时序。</li>
+<li>无人值守环境负责区分产品失败和供电、网络、散热问题。</li>
+</ul>
+<p>组合时要注意一个原则：每个工具只做自己擅长的事。不要让 UI 自动化承担资源分析，不要让资源采样脚本决定业务成败，也不要让调度器直接解释 crash 根因。职责清楚后，平台才容易扩展。</p>
+<p>报告里建议保留“关联能力”小节，列出本次任务是否启用了资源监控、环境监控、兼容性准入和自动恢复。这个信息对复盘非常关键。</p>
+<h2 id="十四、落地时的分阶段路线"><a href="#十四、落地时的分阶段路线" class="headerlink" title="十四、落地时的分阶段路线"></a>十四、落地时的分阶段路线</h2><p>落地 Monkey 二次封装 可以分三阶段。</p>
+<p>第一阶段是脚本可用：</p>
+<ul>
+<li>固定目录结构。</li>
+<li>固定命令封装。</li>
+<li>固定 result.json。</li>
+<li>每次失败能留下最小证据。</li>
+</ul>
+<p>第二阶段是批量可靠：</p>
+<ul>
+<li>多设备并发不互相覆盖日志。</li>
+<li>任务有超时和心跳。</li>
+<li>失败能自动分类为产品、环境、脚本和未知。</li>
+<li>报告能按版本、设备和任务聚合。</li>
+</ul>
+<p>第三阶段是平台治理：</p>
+<ul>
+<li>指标趋势可查询。</li>
+<li>历史失败可对比。</li>
+<li>缺陷提交有模板。</li>
+<li>设备健康度参与调度。</li>
+<li>高风险模块有准入门禁。</li>
+</ul>
+<p>不要跳过第一阶段直接做第三阶段。没有稳定的本地证据结构，平台只会把混乱放大。</p>
+<h2 id="十五、评审口径和缺陷提交标准"><a href="#十五、评审口径和缺陷提交标准" class="headerlink" title="十五、评审口径和缺陷提交标准"></a>十五、评审口径和缺陷提交标准</h2><p>评审 Monkey 二次封装 的结论时，建议采用固定口径。缺陷提交不能只写现象，要包含触发条件、影响范围、证据链和复现方式。</p>
+<p>一个问题达到提交标准，至少满足下面条件之一：</p>
+<ul>
+<li>同一版本同一任务可复现，或多设备出现同类异常。</li>
+<li>有明确 crash、ANR、tombstone、watchdog、kernel panic 或进程异常重启证据。</li>
+<li>资源趋势显示持续恶化，并和业务失败时间对齐。</li>
+<li>CTS&#x2F;VTS 或系统接口用例能把问题收敛到具体契约。</li>
+<li>环境监控排除了供电、网络、散热和 host 异常。</li>
+</ul>
+<p>缺陷描述建议使用“现象 + 证据 + 判断 + 复现命令”的顺序。不要先写猜测根因，也不要把多个不相关失败塞进一个问题单。稳定性问题本来就复杂，提交时更要让信息结构简单。</p>
+<h2 id="十六、小结"><a href="#十六、小结" class="headerlink" title="十六、小结"></a>十六、小结</h2><p>Monkey 二次封装 的核心不是工具名字，而是工程闭环。稳定性测试真正要交付的不是一串命令输出，而是可信的结论：在什么版本、什么设备、什么场景、什么环境下，发生了什么问题，证据在哪里，下一步应该怎么复现或排除。</p>
+<p>如果只能记住三点，可以记住：</p>
+<ul>
+<li>先定义边界，再执行任务。</li>
+<li>先固化证据，再恢复现场。</li>
+<li>先区分环境和产品，再提交缺陷。</li>
+</ul>
+<p>做到这三点，Monkey 二次封装 才能从个人经验变成团队能力。</p>
+<h2 id="十七、附录：建议的目录结构"><a href="#十七、附录：建议的目录结构" class="headerlink" title="十七、附录：建议的目录结构"></a>十七、附录：建议的目录结构</h2><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">artifacts/</span><br><span class="line">  &lt;run_id&gt;/</span><br><span class="line">    manifest.json</span><br><span class="line">    summary.md</span><br><span class="line">    devices/</span><br><span class="line">      &lt;serial&gt;/</span><br><span class="line">        device.json</span><br><span class="line">        task.log</span><br><span class="line">        adb.log</span><br><span class="line">        logcat_all.txt</span><br><span class="line">        dumpsys/</span><br><span class="line">        screenshots/</span><br><span class="line">        result.json</span><br></pre></td></tr></table></figure>
+<p>这个目录结构的重点是每台设备独立、每个 run 独立、原始证据和汇总报告分开。只要目录结构稳定，后续接入数据库或对象存储会简单很多。</p>
+<h2 id="十八、附录：result-json-示例"><a href="#十八、附录：result-json-示例" class="headerlink" title="十八、附录：result.json 示例"></a>十八、附录：result.json 示例</h2><figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;run_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;run_20260217_203000&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;serial&quot;</span><span class="punctuation">:</span> <span class="string">&quot;R58N0000000&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;topic&quot;</span><span class="punctuation">:</span> <span class="string">&quot;Monkey 二次封装&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;status&quot;</span><span class="punctuation">:</span> <span class="string">&quot;failed&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;failure_type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;product_or_system&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;first_error_time&quot;</span><span class="punctuation">:</span> <span class="string">&quot;2026-02-17T23:18:42+08:00&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;evidence&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;logcat_all.txt&quot;</span><span class="punctuation">,</span> <span class="string">&quot;bugreport.zip&quot;</span><span class="punctuation">,</span> <span class="string">&quot;screen.png&quot;</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;reproduce_command&quot;</span><span class="punctuation">:</span> <span class="string">&quot;bash run_task.sh --from result.json&quot;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+<p>JSON 示例不是为了限制实现语言，而是为了让平台、脚本和报告共享同一套事实。Markdown 写给人看，JSON 写给系统处理，两者都需要。</p>
+<h2 id="十九、场景矩阵怎么设计"><a href="#十九、场景矩阵怎么设计" class="headerlink" title="十九、场景矩阵怎么设计"></a>十九、场景矩阵怎么设计</h2><p>Monkey 封装 的场景矩阵要覆盖正常路径、压力路径、异常路径和恢复路径。矩阵不是为了凑用例数量，而是为了让每个失败都能回到明确的场景坐标。</p>
+<ul>
+<li>场景 01：围绕 <code>seed</code> 设计一条最小验证链路，记录输入条件、执行动作、预期信号和失败证据。</li>
+<li>场景 01 的前置状态必须可重建，不能依赖上一次任务遗留的窗口、缓存、权限或网络状态。</li>
+<li>场景 01 的退出条件要明确，达到失败条件后先采集证据，再进入恢复阶段。</li>
+<li>场景 02：围绕 <code>throttle</code> 设计一条最小验证链路，记录输入条件、执行动作、预期信号和失败证据。</li>
+<li>场景 02 的前置状态必须可重建，不能依赖上一次任务遗留的窗口、缓存、权限或网络状态。</li>
+<li>场景 02 的退出条件要明确，达到失败条件后先采集证据，再进入恢复阶段。</li>
+<li>场景 03：围绕 <code>event count</code> 设计一条最小验证链路，记录输入条件、执行动作、预期信号和失败证据。</li>
+<li>场景 03 的前置状态必须可重建，不能依赖上一次任务遗留的窗口、缓存、权限或网络状态。</li>
+<li>场景 03 的退出条件要明确，达到失败条件后先采集证据，再进入恢复阶段。</li>
+<li>场景 04：围绕 <code>pct-touch</code> 设计一条最小验证链路，记录输入条件、执行动作、预期信号和失败证据。</li>
+<li>场景 04 的前置状态必须可重建，不能依赖上一次任务遗留的窗口、缓存、权限或网络状态。</li>
+<li>场景 04 的退出条件要明确，达到失败条件后先采集证据，再进入恢复阶段。</li>
+<li>场景 05：围绕 <code>pct-motion</code> 设计一条最小验证链路，记录输入条件、执行动作、预期信号和失败证据。</li>
+<li>场景 05 的前置状态必须可重建，不能依赖上一次任务遗留的窗口、缓存、权限或网络状态。</li>
+<li>场景 05 的退出条件要明确，达到失败条件后先采集证据，再进入恢复阶段。</li>
+<li>场景 06：围绕 <code>ignore-crashes</code> 设计一条最小验证链路，记录输入条件、执行动作、预期信号和失败证据。</li>
+<li>场景 06 的前置状态必须可重建，不能依赖上一次任务遗留的窗口、缓存、权限或网络状态。</li>
+<li>场景 06 的退出条件要明确，达到失败条件后先采集证据，再进入恢复阶段。</li>
+<li>场景 07：围绕 <code>monkey stdout</code> 设计一条最小验证链路，记录输入条件、执行动作、预期信号和失败证据。</li>
+<li>场景 07 的前置状态必须可重建，不能依赖上一次任务遗留的窗口、缓存、权限或网络状态。</li>
+<li>场景 07 的退出条件要明确，达到失败条件后先采集证据，再进入恢复阶段。</li>
+<li>场景 08：围绕 <code>reproduce.sh</code> 设计一条最小验证链路，记录输入条件、执行动作、预期信号和失败证据。</li>
+<li>场景 08 的前置状态必须可重建，不能依赖上一次任务遗留的窗口、缓存、权限或网络状态。</li>
+<li>场景 08 的退出条件要明确，达到失败条件后先采集证据，再进入恢复阶段。</li>
+</ul>
+<h2 id="二十、关键字段命名建议"><a href="#二十、关键字段命名建议" class="headerlink" title="二十、关键字段命名建议"></a>二十、关键字段命名建议</h2><p>字段命名稳定，比字段数量更重要。命名一旦进入脚本、报告、数据库和缺陷平台，就不要频繁变化。</p>
+<ul>
+<li><code>run_id</code>：用于把 Monkey 封装 的一次执行和后续复盘连接起来，必须在 JSON 和 Markdown 中保持同名。</li>
+<li><code>task_id</code>：用于把 Monkey 封装 的一次执行和后续复盘连接起来，必须在 JSON 和 Markdown 中保持同名。</li>
+<li><code>serial</code>：用于把 Monkey 封装 的一次执行和后续复盘连接起来，必须在 JSON 和 Markdown 中保持同名。</li>
+<li><code>build_fingerprint</code>：用于把 Monkey 封装 的一次执行和后续复盘连接起来，必须在 JSON 和 Markdown 中保持同名。</li>
+<li><code>device_model</code>：用于把 Monkey 封装 的一次执行和后续复盘连接起来，必须在 JSON 和 Markdown 中保持同名。</li>
+<li><code>lab_slot</code>：用于把 Monkey 封装 的一次执行和后续复盘连接起来，必须在 JSON 和 Markdown 中保持同名。</li>
+<li><code>stage</code>：用于把 Monkey 封装 的一次执行和后续复盘连接起来，必须在 JSON 和 Markdown 中保持同名。</li>
+<li><code>start_time</code>：用于把 Monkey 封装 的一次执行和后续复盘连接起来，必须在 JSON 和 Markdown 中保持同名。</li>
+<li><code>end_time</code>：用于把 Monkey 封装 的一次执行和后续复盘连接起来，必须在 JSON 和 Markdown 中保持同名。</li>
+<li><code>status</code>：用于把 Monkey 封装 的一次执行和后续复盘连接起来，必须在 JSON 和 Markdown 中保持同名。</li>
+<li><code>failure_type</code>：用于把 Monkey 封装 的一次执行和后续复盘连接起来，必须在 JSON 和 Markdown 中保持同名。</li>
+<li><code>evidence_path</code>：用于把 Monkey 封装 的一次执行和后续复盘连接起来，必须在 JSON 和 Markdown 中保持同名。</li>
+<li><code>reproduce_command</code>：用于把 Monkey 封装 的一次执行和后续复盘连接起来，必须在 JSON 和 Markdown 中保持同名。</li>
+<li><code>owner</code>：用于把 Monkey 封装 的一次执行和后续复盘连接起来，必须在 JSON 和 Markdown 中保持同名。</li>
+<li><code>retry_of</code>：用于把 Monkey 封装 的一次执行和后续复盘连接起来，必须在 JSON 和 Markdown 中保持同名。</li>
+<li><code>environment_status</code>：用于把 Monkey 封装 的一次执行和后续复盘连接起来，必须在 JSON 和 Markdown 中保持同名。</li>
+</ul>
+<h2 id="二十一、日志关键字和触发动作"><a href="#二十一、日志关键字和触发动作" class="headerlink" title="二十一、日志关键字和触发动作"></a>二十一、日志关键字和触发动作</h2><p>关键字不能只做字符串匹配，还要绑定触发动作。命中后应该知道抓什么、停什么、恢复什么。</p>
+<ul>
+<li>看到 <code>ANR</code> 相关异常时，先截取前后 5 到 10 分钟日志，再补抓当前状态快照。</li>
+<li><code>ANR</code> 如果连续出现，要记录第一次出现时间、最后一次出现时间和出现次数。</li>
+<li><code>ANR</code> 不应单独决定结论，至少要和任务阶段、设备状态或资源指标交叉验证。</li>
+<li>看到 <code>Crash</code> 相关异常时，先截取前后 5 到 10 分钟日志，再补抓当前状态快照。</li>
+<li><code>Crash</code> 如果连续出现，要记录第一次出现时间、最后一次出现时间和出现次数。</li>
+<li><code>Crash</code> 不应单独决定结论，至少要和任务阶段、设备状态或资源指标交叉验证。</li>
+<li>看到 <code>permission dialog</code> 相关异常时，先截取前后 5 到 10 分钟日志，再补抓当前状态快照。</li>
+<li><code>permission dialog</code> 如果连续出现，要记录第一次出现时间、最后一次出现时间和出现次数。</li>
+<li><code>permission dialog</code> 不应单独决定结论，至少要和任务阶段、设备状态或资源指标交叉验证。</li>
+<li>看到 <code>focused window</code> 相关异常时，先截取前后 5 到 10 分钟日志，再补抓当前状态快照。</li>
+<li><code>focused window</code> 如果连续出现，要记录第一次出现时间、最后一次出现时间和出现次数。</li>
+<li><code>focused window</code> 不应单独决定结论，至少要和任务阶段、设备状态或资源指标交叉验证。</li>
+<li>看到 <code>input event</code> 相关异常时，先截取前后 5 到 10 分钟日志，再补抓当前状态快照。</li>
+<li><code>input event</code> 如果连续出现，要记录第一次出现时间、最后一次出现时间和出现次数。</li>
+<li><code>input event</code> 不应单独决定结论，至少要和任务阶段、设备状态或资源指标交叉验证。</li>
+<li>看到 <code>Activity switch</code> 相关异常时，先截取前后 5 到 10 分钟日志，再补抓当前状态快照。</li>
+<li><code>Activity switch</code> 如果连续出现，要记录第一次出现时间、最后一次出现时间和出现次数。</li>
+<li><code>Activity switch</code> 不应单独决定结论，至少要和任务阶段、设备状态或资源指标交叉验证。</li>
+<li>看到 <code>traces</code> 相关异常时，先截取前后 5 到 10 分钟日志，再补抓当前状态快照。</li>
+<li><code>traces</code> 如果连续出现，要记录第一次出现时间、最后一次出现时间和出现次数。</li>
+<li><code>traces</code> 不应单独决定结论，至少要和任务阶段、设备状态或资源指标交叉验证。</li>
+<li>看到 <code>logcat slice</code> 相关异常时，先截取前后 5 到 10 分钟日志，再补抓当前状态快照。</li>
+<li><code>logcat slice</code> 如果连续出现，要记录第一次出现时间、最后一次出现时间和出现次数。</li>
+<li><code>logcat slice</code> 不应单独决定结论，至少要和任务阶段、设备状态或资源指标交叉验证。</li>
+</ul>
+<h2 id="二十二、失败分级建议"><a href="#二十二、失败分级建议" class="headerlink" title="二十二、失败分级建议"></a>二十二、失败分级建议</h2><ul>
+<li><code>P0</code>：设备重启、system_server watchdog、kernel panic、核心功能不可恢复。在Monkey 封装 报告中要写清楚为什么归到这个等级。</li>
+<li><code>P0</code> 评审时要同时看影响范围、复现概率、证据完整度和是否阻塞下一轮测试。</li>
+<li><code>P1</code>：可稳定复现的 Crash、ANR、关键服务异常或长稳中断。在Monkey 封装 报告中要写清楚为什么归到这个等级。</li>
+<li><code>P1</code> 评审时要同时看影响范围、复现概率、证据完整度和是否阻塞下一轮测试。</li>
+<li><code>P2</code>：偶现但证据完整的业务失败、资源趋势异常、自动恢复后继续运行。在Monkey 封装 报告中要写清楚为什么归到这个等级。</li>
+<li><code>P2</code> 评审时要同时看影响范围、复现概率、证据完整度和是否阻塞下一轮测试。</li>
+<li><code>P3</code>：脚本兼容性、环境波动、日志缺失导致的待观察问题。在Monkey 封装 报告中要写清楚为什么归到这个等级。</li>
+<li><code>P3</code> 评审时要同时看影响范围、复现概率、证据完整度和是否阻塞下一轮测试。</li>
+</ul>
+<h2 id="二十三、复跑策略"><a href="#二十三、复跑策略" class="headerlink" title="二十三、复跑策略"></a>二十三、复跑策略</h2><p>复跑不是简单再跑一次。复跑要回答原问题是否在同等条件下再次出现，以及修复是否引入新的环境差异。</p>
+<ul>
+<li>复跑步骤：固定版本。如果这一步发生变化，报告中必须显式说明。</li>
+<li>复跑步骤：固定设备。如果这一步发生变化，报告中必须显式说明。</li>
+<li>复跑步骤：固定任务参数。如果这一步发生变化，报告中必须显式说明。</li>
+<li>复跑步骤：固定前置状态。如果这一步发生变化，报告中必须显式说明。</li>
+<li>复跑步骤：固定网络条件。如果这一步发生变化，报告中必须显式说明。</li>
+<li>复跑步骤：固定日志采集。如果这一步发生变化，报告中必须显式说明。</li>
+<li>复跑步骤：固定超时阈值。如果这一步发生变化，报告中必须显式说明。</li>
+<li>复跑步骤：固定判定规则。如果这一步发生变化，报告中必须显式说明。</li>
+<li>复跑步骤：记录差异。如果这一步发生变化，报告中必须显式说明。</li>
+<li>复跑步骤：保留 retry 关联。如果这一步发生变化，报告中必须显式说明。</li>
+</ul>
+<h2 id="二十四、平台配置示例"><a href="#二十四、平台配置示例" class="headerlink" title="二十四、平台配置示例"></a>二十四、平台配置示例</h2><p>下面的配置片段表达的是结构，不要求团队照搬字段名。重点是把设备、任务、采集和判定分开。</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">task:</span></span><br><span class="line">  <span class="attr">name:</span> <span class="string">&quot;Monkey 封装&quot;</span></span><br><span class="line">  <span class="attr">duration:</span> <span class="string">&quot;24h&quot;</span></span><br><span class="line">  <span class="attr">stages:</span> [<span class="string">precheck</span>, <span class="string">prepare</span>, <span class="string">execute</span>, <span class="string">monitor</span>, <span class="string">collect</span>, <span class="string">recover</span>, <span class="string">report</span>]</span><br><span class="line"><span class="attr">device:</span></span><br><span class="line">  <span class="attr">serial:</span> <span class="string">&quot;$&#123;SERIAL&#125;&quot;</span></span><br><span class="line">  <span class="attr">require_state:</span> <span class="string">&quot;device&quot;</span></span><br><span class="line"><span class="attr">collector:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">&quot;seed&quot;</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">&quot;throttle&quot;</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">&quot;event count&quot;</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">&quot;pct-touch&quot;</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">&quot;pct-motion&quot;</span></span><br><span class="line"><span class="attr">judge:</span></span><br><span class="line">  <span class="attr">fail_on:</span> [<span class="string">crash</span>, <span class="string">anr</span>, <span class="string">reboot</span>, <span class="string">offline_timeout</span>, <span class="string">evidence_missing</span>]</span><br></pre></td></tr></table></figure>
+
+<h2 id="二十五、人工评审时要问的问题"><a href="#二十五、人工评审时要问的问题" class="headerlink" title="二十五、人工评审时要问的问题"></a>二十五、人工评审时要问的问题</h2><ul>
+<li>这个失败是否有明确第一现场。如果答案是否定的，Monkey 封装 的结论就要降级或补证据。</li>
+<li>失败时间是否能和任务阶段对齐。如果答案是否定的，Monkey 封装 的结论就要降级或补证据。</li>
+<li>设备状态是否可信。如果答案是否定的，Monkey 封装 的结论就要降级或补证据。</li>
+<li>环境监控是否正常。如果答案是否定的，Monkey 封装 的结论就要降级或补证据。</li>
+<li>脚本是否可能误判。如果答案是否定的，Monkey 封装 的结论就要降级或补证据。</li>
+<li>是否有可复制命令。如果答案是否定的，Monkey 封装 的结论就要降级或补证据。</li>
+<li>是否需要同设备复跑。如果答案是否定的，Monkey 封装 的结论就要降级或补证据。</li>
+<li>是否需要换设备复跑。如果答案是否定的，Monkey 封装 的结论就要降级或补证据。</li>
+<li>是否影响出货准入。如果答案是否定的，Monkey 封装 的结论就要降级或补证据。</li>
+<li>是否已有历史相似问题。如果答案是否定的，Monkey 封装 的结论就要降级或补证据。</li>
+<li>是否能归到明确责任域。如果答案是否定的，Monkey 封装 的结论就要降级或补证据。</li>
+<li>是否需要补采 bugreport。如果答案是否定的，Monkey 封装 的结论就要降级或补证据。</li>
+</ul>
+<h2 id="二十六、面向缺陷系统的摘要写法"><a href="#二十六、面向缺陷系统的摘要写法" class="headerlink" title="二十六、面向缺陷系统的摘要写法"></a>二十六、面向缺陷系统的摘要写法</h2><p>缺陷摘要要短，但信息密度要高。建议固定为“模块 + 场景 + 现象 + 影响”。</p>
+<ul>
+<li>示例 1：<code>[Monkey 封装] seed 场景长稳中出现异常，任务中断并已附复现命令和日志包</code>。</li>
+<li>示例 1 的正文要补充版本、设备、run_id、失败时间、证据路径和复跑结果。</li>
+<li>示例 2：<code>[Monkey 封装] throttle 场景长稳中出现异常，任务中断并已附复现命令和日志包</code>。</li>
+<li>示例 2 的正文要补充版本、设备、run_id、失败时间、证据路径和复跑结果。</li>
+<li>示例 3：<code>[Monkey 封装] event count 场景长稳中出现异常，任务中断并已附复现命令和日志包</code>。</li>
+<li>示例 3 的正文要补充版本、设备、run_id、失败时间、证据路径和复跑结果。</li>
+<li>示例 4：<code>[Monkey 封装] pct-touch 场景长稳中出现异常，任务中断并已附复现命令和日志包</code>。</li>
+<li>示例 4 的正文要补充版本、设备、run_id、失败时间、证据路径和复跑结果。</li>
+<li>示例 5：<code>[Monkey 封装] pct-motion 场景长稳中出现异常，任务中断并已附复现命令和日志包</code>。</li>
+<li>示例 5 的正文要补充版本、设备、run_id、失败时间、证据路径和复跑结果。</li>
+<li>示例 6：<code>[Monkey 封装] ignore-crashes 场景长稳中出现异常，任务中断并已附复现命令和日志包</code>。</li>
+<li>示例 6 的正文要补充版本、设备、run_id、失败时间、证据路径和复跑结果。</li>
+</ul>
+<h2 id="二十七、如何避免报告变成流水账"><a href="#二十七、如何避免报告变成流水账" class="headerlink" title="二十七、如何避免报告变成流水账"></a>二十七、如何避免报告变成流水账</h2><ul>
+<li>先写结论，再写证据：这能让Monkey 封装 的报告在评审会上快速被理解。</li>
+<li>按时间线组织异常：这能让Monkey 封装 的报告在评审会上快速被理解。</li>
+<li>把环境问题单独成段：这能让Monkey 封装 的报告在评审会上快速被理解。</li>
+<li>表格展示设备分布：这能让Monkey 封装 的报告在评审会上快速被理解。</li>
+<li>只贴关键日志入口：这能让Monkey 封装 的报告在评审会上快速被理解。</li>
+<li>长日志放附件：这能让Monkey 封装 的报告在评审会上快速被理解。</li>
+<li>复现命令放固定位置：这能让Monkey 封装 的报告在评审会上快速被理解。</li>
+<li>未知项明确标注：这能让Monkey 封装 的报告在评审会上快速被理解。</li>
+<li>不要混合多个根因：这能让Monkey 封装 的报告在评审会上快速被理解。</li>
+<li>最后写下一步动作：这能让Monkey 封装 的报告在评审会上快速被理解。</li>
+</ul>
+<h2 id="二十八、团队协作分工"><a href="#二十八、团队协作分工" class="headerlink" title="二十八、团队协作分工"></a>二十八、团队协作分工</h2><ul>
+<li>测试执行：保证任务按配置运行并保留现场。在Monkey 封装 相关问题里，职责要写进报告而不是只在群里口头同步。</li>
+<li>测试开发：维护工具链、采集器、报告和调度逻辑。在Monkey 封装 相关问题里，职责要写进报告而不是只在群里口头同步。</li>
+<li>系统开发：分析 Framework、Native、HAL 或 kernel 证据。在Monkey 封装 相关问题里，职责要写进报告而不是只在群里口头同步。</li>
+<li>应用开发：分析业务进程、生命周期、线程和资源。在Monkey 封装 相关问题里，职责要写进报告而不是只在群里口头同步。</li>
+<li>实验室维护：处理供电、网络、散热、线材和机位。在Monkey 封装 相关问题里，职责要写进报告而不是只在群里口头同步。</li>
+<li>项目负责人：确认风险等级、准入结论和修复节奏。在Monkey 封装 相关问题里，职责要写进报告而不是只在群里口头同步。</li>
+</ul>
+<h2 id="二十九、长期维护指标"><a href="#二十九、长期维护指标" class="headerlink" title="二十九、长期维护指标"></a>二十九、长期维护指标</h2><ul>
+<li>有效运行时长：用于衡量 Monkey 封装 是否真正降低了稳定性测试成本。</li>
+<li>设备在线率：用于衡量 Monkey 封装 是否真正降低了稳定性测试成本。</li>
+<li>环境失败率：用于衡量 Monkey 封装 是否真正降低了稳定性测试成本。</li>
+<li>产品失败率：用于衡量 Monkey 封装 是否真正降低了稳定性测试成本。</li>
+<li>脚本误判率：用于衡量 Monkey 封装 是否真正降低了稳定性测试成本。</li>
+<li>证据完整率：用于衡量 Monkey 封装 是否真正降低了稳定性测试成本。</li>
+<li>复跑复现率：用于衡量 Monkey 封装 是否真正降低了稳定性测试成本。</li>
+<li>平均定位时间：用于衡量 Monkey 封装 是否真正降低了稳定性测试成本。</li>
+<li>自动恢复成功率：用于衡量 Monkey 封装 是否真正降低了稳定性测试成本。</li>
+<li>历史问题重复率：用于衡量 Monkey 封装 是否真正降低了稳定性测试成本。</li>
+<li>报告生成耗时：用于衡量 Monkey 封装 是否真正降低了稳定性测试成本。</li>
+<li>缺陷退回率：用于衡量 Monkey 封装 是否真正降低了稳定性测试成本。</li>
+</ul>
+<h2 id="三十、最后的落地提醒"><a href="#三十、最后的落地提醒" class="headerlink" title="三十、最后的落地提醒"></a>三十、最后的落地提醒</h2><ul>
+<li>不要让一次临时排查命令长期留在主流程里。这条在Monkey 封装 落地时尤其容易被忽略。</li>
+<li>不要把未知失败自动归为产品问题。这条在Monkey 封装 落地时尤其容易被忽略。</li>
+<li>不要在采集证据前清理现场。这条在Monkey 封装 落地时尤其容易被忽略。</li>
+<li>不要让多个任务共享同一个日志文件。这条在Monkey 封装 落地时尤其容易被忽略。</li>
+<li>不要只保存最终报告而删除原始日志。这条在Monkey 封装 落地时尤其容易被忽略。</li>
+<li>不要忽略 host 侧异常。这条在Monkey 封装 落地时尤其容易被忽略。</li>
+<li>不要让阈值只存在代码里。这条在Monkey 封装 落地时尤其容易被忽略。</li>
+<li>不要依赖人工记忆复现步骤。这条在Monkey 封装 落地时尤其容易被忽略。</li>
+<li>不要用截图替代结构化状态。这条在Monkey 封装 落地时尤其容易被忽略。</li>
+<li>不要把平台能力和测试结论混为一谈。这条在Monkey 封装 落地时尤其容易被忽略。</li>
+</ul>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Android%E7%A8%B3%E5%AE%9A%E6%80%A7/" rel="tag"># Android稳定性</a>
+              <a href="/tags/Android/" rel="tag"># Android</a>
+              <a href="/tags/%E7%A8%B3%E5%AE%9A%E6%80%A7%E6%B5%8B%E8%AF%95/" rel="tag"># 稳定性测试</a>
+              <a href="/tags/Monkey/" rel="tag"># Monkey</a>
+              <a href="/tags/%E5%BC%82%E5%B8%B8%E6%8D%95%E8%8E%B7/" rel="tag"># 异常捕获</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2026/02/09/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-20-Android%E7%A8%B3%E5%AE%9A%E6%80%A7%E6%B5%8B%E8%AF%95%E8%84%9A%E6%9C%AC%E5%A6%82%E4%BD%95%E7%BB%84%E7%BB%87%E4%BB%BB%E5%8A%A1%E8%AE%BE%E5%A4%87%E6%97%A5%E5%BF%97%E5%92%8C%E6%8A%A5%E5%91%8A/" rel="prev" title="Android稳定性-20-Android 稳定性测试脚本如何组织：任务、设备、日志和报告">
+                  <i class="fa fa-angle-left"></i> Android稳定性-20-Android 稳定性测试脚本如何组织：任务、设备、日志和报告
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2026/02/13/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-22-UIAutomator%E5%9C%A8%E7%B3%BB%E7%BB%9F%E7%A8%B3%E5%AE%9A%E6%80%A7%E4%B8%9A%E5%8A%A1%E9%81%8D%E5%8E%86%E4%B8%AD%E7%9A%84%E4%BD%BF%E7%94%A8%E8%BE%B9%E7%95%8C/" rel="next" title="Android稳定性-22-UI Automator 在系统稳定性业务遍历中的使用边界">
+                  Android稳定性-22-UI Automator 在系统稳定性业务遍历中的使用边界 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">1.1m</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">66:02</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

@@ -1,0 +1,1039 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="做 Android 系统稳定性测试时，最容易犯的错误，是把问题只看成一个表层现象。 比如：  应用闪退了，就只看应用日志 页面卡住了，就只怀疑 UI 自动化脚本不稳定 设备黑屏了，就只截图留证 系统重启了，就只说“机器不稳定” Monkey 跑出了 ANR，就只把 ANR traces 发给开发  这些动作不是没用，但如果测试同学对 Android 系统架构没有基本认知，很容易只停在“发现问题”和">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Android稳定性-02-Android 系统架构：从 App 到 Kernel 的调用链">
+<meta property="og:url" content="https://paynewinnt.github.io/2026/01/04/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-02-Android%E7%B3%BB%E7%BB%9F%E6%9E%B6%E6%9E%84%E4%BB%8EApp%E5%88%B0Kernel%E7%9A%84%E8%B0%83%E7%94%A8%E9%93%BE/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="做 Android 系统稳定性测试时，最容易犯的错误，是把问题只看成一个表层现象。 比如：  应用闪退了，就只看应用日志 页面卡住了，就只怀疑 UI 自动化脚本不稳定 设备黑屏了，就只截图留证 系统重启了，就只说“机器不稳定” Monkey 跑出了 ANR，就只把 ANR traces 发给开发  这些动作不是没用，但如果测试同学对 Android 系统架构没有基本认知，很容易只停在“发现问题”和">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-01-04T12:30:00.000Z">
+<meta property="article:modified_time" content="2026-01-04T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="Android稳定性">
+<meta property="article:tag" content="Android">
+<meta property="article:tag" content="稳定性测试">
+<meta property="article:tag" content="系统架构">
+<meta property="article:tag" content="Framework">
+<meta property="article:tag" content="HAL">
+<meta property="article:tag" content="Kernel">
+<meta property="article:tag" content="Binder">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2026/01/04/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-02-Android%E7%B3%BB%E7%BB%9F%E6%9E%B6%E6%9E%84%E4%BB%8EApp%E5%88%B0Kernel%E7%9A%84%E8%B0%83%E7%94%A8%E9%93%BE/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2026/01/04/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-02-Android%E7%B3%BB%E7%BB%9F%E6%9E%B6%E6%9E%84%E4%BB%8EApp%E5%88%B0Kernel%E7%9A%84%E8%B0%83%E7%94%A8%E9%93%BE/","path":"2026/01/04/Android稳定性-02-Android系统架构从App到Kernel的调用链/","title":"Android稳定性-02-Android 系统架构：从 App 到 Kernel 的调用链"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>Android稳定性-02-Android 系统架构：从 App 到 Kernel 的调用链 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E5%85%88%E5%BB%BA%E7%AB%8B%E4%B8%80%E5%BC%A0%E7%AE%80%E5%8C%96%E6%9E%B6%E6%9E%84%E5%9B%BE"><span class="nav-number">1.</span> <span class="nav-text">一、先建立一张简化架构图</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81App-%E5%B1%82%EF%BC%9A%E7%A8%B3%E5%AE%9A%E6%80%A7%E9%97%AE%E9%A2%98%E6%9C%80%E5%AE%B9%E6%98%93%E8%A2%AB%E7%9C%8B%E5%88%B0%E7%9A%84%E5%9C%B0%E6%96%B9"><span class="nav-number">2.</span> <span class="nav-text">二、App 层：稳定性问题最容易被看到的地方</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81Framework-%E5%B1%82%EF%BC%9AApp-%E8%B0%83%E7%B3%BB%E7%BB%9F%E8%83%BD%E5%8A%9B%E7%9A%84%E5%85%A5%E5%8F%A3"><span class="nav-number">3.</span> <span class="nav-text">三、Framework 层：App 调系统能力的入口</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81System-Server%EF%BC%9A%E7%B3%BB%E7%BB%9F%E7%A8%B3%E5%AE%9A%E6%80%A7%E7%9A%84%E6%A0%B8%E5%BF%83%E7%8E%B0%E5%9C%BA"><span class="nav-number">4.</span> <span class="nav-text">四、System Server：系统稳定性的核心现场</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81Native-Service%EF%BC%9A%E5%BE%88%E5%A4%9A%E7%B3%BB%E7%BB%9F%E8%83%BD%E5%8A%9B%E7%9C%9F%E6%AD%A3%E5%B9%B2%E6%B4%BB%E7%9A%84%E5%9C%B0%E6%96%B9"><span class="nav-number">5.</span> <span class="nav-text">五、Native Service：很多系统能力真正干活的地方</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81HAL-%E5%B1%82%EF%BC%9A%E7%B3%BB%E7%BB%9F%E5%92%8C%E7%A1%AC%E4%BB%B6%E4%B9%8B%E9%97%B4%E7%9A%84%E6%8A%BD%E8%B1%A1%E8%BE%B9%E7%95%8C"><span class="nav-number">6.</span> <span class="nav-text">六、HAL 层：系统和硬件之间的抽象边界</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81Kernel-Driver-%E5%B1%82%EF%BC%9A%E7%B3%BB%E7%BB%9F%E5%8D%A1%E6%AD%BB%E3%80%81%E9%87%8D%E5%90%AF%E5%92%8C%E8%B5%84%E6%BA%90%E9%97%AE%E9%A2%98%E7%9A%84%E5%BA%95%E5%BA%A7"><span class="nav-number">7.</span> <span class="nav-text">七、Kernel &#x2F; Driver 层：系统卡死、重启和资源问题的底座</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E7%94%A8%E4%B8%80%E4%B8%AA%E2%80%9C%E6%89%93%E5%BC%80%E7%9B%B8%E6%9C%BA%E9%BB%91%E5%B1%8F%E2%80%9D%E7%9A%84%E4%BE%8B%E5%AD%90%E4%B8%B2%E8%B5%B7%E6%9D%A5"><span class="nav-number">8.</span> <span class="nav-text">八、用一个“打开相机黑屏”的例子串起来</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-App-%E5%B1%82"><span class="nav-number">8.1.</span> <span class="nav-text">1. App 层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Framework-System-Server-%E5%B1%82"><span class="nav-number">8.2.</span> <span class="nav-text">2. Framework &#x2F; System Server 层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Native-Service-%E5%B1%82"><span class="nav-number">8.3.</span> <span class="nav-text">3. Native Service 层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-HAL-Driver-%E5%B1%82"><span class="nav-number">8.4.</span> <span class="nav-text">4. HAL &#x2F; Driver 层</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E7%A8%B3%E5%AE%9A%E6%80%A7%E6%B5%8B%E8%AF%95%E9%87%8C%E6%9B%B4%E5%AE%9E%E7%94%A8%E7%9A%84%E5%88%86%E5%B1%82%E5%88%A4%E6%96%AD%E6%B3%95"><span class="nav-number">9.</span> <span class="nav-text">九、稳定性测试里更实用的分层判断法</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%8F%AA%E5%BD%B1%E5%93%8D%E5%8D%95%E4%B8%AA-App"><span class="nav-number">9.1.</span> <span class="nav-text">1. 只影响单个 App</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%BD%B1%E5%93%8D%E5%A4%9A%E4%B8%AA-App"><span class="nav-number">9.2.</span> <span class="nav-text">2. 影响多个 App</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%BD%B1%E5%93%8D%E6%9F%90%E4%B8%80%E7%B1%BB%E7%A1%AC%E4%BB%B6%E8%83%BD%E5%8A%9B"><span class="nav-number">9.3.</span> <span class="nav-text">3. 影响某一类硬件能力</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%95%B4%E6%9C%BA%E5%8D%A1%E6%AD%BB%E3%80%81%E9%BB%91%E5%B1%8F%E3%80%81%E9%87%8D%E5%90%AF"><span class="nav-number">9.4.</span> <span class="nav-text">4. 整机卡死、黑屏、重启</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E4%B8%8D%E5%90%8C%E5%B1%82%E5%B8%B8%E8%A7%81%E6%97%A5%E5%BF%97%E5%92%8C%E5%91%BD%E4%BB%A4%E5%85%A5%E5%8F%A3"><span class="nav-number">10.</span> <span class="nav-text">十、不同层常见日志和命令入口</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E5%B8%B8%E8%A7%81%E8%AF%AF%E5%88%A4"><span class="nav-number">11.</span> <span class="nav-text">十一、常见误判</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E8%BF%99%E7%AF%87%E6%96%87%E7%AB%A0%E7%9C%9F%E6%AD%A3%E8%A6%81%E5%BB%BA%E7%AB%8B%E7%9A%84%E8%83%BD%E5%8A%9B"><span class="nav-number">12.</span> <span class="nav-text">十二、这篇文章真正要建立的能力</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%83%BD%E6%8A%8A%E7%8E%B0%E8%B1%A1%E6%94%BE%E5%9B%9E%E7%B3%BB%E7%BB%9F%E5%B1%82%E7%BA%A7%E9%87%8C"><span class="nav-number">12.1.</span> <span class="nav-text">1. 能把现象放回系统层级里</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%83%BD%E6%8C%89%E5%B1%82%E6%94%B6%E9%9B%86%E8%AF%81%E6%8D%AE"><span class="nav-number">12.2.</span> <span class="nav-text">2. 能按层收集证据</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%83%BD%E8%BE%93%E5%87%BA%E5%88%9D%E6%AD%A5%E5%BD%92%E5%9B%A0%EF%BC%8C%E8%80%8C%E4%B8%8D%E6%98%AF%E5%8F%AA%E8%BD%AC%E5%8F%91%E6%97%A5%E5%BF%97"><span class="nav-number">12.3.</span> <span class="nav-text">3. 能输出初步归因，而不是只转发日志</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81%E5%B0%8F%E7%BB%93"><span class="nav-number">13.</span> <span class="nav-text">十三、小结</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">298</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">27</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">513</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2026/01/04/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-02-Android%E7%B3%BB%E7%BB%9F%E6%9E%B6%E6%9E%84%E4%BB%8EApp%E5%88%B0Kernel%E7%9A%84%E8%B0%83%E7%94%A8%E9%93%BE/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="Android稳定性-02-Android 系统架构：从 App 到 Kernel 的调用链 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Android稳定性-02-Android 系统架构：从 App 到 Kernel 的调用链
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2026-01-04 20:30:00" itemprop="dateCreated datePublished" datetime="2026-01-04T20:30:00+08:00">2026-01-04</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/Android%E7%A8%B3%E5%AE%9A%E6%80%A7/" itemprop="url" rel="index"><span itemprop="name">Android稳定性</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>5k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>18 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>做 Android 系统稳定性测试时，最容易犯的错误，是把问题只看成一个表层现象。</p>
+<p>比如：</p>
+<ul>
+<li>应用闪退了，就只看应用日志</li>
+<li>页面卡住了，就只怀疑 UI 自动化脚本不稳定</li>
+<li>设备黑屏了，就只截图留证</li>
+<li>系统重启了，就只说“机器不稳定”</li>
+<li>Monkey 跑出了 ANR，就只把 ANR traces 发给开发</li>
+</ul>
+<p>这些动作不是没用，但如果测试同学对 Android 系统架构没有基本认知，很容易只停在“发现问题”和“转交日志”这一步。真正难的是继续往下判断：</p>
+<ul>
+<li>这是 App 自己的问题，还是 Framework 服务异常</li>
+<li>是主线程卡住，还是 Binder 调用链路卡住</li>
+<li>是 Window、Input、Display、SurfaceFlinger 这一层的问题，还是底层驱动问题</li>
+<li>是 Native Service 崩了，还是 HAL 返回异常</li>
+<li>是 system_server 卡死，还是 Kernel 触发了 panic</li>
+</ul>
+<p>所以 Android 稳定性测试不能只会跑 Monkey、抓 logcat、导 bugreport。至少要先把一条基本链路讲清楚：</p>
+<p><strong>一个 App 发起动作后，系统从 App 到 Framework、System Server、Native Service、HAL、Kernel、驱动大致是怎么协作的。</strong></p>
+<p>这篇文章就从稳定性测试视角，把这条调用链拆开。</p>
+<h2 id="一、先建立一张简化架构图"><a href="#一、先建立一张简化架构图" class="headerlink" title="一、先建立一张简化架构图"></a>一、先建立一张简化架构图</h2><p>Android 系统可以先粗略拆成下面几层：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line">App 层</span><br><span class="line">  |</span><br><span class="line">  | Java / Kotlin API</span><br><span class="line">  v</span><br><span class="line">Framework 层</span><br><span class="line">  |</span><br><span class="line">  | Binder IPC</span><br><span class="line">  v</span><br><span class="line">System Server / 系统服务</span><br><span class="line">  |</span><br><span class="line">  | Binder / Socket / Native 调用</span><br><span class="line">  v</span><br><span class="line">Native Service / 系统 Native 组件</span><br><span class="line">  |</span><br><span class="line">  | HIDL / AIDL HAL / JNI / ioctl / sysfs</span><br><span class="line">  v</span><br><span class="line">HAL 层</span><br><span class="line">  |</span><br><span class="line">  | 驱动接口</span><br><span class="line">  v</span><br><span class="line">Kernel / Driver 层</span><br><span class="line">  |</span><br><span class="line">  v</span><br><span class="line">硬件</span><br></pre></td></tr></table></figure>
+
+<p>这张图很简化，但对测试定位已经够用了。</p>
+<p>因为大多数稳定性问题，最后都能放回这几层里判断：</p>
+<ul>
+<li>App 层：业务代码、三方 SDK、主线程、资源使用、生命周期</li>
+<li>Framework 层：Android 对外暴露的系统能力和 Java API</li>
+<li>System Server：Activity、Window、Package、Power、Input、Display 等核心系统服务</li>
+<li>Native Service：SurfaceFlinger、AudioFlinger、media、netd、vold、servicemanager 等 Native 组件</li>
+<li>HAL 层：相机、音频、传感器、蓝牙、定位、显示等硬件抽象接口</li>
+<li>Kernel &#x2F; Driver 层：进程调度、内存、文件系统、网络、Binder 驱动、设备驱动</li>
+</ul>
+<p>稳定性测试看这张图，不是为了背架构，而是为了形成一个判断习惯：</p>
+<p><strong>看到现象后，先判断它最可能发生在哪一层，再决定优先看什么日志。</strong></p>
+<h2 id="二、App-层：稳定性问题最容易被看到的地方"><a href="#二、App-层：稳定性问题最容易被看到的地方" class="headerlink" title="二、App 层：稳定性问题最容易被看到的地方"></a>二、App 层：稳定性问题最容易被看到的地方</h2><p>App 层是测试最容易接触的一层。</p>
+<p>比如：</p>
+<ul>
+<li>点击某个页面后闪退</li>
+<li>某个按钮无响应</li>
+<li>页面加载很慢</li>
+<li>切后台再回来白屏</li>
+<li>Monkey 随机点出 Crash</li>
+<li>长时间运行后内存持续上涨</li>
+</ul>
+<p>这些现象都发生在 App 表面，但根因不一定都在 App。</p>
+<p>App 层最常见的问题包括：</p>
+<ul>
+<li>Java Crash</li>
+<li>Native Crash</li>
+<li>ANR</li>
+<li>主线程阻塞</li>
+<li>内存泄漏</li>
+<li>线程泄漏</li>
+<li>文件描述符泄漏</li>
+<li>生命周期处理错误</li>
+<li>权限或系统能力调用异常</li>
+<li>三方 SDK 异常</li>
+</ul>
+<p>如果只是普通 App 测试，看到 App 崩溃，通常先看 <code>logcat</code> 里的 <code>FATAL EXCEPTION</code>。但系统稳定性测试要多问一步：</p>
+<p><strong>这个 App 异常有没有触发系统服务异常，或者是不是由系统服务异常导致的？</strong></p>
+<p>比如相机应用打开失败，可能是 App 自己逻辑错，也可能是：</p>
+<ul>
+<li>CameraService 异常</li>
+<li>camera provider 异常</li>
+<li>camera HAL 异常</li>
+<li>驱动返回错误</li>
+<li>权限状态异常</li>
+<li>设备资源被占用</li>
+</ul>
+<p>所以 App 层日志是入口，但不能天然等于根因。</p>
+<p>常用观察命令：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">adb shell ps -A</span><br><span class="line">adb shell top</span><br><span class="line">adb shell dumpsys activity top</span><br><span class="line">adb shell dumpsys meminfo &lt;package&gt;</span><br><span class="line">adb logcat -b all -v threadtime</span><br></pre></td></tr></table></figure>
+
+<p>测试判断重点：</p>
+<ul>
+<li>目标进程是否还在</li>
+<li>是否出现 <code>FATAL EXCEPTION</code></li>
+<li>是否出现 <code>ANR in &lt;package&gt;</code></li>
+<li>主线程是否阻塞在 Binder、锁、I&#x2F;O、网络或渲染</li>
+<li>异常前后是否有系统服务报错</li>
+<li>是否只有单个 App 异常，还是多个 App 同时异常</li>
+</ul>
+<p>如果多个 App 同时出现卡顿、无响应或启动失败，通常就不应该只盯着某一个 App。</p>
+<h2 id="三、Framework-层：App-调系统能力的入口"><a href="#三、Framework-层：App-调系统能力的入口" class="headerlink" title="三、Framework 层：App 调系统能力的入口"></a>三、Framework 层：App 调系统能力的入口</h2><p>App 不会直接操作大多数硬件和系统资源。</p>
+<p>比如 App 想要：</p>
+<ul>
+<li>启动 Activity</li>
+<li>申请权限</li>
+<li>打开相机</li>
+<li>播放音频</li>
+<li>获取定位</li>
+<li>操作蓝牙</li>
+<li>访问剪贴板</li>
+<li>获取窗口焦点</li>
+<li>注册广播</li>
+<li>使用传感器</li>
+</ul>
+<p>它通常会先调用 Android Framework 提供的 API。</p>
+<p>Framework 层可以理解成 App 和系统服务之间的一层 Java 世界。它把底层复杂能力包装成开发者能调用的接口，同时也负责参数检查、权限校验、生命周期管理和跨进程通信封装。</p>
+<p>以启动页面为例，简化链路大致是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">App</span><br><span class="line">  |</span><br><span class="line">  | startActivity()</span><br><span class="line">  v</span><br><span class="line">Activity Framework API</span><br><span class="line">  |</span><br><span class="line">  | Binder</span><br><span class="line">  v</span><br><span class="line">ActivityTaskManagerService / ActivityManagerService</span><br><span class="line">  |</span><br><span class="line">  v</span><br><span class="line">进程启动、Activity 生命周期调度、窗口绘制协作</span><br></pre></td></tr></table></figure>
+
+<p>从稳定性测试角度看，Framework 层的价值在于：</p>
+<ul>
+<li>它是很多系统能力的统一入口</li>
+<li>它会留下大量可分析日志</li>
+<li>它和 system_server 里的系统服务高度相关</li>
+<li>它能帮助判断问题是 App 调用错误，还是系统服务处理异常</li>
+</ul>
+<p>比如 App 报权限异常，可能要看：</p>
+<ul>
+<li>App 是否真的声明了权限</li>
+<li>运行时权限是否授权</li>
+<li>PackageManager 状态是否正常</li>
+<li>AppOps 是否拦截</li>
+<li>设备策略或系统配置是否限制</li>
+</ul>
+<p>常用观察命令：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">adb shell dumpsys package &lt;package&gt;</span><br><span class="line">adb shell dumpsys activity</span><br><span class="line">adb shell dumpsys window</span><br><span class="line">adb shell dumpsys appops &lt;package&gt;</span><br><span class="line">adb shell dumpsys permission</span><br></pre></td></tr></table></figure>
+
+<p>测试判断重点：</p>
+<ul>
+<li>App 调用的系统能力是哪一类</li>
+<li>Framework 是否有明确异常日志</li>
+<li>权限、状态、生命周期是否符合预期</li>
+<li>是否涉及跨进程 Binder 调用</li>
+<li>是否进一步进入 system_server 的系统服务</li>
+</ul>
+<p>很多 Android 问题表面看是“某个功能打不开”，实际上是 Framework 调系统服务时失败了。</p>
+<h2 id="四、System-Server：系统稳定性的核心现场"><a href="#四、System-Server：系统稳定性的核心现场" class="headerlink" title="四、System Server：系统稳定性的核心现场"></a>四、System Server：系统稳定性的核心现场</h2><p><code>system_server</code> 是 Android 稳定性测试里必须重点关注的进程。</p>
+<p>它里面运行着大量核心系统服务，例如：</p>
+<ul>
+<li>ActivityManagerService</li>
+<li>ActivityTaskManagerService</li>
+<li>WindowManagerService</li>
+<li>PackageManagerService</li>
+<li>PowerManagerService</li>
+<li>InputManagerService</li>
+<li>DisplayManagerService</li>
+<li>AlarmManagerService</li>
+<li>BatteryService</li>
+<li>ConnectivityService</li>
+</ul>
+<p>这些服务直接影响应用启动、窗口显示、输入事件、电源状态、包管理、网络状态、后台调度等关键能力。</p>
+<p>所以很多严重稳定性问题，最后都会和 <code>system_server</code> 有关系。</p>
+<p>比如：</p>
+<ul>
+<li>App 启动很慢</li>
+<li>页面切换卡住</li>
+<li>输入无响应</li>
+<li>锁屏解锁异常</li>
+<li>黑屏</li>
+<li>系统弹窗不出现</li>
+<li>全局卡死</li>
+<li>Watchdog 重启</li>
+</ul>
+<p>这些问题都可能需要看 <code>system_server</code>。</p>
+<p>一条典型调用链可能是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">App 调用 Framework API</span><br><span class="line">  |</span><br><span class="line">  | Binder IPC</span><br><span class="line">  v</span><br><span class="line">system_server 中的系统服务</span><br><span class="line">  |</span><br><span class="line">  | 调用其他系统服务或 Native 组件</span><br><span class="line">  v</span><br><span class="line">返回结果给 App</span><br></pre></td></tr></table></figure>
+
+<p>这里最关键的是 Binder。</p>
+<p>App 和系统服务通常不在同一个进程里，跨进程通信主要依赖 Binder。如果 Binder 调用长时间不返回，App 主线程可能会卡住；如果 system_server 某个关键线程被锁住，可能影响一大片系统功能。</p>
+<p>稳定性测试里看到 ANR 时，不能只看 App 主线程最后停在哪一行，还要判断它是不是在等系统服务。</p>
+<p>例如 traces 里如果看到类似方向：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">main thread</span><br><span class="line">  waiting for Binder reply</span><br></pre></td></tr></table></figure>
+
+<p>就要继续追：</p>
+<ul>
+<li>它在等哪个系统服务</li>
+<li>system_server 对应线程在做什么</li>
+<li>是否有锁等待</li>
+<li>是否有 CPU 饥饿</li>
+<li>是否有 I&#x2F;O 阻塞</li>
+<li>是否出现 Watchdog 相关日志</li>
+</ul>
+<p>常用观察命令：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">adb shell ps -A | grep system_server</span><br><span class="line">adb shell dumpsys activity</span><br><span class="line">adb shell dumpsys window</span><br><span class="line">adb shell dumpsys input</span><br><span class="line">adb shell dumpsys power</span><br><span class="line">adb shell dumpsys display</span><br><span class="line">adb shell dumpsys SurfaceFlinger</span><br><span class="line">adb bugreport ./bugreport.zip</span><br></pre></td></tr></table></figure>
+
+<p>测试判断重点：</p>
+<ul>
+<li><code>system_server</code> 是否发生 crash</li>
+<li>是否出现 Watchdog</li>
+<li>是否有大量 Binder 阻塞</li>
+<li>Window、Input、Power、Display 状态是否异常</li>
+<li>问题是否影响多个 App 或整个系统</li>
+<li>是否伴随系统重启或卡死</li>
+</ul>
+<p>如果一个问题影响范围从单 App 扩大到系统级能力，<code>system_server</code> 通常是必须排查的一站。</p>
+<h2 id="五、Native-Service：很多系统能力真正干活的地方"><a href="#五、Native-Service：很多系统能力真正干活的地方" class="headerlink" title="五、Native Service：很多系统能力真正干活的地方"></a>五、Native Service：很多系统能力真正干活的地方</h2><p>Android 不是只有 Java Framework 和 system_server。</p>
+<p>很多核心能力实际由 Native Service 承担，例如：</p>
+<ul>
+<li><code>surfaceflinger</code>：合成和显示相关</li>
+<li><code>audioserver</code> &#x2F; <code>AudioFlinger</code>：音频相关</li>
+<li><code>cameraserver</code>：相机相关</li>
+<li><code>mediaextractor</code>、<code>mediacodec</code>、<code>mediaserver</code>：媒体相关</li>
+<li><code>netd</code>：网络管理相关</li>
+<li><code>vold</code>：存储卷管理相关</li>
+<li><code>servicemanager</code>：Binder 服务管理</li>
+<li><code>hwservicemanager</code>：HAL 服务管理</li>
+</ul>
+<p>这些 Native 组件一旦异常，表现可能非常“上层”：</p>
+<ul>
+<li>相机打不开</li>
+<li>视频播放黑屏</li>
+<li>音频无声</li>
+<li>系统界面卡顿</li>
+<li>屏幕不刷新</li>
+<li>网络状态异常</li>
+<li>外部存储不可用</li>
+</ul>
+<p>但根因并不一定在 App，也不一定在 Java Framework。</p>
+<p>以显示链路为例，简化后大致是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">App 绘制界面</span><br><span class="line">  |</span><br><span class="line">  v</span><br><span class="line">View / RenderThread</span><br><span class="line">  |</span><br><span class="line">  v</span><br><span class="line">BufferQueue</span><br><span class="line">  |</span><br><span class="line">  v</span><br><span class="line">SurfaceFlinger</span><br><span class="line">  |</span><br><span class="line">  v</span><br><span class="line">Display HAL / Kernel Driver</span><br><span class="line">  |</span><br><span class="line">  v</span><br><span class="line">屏幕显示</span><br></pre></td></tr></table></figure>
+
+<p>如果用户看到黑屏或画面不刷新，可能要看：</p>
+<ul>
+<li>App 是否还在绘制</li>
+<li>Window 是否可见</li>
+<li>Surface 是否创建成功</li>
+<li>SurfaceFlinger 是否正常合成</li>
+<li>Display 状态是否正常</li>
+<li>底层显示驱动是否异常</li>
+</ul>
+<p>常用观察命令：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">adb shell ps -A | grep -E <span class="string">&quot;surfaceflinger|audioserver|cameraserver|media|netd|vold&quot;</span></span><br><span class="line">adb shell dumpsys SurfaceFlinger</span><br><span class="line">adb shell dumpsys media.camera</span><br><span class="line">adb shell dumpsys audio</span><br><span class="line">adb shell dumpsys connectivity</span><br><span class="line">adb logcat -b all -v threadtime</span><br></pre></td></tr></table></figure>
+
+<p>测试判断重点：</p>
+<ul>
+<li>Native Service 是否 crash 或频繁重启</li>
+<li>是否出现 tombstone</li>
+<li>是否出现 service died、binder died、transaction failed</li>
+<li>是否只有某个硬件相关功能异常</li>
+<li>是否需要继续追到 HAL 或 Kernel</li>
+</ul>
+<p>Native Service 是系统稳定性测试里很容易被忽略的一层。很多黑屏、音视频、相机、网络、存储问题，如果只看 App 日志，会完全看不到关键现场。</p>
+<h2 id="六、HAL-层：系统和硬件之间的抽象边界"><a href="#六、HAL-层：系统和硬件之间的抽象边界" class="headerlink" title="六、HAL 层：系统和硬件之间的抽象边界"></a>六、HAL 层：系统和硬件之间的抽象边界</h2><p>HAL 是 Hardware Abstraction Layer，也就是硬件抽象层。</p>
+<p>它的价值是让 Android Framework 和系统服务不需要直接理解每一种硬件驱动细节，而是通过统一接口访问硬件能力。</p>
+<p>常见 HAL 包括：</p>
+<ul>
+<li>Camera HAL</li>
+<li>Audio HAL</li>
+<li>Sensors HAL</li>
+<li>Bluetooth HAL</li>
+<li>GPS &#x2F; GNSS HAL</li>
+<li>Wi-Fi 相关 HAL</li>
+<li>Graphics &#x2F; Composer HAL</li>
+<li>Power HAL</li>
+</ul>
+<p>从稳定性测试角度看，HAL 层问题通常有几个特点：</p>
+<ul>
+<li>现象很像 App 或 Framework 问题</li>
+<li>复现往往和具体硬件、版本、场景有关</li>
+<li>日志可能分散在 logcat、kernel log、vendor log 中</li>
+<li>测试同学通常不能直接修改，但要能判断方向</li>
+</ul>
+<p>比如相机黑屏，可能链路是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">Camera App</span><br><span class="line">  |</span><br><span class="line">  v</span><br><span class="line">Camera Framework</span><br><span class="line">  |</span><br><span class="line">  v</span><br><span class="line">CameraService</span><br><span class="line">  |</span><br><span class="line">  v</span><br><span class="line">Camera Provider / Camera HAL</span><br><span class="line">  |</span><br><span class="line">  v</span><br><span class="line">Camera Driver</span><br><span class="line">  |</span><br><span class="line">  v</span><br><span class="line">Camera Sensor</span><br></pre></td></tr></table></figure>
+
+<p>如果 CameraService 日志显示调用 HAL 超时，或者 provider 进程异常退出，就不能简单归因给 App。</p>
+<p>同理，音频、蓝牙、定位、传感器这类问题也经常需要判断是否进入 HAL 层。</p>
+<p>常用观察方向：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">adb shell lshal</span><br><span class="line">adb shell dumpsys media.camera</span><br><span class="line">adb shell dumpsys audio</span><br><span class="line">adb shell dumpsys sensorservice</span><br><span class="line">adb shell dumpsys location</span><br><span class="line">adb logcat -b all -v threadtime</span><br></pre></td></tr></table></figure>
+
+<p>测试判断重点：</p>
+<ul>
+<li>是否只有特定硬件能力异常</li>
+<li>是否涉及 vendor 进程或 HAL service</li>
+<li>是否有调用超时、返回错误码、服务死亡</li>
+<li>是否和特定设备、硬件批次、系统版本相关</li>
+<li>是否需要提供更完整的 bugreport、tombstone、kernel log 给底层开发</li>
+</ul>
+<p>测试不一定要能深入 HAL 源码，但至少要能识别：</p>
+<p><strong>这个问题已经不是普通 App 层问题，需要拉系统或驱动侧一起看。</strong></p>
+<h2 id="七、Kernel-Driver-层：系统卡死、重启和资源问题的底座"><a href="#七、Kernel-Driver-层：系统卡死、重启和资源问题的底座" class="headerlink" title="七、Kernel &#x2F; Driver 层：系统卡死、重启和资源问题的底座"></a>七、Kernel &#x2F; Driver 层：系统卡死、重启和资源问题的底座</h2><p>Kernel &#x2F; Driver 层是 Android 系统运行的底座。</p>
+<p>它负责：</p>
+<ul>
+<li>进程和线程调度</li>
+<li>内存管理</li>
+<li>文件系统</li>
+<li>网络协议栈</li>
+<li>Binder 驱动</li>
+<li>电源管理</li>
+<li>设备驱动</li>
+<li>安全机制</li>
+</ul>
+<p>很多严重稳定性问题，最后都要看这一层。</p>
+<p>典型现象包括：</p>
+<ul>
+<li>Kernel Panic</li>
+<li>随机重启</li>
+<li>设备完全无响应</li>
+<li>系统级卡死</li>
+<li>I&#x2F;O 长时间阻塞</li>
+<li>内存耗尽导致 LMK &#x2F; OOM</li>
+<li>驱动异常导致某个硬件不可用</li>
+<li>温升降频导致整体响应变慢</li>
+</ul>
+<p>比如设备突然重启，不能只看重启后的 logcat。因为重启后，很多现场已经丢了。需要优先确认：</p>
+<ul>
+<li>reboot reason 是什么</li>
+<li>pstore &#x2F; console-ramoops 是否存在</li>
+<li>last_kmsg 是否保留</li>
+<li>是否有 kernel panic</li>
+<li>是否 Watchdog 触发</li>
+<li>是否电源、温度或硬件异常</li>
+</ul>
+<p>常用观察命令：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">adb shell <span class="built_in">cat</span> /proc/meminfo</span><br><span class="line">adb shell <span class="built_in">cat</span> /proc/uptime</span><br><span class="line">adb shell dmesg</span><br><span class="line">adb shell <span class="built_in">ls</span> /sys/fs/pstore</span><br><span class="line">adb shell <span class="built_in">cat</span> /sys/fs/pstore/console-ramoops*</span><br><span class="line">adb shell getprop ro.boot.bootreason</span><br><span class="line">adb shell getprop sys.boot.reason</span><br></pre></td></tr></table></figure>
+
+<p>不同设备权限不一样，有些命令在 user 版本上可能无法直接执行，这时就更依赖 bugreport、厂商日志工具或测试版本权限。</p>
+<p>测试判断重点：</p>
+<ul>
+<li>是否发生重启、panic、Watchdog 或低内存杀进程</li>
+<li>是否有 pstore &#x2F; last_kmsg 证据</li>
+<li>是否有明显驱动报错</li>
+<li>是否和高负载、温升、I&#x2F;O、弱网、频繁插拔相关</li>
+<li>是否只有特定硬件版本或批次复现</li>
+</ul>
+<p>Kernel 层问题通常不是测试同学独立闭环，但测试需要把证据收集完整。否则底层开发拿不到现场，只能要求复现。</p>
+<h2 id="八、用一个“打开相机黑屏”的例子串起来"><a href="#八、用一个“打开相机黑屏”的例子串起来" class="headerlink" title="八、用一个“打开相机黑屏”的例子串起来"></a>八、用一个“打开相机黑屏”的例子串起来</h2><p>为了让这条链路更具体，可以用“打开相机黑屏”做例子。</p>
+<p>用户现象：</p>
+<ul>
+<li>点击相机图标后进入相机页面</li>
+<li>页面黑屏</li>
+<li>没有预览画面</li>
+<li>返回桌面后再打开偶现恢复</li>
+</ul>
+<p>如果只从 App 层看，可能会记录为：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">相机 App 打开后黑屏</span><br></pre></td></tr></table></figure>
+
+<p>但从系统链路看，至少要拆成几层：</p>
+<h3 id="1-App-层"><a href="#1-App-层" class="headerlink" title="1. App 层"></a>1. App 层</h3><p>先确认：</p>
+<ul>
+<li>相机 App 是否 crash</li>
+<li>页面 Activity 是否正常启动</li>
+<li>是否有权限异常</li>
+<li>是否有预览初始化失败日志</li>
+<li>App 是否阻塞在主线程</li>
+</ul>
+<p>常看：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">adb logcat -b all -v threadtime</span><br><span class="line">adb shell dumpsys activity top</span><br><span class="line">adb shell dumpsys package &lt;camera_package&gt;</span><br></pre></td></tr></table></figure>
+
+<h3 id="2-Framework-System-Server-层"><a href="#2-Framework-System-Server-层" class="headerlink" title="2. Framework &#x2F; System Server 层"></a>2. Framework &#x2F; System Server 层</h3><p>继续确认：</p>
+<ul>
+<li>Activity 是否处于 resumed</li>
+<li>Window 是否可见</li>
+<li>屏幕是否处于 on 状态</li>
+<li>是否有系统权限或 AppOps 拦截</li>
+<li>是否存在系统服务超时</li>
+</ul>
+<p>常看：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">adb shell dumpsys activity</span><br><span class="line">adb shell dumpsys window</span><br><span class="line">adb shell dumpsys power</span><br><span class="line">adb shell dumpsys appops &lt;camera_package&gt;</span><br></pre></td></tr></table></figure>
+
+<h3 id="3-Native-Service-层"><a href="#3-Native-Service-层" class="headerlink" title="3. Native Service 层"></a>3. Native Service 层</h3><p>再确认：</p>
+<ul>
+<li>CameraService 是否正常</li>
+<li>SurfaceFlinger 是否有对应 layer</li>
+<li>是否有 native crash 或 tombstone</li>
+<li>是否出现 service died</li>
+</ul>
+<p>常看：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">adb shell dumpsys media.camera</span><br><span class="line">adb shell dumpsys SurfaceFlinger</span><br><span class="line">adb shell <span class="built_in">ls</span> /data/tombstones</span><br></pre></td></tr></table></figure>
+
+<h3 id="4-HAL-Driver-层"><a href="#4-HAL-Driver-层" class="headerlink" title="4. HAL &#x2F; Driver 层"></a>4. HAL &#x2F; Driver 层</h3><p>最后确认：</p>
+<ul>
+<li>Camera HAL 是否返回错误</li>
+<li>provider 是否异常</li>
+<li>kernel log 是否有 camera driver 报错</li>
+<li>是否只在某一批设备上复现</li>
+</ul>
+<p>常看：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">adb shell lshal</span><br><span class="line">adb shell dmesg</span><br><span class="line">adb bugreport ./bugreport.zip</span><br></pre></td></tr></table></figure>
+
+<p>这样分析后，提单就不只是“相机黑屏”，而可以变成：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">现象：相机应用打开后黑屏，Activity 已 resumed，Window 可见，App 无 Java Crash。</span><br><span class="line">证据：dumpsys media.camera 显示 camera provider 调用异常；logcat 中出现 HAL 返回错误；SurfaceFlinger 中预览 layer 未正常更新。</span><br><span class="line">初步方向：疑似 Camera HAL / provider 异常，需要相机框架和底层侧联合分析。</span><br><span class="line">附件：logcat、bugreport、dumpsys media.camera、SurfaceFlinger dump、复现视频。</span><br></pre></td></tr></table></figure>
+
+<p>这种描述对研发的价值，明显高于一句“相机黑屏，请分析”。</p>
+<h2 id="九、稳定性测试里更实用的分层判断法"><a href="#九、稳定性测试里更实用的分层判断法" class="headerlink" title="九、稳定性测试里更实用的分层判断法"></a>九、稳定性测试里更实用的分层判断法</h2><p>实际排障时，不需要每次都从 App 一层层查到 Kernel。更实用的方法是根据现象先判断影响范围。</p>
+<h3 id="1-只影响单个-App"><a href="#1-只影响单个-App" class="headerlink" title="1. 只影响单个 App"></a>1. 只影响单个 App</h3><p>优先看：</p>
+<ul>
+<li>App log</li>
+<li>Java Crash</li>
+<li>Native Crash</li>
+<li>ANR traces</li>
+<li>App 权限</li>
+<li>App 资源使用</li>
+</ul>
+<p>但要留意系统服务是否有伴随异常。</p>
+<h3 id="2-影响多个-App"><a href="#2-影响多个-App" class="headerlink" title="2. 影响多个 App"></a>2. 影响多个 App</h3><p>优先看：</p>
+<ul>
+<li>system_server</li>
+<li>Activity &#x2F; Window &#x2F; Input &#x2F; Power 状态</li>
+<li>Binder 阻塞</li>
+<li>CPU &#x2F; 内存 &#x2F; I&#x2F;O 压力</li>
+<li>bugreport</li>
+</ul>
+<p>多个 App 同时异常，通常不适合只从单个 App 归因。</p>
+<h3 id="3-影响某一类硬件能力"><a href="#3-影响某一类硬件能力" class="headerlink" title="3. 影响某一类硬件能力"></a>3. 影响某一类硬件能力</h3><p>比如只有相机、音频、蓝牙、定位、传感器异常。</p>
+<p>优先看：</p>
+<ul>
+<li>对应系统服务</li>
+<li>对应 Native Service</li>
+<li>HAL service</li>
+<li>vendor log</li>
+<li>kernel log</li>
+</ul>
+<p>这类问题经常需要系统侧或驱动侧介入。</p>
+<h3 id="4-整机卡死、黑屏、重启"><a href="#4-整机卡死、黑屏、重启" class="headerlink" title="4. 整机卡死、黑屏、重启"></a>4. 整机卡死、黑屏、重启</h3><p>优先看：</p>
+<ul>
+<li>bugreport</li>
+<li>pstore &#x2F; last_kmsg</li>
+<li>Watchdog</li>
+<li>Kernel Panic</li>
+<li>Power &#x2F; Display &#x2F; SurfaceFlinger</li>
+<li>温度、电量、重启原因</li>
+</ul>
+<p>这类问题要优先保现场，不要只重启设备继续跑。</p>
+<h2 id="十、不同层常见日志和命令入口"><a href="#十、不同层常见日志和命令入口" class="headerlink" title="十、不同层常见日志和命令入口"></a>十、不同层常见日志和命令入口</h2><p>可以先记一张简表。</p>
+<table>
+<thead>
+<tr>
+<th>层级</th>
+<th>常见对象</th>
+<th>常用证据</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>App</td>
+<td>业务进程、主线程、三方 SDK</td>
+<td>logcat、ANR traces、meminfo、截图录屏</td>
+</tr>
+<tr>
+<td>Framework</td>
+<td>Android API、权限、生命周期</td>
+<td>dumpsys package、activity、appops、permission</td>
+</tr>
+<tr>
+<td>System Server</td>
+<td>AMS、WMS、PMS、Power、Input、Display</td>
+<td>bugreport、dumpsys activity&#x2F;window&#x2F;power&#x2F;input&#x2F;display</td>
+</tr>
+<tr>
+<td>Native Service</td>
+<td>SurfaceFlinger、CameraService、AudioFlinger、netd、vold</td>
+<td>logcat、tombstone、dumpsys SurfaceFlinger&#x2F;media.camera&#x2F;audio</td>
+</tr>
+<tr>
+<td>HAL</td>
+<td>camera、audio、sensors、bluetooth、gnss、composer</td>
+<td>lshal、vendor log、service log、bugreport</td>
+</tr>
+<tr>
+<td>Kernel &#x2F; Driver</td>
+<td>调度、内存、文件系统、Binder、设备驱动</td>
+<td>dmesg、pstore、last_kmsg、vmcore、reboot reason</td>
+</tr>
+</tbody></table>
+<p>这张表不是为了替代分析，而是帮助测试在第一时间知道：</p>
+<p><strong>我现在应该先抓哪些证据。</strong></p>
+<h2 id="十一、常见误判"><a href="#十一、常见误判" class="headerlink" title="十一、常见误判"></a>十一、常见误判</h2><p>理解 Android 分层时，最常见的误判有四类。</p>
+<p>第一，把问题出现的位置当成根因位置。比如黑屏出现在相机 App 页面，不代表根因一定在相机 App；也可能是 CameraService、Camera HAL、SurfaceFlinger 或显示驱动异常。</p>
+<p>第二，把 App Crash 和系统稳定性完全切开。单个 App Crash 看起来是应用问题，但如果多个 App 都在同一时间出现 Binder timeout、资源申请失败或系统服务异常，就要继续看 system_server 和底层资源状态。</p>
+<p>第三，只看 Java 世界，忽略 Native Service 和 HAL。音频、相机、显示、媒体、蓝牙、定位这类问题，经常需要把 logcat、tombstone、dumpsys、vendor log、kernel log 放在一起看。</p>
+<p>第四，重启后继续跑测试但不保现场。重启、卡死、Watchdog、Kernel Panic 这类问题的关键证据可能在 pstore、last_kmsg、dropbox 或 bugreport 里，错过第一次现场，后面即使复现路径相同，也不一定还能拿到同样的证据。</p>
+<p>所以分层不是为了把问题复杂化，而是为了减少错误归因。</p>
+<h2 id="十二、这篇文章真正要建立的能力"><a href="#十二、这篇文章真正要建立的能力" class="headerlink" title="十二、这篇文章真正要建立的能力"></a>十二、这篇文章真正要建立的能力</h2><p>Android 系统架构很复杂，但测试开发不需要一开始就把每个模块源码都读完。对稳定性测试来说，更重要的是先建立三种能力。</p>
+<h3 id="1-能把现象放回系统层级里"><a href="#1-能把现象放回系统层级里" class="headerlink" title="1. 能把现象放回系统层级里"></a>1. 能把现象放回系统层级里</h3><p>看到 Crash、ANR、黑屏、卡死、重启时，不只说现象，而是先判断：</p>
+<ul>
+<li>单 App 问题</li>
+<li>Framework &#x2F; system_server 问题</li>
+<li>Native Service 问题</li>
+<li>HAL &#x2F; Driver 问题</li>
+<li>Kernel 层问题</li>
+</ul>
+<p>判断不一定一次准确，但要有方向。</p>
+<h3 id="2-能按层收集证据"><a href="#2-能按层收集证据" class="headerlink" title="2. 能按层收集证据"></a>2. 能按层收集证据</h3><p>不同层的问题需要不同证据。</p>
+<p>只给一个截图，无法分析系统服务异常。只给一段 App log，也无法分析 kernel panic。测试要能根据问题类型补齐：</p>
+<ul>
+<li>logcat</li>
+<li>bugreport</li>
+<li>dumpsys</li>
+<li>tombstone</li>
+<li>traces</li>
+<li>pstore</li>
+<li>Perfetto &#x2F; systrace</li>
+<li>复现视频</li>
+</ul>
+<h3 id="3-能输出初步归因，而不是只转发日志"><a href="#3-能输出初步归因，而不是只转发日志" class="headerlink" title="3. 能输出初步归因，而不是只转发日志"></a>3. 能输出初步归因，而不是只转发日志</h3><p>好的稳定性问题单不一定要求测试直接给最终根因，但至少要能说明：</p>
+<ul>
+<li>影响范围</li>
+<li>发生时间</li>
+<li>复现路径</li>
+<li>关键证据</li>
+<li>初步怀疑层级</li>
+<li>建议责任方向</li>
+<li>还缺哪些日志</li>
+</ul>
+<p>这就是系统稳定性测试和普通功能测试最大的区别之一。</p>
+<h2 id="十三、小结"><a href="#十三、小结" class="headerlink" title="十三、小结"></a>十三、小结</h2><p>Android 从 App 到 Kernel 的调用链，可以先按六层理解：</p>
+<ol>
+<li>App 层负责业务逻辑和用户交互。</li>
+<li>Framework 层提供系统 API 和调用封装。</li>
+<li>System Server 承载大量核心系统服务，是系统稳定性的关键现场。</li>
+<li>Native Service 承担显示、音频、相机、媒体、网络、存储等底层系统能力。</li>
+<li>HAL 层连接系统服务和硬件能力。</li>
+<li>Kernel &#x2F; Driver 层负责调度、内存、I&#x2F;O、网络、电源、驱动和硬件交互。</li>
+</ol>
+<p>做稳定性测试时，不能只看问题发生在哪个界面，而要继续追问：</p>
+<p><strong>这个现象背后的调用链走到了哪一层，哪一层最可能先出问题，哪一层还缺证据。</strong></p>
+<p>只要这个意识建立起来，后面再学 <code>logcat</code>、<code>bugreport</code>、<code>tombstone</code>、<code>ANR traces</code>、<code>dumpsys</code>、<code>pstore</code>、<code>Perfetto</code>，就不会变成零散命令，而会变成一套有方向的问题定位方法。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Android%E7%A8%B3%E5%AE%9A%E6%80%A7/" rel="tag"># Android稳定性</a>
+              <a href="/tags/Android/" rel="tag"># Android</a>
+              <a href="/tags/%E7%A8%B3%E5%AE%9A%E6%80%A7%E6%B5%8B%E8%AF%95/" rel="tag"># 稳定性测试</a>
+              <a href="/tags/%E7%B3%BB%E7%BB%9F%E6%9E%B6%E6%9E%84/" rel="tag"># 系统架构</a>
+              <a href="/tags/Framework/" rel="tag"># Framework</a>
+              <a href="/tags/HAL/" rel="tag"># HAL</a>
+              <a href="/tags/Kernel/" rel="tag"># Kernel</a>
+              <a href="/tags/Binder/" rel="tag"># Binder</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2026/01/02/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-01-Android%E7%B3%BB%E7%BB%9F%E7%A8%B3%E5%AE%9A%E6%80%A7%E6%B5%8B%E8%AF%95%E5%88%B0%E5%BA%95%E5%9C%A8%E6%B5%8B%E4%BB%80%E4%B9%88/" rel="prev" title="Android稳定性-01-Android 系统稳定性测试到底在测什么">
+                  <i class="fa fa-angle-left"></i> Android稳定性-01-Android 系统稳定性测试到底在测什么
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2026/01/06/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-03-Android%E6%A0%B8%E5%BF%83%E7%B3%BB%E7%BB%9F%E8%BF%9B%E7%A8%8Bsystemserverzygotesurfaceflinger%E4%B8%8Einit/" rel="next" title="Android稳定性-03-Android 核心系统进程：system_server、zygote、surfaceflinger 与 init">
+                  Android稳定性-03-Android 核心系统进程：system_server、zygote、surfaceflinger 与 init <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">1.1m</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">66:02</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

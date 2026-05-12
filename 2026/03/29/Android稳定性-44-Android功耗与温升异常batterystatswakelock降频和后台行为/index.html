@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="功耗和温升问题在 Android 稳定性测试里很特殊。它们不一定马上表现为 Crash、ANR 或重启，却会持续侵蚀用户体验：待机一夜掉电过快，视频会议二十分钟后机身烫手，导航过程中亮度下降，游戏或相机预览越来越卡，后台放着不动也频繁唤醒。很多版本评审只盯崩溃率和长稳通过率，功耗温升如果没有被写成清楚的风险，就容易被当成“体验优化”延后处理。 这类问题也很容易争议。测试说发热，研发会问环境温度、亮">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Android稳定性-44-Android 功耗与温升异常：batterystats、wakelock、降频和后台行为">
+<meta property="og:url" content="https://paynewinnt.github.io/2026/03/29/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-44-Android%E5%8A%9F%E8%80%97%E4%B8%8E%E6%B8%A9%E5%8D%87%E5%BC%82%E5%B8%B8batterystatswakelock%E9%99%8D%E9%A2%91%E5%92%8C%E5%90%8E%E5%8F%B0%E8%A1%8C%E4%B8%BA/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="功耗和温升问题在 Android 稳定性测试里很特殊。它们不一定马上表现为 Crash、ANR 或重启，却会持续侵蚀用户体验：待机一夜掉电过快，视频会议二十分钟后机身烫手，导航过程中亮度下降，游戏或相机预览越来越卡，后台放着不动也频繁唤醒。很多版本评审只盯崩溃率和长稳通过率，功耗温升如果没有被写成清楚的风险，就容易被当成“体验优化”延后处理。 这类问题也很容易争议。测试说发热，研发会问环境温度、亮">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-03-29T12:30:00.000Z">
+<meta property="article:modified_time" content="2026-03-29T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="Android稳定性">
+<meta property="article:tag" content="Android">
+<meta property="article:tag" content="稳定性测试">
+<meta property="article:tag" content="功耗">
+<meta property="article:tag" content="温升">
+<meta property="article:tag" content="batterystats">
+<meta property="article:tag" content="wakelock">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2026/03/29/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-44-Android%E5%8A%9F%E8%80%97%E4%B8%8E%E6%B8%A9%E5%8D%87%E5%BC%82%E5%B8%B8batterystatswakelock%E9%99%8D%E9%A2%91%E5%92%8C%E5%90%8E%E5%8F%B0%E8%A1%8C%E4%B8%BA/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2026/03/29/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-44-Android%E5%8A%9F%E8%80%97%E4%B8%8E%E6%B8%A9%E5%8D%87%E5%BC%82%E5%B8%B8batterystatswakelock%E9%99%8D%E9%A2%91%E5%92%8C%E5%90%8E%E5%8F%B0%E8%A1%8C%E4%B8%BA/","path":"2026/03/29/Android稳定性-44-Android功耗与温升异常batterystatswakelock降频和后台行为/","title":"Android稳定性-44-Android 功耗与温升异常：batterystats、wakelock、降频和后台行为"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>Android稳定性-44-Android 功耗与温升异常：batterystats、wakelock、降频和后台行为 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E5%8A%9F%E8%80%97%E6%B8%A9%E5%8D%87%E8%A6%81%E5%85%88%E7%BB%9F%E4%B8%80%E6%B5%8B%E8%AF%95%E5%8F%A3%E5%BE%84"><span class="nav-number">1.</span> <span class="nav-text">一、功耗温升要先统一测试口径</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E5%8A%9F%E8%80%97%E3%80%81%E6%B8%A9%E5%8D%87%E3%80%81%E6%80%A7%E8%83%BD%E6%98%AF%E8%BF%9E%E5%9C%A8%E4%B8%80%E8%B5%B7%E7%9A%84"><span class="nav-number">2.</span> <span class="nav-text">二、功耗、温升、性能是连在一起的</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E5%9F%BA%E7%A1%80%E5%91%BD%E4%BB%A4%EF%BC%9Abatterystats%E3%80%81thermal%E3%80%81%E9%A2%91%E7%8E%87%E5%92%8C%E5%94%A4%E9%86%92"><span class="nav-number">3.</span> <span class="nav-text">三、基础命令：batterystats、thermal、频率和唤醒</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E6%95%B0%E6%8D%AE%E8%A1%A8%EF%BC%9A%E6%8A%8A%E6%9B%B2%E7%BA%BF%E5%8F%98%E6%88%90%E7%BB%93%E8%AE%BA"><span class="nav-number">4.</span> <span class="nav-text">四、数据表：把曲线变成结论</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81batterystats-%E8%AF%A5%E6%80%8E%E4%B9%88%E7%9C%8B"><span class="nav-number">5.</span> <span class="nav-text">五、batterystats 该怎么看</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E5%AE%8C%E6%95%B4%E6%A1%88%E4%BE%8B%EF%BC%9A%E5%90%8E%E5%8F%B0%E5%90%8C%E6%AD%A5%E6%8C%81%E9%94%81%E5%AF%BC%E8%87%B4%E5%BE%85%E6%9C%BA%E6%8E%89%E7%94%B5"><span class="nav-number">6.</span> <span class="nav-text">六、完整案例：后台同步持锁导致待机掉电</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E6%B8%A9%E5%8D%87%E5%92%8C%E9%99%8D%E9%A2%91%E8%A6%81%E4%B8%80%E8%B5%B7%E8%AE%B0%E5%BD%95"><span class="nav-number">7.</span> <span class="nav-text">七、温升和降频要一起记录</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E5%90%8E%E5%8F%B0%E8%A1%8C%E4%B8%BA%E5%AE%A1%E8%AE%A1"><span class="nav-number">8.</span> <span class="nav-text">八、后台行为审计</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E5%B8%B8%E8%A7%81%E8%AF%AF%E5%88%A4"><span class="nav-number">9.</span> <span class="nav-text">九、常见误判</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E6%A3%80%E6%9F%A5%E6%B8%85%E5%8D%95"><span class="nav-number">10.</span> <span class="nav-text">十、检查清单</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E8%BE%93%E5%87%BA%E7%89%A9%E6%A8%A1%E6%9D%BF"><span class="nav-number">11.</span> <span class="nav-text">十一、输出物模板</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E5%B0%8F%E7%BB%93"><span class="nav-number">12.</span> <span class="nav-text">十二、小结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81%E5%A4%8D%E6%B5%8B%E8%A6%81%E8%A6%86%E7%9B%96%E5%86%B7%E6%9C%BA%E3%80%81%E7%83%AD%E6%9C%BA%E5%92%8C%E9%95%BF%E6%97%B6%E9%97%B4%E5%90%8E%E5%8F%B0"><span class="nav-number">13.</span> <span class="nav-text">十三、复测要覆盖冷机、热机和长时间后台</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81%E5%92%8C%E5%8F%91%E5%B8%83%E7%AD%96%E7%95%A5%E7%9A%84%E5%85%B3%E7%B3%BB"><span class="nav-number">14.</span> <span class="nav-text">十四、和发布策略的关系</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%94%E3%80%81%E4%B8%93%E9%A1%B9%E5%B9%B3%E5%8F%B0%E5%8F%AF%E4%BB%A5%E6%B2%89%E6%B7%80%E5%93%AA%E4%BA%9B%E8%83%BD%E5%8A%9B"><span class="nav-number">15.</span> <span class="nav-text">十五、专项平台可以沉淀哪些能力</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AD%E3%80%81%E4%BA%AE%E5%B1%8F%E4%B8%9A%E5%8A%A1%E5%9C%BA%E6%99%AF%E7%9A%84%E4%B8%93%E9%A1%B9%E8%AE%BE%E8%AE%A1"><span class="nav-number">16.</span> <span class="nav-text">十六、亮屏业务场景的专项设计</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%83%E3%80%81%E5%BC%B1%E7%BD%91%E5%92%8C%E4%BD%8E%E7%94%B5%E9%87%8F%E4%BC%9A%E6%94%BE%E5%A4%A7%E5%8A%9F%E8%80%97%E9%97%AE%E9%A2%98"><span class="nav-number">17.</span> <span class="nav-text">十七、弱网和低电量会放大功耗问题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AB%E3%80%81%E9%97%AE%E9%A2%98%E5%85%B3%E9%97%AD%E6%A0%87%E5%87%86"><span class="nav-number">18.</span> <span class="nav-text">十八、问题关闭标准</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">298</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">27</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">513</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2026/03/29/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-44-Android%E5%8A%9F%E8%80%97%E4%B8%8E%E6%B8%A9%E5%8D%87%E5%BC%82%E5%B8%B8batterystatswakelock%E9%99%8D%E9%A2%91%E5%92%8C%E5%90%8E%E5%8F%B0%E8%A1%8C%E4%B8%BA/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="Android稳定性-44-Android 功耗与温升异常：batterystats、wakelock、降频和后台行为 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Android稳定性-44-Android 功耗与温升异常：batterystats、wakelock、降频和后台行为
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2026-03-29 20:30:00" itemprop="dateCreated datePublished" datetime="2026-03-29T20:30:00+08:00">2026-03-29</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/Android%E7%A8%B3%E5%AE%9A%E6%80%A7/" itemprop="url" rel="index"><span itemprop="name">Android稳定性</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>7k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>25 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>功耗和温升问题在 Android 稳定性测试里很特殊。它们不一定马上表现为 Crash、ANR 或重启，却会持续侵蚀用户体验：待机一夜掉电过快，视频会议二十分钟后机身烫手，导航过程中亮度下降，游戏或相机预览越来越卡，后台放着不动也频繁唤醒。很多版本评审只盯崩溃率和长稳通过率，功耗温升如果没有被写成清楚的风险，就容易被当成“体验优化”延后处理。</p>
+<p>这类问题也很容易争议。测试说发热，研发会问环境温度、亮度、网络、信号、后台账号、SIM 卡、是否插电、是否刚刷机、是否同步数据；测试说掉电快，研发会问电池健康、充电截止电量、静置时长、设备差异、统计口径。争议本身不是坏事，它说明功耗温升必须比普通功能缺陷更重视实验条件和数据口径。</p>
+<p>本文从稳定性测试角度梳理功耗与温升异常：如何建立基线，如何看 batterystats 和 wakelock，如何把温度、频率、掉电、后台行为放在同一条时间线上，如何处理降频带来的连锁卡顿。文章包含完整案例、命令、表格、误判、检查清单和输出物模板，重点是让问题能进入版本决策，而不是停留在一句“设备比较热”。</p>
+<h2 id="一、功耗温升要先统一测试口径"><a href="#一、功耗温升要先统一测试口径" class="headerlink" title="一、功耗温升要先统一测试口径"></a>一、功耗温升要先统一测试口径</h2><p>功耗测试最怕条件不一致。同一个版本，在 Wi-Fi 强信号和弱蜂窝信号下，待机掉电可能完全不同；同一台设备，刚刷机后的媒体扫描、云同步、应用恢复会让后台活动明显增加；同一个视频场景，屏幕亮度、音量、分辨率、环境温度、保护壳都会改变温升曲线。如果这些条件没有写清楚，后面的数字很难被复核。</p>
+<p>稳定性团队至少要固定五类条件。第一是设备状态：型号、内存存储配置、电池健康、是否插 SIM、是否登录账号、是否恢复出厂。第二是环境：室温、是否风冷、设备摆放方式、屏幕亮度、音量、网络类型和信号强度。第三是版本：系统版本、基带版本、内核版本、应用版本、是否打开调试日志。第四是场景：亮屏、灭屏、视频、相机、导航、通话、游戏、长稳遍历。第五是采集方式：电量读数来源、温度来源、采样间隔、起止时间。</p>
+<p>只有口径固定，数据才有比较意义。比如“待机 8 小时掉电 12%”本身没有结论，只有和同设备基线、竞品或前一版本对比后才有意义。如果前一版本同条件掉电 4%，新版本掉电 12%，并且 batterystats 指向某个后台服务持有 wakelock，那么它就是版本风险；如果两台设备电池健康差异很大，环境温度差 8 摄氏度，就不能直接下结论。</p>
+<p>功耗温升专项最好在报告开头放一张条件表，而不是把条件散落在正文里。这样评审时所有人先对实验边界达成一致，再讨论结果是否异常。</p>
+<h2 id="二、功耗、温升、性能是连在一起的"><a href="#二、功耗、温升、性能是连在一起的" class="headerlink" title="二、功耗、温升、性能是连在一起的"></a>二、功耗、温升、性能是连在一起的</h2><p>很多测试报告把功耗、温升和卡顿分开写，实际设备上它们经常互相影响。后台频繁唤醒会增加功耗，功耗增加会推高温度，温度升高触发 thermal 策略，CPU&#x2F;GPU 降频后前台场景变卡，用户感知就从“掉电快”变成“发热并且卡”。如果只看最后的卡顿，可能会误判为渲染问题；如果只看掉电，又可能漏掉降频后的体验退化。</p>
+<p>温升也不一定来自 CPU。相机、屏幕、基带、Wi-Fi、GPS、NPU、充电管理、音频、传感器都可能贡献热量。比如弱网直播时，基带功耗升高、编码器持续工作、屏幕常亮、应用还在写日志，最终温度上升并触发降频。此时 CPU top 可能没有异常高负载，但整机仍然发热。</p>
+<p>稳定性测试要做的是把链路串起来：哪个业务动作或后台行为增加了唤醒，唤醒带来了哪些硬件活动，硬件活动怎样改变电量和温度，thermal 策略何时介入，介入后帧率、响应或任务耗时发生了什么变化。这个链路越清楚，越容易判断问题归属。</p>
+<p>如果只需要做准入判断，也至少要回答：新版本是否比基线更耗电，温升是否更快或峰值更高，是否触发降频，降频是否影响关键场景，异常是否能通过配置、关闭后台任务或修复日志策略消除。</p>
+<h2 id="三、基础命令：batterystats、thermal、频率和唤醒"><a href="#三、基础命令：batterystats、thermal、频率和唤醒" class="headerlink" title="三、基础命令：batterystats、thermal、频率和唤醒"></a>三、基础命令：batterystats、thermal、频率和唤醒</h2><p>功耗温升现场采集要分成开始前、运行中、结束后三段。开始前清空统计或记录基线，运行中按固定间隔采样，结束后导出完整证据。下面是一组常用命令。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">adb shell dumpsys battery</span><br><span class="line">adb shell dumpsys batterystats --reset</span><br><span class="line">adb shell cmd battery unplug</span><br><span class="line">adb shell settings get system screen_brightness</span><br><span class="line">adb shell dumpsys power</span><br><span class="line">adb shell dumpsys deviceidle</span><br><span class="line">adb shell dumpsys alarm</span><br><span class="line">adb shell dumpsys jobscheduler</span><br><span class="line">adb shell dumpsys batterystats &gt; batterystats.txt</span><br><span class="line">adb bugreport bugreport-power.zip</span><br></pre></td></tr></table></figure>
+
+<p>温度和频率路径在不同芯片平台上差异较大，测试脚本要做兼容。下面命令适合先探索设备节点，再选择稳定可读的指标。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">adb shell <span class="built_in">ls</span> /sys/class/thermal</span><br><span class="line">adb shell <span class="string">&quot;for z in /sys/class/thermal/thermal_zone*/temp; do echo <span class="variable">$z</span>=<span class="subst">$(cat $z)</span>; done&quot;</span></span><br><span class="line">adb shell <span class="string">&quot;for z in /sys/class/thermal/thermal_zone*/type; do echo <span class="variable">$z</span>=<span class="subst">$(cat $z)</span>; done&quot;</span></span><br><span class="line">adb shell <span class="string">&quot;for c in /sys/devices/system/cpu/cpu*/cpufreq/scaling_cur_freq; do echo <span class="variable">$c</span>=<span class="subst">$(cat $c 2&gt;/dev/null)</span>; done&quot;</span></span><br><span class="line">adb shell dumpsys thermalservice</span><br><span class="line">adb shell dumpsys SurfaceFlinger --latency-clear 2&gt;/dev/null</span><br></pre></td></tr></table></figure>
+
+<p>如果怀疑 wakelock 或后台唤醒，重点看 <code>dumpsys batterystats</code> 里的 partial wakelock、wakeups、jobs、alarms、network、wifi、mobile radio、sensor 使用情况。Android 版本不同，输出格式会变，但核心思路不变：找出谁让设备睡不下去，谁让硬件持续工作，谁在用户没有感知的情况下消耗资源。</p>
+<p>命令采集要避免插电状态混乱。很多设备插 USB 后会影响充电状态、温控策略和统计口径。如果必须通过 ADB 采集，至少要在报告里写明供电方式，并保持基线和问题版本一致。</p>
+<h2 id="四、数据表：把曲线变成结论"><a href="#四、数据表：把曲线变成结论" class="headerlink" title="四、数据表：把曲线变成结论"></a>四、数据表：把曲线变成结论</h2><p>功耗温升报告要少写形容词，多写对比数据。下面这张表适合放在专项报告的结果页。</p>
+<table>
+<thead>
+<tr>
+<th>项目</th>
+<th>基线版本</th>
+<th>问题版本</th>
+<th>差异</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>灭屏待机 8h 掉电</td>
+<td>4%</td>
+<td>12%</td>
+<td>+8%</td>
+<td>明显退化</td>
+</tr>
+<tr>
+<td>partial wakelock 总时长</td>
+<td>18 min</td>
+<td>3 h 42 min</td>
+<td>+3 h 24 min</td>
+<td>后台持锁异常</td>
+</tr>
+<tr>
+<td>每小时 wakeup 次数</td>
+<td>120</td>
+<td>980</td>
+<td>+716%</td>
+<td>Alarm 过密</td>
+</tr>
+<tr>
+<td>亮屏视频 30 min 温升</td>
+<td>+7.2°C</td>
+<td>+13.8°C</td>
+<td>+6.6°C</td>
+<td>温升过快</td>
+</tr>
+<tr>
+<td>CPU 大核最低稳定频率</td>
+<td>1.8 GHz</td>
+<td>998 MHz</td>
+<td>降频明显</td>
+<td>影响前台流畅度</td>
+</tr>
+<tr>
+<td>相机预览 P95 帧间隔</td>
+<td>22 ms</td>
+<td>48 ms</td>
+<td>+26 ms</td>
+<td>用户可感知卡顿</td>
+</tr>
+</tbody></table>
+<p>表格只是摘要，后面还要说明口径。例如电量来自系统电量百分比还是外接电源仪，温度取 battery、skin、cpu 还是板级传感器，采样间隔是 1 秒还是 30 秒。不要让一个看似漂亮的表格变成无法复测的数据孤岛。</p>
+<p>趋势图也很重要。待机掉电看斜率，温升看上升速度和平台期，频率看 thermal 介入前后的变化，wakelock 看是否集中在某个应用或服务。报告里如果只能放一张图，优先放“温度、电量、频率、场景阶段”合在一起的时间线。</p>
+<h2 id="五、batterystats-该怎么看"><a href="#五、batterystats-该怎么看" class="headerlink" title="五、batterystats 该怎么看"></a>五、batterystats 该怎么看</h2><p><code>batterystats</code> 的输出很长，第一次看很容易迷失。稳定性测试不需要逐字段背完，但要知道从哪里找线索。灭屏待机重点看 wake lock、wakeups、alarms、jobs、network、sensor、wifi scan、mobile radio。亮屏场景还要看 screen、camera、audio、video、cpu running 和应用前后台状态。</p>
+<p>partial wakelock 是常见入口。如果某个服务在灭屏后仍持锁几个小时，就要看它是否有合理业务理由。比如音乐播放、导航、通话有合理性；普通同步、日志上传、埋点重试、保活心跳则要看频率和退出条件。不要看到 wakelock 就直接判错，也不要因为应用声明“业务需要”就放过长时间持锁。</p>
+<p>Alarm 和 JobScheduler 也要结合看。有些问题不是单个 wakelock 很长，而是每隔几十秒唤醒一次，设备反复从低功耗状态出来，累计掉电明显。还有些模块在网络失败时指数退避没做好，弱网环境下不断重试，导致 radio 和 CPU 都下不去。</p>
+<p>分析时可以用文本提取辅助，但最后要回到场景。比如灭屏 8 小时里某包唤醒 900 次，先问它是否应该在灭屏工作；如果应该，再问频率是否合理；如果不应该，就要给出触发条件和复现方式。否则研发只能拿到一个排行榜，很难修。</p>
+<h2 id="六、完整案例：后台同步持锁导致待机掉电"><a href="#六、完整案例：后台同步持锁导致待机掉电" class="headerlink" title="六、完整案例：后台同步持锁导致待机掉电"></a>六、完整案例：后台同步持锁导致待机掉电</h2><p>某海外版本在灰度前做 8 小时灭屏待机测试，10 台设备里有 6 台掉电超过 10%，基线版本同条件通常在 3% 到 5%。测试条件固定为 Wi-Fi 连接、插 SIM 但关闭移动数据、亮度自动、登录同一测试账号、刷机后静置 2 小时再开始。开始前执行 <code>batterystats --reset</code>，结束后导出 bugreport 和温度采样。</p>
+<p>第一轮数据只显示掉电偏高，没有 Crash、ANR 或明显 CPU 高负载。继续看 batterystats，发现某云同步服务在灭屏期间 partial wakelock 总时长超过 4 小时，每小时 alarm wakeup 接近 700 次。脚本日志显示设备在灭屏后仍持续上传本地诊断文件，网络失败时没有按预期退避，导致服务反复唤醒、扫描目录、尝试上传。</p>
+<p>温度曲线也提供了旁证。虽然设备灭屏，battery 温度仍从 30°C 缓慢上升到 36°C，CPU 小核频率间歇性抬高。<code>dumpsys jobscheduler</code> 里能看到同一个 job 反复执行失败，下一次调度间隔只有几十秒。关闭该同步开关后，复测 8 小时掉电回落到 4%，wakelock 总时长低于 20 分钟。</p>
+<p>最终修复是三部分：同步服务只在充电或 Wi-Fi 良好且满足用户设置时运行；失败重试改成指数退避并设置每日上限；诊断文件上传增加大小限制和批处理。测试侧把“灭屏待机 wakelock 总时长”和“每小时 wakeup 次数”加入灰度准入表，不再只看最终电量。</p>
+<p>这个案例说明，功耗问题不能等同于“某进程耗电排名高”。真正的证据链是：待机掉电退化，后台服务持锁和唤醒异常，重试策略与网络失败相关，关闭开关后可恢复，修复后同条件复测达标。</p>
+<h2 id="七、温升和降频要一起记录"><a href="#七、温升和降频要一起记录" class="headerlink" title="七、温升和降频要一起记录"></a>七、温升和降频要一起记录</h2><p>温升本身影响用户感知，但在系统稳定性里，更大的风险是 thermal 策略介入后引发连锁问题。CPU 降频会让启动、滑动、数据库、解码变慢；GPU 降频会影响动画和游戏；屏幕亮度限制会影响户外可用性；相机可能因为温度过高降帧甚至停止录像。报告如果只写最高温度，无法说明影响范围。</p>
+<p>温升测试要记录三个点：起始温度、到达关键阈值的时间、进入平台期后的性能。比如视频会议 30 分钟，问题版本 12 分钟触发大核降频，18 分钟后相机预览 P95 帧间隔超过 45 ms；基线版本 30 分钟内未触发同等级降频。这样的描述比“温度高 5 度”更能支持版本判断。</p>
+<p>降频判断也不能只看单次频率读数。频率会随负载波动，应该结合场景阶段、温度、thermal status、帧率或任务耗时。若有 Perfetto，可以把 CPU freq、sched、SurfaceFlinger、应用线程放在同一视图；没有 Perfetto，也可以用脚本每秒采样温度、频率和前台动作耗时，形成 CSV。</p>
+<p>示例采样命令：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">adb shell <span class="string">&quot;while true; do date +%s; cat /sys/class/thermal/thermal_zone*/temp 2&gt;/dev/null | head -n 8; sleep 1; done&quot;</span> &gt; temp_sample.txt</span><br><span class="line">adb shell <span class="string">&quot;while true; do cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq 2&gt;/dev/null; sleep 1; done&quot;</span> &gt; cpu0_freq.txt</span><br><span class="line">adb shell dumpsys thermalservice &gt; thermalservice.txt</span><br></pre></td></tr></table></figure>
+
+<p>不同平台 thermal zone 名称差异很大，正式脚本要先映射传感器类型。不要把未知 zone 的数字直接写成“CPU 温度”，这会造成复盘时的数据争议。</p>
+<h2 id="八、后台行为审计"><a href="#八、后台行为审计" class="headerlink" title="八、后台行为审计"></a>八、后台行为审计</h2><p>功耗问题里最常见的后台行为包括：频繁定位、Wi-Fi 扫描、蓝牙扫描、传感器采样、网络心跳、日志上传、数据库清理、媒体扫描、账号同步、保活拉起。每一项都可能有业务理由，但稳定性测试要看它是否尊重系统状态和用户场景。</p>
+<p>审计后台行为时，不要只问“有没有运行”，而要问“何时运行、运行多久、失败后怎么退、灭屏是否停止、低电量是否停止、弱网是否降频、温度高时是否让路”。这几个问题比单纯抓一个进程耗电排名更有价值。</p>
+<p>可以把后台行为整理成表：</p>
+<table>
+<thead>
+<tr>
+<th>行为</th>
+<th>触发条件</th>
+<th>灭屏策略</th>
+<th>失败重试</th>
+<th>证据</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>诊断日志上传</td>
+<td>每小时或异常后</td>
+<td>问题版本未停止</td>
+<td>固定 30 秒重试</td>
+<td>alarm、wakelock、网络日志</td>
+<td>需修复</td>
+</tr>
+<tr>
+<td>定位刷新</td>
+<td>地图前台</td>
+<td>退后台 3 分钟停止</td>
+<td>无重试</td>
+<td>app log、batterystats sensor</td>
+<td>符合预期</td>
+</tr>
+<tr>
+<td>Wi-Fi 扫描</td>
+<td>配网页</td>
+<td>页面退出停止</td>
+<td>无</td>
+<td>dumpsys wifi</td>
+<td>符合预期</td>
+</tr>
+<tr>
+<td>媒体扫描</td>
+<td>新文件写入</td>
+<td>可后台短时运行</td>
+<td>系统控制</td>
+<td>logcat、media provider</td>
+<td>观察</td>
+</tr>
+</tbody></table>
+<p>这张表能帮助评审区分合理消耗和异常消耗。功耗不是要求所有后台行为归零，而是要求行为与场景匹配、频率可控、退出条件明确。</p>
+<h2 id="九、常见误判"><a href="#九、常见误判" class="headerlink" title="九、常见误判"></a>九、常见误判</h2><table>
+<thead>
+<tr>
+<th>误判</th>
+<th>问题</th>
+<th>建议</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>只看最终掉电百分比</td>
+<td>电池健康和初始状态可能干扰</td>
+<td>固定条件并与基线同台对比</td>
+</tr>
+<tr>
+<td>看到发热就归 CPU</td>
+<td>基带、屏幕、相机、充电都可能发热</td>
+<td>同时看硬件活动和场景</td>
+</tr>
+<tr>
+<td>wakelock 排名高就判错</td>
+<td>前台播放、导航等场景可能合理</td>
+<td>结合用户场景和持锁时长</td>
+</tr>
+<tr>
+<td>没有 Crash 就认为不阻断</td>
+<td>功耗温升会引发降频和体验退化</td>
+<td>把性能影响写进风险结论</td>
+</tr>
+<tr>
+<td>插 USB 采集不说明</td>
+<td>供电影响电量和温控</td>
+<td>报告中固定并说明供电方式</td>
+</tr>
+<tr>
+<td>只测一次</td>
+<td>温度和电量受环境波动影响</td>
+<td>至少做多机或多轮确认</td>
+</tr>
+</tbody></table>
+<p>功耗温升问题的可信度来自可复测。只要条件固定、基线明确、证据成链，结论就不需要依赖“手感热不热”。</p>
+<h2 id="十、检查清单"><a href="#十、检查清单" class="headerlink" title="十、检查清单"></a>十、检查清单</h2><ul>
+<li>是否写明环境温度、亮度、音量、网络、SIM、账号和供电方式。</li>
+<li>是否使用同台或同批设备做基线对比。</li>
+<li>是否在测试前重置或记录 batterystats 起点。</li>
+<li>是否采集 wakelock、alarm、job、network、sensor、thermal 数据。</li>
+<li>是否记录温度、频率、帧率或任务耗时的时间线。</li>
+<li>是否区分亮屏功耗、灭屏待机、后台同步和专项业务场景。</li>
+<li>是否分析降频后的用户影响，而不是只写最高温度。</li>
+<li>是否排查刷机后同步、媒体扫描、日志级别等干扰项。</li>
+<li>是否验证关闭可疑后台行为后的恢复效果。</li>
+<li>是否给出准入、灰度或遗留建议。</li>
+</ul>
+<p>这份清单可以作为日报和准入报告的附件。对于高风险版本，建议把灭屏待机、视频温升、相机温升、弱网后台重试至少选两项加入每日监控。</p>
+<h2 id="十一、输出物模板"><a href="#十一、输出物模板" class="headerlink" title="十一、输出物模板"></a>十一、输出物模板</h2><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line">问题标题：</span><br><span class="line">  [Power][Standby] V2026.03.29 灭屏待机 8 小时掉电从 4% 退化到 12%</span><br><span class="line"></span><br><span class="line">测试条件：</span><br><span class="line">  设备：X1 8+256G，10 台</span><br><span class="line">  环境：25°C，Wi-Fi，插 SIM，移动数据关闭，亮度自动</span><br><span class="line">  状态：刷机后静置 2 小时，登录测试账号，开始前 batterystats reset</span><br><span class="line"></span><br><span class="line">结果摘要：</span><br><span class="line">  基线版本：8 小时掉电 3% 到 5%</span><br><span class="line">  问题版本：8 小时掉电 10% 到 13%，6/10 台超阈值</span><br><span class="line">  温度：battery 最高 36°C，灭屏期间缓慢上升</span><br><span class="line"></span><br><span class="line">关键证据：</span><br><span class="line">  1. com.example.sync partial wakelock 总时长 4h12m。</span><br><span class="line">  2. 每小时 alarm wakeup 约 700 次，网络失败后固定间隔重试。</span><br><span class="line">  3. 关闭诊断上传后，8 小时掉电回落到 4%。</span><br><span class="line"></span><br><span class="line">根因判断：</span><br><span class="line">  后台诊断上传在灭屏弱网下没有退避，持续持锁并唤醒设备。</span><br><span class="line"></span><br><span class="line">修复要求：</span><br><span class="line">  增加充电/Wi-Fi/低电量/温度条件，失败重试改为指数退避，限制每日上传量。</span><br><span class="line"></span><br><span class="line">版本建议：</span><br><span class="line">  当前版本不建议灰度扩大；修复后需完成 3 轮 8 小时待机和 30 分钟亮屏温升复测。</span><br></pre></td></tr></table></figure>
+
+<h2 id="十二、小结"><a href="#十二、小结" class="headerlink" title="十二、小结"></a>十二、小结</h2><h2 id="十三、复测要覆盖冷机、热机和长时间后台"><a href="#十三、复测要覆盖冷机、热机和长时间后台" class="headerlink" title="十三、复测要覆盖冷机、热机和长时间后台"></a>十三、复测要覆盖冷机、热机和长时间后台</h2><p>功耗温升修复后的复测不能只跑一轮短场景。很多策略在冷机时看起来正常，设备热起来以后才暴露降频；很多后台行为在刚刷机时没有数据，账号同步几小时后才开始高频运行；很多上传任务在网络正常时没有问题，弱网失败后才暴露重试策略。复测至少要覆盖冷机启动、热机连续运行、灭屏后台和失败重试几个状态。</p>
+<p>建议把复测拆成三组。第一组是同条件回归，完全复制发现问题时的环境和账号，验证掉电、温升和 wakelock 是否回到基线。第二组是边界场景，加入弱网、低电量、低温或高温、长时间灭屏、充电和非充电切换，确认修复策略不会只在理想条件下生效。第三组是副作用验证，比如限制后台同步后，用户打开应用是否还能及时看到数据，诊断日志延后上传是否影响问题定位。</p>
+<p>复测结论里要写清楚“恢复到什么程度”。例如待机 8 小时从 12% 回落到 4%，partial wakelock 从 4 小时降到 18 分钟，wakeups 从每小时 700 次降到 120 次，亮屏视频 30 分钟不再触发大核长期降频。只写“功耗正常”不够，因为下一轮版本如果再次退化，团队需要这些数字作为基线。</p>
+<h2 id="十四、和发布策略的关系"><a href="#十四、和发布策略的关系" class="headerlink" title="十四、和发布策略的关系"></a>十四、和发布策略的关系</h2><p>功耗温升问题的发布策略通常比 Crash 更难定。Crash 是非黑即白的中断，功耗则有程度差异。是否阻断，要看退化幅度、用户路径、可规避性和线上监控能力。灭屏待机掉电大幅退化，通常比某个低频页面温升略高更严重；相机、导航、视频会议这类长时间前台场景发热降频，也比一次性短操作更接近发布风险。</p>
+<p>如果风险允许灰度，日报和灰度方案里要写清楚观察指标。比如灰度用户待机掉电分布、后台 wakelock 排名、温度上报、前台场景帧率、低电量投诉、回滚阈值。不能把“灰度观察”写成没有指标的等待。对于无法线上监控的温升问题，线下样本就要更充分，尤其要覆盖高温环境和弱信号环境。</p>
+<p>发布建议可以分三档：阻断，表示退化明显且影响高频或核心场景；条件通过，表示修复已合入但样本时长不足，需要限制灰度比例和监控；普通遗留，表示影响轻、路径低频、已有规避，且下一版本有明确计划。稳定性测试报告要说明为什么落在这一档，而不是只把数据交给项目自己猜。</p>
+<h2 id="十五、专项平台可以沉淀哪些能力"><a href="#十五、专项平台可以沉淀哪些能力" class="headerlink" title="十五、专项平台可以沉淀哪些能力"></a>十五、专项平台可以沉淀哪些能力</h2><p>功耗温升分析如果每次都靠人工翻 batterystats，效率会很低。测试平台可以先沉淀四类能力。第一是条件记录，自动保存环境温度、亮度、网络、SIM、账号、供电方式和版本信息。第二是趋势采样，统一采集电量、温度、频率、前台场景阶段和设备状态。第三是行为摘要，从 batterystats 中提取 wakelock、alarm、job、sensor、network 的 Top 列表。第四是阈值告警，当待机掉电、温升速度、wakeup 次数或降频时长超过基线时自动标红。</p>
+<p>平台能力不需要一次做完。最小可用版本可以先生成一份 CSV 和一张趋势图，让日报不再手工抄数字。后续再加入基线对比、问题单关联、修复前后对照和灰度指标映射。功耗温升问题最怕口径漂移，平台的意义就是让每次测试在同一套口径下比较。</p>
+<h2 id="十六、亮屏业务场景的专项设计"><a href="#十六、亮屏业务场景的专项设计" class="headerlink" title="十六、亮屏业务场景的专项设计"></a>十六、亮屏业务场景的专项设计</h2><p>亮屏功耗和灭屏待机的分析方法不同。灭屏看设备能不能睡下去，亮屏看硬件能力是否被合理使用。相机、视频会议、导航、游戏、短视频、热点共享，这些场景都可能让多个硬件单元同时工作。测试时不能只看系统电量下降，还要看帧率、编码、网络、定位、屏幕亮度、音频和温度策略。</p>
+<p>以视频会议为例，测试条件至少要固定会议时长、参会人数、前后摄、分辨率、弱网档位、扬声器音量、屏幕亮度和是否佩戴耳机。采集时不仅记录电量和温度，还要记录音视频卡顿、CPU&#x2F;GPU 频率、编码器状态、网络重传、应用日志和 thermal status。如果问题版本 20 分钟后温度到达阈值并限制频率，随后音频断续或视频降帧，报告里要把这三件事连起来。</p>
+<p>导航场景则要重点看定位、屏幕常亮、移动网络、语音播报和后台保活。弱信号下基带功耗上升很常见，如果应用还在高频上传轨迹、频繁刷新地图瓦片、持续写日志，温升会进一步放大。测试报告里要区分“业务必要消耗”和“异常重复消耗”：导航前台持续定位合理，但灭屏后仍保持高频定位就需要解释。</p>
+<p>这些亮屏场景适合建立“场景画像”。画像不是一张图，而是一组基准：30 分钟电量下降、最高 skin 温度、触发降频时间、P95 帧耗时、网络流量、主要 wakelock、主要 job&#x2F;alarm。下一次版本改动后，只要画像里某个指标明显偏离，就能快速发现退化。</p>
+<h2 id="十七、弱网和低电量会放大功耗问题"><a href="#十七、弱网和低电量会放大功耗问题" class="headerlink" title="十七、弱网和低电量会放大功耗问题"></a>十七、弱网和低电量会放大功耗问题</h2><p>功耗问题经常在理想网络下不复现，在弱网下明显放大。原因很直接：请求失败会重试，上传下载会拉长，radio 活跃时间增加，业务线程等待更久，日志也可能变多。如果重试策略没有退避，设备会在用户没有感知的后台行为里反复醒来。弱网功耗测试不能只看请求成功率，还要看失败后的资源行为。</p>
+<p>低电量也是重要边界。系统和应用在低电量时应该降低非关键任务频率，推迟上传、减少扫描、停止部分后台同步。如果低电量下仍然保持高频任务，不只是续航问题，也可能让用户在最需要省电的时候更快关机。报告里可以把普通电量和低电量对照：同样灭屏 2 小时，后台同步次数、wakelock、网络流量是否下降。</p>
+<p>弱网与低电量叠加时，问题更容易暴露。比如诊断上传失败后固定间隔重试，低电量策略没有拦截，设备每 30 秒醒一次；或者地图在弱网下不断请求瓦片，低电量时仍不降频。测试设计时可以先用短时探索找出高风险行为，再决定是否加入准入门禁。</p>
+<p>这类边界场景不一定每个版本都全量跑，但一旦某个模块修改了后台同步、网络重试、定位、日志上传或推送保活，就应该触发专项回归。功耗测试不能只作为发布前的固定动作，还要和代码变更类型联动。</p>
+<h2 id="十八、问题关闭标准"><a href="#十八、问题关闭标准" class="headerlink" title="十八、问题关闭标准"></a>十八、问题关闭标准</h2><p>功耗温升问题关闭时，建议同时满足四个条件。第一，同条件指标恢复到基线阈值内。第二，关键后台行为有明确策略变化，并通过日志或 batterystats 证明生效。第三，前台用户体验没有因为省电策略产生明显副作用。第四，灰度或长稳日报里有后续观察指标。</p>
+<p>例如后台同步持锁问题，关闭标准可以写成：灭屏 8 小时掉电不超过基线 2 个百分点；partial wakelock 总时长低于 30 分钟；失败重试间隔符合退避策略；用户打开应用后数据同步延迟不超过产品可接受范围；灰度期间监控 wakeup 和同步失败率。这样关闭问题时，研发、测试和产品都知道边界。</p>
+<p>温升问题也类似。关闭不是最高温度降低一点就结束，而是关键场景不再触发不可接受的降频或功能限制，用户路径指标恢复，异常温度上报下降。对于相机、视频会议、导航这类核心场景，最好保留长时间复测视频和采样 CSV，避免下一轮版本重新争论。</p>
+<p>还有一个经常被忽略的关闭条件：修复策略要能解释线上差异。实验室里网络、温度、账号都可控，线上用户环境更复杂。如果修复只在实验室账号生效，或者只在 Wi-Fi 下退避，灰度后仍可能复发。因此关闭前要确认策略绑定的是系统状态和业务状态，而不是测试环境里的偶然条件。</p>
+<p>功耗与温升异常不是单纯的性能优化项，它们会影响续航、握持体验、前台流畅度和版本口碑。稳定性测试要把条件、基线、行为、资源和用户影响写清楚，让评审能判断这是不是版本风险。</p>
+<p>一份合格的功耗温升分析，应该能说明：同条件下退化多少，退化来自哪些后台或硬件活动，温度和频率如何变化，是否影响关键场景，修复或关闭可疑行为后是否恢复。做到这些，功耗问题就能从“感觉耗电”变成可复测、可关闭的工程问题。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Android%E7%A8%B3%E5%AE%9A%E6%80%A7/" rel="tag"># Android稳定性</a>
+              <a href="/tags/Android/" rel="tag"># Android</a>
+              <a href="/tags/%E7%A8%B3%E5%AE%9A%E6%80%A7%E6%B5%8B%E8%AF%95/" rel="tag"># 稳定性测试</a>
+              <a href="/tags/%E5%8A%9F%E8%80%97/" rel="tag"># 功耗</a>
+              <a href="/tags/%E6%B8%A9%E5%8D%87/" rel="tag"># 温升</a>
+              <a href="/tags/batterystats/" rel="tag"># batterystats</a>
+              <a href="/tags/wakelock/" rel="tag"># wakelock</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2026/03/27/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-43-AndroidIO%E9%98%BB%E5%A1%9E%E7%A8%B3%E5%AE%9A%E6%80%A7%E9%97%AE%E9%A2%98%E5%AD%98%E5%82%A8%E6%BB%A1fsyncblockedthread%E4%B8%8E%E7%B3%BB%E7%BB%9F%E5%8D%A1%E6%AD%BB/" rel="prev" title="Android稳定性-43-Android I&#x2F;O 阻塞稳定性问题：存储满、fsync、blocked thread 与系统卡死">
+                  <i class="fa fa-angle-left"></i> Android稳定性-43-Android I/O 阻塞稳定性问题：存储满、fsync、blocked thread 与系统卡死
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2026/03/31/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-45-Android%E5%B8%A7%E7%8E%87%E5%8D%A1%E9%A1%BF%E5%92%8C%E5%93%8D%E5%BA%94%E5%BB%B6%E8%BF%9F%E4%BB%8E%E7%94%A8%E6%88%B7%E6%84%9F%E7%9F%A5%E5%88%B0%E7%B3%BB%E7%BB%9F%E6%97%B6%E9%97%B4%E7%BA%BF/" rel="next" title="Android稳定性-45-Android 帧率、卡顿和响应延迟：从用户感知到系统时间线">
+                  Android稳定性-45-Android 帧率、卡顿和响应延迟：从用户感知到系统时间线 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">1.1m</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">66:02</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

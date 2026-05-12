@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="稳定性问题复盘如果只写“问题现象、原因分析、解决方案”，通常很快就会变成缺陷单的加长版。它可能记录了发生过什么，却没有让团队下次更快发现、更准定位、更早预防。真正有价值的复盘，不是为了证明谁对谁错，而是把一次故障转化为可以复用的工程经验。 Android 稳定性问题尤其需要复盘。因为很多问题不是单点代码错误，而是跨 App、Framework、Native Service、HAL、Kernel、测">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Android稳定性-51-Android 稳定性问题复盘模板：现象、证据、根因、修复和预防">
+<meta property="og:url" content="https://paynewinnt.github.io/2026/04/12/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-51-Android%E7%A8%B3%E5%AE%9A%E6%80%A7%E9%97%AE%E9%A2%98%E5%A4%8D%E7%9B%98%E6%A8%A1%E6%9D%BF%E7%8E%B0%E8%B1%A1%E8%AF%81%E6%8D%AE%E6%A0%B9%E5%9B%A0%E4%BF%AE%E5%A4%8D%E5%92%8C%E9%A2%84%E9%98%B2/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="稳定性问题复盘如果只写“问题现象、原因分析、解决方案”，通常很快就会变成缺陷单的加长版。它可能记录了发生过什么，却没有让团队下次更快发现、更准定位、更早预防。真正有价值的复盘，不是为了证明谁对谁错，而是把一次故障转化为可以复用的工程经验。 Android 稳定性问题尤其需要复盘。因为很多问题不是单点代码错误，而是跨 App、Framework、Native Service、HAL、Kernel、测">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-04-12T12:30:00.000Z">
+<meta property="article:modified_time" content="2026-04-12T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="Android稳定性">
+<meta property="article:tag" content="Android">
+<meta property="article:tag" content="稳定性测试">
+<meta property="article:tag" content="问题复盘">
+<meta property="article:tag" content="根因分析">
+<meta property="article:tag" content="预防机制">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2026/04/12/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-51-Android%E7%A8%B3%E5%AE%9A%E6%80%A7%E9%97%AE%E9%A2%98%E5%A4%8D%E7%9B%98%E6%A8%A1%E6%9D%BF%E7%8E%B0%E8%B1%A1%E8%AF%81%E6%8D%AE%E6%A0%B9%E5%9B%A0%E4%BF%AE%E5%A4%8D%E5%92%8C%E9%A2%84%E9%98%B2/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2026/04/12/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-51-Android%E7%A8%B3%E5%AE%9A%E6%80%A7%E9%97%AE%E9%A2%98%E5%A4%8D%E7%9B%98%E6%A8%A1%E6%9D%BF%E7%8E%B0%E8%B1%A1%E8%AF%81%E6%8D%AE%E6%A0%B9%E5%9B%A0%E4%BF%AE%E5%A4%8D%E5%92%8C%E9%A2%84%E9%98%B2/","path":"2026/04/12/Android稳定性-51-Android稳定性问题复盘模板现象证据根因修复和预防/","title":"Android稳定性-51-Android 稳定性问题复盘模板：现象、证据、根因、修复和预防"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>Android稳定性-51-Android 稳定性问题复盘模板：现象、证据、根因、修复和预防 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E5%A4%8D%E7%9B%98%E8%A6%81%E5%85%88%E5%AE%9A%E4%B9%89%E8%BE%B9%E7%95%8C"><span class="nav-number">1.</span> <span class="nav-text">一、复盘要先定义边界</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E7%8E%B0%E8%B1%A1%E8%A6%81%E5%86%99%E7%94%A8%E6%88%B7%E8%A7%86%E8%A7%92%E5%92%8C%E7%B3%BB%E7%BB%9F%E8%A7%86%E8%A7%92"><span class="nav-number">2.</span> <span class="nav-text">二、现象要写用户视角和系统视角</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E8%AF%81%E6%8D%AE%E8%A6%81%E8%83%BD%E8%BF%98%E5%8E%9F%E6%97%B6%E9%97%B4%E7%BA%BF"><span class="nav-number">3.</span> <span class="nav-text">三、证据要能还原时间线</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E6%A0%B9%E5%9B%A0%E8%A6%81%E5%8C%BA%E5%88%86%E7%9B%B4%E6%8E%A5%E5%8E%9F%E5%9B%A0%E3%80%81%E8%A7%A6%E5%8F%91%E6%9D%A1%E4%BB%B6%E5%92%8C%E7%B3%BB%E7%BB%9F%E6%80%A7%E5%8E%9F%E5%9B%A0"><span class="nav-number">4.</span> <span class="nav-text">四、根因要区分直接原因、触发条件和系统性原因</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E4%BF%AE%E5%A4%8D%E6%96%B9%E6%A1%88%E8%A6%81%E8%AF%B4%E6%98%8E%E4%B8%BA%E4%BB%80%E4%B9%88%E8%BF%99%E6%A0%B7%E6%94%B9"><span class="nav-number">5.</span> <span class="nav-text">五、修复方案要说明为什么这样改</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E9%AA%8C%E8%AF%81%E8%A6%81%E8%A6%86%E7%9B%96%E5%8E%9F%E5%9C%BA%E6%99%AF%E3%80%81%E7%9B%B8%E9%82%BB%E5%9C%BA%E6%99%AF%E5%92%8C%E5%8F%8D%E5%90%91%E9%A3%8E%E9%99%A9"><span class="nav-number">6.</span> <span class="nav-text">六、验证要覆盖原场景、相邻场景和反向风险</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E5%AE%8C%E6%95%B4%E6%A1%88%E4%BE%8B%EF%BC%9A%E4%B8%80%E6%AC%A1-Watchdog-%E5%A4%8D%E7%9B%98"><span class="nav-number">7.</span> <span class="nav-text">七、完整案例：一次 Watchdog 复盘</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E5%A4%8D%E7%9B%98%E4%BC%9A%E8%AE%AE%E8%A6%81%E6%8E%A7%E5%88%B6%E8%AE%A8%E8%AE%BA%E7%BB%93%E6%9E%84"><span class="nav-number">8.</span> <span class="nav-text">八、复盘会议要控制讨论结构</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E5%B8%B8%E8%A7%81%E8%AF%AF%E5%88%A4"><span class="nav-number">9.</span> <span class="nav-text">九、常见误判</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E6%A3%80%E6%9F%A5%E6%B8%85%E5%8D%95"><span class="nav-number">10.</span> <span class="nav-text">十、检查清单</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E8%BE%93%E5%87%BA%E7%89%A9%E6%A8%A1%E6%9D%BF"><span class="nav-number">11.</span> <span class="nav-text">十一、输出物模板</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E6%8A%8A%E5%A4%8D%E7%9B%98%E5%8A%A8%E4%BD%9C%E8%BD%AC%E6%88%90%E9%97%A8%E7%A6%81%E5%92%8C%E7%94%A8%E4%BE%8B"><span class="nav-number">12.</span> <span class="nav-text">十二、把复盘动作转成门禁和用例</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81%E5%A4%8D%E7%9B%98%E6%95%B0%E6%8D%AE%E5%8F%A3%E5%BE%84%E8%A6%81%E7%BB%9F%E4%B8%80"><span class="nav-number">13.</span> <span class="nav-text">十三、复盘数据口径要统一</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81%E5%A4%8D%E7%9B%98%E8%B4%A8%E9%87%8F%E4%B9%9F%E8%A6%81%E5%AE%A1%E9%98%85"><span class="nav-number">14.</span> <span class="nav-text">十四、复盘质量也要审阅</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%94%E3%80%81%E5%A4%8D%E7%9B%98%E8%A6%81%E4%BF%9D%E7%95%99%E5%B7%B2%E6%8E%92%E9%99%A4%E8%B7%AF%E5%BE%84"><span class="nav-number">15.</span> <span class="nav-text">十五、复盘要保留已排除路径</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AD%E3%80%81%E5%A4%8D%E7%9B%98%E9%87%8C%E7%9A%84%E8%B4%A3%E4%BB%BB%E4%B8%8D%E6%98%AF%E8%BF%BD%E8%B4%A3"><span class="nav-number">16.</span> <span class="nav-text">十六、复盘里的责任不是追责</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%83%E3%80%81%E5%A4%8D%E7%9B%98%E8%A6%81%E8%AE%B0%E5%BD%95%E5%86%B3%E7%AD%96%E8%BF%87%E7%A8%8B"><span class="nav-number">17.</span> <span class="nav-text">十七、复盘要记录决策过程</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AB%E3%80%81%E5%A4%8D%E7%9B%98%E7%BB%93%E8%AE%BA%E8%A6%81%E8%83%BD%E8%BF%9B%E5%85%A5%E5%9F%B9%E8%AE%AD"><span class="nav-number">18.</span> <span class="nav-text">十八、复盘结论要能进入培训</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B9%9D%E3%80%81%E5%A4%8D%E7%9B%98%E5%90%8E%E7%9A%84%E8%B7%9F%E8%B8%AA%E4%B8%8D%E8%83%BD%E4%B8%A2"><span class="nav-number">19.</span> <span class="nav-text">十九、复盘后的跟踪不能丢</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E3%80%81%E5%A4%8D%E7%9B%98%E6%9D%90%E6%96%99%E8%A6%81%E4%BF%9D%E7%95%99%E5%8E%9F%E5%A7%8B%E8%AF%81%E6%8D%AE%E7%B4%A2%E5%BC%95"><span class="nav-number">20.</span> <span class="nav-text">二十、复盘材料要保留原始证据索引</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%80%E3%80%81%E5%A4%8D%E7%9B%98%E7%BB%93%E8%AE%BA%E8%A6%81%E5%9B%9E%E5%88%B0%E7%89%88%E6%9C%AC%E9%A3%8E%E9%99%A9"><span class="nav-number">21.</span> <span class="nav-text">二十一、复盘结论要回到版本风险</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%8C%E3%80%81%E5%B0%8F%E7%BB%93"><span class="nav-number">22.</span> <span class="nav-text">二十二、小结</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">298</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">27</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">513</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2026/04/12/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-51-Android%E7%A8%B3%E5%AE%9A%E6%80%A7%E9%97%AE%E9%A2%98%E5%A4%8D%E7%9B%98%E6%A8%A1%E6%9D%BF%E7%8E%B0%E8%B1%A1%E8%AF%81%E6%8D%AE%E6%A0%B9%E5%9B%A0%E4%BF%AE%E5%A4%8D%E5%92%8C%E9%A2%84%E9%98%B2/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="Android稳定性-51-Android 稳定性问题复盘模板：现象、证据、根因、修复和预防 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Android稳定性-51-Android 稳定性问题复盘模板：现象、证据、根因、修复和预防
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2026-04-12 20:30:00" itemprop="dateCreated datePublished" datetime="2026-04-12T20:30:00+08:00">2026-04-12</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/Android%E7%A8%B3%E5%AE%9A%E6%80%A7/" itemprop="url" rel="index"><span itemprop="name">Android稳定性</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>6.6k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>24 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>稳定性问题复盘如果只写“问题现象、原因分析、解决方案”，通常很快就会变成缺陷单的加长版。它可能记录了发生过什么，却没有让团队下次更快发现、更准定位、更早预防。真正有价值的复盘，不是为了证明谁对谁错，而是把一次故障转化为可以复用的工程经验。</p>
+<p>Android 稳定性问题尤其需要复盘。因为很多问题不是单点代码错误，而是跨 App、Framework、Native Service、HAL、Kernel、测试环境、版本节奏和监控能力的组合结果。一次 system_server Watchdog，表面是系统卡死，背后可能是锁竞争、Binder 调用、I&#x2F;O 阻塞、低内存、供应商服务超时和测试场景叠加。复盘如果只停在“修复某处死锁”，下个版本可能还会以另一个形态出现。</p>
+<p>这篇给一套可直接使用的问题复盘方法。重点放在现象、证据、根因、修复和预防五个部分，但每个部分都要写到能被别人复查和复用。</p>
+<h2 id="一、复盘要先定义边界"><a href="#一、复盘要先定义边界" class="headerlink" title="一、复盘要先定义边界"></a>一、复盘要先定义边界</h2><p>复盘开始前，先确认这次复盘到底复盘什么。是复盘一个缺陷，还是一类问题；是复盘技术根因，还是复盘版本决策；是复盘测试漏检，还是复盘线上止损。边界不清，复盘很容易发散成所有人都能补充一句，但没有结论。</p>
+<p>建议在复盘文档开头写四个边界：时间边界、版本边界、影响边界、责任边界。时间边界说明问题从什么时候被引入、什么时候被发现、什么时候被修复。版本边界说明影响哪些 build、哪些渠道、哪些机型。影响边界说明用户或测试路径受到什么影响。责任边界说明哪些团队参与复盘，不是为了追责，而是为了确认后续动作谁能落地。</p>
+<p>一个清楚的边界示例：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">复盘对象：V6.1.3 灰度阶段锁屏后偶发 system_server Watchdog</span><br><span class="line">时间边界：V6.1.1 引入，V6.1.3 G1 灰度第 7 小时发现，V6.1.4 修复</span><br><span class="line">版本边界：A05/A06，Android 14 分支，公开渠道 G1</span><br><span class="line">影响边界：锁屏后设备无响应并自动重启，影响基础可用性</span><br><span class="line">参与团队：Power Framework、vendor sensor、Kernel、测试平台、版本质量</span><br></pre></td></tr></table></figure>
+
+<p>有了边界，后面的证据和改进才不会漂移。</p>
+<h2 id="二、现象要写用户视角和系统视角"><a href="#二、现象要写用户视角和系统视角" class="headerlink" title="二、现象要写用户视角和系统视角"></a>二、现象要写用户视角和系统视角</h2><p>稳定性问题的现象至少要写两层。第一层是用户或测试看到的表现：黑屏、卡死、重启、闪退、无响应、耗电、发热、连接失败。第二层是系统记录到的表现：进程 crash、ANR traces、Watchdog、dropbox、tombstone、pstore、binder wait、I&#x2F;O blocked、thermal throttling。</p>
+<p>只写用户视角，无法定位；只写系统视角，别人看不懂影响。两层都写，复盘才能连接质量影响和技术证据。</p>
+<table>
+<thead>
+<tr>
+<th>视角</th>
+<th>应写内容</th>
+<th>示例</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>用户视角</td>
+<td>操作路径、可见表现、影响后果</td>
+<td>锁屏 5 分钟后按电源键无响应，约 60 秒后自动重启</td>
+</tr>
+<tr>
+<td>测试视角</td>
+<td>场景、脚本、设备、概率</td>
+<td>20 台 A05，锁屏唤醒循环 12 小时，2 台复现</td>
+</tr>
+<tr>
+<td>系统视角</td>
+<td>日志、进程、时间线</td>
+<td>Watchdog: PowerManagerService monitor blocked 60s</td>
+</tr>
+<tr>
+<td>版本视角</td>
+<td>首现版本、关联改动</td>
+<td>V6.1.1 合入 sensor suspend 优化后出现</td>
+</tr>
+</tbody></table>
+<p>现象写清楚后，复盘读者不需要再翻缺陷系统才能理解问题。</p>
+<h2 id="三、证据要能还原时间线"><a href="#三、证据要能还原时间线" class="headerlink" title="三、证据要能还原时间线"></a>三、证据要能还原时间线</h2><p>复盘里的证据不是贴几段日志。好的证据能还原问题发生前、发生中、发生后的时间线。</p>
+<p>建议时间线至少包含：触发动作、异常前状态、第一条异常日志、系统决策、用户可见表现、恢复或失败结果。时间戳要统一，最好使用设备时间，并说明是否和服务器时间有偏差。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">14:02:10 测试脚本进入锁屏待机，设备电量 78%，温度 34C</span><br><span class="line">14:07:32 sensor service 收到 suspend 回调，等待 vendor sensor flush</span><br><span class="line">14:07:33 PowerManagerService 进入 goToSleep 流程，持有 mLock</span><br><span class="line">14:07:35 system_server binder 线程出现等待，InputDispatcher 无新响应</span><br><span class="line">14:08:35 Watchdog 判定 PowerManagerService monitor 超时</span><br><span class="line">14:08:36 dropbox 写入 watchdog，设备触发重启</span><br><span class="line">14:09:10 设备重新开机，bootreason=watchdog</span><br></pre></td></tr></table></figure>
+
+<p>这类时间线比单独贴 <code>Watchdog</code> 栈更有价值，因为它能暴露因果顺序。很多复盘失败，就是把最后一条错误当成根因。</p>
+<h2 id="四、根因要区分直接原因、触发条件和系统性原因"><a href="#四、根因要区分直接原因、触发条件和系统性原因" class="headerlink" title="四、根因要区分直接原因、触发条件和系统性原因"></a>四、根因要区分直接原因、触发条件和系统性原因</h2><p>根因分析最常见的问题，是把直接原因当成全部原因。比如“PowerManagerService 持锁等待 sensor 返回”是直接原因，但为什么会持锁等待，为什么测试前没有发现，为什么灰度才暴露，为什么监控没有提前告警，这些才决定预防动作。</p>
+<p>建议根因拆成三层。</p>
+<p>第一层是直接技术原因：哪段代码、哪个状态机、哪个资源等待导致异常。第二层是触发条件：什么场景、设备、配置、压力组合让问题出现。第三层是系统性原因：评审、测试、监控、准入、知识库中哪个环节没有提前识别风险。</p>
+<table>
+<thead>
+<tr>
+<th>层级</th>
+<th>说明</th>
+<th>Watchdog 示例</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>直接原因</td>
+<td>导致故障的技术点</td>
+<td>PowerManagerService 持锁等待 vendor sensor flush</td>
+</tr>
+<tr>
+<td>触发条件</td>
+<td>问题出现所需条件</td>
+<td>锁屏待机 + 特定 sensor 固件 + 低温恢复场景</td>
+</tr>
+<tr>
+<td>系统性原因</td>
+<td>流程或能力缺口</td>
+<td>suspend&#x2F;resume 专项没有覆盖该固件批次</td>
+</tr>
+</tbody></table>
+<p>只有三层都写，复盘才能从修 bug 走向防复发。</p>
+<h2 id="五、修复方案要说明为什么这样改"><a href="#五、修复方案要说明为什么这样改" class="headerlink" title="五、修复方案要说明为什么这样改"></a>五、修复方案要说明为什么这样改</h2><p>复盘中的修复方案不要只贴 commit。要写清楚修复思路、替代方案、风险和验证点。</p>
+<p>比如 Watchdog 案例里，可能有几个方案：缩短 vendor sensor 等待时间、把等待移出锁、改成异步回调、在 suspend 前增加状态检查、回滚低功耗优化。最终选择哪一个，要说明原因。如果只是写“已修复锁等待”，别人下次看不出为什么不是简单加 timeout。</p>
+<p>一个好的修复描述可以这样写：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">修复方案：PowerManagerService 不再在持有全局锁期间同步等待 sensor flush 完成，改为记录 pending 状态并由异步回调更新 suspend 结果。vendor sensor 超过 2s 未返回时记录 error event，但不阻塞系统睡眠主流程。</span><br><span class="line">选择原因：直接缩短 timeout 会降低复现概率但不能消除锁等待；回滚低功耗优化会影响待机功耗；异步化能同时消除 Watchdog 风险并保留功耗收益。</span><br><span class="line">引入风险：sensor 状态上报可能晚于 sleep 流程，需要验证唤醒后的状态一致性。</span><br></pre></td></tr></table></figure>
+
+<p>这种写法能帮助后续维护者理解改动意图。</p>
+<h2 id="六、验证要覆盖原场景、相邻场景和反向风险"><a href="#六、验证要覆盖原场景、相邻场景和反向风险" class="headerlink" title="六、验证要覆盖原场景、相邻场景和反向风险"></a>六、验证要覆盖原场景、相邻场景和反向风险</h2><p>稳定性问题修复后，不能只复测最初路径。要覆盖三类场景。</p>
+<p>原场景验证用于证明问题不再复现。相邻场景验证用于证明同一链路的其他入口没有类似问题。反向风险验证用于证明修复没有引入新的问题。</p>
+<p>以锁屏 Watchdog 为例，原场景是锁屏待机唤醒循环；相邻场景包括来电唤醒、闹钟唤醒、指纹解锁、低电量待机、弱网待机；反向风险包括待机功耗是否劣化、sensor 状态是否异常、唤醒耗时是否增加。</p>
+<table>
+<thead>
+<tr>
+<th>验证类型</th>
+<th>场景</th>
+<th>通过标准</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>原场景</td>
+<td>20 台 x 24h 锁屏唤醒循环</td>
+<td>无 Watchdog，无同类 blocked 日志</td>
+</tr>
+<tr>
+<td>相邻场景</td>
+<td>来电、闹钟、指纹、低电量待机</td>
+<td>无唤醒失败和输入无响应</td>
+</tr>
+<tr>
+<td>反向风险</td>
+<td>待机功耗、sensor 状态、唤醒耗时</td>
+<td>不劣于基线</td>
+</tr>
+</tbody></table>
+<p>验证结论要写样本量和版本号。不要只写“回归通过”。</p>
+<h2 id="七、完整案例：一次-Watchdog-复盘"><a href="#七、完整案例：一次-Watchdog-复盘" class="headerlink" title="七、完整案例：一次 Watchdog 复盘"></a>七、完整案例：一次 Watchdog 复盘</h2><p>下面把前面的内容串成一个完整案例。</p>
+<p>V6.1.3 灰度第 7 小时，线上监控出现 2 台 A05 设备 <code>watchdog</code> 重启。用户反馈是锁屏后按电源键无响应，随后设备自动重启。灰度比例只有 1%，但 Watchdog 属于基础可用性问题，版本团队立即暂停扩大灰度。</p>
+<p>证据收集包括：dropbox watchdog 记录、bugreport、pstore、bootreason、灰度上报事件、最近合入列表。两台设备的 Watchdog 栈都指向 <code>PowerManagerService.monitor()</code>，system_server 主线程持有 power lock，另一个 binder 线程等待 sensor service 返回。vendor log 显示 sensor flush 在特定固件版本上偶发超过 60 秒。</p>
+<p>时间线显示，问题不是重启后才出现的随机异常，而是在锁屏流程中先发生 sensor flush 长等待，随后 PowerManagerService 持锁阻塞，最后 Watchdog 触发。关联改动是 V6.1.1 合入的低功耗优化：为了确保 suspend 前 sensor 状态一致，Framework 同步等待 vendor 回调。</p>
+<p>根因拆分如下：直接原因是 PowerManagerService 在持有全局锁时同步等待 vendor sensor flush；触发条件是 A05 某批 sensor 固件在低温恢复后 flush 偶发超时；系统性原因是低功耗优化评审时只覆盖了常温待机场景，没有覆盖该固件批次和低温恢复，也没有把 sensor flush 耗时纳入灰度监控。</p>
+<p>修复采用异步等待方案，避免阻塞 power 主流程；vendor 侧同时修复 flush 超时。验证分三轮：实验室 30 台 x 48 小时锁屏唤醒循环，低温箱 10 台 x 12 小时恢复测试，G1 灰度 24 小时观察。验证期间无 Watchdog，sensor flush 超时降为 0，待机功耗与上一版本持平。</p>
+<p>预防动作包括：新增 suspend&#x2F;resume 专项用例，覆盖低温恢复和不同 sensor 固件；灰度监控增加 <code>sensor_flush_timeout</code> 事件；Framework 评审规则增加“系统锁内不得等待 vendor 长耗时回调”；案例沉淀到 Watchdog 案例库。</p>
+<p>这个复盘的结论不是“某模块修了一个 bug”，而是明确了代码规则、测试覆盖和监控指标三类预防动作。</p>
+<h2 id="八、复盘会议要控制讨论结构"><a href="#八、复盘会议要控制讨论结构" class="headerlink" title="八、复盘会议要控制讨论结构"></a>八、复盘会议要控制讨论结构</h2><p>复盘会议不要从“谁来解释一下”开始。建议按固定顺序推进：先确认事实，再确认根因，再确认修复，再确认预防。事实阶段不讨论责任，根因阶段不讨论排期，预防阶段不重新争论事实。</p>
+<p>会议前，测试 owner 应该准备时间线、证据索引、影响范围和问题状态。研发 owner 准备根因假设、修复方案和风险。版本 owner 准备发布影响和决策记录。质量 owner 准备流程改进建议。</p>
+<p>会议结束必须产出 action item，不能只产出共识。每个 action item 要有 owner、截止时间、验收方式。</p>
+<h2 id="九、常见误判"><a href="#九、常见误判" class="headerlink" title="九、常见误判"></a>九、常见误判</h2><p>第一，把最后报错的模块当成根因。Watchdog 报 PowerManagerService，不代表 PowerManagerService 一定是唯一根因；它可能在等待 vendor、I&#x2F;O 或 Binder。</p>
+<p>第二，把复现困难当成无法分析。低概率问题更需要时间线、版本差异和环境差异，而不是等到稳定复现才开始行动。</p>
+<p>第三，把修复合入当成复盘完成。复盘完成的标志是预防动作落地，包括用例、监控、规则或知识沉淀。</p>
+<p>第四，把复盘写成追责材料。追责会让信息变少，工程复盘要让事实变多。</p>
+<p>第五，只关注技术原因，不看准入和监控。很多线上问题不是没人修，而是发布前没有识别出风险，发布后没有及时止损。</p>
+<h2 id="十、检查清单"><a href="#十、检查清单" class="headerlink" title="十、检查清单"></a>十、检查清单</h2><ul>
+<li>复盘对象是否有清楚的时间、版本、影响和参与边界。</li>
+<li>现象是否同时包含用户视角和系统视角。</li>
+<li>证据是否能还原异常前、中、后的时间线。</li>
+<li>根因是否区分直接原因、触发条件和系统性原因。</li>
+<li>修复方案是否说明选择理由、替代方案和引入风险。</li>
+<li>验证是否覆盖原场景、相邻场景和反向风险。</li>
+<li>结论是否包含版本号、样本量、设备范围和通过标准。</li>
+<li>预防动作是否落到用例、监控、准入、代码规则或案例库。</li>
+<li>每个后续动作是否有 owner、截止时间和验收方式。</li>
+<li>复盘材料是否能让未参与问题的人读懂并复用。</li>
+</ul>
+<h2 id="十一、输出物模板"><a href="#十一、输出物模板" class="headerlink" title="十一、输出物模板"></a>十一、输出物模板</h2><figure class="highlight markdown"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br></pre></td><td class="code"><pre><span class="line"><span class="section"># 稳定性问题复盘：&lt;版本 + 场景 + 现象&gt;</span></span><br><span class="line"></span><br><span class="line"><span class="section">## 1. 复盘边界</span></span><br><span class="line"><span class="bullet">-</span> 问题编号：<span class="language-xml"><span class="tag">&lt;<span class="name">bug</span> / <span class="attr">top</span> <span class="attr">issue</span> <span class="attr">id</span>&gt;</span></span></span><br><span class="line"><span class="bullet">-</span> 影响版本：<span class="language-xml"><span class="tag">&lt;<span class="name">build</span> <span class="attr">id</span> / <span class="attr">fingerprint</span>&gt;</span></span></span><br><span class="line"><span class="bullet">-</span> 发现阶段：&lt;实验室 / 灰度 / 线上 / 售后&gt;</span><br><span class="line"><span class="bullet">-</span> 影响范围：&lt;机型 / 批次 / 渠道 / 用户路径&gt;</span><br><span class="line"><span class="bullet">-</span> 参与团队：<span class="language-xml"><span class="tag">&lt;<span class="name">team</span> <span class="attr">list</span>&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="section">## 2. 现象描述</span></span><br><span class="line"><span class="bullet">-</span> 用户视角：&lt;用户看到什么&gt;</span><br><span class="line"><span class="bullet">-</span> 测试视角：&lt;如何触发，概率多少&gt;</span><br><span class="line"><span class="bullet">-</span> 系统视角：<span class="language-xml"><span class="tag">&lt;<span class="name">Crash</span> / <span class="attr">ANR</span> / <span class="attr">Watchdog</span> / <span class="attr">reboot</span> / <span class="attr">resource</span>&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="section">## 3. 时间线</span></span><br><span class="line">| 时间 | 事件 | 证据 |</span><br><span class="line">| --- | --- | --- |</span><br><span class="line">|  |  |  |</span><br><span class="line"></span><br><span class="line"><span class="section">## 4. 证据索引</span></span><br><span class="line">| 证据 | 路径 | 说明 |</span><br><span class="line">| --- | --- | --- |</span><br><span class="line">| bugreport |  |  |</span><br><span class="line">| logcat |  |  |</span><br><span class="line">| traces / tombstone / pstore |  |  |</span><br><span class="line"></span><br><span class="line"><span class="section">## 5. 根因分析</span></span><br><span class="line"><span class="bullet">-</span> 直接原因：&lt;技术点&gt;</span><br><span class="line"><span class="bullet">-</span> 触发条件：&lt;场景和环境&gt;</span><br><span class="line"><span class="bullet">-</span> 系统性原因：&lt;流程、测试、监控或评审缺口&gt;</span><br><span class="line"><span class="bullet">-</span> 已排除项：&lt;排除依据&gt;</span><br><span class="line"></span><br><span class="line"><span class="section">## 6. 修复方案</span></span><br><span class="line"><span class="bullet">-</span> 修复方式：<span class="language-xml"><span class="tag">&lt;<span class="name">commit</span> / <span class="attr">配置</span> / <span class="attr">回滚</span> / <span class="attr">规避</span>&gt;</span></span></span><br><span class="line"><span class="bullet">-</span> 选择理由：&lt;为什么这样改&gt;</span><br><span class="line"><span class="bullet">-</span> 引入风险：&lt;可能影响什么&gt;</span><br><span class="line"></span><br><span class="line"><span class="section">## 7. 验证结论</span></span><br><span class="line">| 验证类型 | 样本 | 结果 | 结论 |</span><br><span class="line">| --- | --- | --- | --- |</span><br><span class="line"></span><br><span class="line"><span class="section">## 8. 预防动作</span></span><br><span class="line">| 动作 | Owner | 截止时间 | 验收方式 |</span><br><span class="line">| --- | --- | --- | --- |</span><br></pre></td></tr></table></figure>
+
+
+<h2 id="十二、把复盘动作转成门禁和用例"><a href="#十二、把复盘动作转成门禁和用例" class="headerlink" title="十二、把复盘动作转成门禁和用例"></a>十二、把复盘动作转成门禁和用例</h2><p>复盘里最容易流失的是预防动作。会议上大家都同意“后续加强覆盖”，但一个月后没人知道加强了什么。预防动作必须落到具体载体：自动化用例、准入门禁、日志告警、代码评审规则、平台脚本或案例库条目。</p>
+<p>以 Watchdog 复盘为例，预防动作可以这样落地：自动化用例增加锁屏唤醒循环和低温恢复；准入门禁增加 system_server Watchdog 为硬阻断；日志告警增加 sensor flush 超时事件；代码评审规则增加系统锁内禁止等待 vendor 长耗时回调；案例库新增 power-sensor suspend 条目。每一项都有不同 owner，也有不同验收方式。</p>
+<table>
+<thead>
+<tr>
+<th>复盘发现</th>
+<th>落地载体</th>
+<th>验收方式</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>锁内等待 vendor 回调</td>
+<td>代码评审规则</td>
+<td>新增 checklist，模块 owner 审阅</td>
+</tr>
+<tr>
+<td>低温恢复未覆盖</td>
+<td>自动化专项</td>
+<td>CI 或周度长稳包含该场景</td>
+</tr>
+<tr>
+<td>灰度无 flush 耗时指标</td>
+<td>监控事件</td>
+<td>看板能按版本统计超时次数</td>
+</tr>
+<tr>
+<td>新人不熟悉 Watchdog 路径</td>
+<td>案例库</td>
+<td>可通过 watchdog&#x2F;power&#x2F;sensor 检索</td>
+</tr>
+</tbody></table>
+<p>复盘 owner 应该在问题关闭后一周内检查这些动作是否进入相应系统。没有进入系统的预防动作，通常会在忙碌中消失。</p>
+<h2 id="十三、复盘数据口径要统一"><a href="#十三、复盘数据口径要统一" class="headerlink" title="十三、复盘数据口径要统一"></a>十三、复盘数据口径要统一</h2><p>复盘经常因为数据口径不一致产生争议。测试说复现 3 次，研发说只看到 1 次；线上说 Crash 率上升，版本说实验室没有异常。很多时候不是谁错了，而是统计窗口、设备范围、版本范围、去重规则不同。</p>
+<p>复盘材料里要写清数据口径。比如复现次数是按设备计、按 run 计，还是按用户事件计；Crash 率的分母是活跃设备、启动次数，还是场景次数；重启是否排除了手动重启、低电关机和刷机；ANR 是否只统计目标进程，还是包含系统进程。口径一旦清楚，争议会少很多。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">数据口径示例：</span><br><span class="line">复现次数：同一设备同一 run 内同类异常只计 1 次。</span><br><span class="line">样本范围：A05/A06，V6.1.3 G1 灰度，公开渠道，排除工程机。</span><br><span class="line">Crash 率分母：目标 App 启动次数，不使用活跃设备数。</span><br><span class="line">重启统计：排除手动 adb reboot 和 OTA 安装重启，仅统计 bootreason 异常项。</span><br><span class="line">时间窗口：2026-04-18 10:00 至 2026-04-19 10:00，设备本地时间。</span><br></pre></td></tr></table></figure>
+
+<p>统一口径不是为了让数据更好看，而是让复盘结论可比较。下次同类问题发生时，团队才能判断风险是变大还是变小。</p>
+<h2 id="十四、复盘质量也要审阅"><a href="#十四、复盘质量也要审阅" class="headerlink" title="十四、复盘质量也要审阅"></a>十四、复盘质量也要审阅</h2><p>复盘文档写完后，最好有一次轻量审阅。审阅重点不是文字是否漂亮，而是事实是否完整、证据是否支撑结论、预防动作是否可验收。</p>
+<p>可以由质量 owner 或领域专家做 15 分钟审阅，按清单打回不合格复盘。常见打回原因包括：没有时间线、根因只写了直接原因、验证没有样本量、预防动作没有 owner、结论没有版本范围、把猜测写成事实。</p>
+<table>
+<thead>
+<tr>
+<th>审阅项</th>
+<th>合格标准</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>事实</td>
+<td>时间、版本、设备、影响范围清楚</td>
+</tr>
+<tr>
+<td>证据</td>
+<td>日志和结论之间能对应</td>
+</tr>
+<tr>
+<td>根因</td>
+<td>直接原因、触发条件、系统性原因分开</td>
+</tr>
+<tr>
+<td>修复</td>
+<td>写明取舍和引入风险</td>
+</tr>
+<tr>
+<td>验证</td>
+<td>有样本量、场景和通过标准</td>
+</tr>
+<tr>
+<td>预防</td>
+<td>有 owner、截止时间和验收方式</td>
+</tr>
+</tbody></table>
+<p>复盘质量审阅会让文档少一些故事，多一些可复用的工程信息。</p>
+<h2 id="十五、复盘要保留已排除路径"><a href="#十五、复盘要保留已排除路径" class="headerlink" title="十五、复盘要保留已排除路径"></a>十五、复盘要保留已排除路径</h2><p>很多复盘只记录最终根因，不记录排除过什么。这样会丢掉大量定位经验。实际上，已排除路径对后续同类问题非常有价值。它能告诉别人哪些方向看过、凭什么排除、当时用了什么证据。</p>
+<p>比如相机黑屏最终根因在 provider 会话释放，但复盘中也应该记录：已排除 App 权限，因为权限状态正常且多个 App 复现；已排除 SurfaceFlinger 死亡，因为进程未重启且其他 layer 正常；已排除低内存，因为 meminfo 和 lmk 日志无异常。下次遇到类似问题，排查者可以直接复用这些排除方法。</p>
+<p>已排除路径要避免写成“不是某模块问题”这种结论式表达。更好的写法是“检查了什么证据，证据显示什么，因此暂时排除什么”。这比简单甩锅更专业，也更容易被其他团队接受。</p>
+<h2 id="十六、复盘里的责任不是追责"><a href="#十六、复盘里的责任不是追责" class="headerlink" title="十六、复盘里的责任不是追责"></a>十六、复盘里的责任不是追责</h2><p>稳定性复盘必须谈责任，但责任不是追责。责任的含义是：哪个环节可以改变现状，哪个团队可以落实预防动作，哪个角色要确认验收结果。如果复盘把责任理解成找错人，参与者会倾向于少说、晚说、模糊说；如果责任被定义为行动归属，复盘会更容易得到真实信息。</p>
+<p>可以把责任分成四类。技术责任是代码、配置、架构或供应商实现的问题归属。验证责任是测试覆盖、样本选择、场景设计的问题归属。监控责任是线上指标、日志字段、告警规则的问题归属。决策责任是准入、灰度、回滚和遗留审批的问题归属。一次事故可能四类责任都有，但每一类的改进动作不同。</p>
+<table>
+<thead>
+<tr>
+<th>责任类型</th>
+<th>关注问题</th>
+<th>改进动作</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>技术责任</td>
+<td>为什么代码或配置会触发故障</td>
+<td>修复、重构、评审规则</td>
+</tr>
+<tr>
+<td>验证责任</td>
+<td>为什么测试没有提前发现</td>
+<td>用例、样本、专项矩阵</td>
+</tr>
+<tr>
+<td>监控责任</td>
+<td>为什么线上没有及时发现</td>
+<td>埋点、日志、告警、看板</td>
+</tr>
+<tr>
+<td>决策责任</td>
+<td>为什么风险被放大</td>
+<td>准入、灰度、回滚机制</td>
+</tr>
+</tbody></table>
+<p>复盘文档里写责任时，建议直接写动作归属，而不是写情绪化评价。比如“Power 模块补充锁内等待评审项，owner 张三，4 月 30 日前合入 checklist”，比“Power 模块评审不充分”更有用。</p>
+<h2 id="十七、复盘要记录决策过程"><a href="#十七、复盘要记录决策过程" class="headerlink" title="十七、复盘要记录决策过程"></a>十七、复盘要记录决策过程</h2><p>很多问题的技术根因很清楚，但事故仍然发生，是因为中间做过一些决策：是否带风险灰度、是否扩大流量、是否暂停发布、是否回滚、是否接受遗留。复盘如果不记录这些决策，团队无法判断决策机制是否需要改进。</p>
+<p>决策记录不需要很长，但要写清当时已知信息、选择了什么、为什么这么选、结果如何。比如某个相机 Watch 项进入灰度，当时已知修复验证 3000 次无复现，但仍有 provider warning；团队选择 1% 灰度并增加监控；灰度 12 小时后 warning 上升但失败率未超门槛；24 小时后出现用户黑屏投诉，暂停扩大。这样的记录能帮助团队判断停止条件是否太宽、监控指标是否滞后。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">决策记录模板：</span><br><span class="line">时间：&lt;yyyy-mm-dd hh:mm&gt;</span><br><span class="line">已知信息：&lt;当时掌握的证据&gt;</span><br><span class="line">可选方案：&lt;继续 / 暂停 / 回滚 / 限量 / 补测&gt;</span><br><span class="line">最终选择：&lt;选择及审批人&gt;</span><br><span class="line">选择理由：&lt;为什么&gt;</span><br><span class="line">后续结果：&lt;事实反馈&gt;</span><br><span class="line">复盘判断：&lt;决策合理、信息不足、门槛需调整等&gt;</span><br></pre></td></tr></table></figure>
+
+<p>复盘不是用事后视角苛责当时决策，而是检查当时的信息和规则是否足够支持正确选择。</p>
+<h2 id="十八、复盘结论要能进入培训"><a href="#十八、复盘结论要能进入培训" class="headerlink" title="十八、复盘结论要能进入培训"></a>十八、复盘结论要能进入培训</h2><p>一篇好的复盘，应该能被拿来培训新人。不是让新人背事故，而是学习问题分析方法。为了做到这一点，复盘结论要有可教学的结构：典型现象、关键证据、错误路径、正确路径、修复取舍、预防规则。</p>
+<p>比如 Watchdog 复盘可以转成一页培训材料：看到 Watchdog 不要只看最后栈；先还原 60 秒前时间线；检查 system_server 锁、Binder、I&#x2F;O、vendor 回调；确认 bootreason 和 dropbox；验证修复时覆盖原场景、相邻场景和反向风险。这样的材料比“某版本发生过一次 Watchdog”更能提升团队能力。</p>
+<p>复盘进入培训后，还能暴露文档是否真正清楚。如果讲不明白，通常说明复盘本身还有缺口：可能证据链不完整，可能根因层级混在一起，可能预防动作太抽象。</p>
+<h2 id="十九、复盘后的跟踪不能丢"><a href="#十九、复盘后的跟踪不能丢" class="headerlink" title="十九、复盘后的跟踪不能丢"></a>十九、复盘后的跟踪不能丢</h2><p>复盘会结束后，真正困难的是跟踪。很多 action item 在会议纪要里写得很好，但没有进入缺陷系统、需求系统或测试平台，几周后就没人再看。建议复盘动作必须有一个统一承载位置，可以是缺陷子任务、质量改进任务、用例变更单或监控需求单。</p>
+<p>跟踪时要区分短期动作和长期动作。短期动作包括修复、回归、灰度观察、回滚策略，通常一两个版本内完成。长期动作包括平台能力、工具脚本、专项矩阵、供应商规范，周期更长，但也要有里程碑。复盘 owner 不一定亲自完成所有动作，但要确保每个动作被系统记录、有人接收、可以验收。</p>
+<table>
+<thead>
+<tr>
+<th>动作类型</th>
+<th>承载位置</th>
+<th>验收方式</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>修复回归</td>
+<td>缺陷单 &#x2F; Top Issue</td>
+<td>修复包和样本验证通过</td>
+</tr>
+<tr>
+<td>用例补充</td>
+<td>测试用例库</td>
+<td>新用例可执行，有通过记录</td>
+</tr>
+<tr>
+<td>监控补充</td>
+<td>日志平台需求</td>
+<td>看板或告警上线</td>
+</tr>
+<tr>
+<td>规则更新</td>
+<td>准入标准 &#x2F; 评审 checklist</td>
+<td>下个版本评审使用</td>
+</tr>
+<tr>
+<td>案例沉淀</td>
+<td>案例库</td>
+<td>可检索，有标签和 owner</td>
+</tr>
+</tbody></table>
+<p>复盘结束两周后，可以做一次轻量回看：哪些动作已完成，哪些延期，延期是否影响当前版本。如果没有这个回看，复盘很容易停留在文档层面。</p>
+<h2 id="二十、复盘材料要保留原始证据索引"><a href="#二十、复盘材料要保留原始证据索引" class="headerlink" title="二十、复盘材料要保留原始证据索引"></a>二十、复盘材料要保留原始证据索引</h2><p>复盘文档为了可读性，通常只贴关键日志片段。但原始证据不能丢。半年后同类问题再出现，团队需要回看完整 bugreport、traces、pstore、tombstone、测试脚本和设备信息。只保留截图或复制片段，会让历史案例失去复查价值。</p>
+<p>建议复盘文档里保留证据索引表，记录文件名、采集时间、设备、版本、用途和存储位置。证据可以放在制品库、日志平台或内部对象存储，但路径要稳定。涉及隐私或用户数据的材料要脱敏，并写明访问权限。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">证据索引示例：</span><br><span class="line">watchdog_bugreport_A05_20260418.zip：复现设备完整 bugreport，用于 system_server 栈和 dropbox。</span><br><span class="line">pstore_A05_20260418.txt：重启现场 pstore，用于确认 bootreason。</span><br><span class="line">run_config_0420.json：测试脚本和场景配置，用于复现路径。</span><br><span class="line">fix_validation.csv：修复后三轮验证结果，用于关闭结论。</span><br></pre></td></tr></table></figure>
+
+<p>原始证据索引让复盘经得起回看，也让案例库能从复盘中提取可靠材料。</p>
+<h2 id="二十一、复盘结论要回到版本风险"><a href="#二十一、复盘结论要回到版本风险" class="headerlink" title="二十一、复盘结论要回到版本风险"></a>二十一、复盘结论要回到版本风险</h2><p>稳定性复盘最后还要回到版本风险：这个问题是否只影响当前版本，是否已经进入灰度监控，是否需要调整准入标准，是否影响同平台其他机型。很多复盘把技术修复写清了，却没有说明版本后续怎么处理，导致版本 owner 仍然不知道能否继续扩大。</p>
+<p>建议在复盘末尾写一段版本影响结论：当前版本是否可继续、遗留风险是什么、观察到什么时候、同平台是否需要排查、下一版是否要补专项。这样复盘不只服务技术团队，也能服务发布决策。</p>
+<h2 id="二十二、小结"><a href="#二十二、小结" class="headerlink" title="二十二、小结"></a>二十二、小结</h2><p>问题复盘的价值，不在于把一次故障写完整，而在于让团队下次少走弯路。现象要连接用户影响和系统证据，证据要能还原时间线，根因要拆到直接原因、触发条件和系统性原因，修复要说明取舍，预防要有可验收动作。</p>
+<p>当复盘能沉淀成用例、监控、准入规则、代码评审规则和案例库条目时，它才真正结束。否则它只是一次写得更长的缺陷关闭说明。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Android%E7%A8%B3%E5%AE%9A%E6%80%A7/" rel="tag"># Android稳定性</a>
+              <a href="/tags/Android/" rel="tag"># Android</a>
+              <a href="/tags/%E7%A8%B3%E5%AE%9A%E6%80%A7%E6%B5%8B%E8%AF%95/" rel="tag"># 稳定性测试</a>
+              <a href="/tags/%E9%97%AE%E9%A2%98%E5%A4%8D%E7%9B%98/" rel="tag"># 问题复盘</a>
+              <a href="/tags/%E6%A0%B9%E5%9B%A0%E5%88%86%E6%9E%90/" rel="tag"># 根因分析</a>
+              <a href="/tags/%E9%A2%84%E9%98%B2%E6%9C%BA%E5%88%B6/" rel="tag"># 预防机制</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2026/04/10/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-50-%E9%87%8F%E4%BA%A7%E5%89%8D%E7%A8%B3%E5%AE%9A%E6%80%A7%E9%AA%8C%E6%94%B6%E6%80%8E%E4%B9%88%E5%81%9A%E9%A3%8E%E9%99%A9%E8%AF%84%E4%BC%B0%E5%87%86%E5%85%A5%E8%AF%84%E5%AE%A1%E5%92%8C%E9%81%97%E7%95%99%E9%97%AE%E9%A2%98%E7%AE%A1%E7%90%86/" rel="prev" title="Android稳定性-50-量产前稳定性验收怎么做：风险评估、准入评审和遗留问题管理">
+                  <i class="fa fa-angle-left"></i> Android稳定性-50-量产前稳定性验收怎么做：风险评估、准入评审和遗留问题管理
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2026/04/14/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-52-Android%E7%B3%BB%E7%BB%9F%E9%97%AE%E9%A2%98%E5%88%86%E6%9E%90%E6%A1%88%E4%BE%8B%E5%BA%93%E6%80%8E%E4%B9%88%E5%BB%BA%E8%AE%BE/" rel="next" title="Android稳定性-52-Android 系统问题分析案例库怎么建设">
+                  Android稳定性-52-Android 系统问题分析案例库怎么建设 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">1.1m</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">66:02</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="PSS、RSS、USS、Java Heap 和 Native Heap 是 Android 稳定性测试里非常容易被写成一句话的问题，但真正能推动开发定位的材料，必须包含现象、时间、系统状态、关键日志、复现路径和排除项。本文围绕 内存 建立一条可执行的排查链路：先判断问题类型，再采集正确证据，然后把证据按时间线组织成结论。 这篇不是命令清单，而是面向测试开发的定位方法。你应该能在读完后知道工具在哪里">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Android稳定性-40-Android 内存稳定性分析：PSS、RSS、USS、Java Heap 和 Native Heap">
+<meta property="og:url" content="https://paynewinnt.github.io/2026/03/21/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-40-Android%E5%86%85%E5%AD%98%E7%A8%B3%E5%AE%9A%E6%80%A7%E5%88%86%E6%9E%90PSSRSSUSSJavaHeap%E5%92%8CNativeHeap/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="PSS、RSS、USS、Java Heap 和 Native Heap 是 Android 稳定性测试里非常容易被写成一句话的问题，但真正能推动开发定位的材料，必须包含现象、时间、系统状态、关键日志、复现路径和排除项。本文围绕 内存 建立一条可执行的排查链路：先判断问题类型，再采集正确证据，然后把证据按时间线组织成结论。 这篇不是命令清单，而是面向测试开发的定位方法。你应该能在读完后知道工具在哪里">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-03-21T12:30:00.000Z">
+<meta property="article:modified_time" content="2026-03-21T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="Android稳定性">
+<meta property="article:tag" content="Android">
+<meta property="article:tag" content="稳定性测试">
+<meta property="article:tag" content="内存分析">
+<meta property="article:tag" content="PSS">
+<meta property="article:tag" content="Native Heap">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2026/03/21/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-40-Android%E5%86%85%E5%AD%98%E7%A8%B3%E5%AE%9A%E6%80%A7%E5%88%86%E6%9E%90PSSRSSUSSJavaHeap%E5%92%8CNativeHeap/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2026/03/21/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-40-Android%E5%86%85%E5%AD%98%E7%A8%B3%E5%AE%9A%E6%80%A7%E5%88%86%E6%9E%90PSSRSSUSSJavaHeap%E5%92%8CNativeHeap/","path":"2026/03/21/Android稳定性-40-Android内存稳定性分析PSSRSSUSSJavaHeap和NativeHeap/","title":"Android稳定性-40-Android 内存稳定性分析：PSS、RSS、USS、Java Heap 和 Native Heap"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>Android稳定性-40-Android 内存稳定性分析：PSS、RSS、USS、Java Heap 和 Native Heap | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E5%85%88%E5%AE%9A%E4%B9%89-%E5%86%85%E5%AD%98-%E9%97%AE%E9%A2%98%E7%9A%84%E8%BE%B9%E7%95%8C"><span class="nav-number">1.</span> <span class="nav-text">一、先定义 内存 问题的边界</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E5%AE%9A%E4%BD%8D%E5%B7%A5%E5%85%B7%E5%9C%A8%E7%B3%BB%E7%BB%9F%E9%87%8C%E7%9A%84%E4%BD%8D%E7%BD%AE"><span class="nav-number">2.</span> <span class="nav-text">二、定位工具在系统里的位置</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E7%AC%AC%E4%B8%80%E8%BD%AE%E9%87%87%E9%9B%86%E5%91%BD%E4%BB%A4"><span class="nav-number">3.</span> <span class="nav-text">三、第一轮采集命令</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E5%85%B3%E9%94%AE%E6%97%A5%E5%BF%97%E5%85%A5%E5%8F%A3%E5%92%8C%E5%85%B3%E9%94%AE%E8%AF%8D"><span class="nav-number">4.</span> <span class="nav-text">四、关键日志入口和关键词</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E6%97%B6%E9%97%B4%E7%BA%BF%E6%80%8E%E4%B9%88%E6%90%AD"><span class="nav-number">5.</span> <span class="nav-text">五、时间线怎么搭</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81PSS%E3%80%81RSS%E3%80%81USS%E3%80%81Java-Heap-%E5%92%8C-Native-Heap-%E7%9A%84%E5%88%A4%E6%96%AD%E5%8F%A3%E5%BE%84"><span class="nav-number">6.</span> <span class="nav-text">六、PSS、RSS、USS、Java Heap 和 Native Heap 的判断口径</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E5%A6%82%E4%BD%95%E5%88%A4%E6%96%AD%E6%A0%B9%E5%9B%A0%E6%96%B9%E5%90%91"><span class="nav-number">7.</span> <span class="nav-text">七、如何判断根因方向</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E8%A1%A8%E6%A0%BC%E5%8C%96%E5%AF%B9%E6%AF%94%EF%BC%9A%E7%8E%B0%E8%B1%A1%E3%80%81%E8%AF%81%E6%8D%AE%E5%92%8C%E4%B8%8B%E4%B8%80%E6%AD%A5"><span class="nav-number">8.</span> <span class="nav-text">八、表格化对比：现象、证据和下一步</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E5%AE%8C%E6%95%B4%E6%A1%88%E4%BE%8B"><span class="nav-number">9.</span> <span class="nav-text">九、完整案例</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E5%B8%B8%E8%A7%81%E8%AF%AF%E5%88%A4"><span class="nav-number">10.</span> <span class="nav-text">十、常见误判</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E5%A4%8D%E7%8E%B0%E5%92%8C%E4%BA%8C%E6%AC%A1%E9%87%87%E9%9B%86%E7%AD%96%E7%95%A5"><span class="nav-number">11.</span> <span class="nav-text">十一、复现和二次采集策略</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E6%A3%80%E6%9F%A5%E6%B8%85%E5%8D%95"><span class="nav-number">12.</span> <span class="nav-text">十二、检查清单</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81%E8%BE%93%E5%87%BA%E7%89%A9%E6%A8%A1%E6%9D%BF"><span class="nav-number">13.</span> <span class="nav-text">十三、输出物模板</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81%E6%8F%90%E5%8D%95%E6%97%B6%E6%80%8E%E4%B9%88%E5%86%99%E6%89%8D%E6%9C%89%E6%95%88"><span class="nav-number">14.</span> <span class="nav-text">十四、提单时怎么写才有效</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%94%E3%80%81%E5%B0%8F%E7%BB%93"><span class="nav-number">15.</span> <span class="nav-text">十五、小结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AD%E3%80%81%E9%87%87%E9%9B%86%E7%9B%AE%E5%BD%95%E5%92%8C%E5%91%BD%E5%90%8D%E8%A7%84%E8%8C%83"><span class="nav-number">16.</span> <span class="nav-text">十六、采集目录和命名规范</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%83%E3%80%81%E6%97%B6%E9%97%B4%E6%A0%A1%E5%87%86%E6%96%B9%E6%B3%95"><span class="nav-number">17.</span> <span class="nav-text">十七、时间校准方法</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AB%E3%80%81%E8%87%AA%E5%8A%A8%E5%8C%96%E5%B9%B3%E5%8F%B0%E5%BA%94%E8%AF%A5%E6%8F%90%E5%89%8D%E5%9F%8B%E5%93%AA%E4%BA%9B%E7%82%B9"><span class="nav-number">18.</span> <span class="nav-text">十八、自动化平台应该提前埋哪些点</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B9%9D%E3%80%81%E5%A6%82%E4%BD%95%E5%81%9A%E6%9C%80%E5%B0%8F%E5%A4%8D%E7%8E%B0"><span class="nav-number">19.</span> <span class="nav-text">十九、如何做最小复现</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E3%80%81%E5%A6%82%E4%BD%95%E5%8C%BA%E5%88%86%E6%A0%B9%E5%9B%A0%E3%80%81%E8%AF%B1%E5%9B%A0%E5%92%8C%E5%90%8E%E6%9E%9C"><span class="nav-number">20.</span> <span class="nav-text">二十、如何区分根因、诱因和后果</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%80%E3%80%81%E7%89%88%E6%9C%AC%E5%B7%AE%E5%BC%82%E5%92%8C%E6%9D%83%E9%99%90%E9%99%90%E5%88%B6"><span class="nav-number">21.</span> <span class="nav-text">二十一、版本差异和权限限制</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%8C%E3%80%81%E8%AF%81%E6%8D%AE%E6%91%98%E5%BD%95%E7%9A%84%E5%B0%BA%E5%BA%A6"><span class="nav-number">22.</span> <span class="nav-text">二十二、证据摘录的尺度</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%89%E3%80%81%E8%B7%A8%E5%9B%A2%E9%98%9F%E4%BA%A4%E6%8E%A5%E6%96%B9%E5%BC%8F"><span class="nav-number">23.</span> <span class="nav-text">二十三、跨团队交接方式</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%9B%9B%E3%80%81%E5%9B%9E%E5%BD%92%E9%AA%8C%E8%AF%81%E6%80%8E%E4%B9%88%E8%AE%BE%E8%AE%A1"><span class="nav-number">24.</span> <span class="nav-text">二十四、回归验证怎么设计</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%94%E3%80%81%E6%9C%80%E7%BB%88%E5%B0%8F%E7%BB%93"><span class="nav-number">25.</span> <span class="nav-text">二十五、最终小结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%85%AD%E3%80%81%E5%BC%82%E5%B8%B8%E5%88%86%E7%BA%A7%E5%92%8C%E4%BC%98%E5%85%88%E7%BA%A7%E5%88%A4%E6%96%AD"><span class="nav-number">26.</span> <span class="nav-text">二十六、异常分级和优先级判断</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%83%E3%80%81%E8%B6%8B%E5%8A%BF%E9%87%87%E6%A0%B7%E6%AF%94%E5%8D%95%E7%82%B9%E6%88%AA%E5%9B%BE%E6%9B%B4%E9%87%8D%E8%A6%81"><span class="nav-number">27.</span> <span class="nav-text">二十七、趋势采样比单点截图更重要</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%85%AB%E3%80%81%E9%99%84%E4%BB%B6%E9%AA%8C%E6%94%B6%E6%A0%87%E5%87%86"><span class="nav-number">28.</span> <span class="nav-text">二十八、附件验收标准</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B9%9D%E3%80%81%E6%8A%A5%E5%91%8A%E5%8F%A3%E5%BE%84%E7%A4%BA%E4%BE%8B"><span class="nav-number">29.</span> <span class="nav-text">二十九、报告口径示例</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E5%8D%81%E3%80%81%E5%9F%BA%E7%BA%BF%E5%AF%B9%E6%AF%94%E5%92%8C%E7%8E%AF%E5%A2%83%E6%8E%A7%E5%88%B6"><span class="nav-number">30.</span> <span class="nav-text">三十、基线对比和环境控制</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E5%8D%81%E4%B8%80%E3%80%81%E7%BB%99%E5%BC%80%E5%8F%91%E7%9A%84%E6%9C%80%E7%9F%AD%E9%98%85%E8%AF%BB%E8%B7%AF%E5%BE%84"><span class="nav-number">31.</span> <span class="nav-text">三十一、给开发的最短阅读路径</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">298</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">27</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">513</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2026/03/21/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-40-Android%E5%86%85%E5%AD%98%E7%A8%B3%E5%AE%9A%E6%80%A7%E5%88%86%E6%9E%90PSSRSSUSSJavaHeap%E5%92%8CNativeHeap/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="Android稳定性-40-Android 内存稳定性分析：PSS、RSS、USS、Java Heap 和 Native Heap | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Android稳定性-40-Android 内存稳定性分析：PSS、RSS、USS、Java Heap 和 Native Heap
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2026-03-21 20:30:00" itemprop="dateCreated datePublished" datetime="2026-03-21T20:30:00+08:00">2026-03-21</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/Android%E7%A8%B3%E5%AE%9A%E6%80%A7/" itemprop="url" rel="index"><span itemprop="name">Android稳定性</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>6.3k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>23 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>PSS、RSS、USS、Java Heap 和 Native Heap 是 Android 稳定性测试里非常容易被写成一句话的问题，但真正能推动开发定位的材料，必须包含现象、时间、系统状态、关键日志、复现路径和排除项。本文围绕 <code>内存</code> 建立一条可执行的排查链路：先判断问题类型，再采集正确证据，然后把证据按时间线组织成结论。</p>
+<p>这篇不是命令清单，而是面向测试开发的定位方法。你应该能在读完后知道工具在哪里、每个输出看什么、哪些结论不能轻易下，以及怎样把一次偶现问题整理成开发可以继续分析的报告。</p>
+<h2 id="一、先定义-内存-问题的边界"><a href="#一、先定义-内存-问题的边界" class="headerlink" title="一、先定义 内存 问题的边界"></a>一、先定义 内存 问题的边界</h2><p>很多定位失败不是工具不会用，而是一开始没有定义边界。遇到 PSS、RSS、USS、Java Heap 和 Native Heap 时，先把它拆成可验证的问题：是否发生在前台应用、是否影响整个系统、adb 是否在线、是否发生重启、是否能复现、是否和长稳时长相关。边界越清楚，后面的日志越少走弯路。</p>
+<p>对 <code>内存</code> 类问题，不要直接写“系统不稳定”。至少要写出发生时间、持续时间、用户可见现象、设备连接状态、任务类型、恢复方式，以及问题前后有没有 crash、ANR、watchdog、panic、资源上涨或服务重启。</p>
+<h2 id="二、定位工具在系统里的位置"><a href="#二、定位工具在系统里的位置" class="headerlink" title="二、定位工具在系统里的位置"></a>二、定位工具在系统里的位置</h2><p>这类问题通常跨越 App、Framework、Native Service、HAL 和 Kernel。工具也要分层使用：logcat 负责过程日志，bugreport 负责系统快照，dropbox 负责异常索引，dumpsys 负责服务状态，Perfetto 负责时间线，procfs 和 pstore 负责底层现场。</p>
+<table>
+<thead>
+<tr>
+<th>层级</th>
+<th>工具</th>
+<th>看什么</th>
+<th>典型输出</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>App&#x2F;Framework</td>
+<td>logcat、dropbox、traces</td>
+<td>crash、ANR、主线程和 binder</td>
+<td>logcat_all.txt、anr traces</td>
+</tr>
+<tr>
+<td>System Server</td>
+<td>dumpsys、event log</td>
+<td>Activity、Window、Power、Display 状态</td>
+<td>dumpsys_window.txt</td>
+</tr>
+<tr>
+<td>Native</td>
+<td>tombstone、Perfetto</td>
+<td>native crash、调度、合成、binder</td>
+<td>tombstone_XX、pftrace</td>
+</tr>
+<tr>
+<td>Kernel</td>
+<td>pstore、dmesg、procfs</td>
+<td>panic、资源、调度和驱动错误</td>
+<td>console-ramoops、proc 文件</td>
+</tr>
+<tr>
+<td>平台</td>
+<td>自动化报告、录屏</td>
+<td>触发动作和用户视角</td>
+<td>任务日志、截图、视频</td>
+</tr>
+</tbody></table>
+<h2 id="三、第一轮采集命令"><a href="#三、第一轮采集命令" class="headerlink" title="三、第一轮采集命令"></a>三、第一轮采集命令</h2><p>第一轮采集的目标是固定现场，不是立刻证明根因。命令应当在问题发生后尽快执行，并把输出保存到以设备、时间、任务命名的目录。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">adb devices</span><br><span class="line">adb shell <span class="built_in">date</span>; adb shell <span class="built_in">uptime</span></span><br><span class="line">adb logcat -b main -b system -b events -b crash -v threadtime -d &gt; logcat_all.txt</span><br><span class="line">adb bugreport ./bugreport.zip</span><br><span class="line">adb shell dumpsys meminfo -a &gt; meminfo_all.txt</span><br><span class="line">adb shell dumpsys meminfo com.example.app &gt; meminfo_app.txt</span><br><span class="line">adb shell <span class="built_in">cat</span> /proc/meminfo &gt; proc_meminfo.txt</span><br><span class="line">adb shell <span class="built_in">cat</span> /proc/pressure/memory &gt; psi_memory.txt</span><br><span class="line">adb shell dumpsys activity lmk &gt; lmk.txt</span><br></pre></td></tr></table></figure>
+
+<p>如果设备正在卡住，优先采集不会改变现场的命令。比如先 <code>date</code>、<code>uptime</code>、<code>dumpsys</code>、<code>logcat -d</code>，再考虑按键唤醒、重启设备或重新启动服务。任何会改变状态的动作都要记录在时间线里。</p>
+<h2 id="四、关键日志入口和关键词"><a href="#四、关键日志入口和关键词" class="headerlink" title="四、关键日志入口和关键词"></a>四、关键日志入口和关键词</h2><p>排查 <code>内存</code> 时，日志搜索要围绕事件链，而不是只搜 error。建议先搜时间窗口，再搜关键词。相关关键词包括：PSS, RSS, USS, Java Heap, Native Heap, LMKD。还要结合 <code>am_</code>、<code>wm_</code>、<code>power</code>、<code>display</code>、<code>binder</code>、<code>watchdog</code>、<code>lmkd</code>、<code>tombstone</code>、<code>panic</code> 等系统词。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">rg -n <span class="string">&quot;watchdog|ANR|am_anr|am_crash|binder|timeout|killing|lowmemory|panic|reboot|SurfaceFlinger&quot;</span> logcat_all.txt</span><br><span class="line">rg -n <span class="string">&quot;Window|Display|Power|ActivityManager|InputDispatcher|lmkd|sched|blocked&quot;</span> bugreport.txt</span><br><span class="line">rg -n <span class="string">&quot;PSS|LMKD&quot;</span> *.txt</span><br></pre></td></tr></table></figure>
+
+<p>关键词只是入口。看到命中后要回看前后 1 到 5 分钟，确认它是原因、结果还是无关噪声。</p>
+<h2 id="五、时间线怎么搭"><a href="#五、时间线怎么搭" class="headerlink" title="五、时间线怎么搭"></a>五、时间线怎么搭</h2><p>稳定性问题必须按时间线写。建议建立四列：平台动作、用户可见现象、系统日志、系统状态。每个证据都落到秒级时间，无法确定时写明来源。</p>
+<table>
+<thead>
+<tr>
+<th>时间</th>
+<th>平台&#x2F;用户现象</th>
+<th>系统证据</th>
+<th>判断</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>T-300s</td>
+<td>任务正常运行</td>
+<td>资源指标开始抬升或日志出现 timeout</td>
+<td>可能是前兆</td>
+</tr>
+<tr>
+<td>T-30s</td>
+<td>页面开始变慢</td>
+<td>event log 出现 input 或 binder 延迟</td>
+<td>进入异常窗口</td>
+</tr>
+<tr>
+<td>T</td>
+<td>问题可见</td>
+<td>dropbox&#x2F;dumpsys&#x2F;perfetto 命中</td>
+<td>核心现场</td>
+</tr>
+<tr>
+<td>T+60s</td>
+<td>恢复或重启</td>
+<td>服务重启、LMKD、boot reason</td>
+<td>判断恢复路径</td>
+</tr>
+<tr>
+<td>T+300s</td>
+<td>二次采集</td>
+<td>bugreport、pstore、tombstone</td>
+<td>补充证据</td>
+</tr>
+</tbody></table>
+<h2 id="六、PSS、RSS、USS、Java-Heap-和-Native-Heap-的判断口径"><a href="#六、PSS、RSS、USS、Java-Heap-和-Native-Heap-的判断口径" class="headerlink" title="六、PSS、RSS、USS、Java Heap 和 Native Heap 的判断口径"></a>六、PSS、RSS、USS、Java Heap 和 Native Heap 的判断口径</h2><p>PSS 适合做 Android 进程整体内存趋势，因为共享页按比例分摊；RSS 容易被共享库和映射影响，适合结合 smaps 看页类型；USS 表示独占页，更接近杀掉进程后可释放的收益；Java Heap 对应 ART&#x2F;Dalvik 对象；Native Heap 对应 malloc、JNI、C&#x2F;C++ 库和部分 bitmap&#x2F;native buffer。</p>
+<p>长稳分析不要只看单点最大值，要看斜率、场景边界和 GC&#x2F;回收后是否下降。页面反复进入后 PSS 台阶式上涨，且退出后不回落，才像泄漏。Native Heap 涨但 Java Heap 稳定，要优先看 JNI、bitmap、media、skia、OpenGL、ashmem 或 vendor native 库。</p>
+<h2 id="七、如何判断根因方向"><a href="#七、如何判断根因方向" class="headerlink" title="七、如何判断根因方向"></a>七、如何判断根因方向</h2><p>对 <code>内存</code> 类问题，根因方向通常不是单点日志，而是一组证据共同指向。比如前台应用 ANR 同时出现 system_server binder 阻塞，不能直接归因到应用；CPU 高但 Perfetto 显示关键线程在 uninterruptible sleep，不能简单说是计算耗时；黑屏时 Power 状态是 ON、Display 是 ON、SurfaceFlinger 没有合成，则优先看显示链路。</p>
+<p>判断根因时先问三个问题：异常是否发生在问题前，异常是否能解释用户现象，异常是否有独立证据支持。如果三个问题有一个回答不上来，就只能写“相关线索”，不能写“根因”。</p>
+<h2 id="八、表格化对比：现象、证据和下一步"><a href="#八、表格化对比：现象、证据和下一步" class="headerlink" title="八、表格化对比：现象、证据和下一步"></a>八、表格化对比：现象、证据和下一步</h2><table>
+<thead>
+<tr>
+<th>现象</th>
+<th>优先证据</th>
+<th>支持判断</th>
+<th>下一步</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>局部应用异常</td>
+<td>app crash、app ANR、进程状态</td>
+<td>只影响单包，系统服务正常</td>
+<td>交给应用并附主线程栈</td>
+</tr>
+<tr>
+<td>系统服务阻塞</td>
+<td>watchdog、dumpsys、traces</td>
+<td>system_server 关键线程等待</td>
+<td>看锁、binder、CPU、对端服务</td>
+</tr>
+<tr>
+<td>Native&#x2F;HAL 异常</td>
+<td>tombstone、Perfetto、HAL 日志</td>
+<td>native backtrace 或 HAL 超时</td>
+<td>符号化并找模块 owner</td>
+</tr>
+<tr>
+<td>Kernel&#x2F;驱动异常</td>
+<td>pstore、dmesg、bootreason</td>
+<td>panic、oops、硬件复位</td>
+<td>交 kernel&#x2F;vendor 并保留原始 pstore</td>
+</tr>
+<tr>
+<td>资源耗尽</td>
+<td>meminfo、fd、thread、binder、lmkd</td>
+<td>指标持续上涨并触发失败</td>
+<td>做趋势图和最小复现</td>
+</tr>
+</tbody></table>
+<h2 id="九、完整案例"><a href="#九、完整案例" class="headerlink" title="九、完整案例"></a>九、完整案例</h2><p>背景：一台 userdebug 设备执行长稳任务，任务包含 Monkey、业务页面巡检和定时截图。第 7 小时平台记录到异常，现象属于 PSS、RSS、USS、Java Heap 和 Native Heap。adb 仍能连接，但用户侧体验异常持续约 90 秒。</p>
+<p>处理过程：先保存 <code>date</code>、<code>uptime</code> 和 bugreport，确认没有人为重启；再按问题时间窗口提取 logcat、dropbox 和 dumpsys。日志显示异常前 2 分钟已经出现 <code>PSS</code> 相关告警，问题发生时 <code>LMKD</code> 相关状态异常。Perfetto 或系统快照进一步证明关键线程没有正常推进。最后根据证据排除脚本误触、网络波动和单一应用 crash，把问题收敛到对应系统链路。</p>
+<p>结论写法：本次问题不是“偶现卡住”这种泛描述，而是“在某任务压力下，某链路在 T 到 T+90s 之间停止推进，导致用户可见异常；恢复后系统未重启，核心证据见附件 A&#x2F;B&#x2F;C”。</p>
+<h2 id="十、常见误判"><a href="#十、常见误判" class="headerlink" title="十、常见误判"></a>十、常见误判</h2><p>第一，只看最后一条 error。最后打印的日志经常是结果，不是原因。第二，把平台脚本异常当系统异常，或者把系统异常推给脚本。两者要靠设备状态和用户可见现象区分。第三，只用截图证明问题。截图证明现象，不证明链路。第四，不保留原始文件，只摘录几行。开发无法复核时，结论可信度会明显下降。第五，忽略版本差异。user、userdebug、eng 的日志权限和服务输出不同，同一命令在不同版本可见内容不一样。</p>
+<h2 id="十一、复现和二次采集策略"><a href="#十一、复现和二次采集策略" class="headerlink" title="十一、复现和二次采集策略"></a>十一、复现和二次采集策略</h2><p>如果问题能复现，要把第一轮被动采集升级为主动采集。复现前开启循环 logcat、定时 dumpsys、关键指标采样和 Perfetto 触发条件。长稳任务建议每 30 到 60 秒采集一次轻量指标，每次异常立即抓重型快照。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">while</span> <span class="literal">true</span>; <span class="keyword">do</span></span><br><span class="line">  adb shell <span class="built_in">date</span> &gt;&gt; heartbeat.txt</span><br><span class="line">  adb shell <span class="built_in">uptime</span> &gt;&gt; heartbeat.txt</span><br><span class="line">  adb shell dumpsys meminfo com.example.app &gt;&gt; meminfo_loop.txt</span><br><span class="line">  adb shell top -b -n 1 -H | <span class="built_in">head</span> -80 &gt;&gt; top_loop.txt</span><br><span class="line">  <span class="built_in">sleep</span> 30</span><br><span class="line"><span class="keyword">done</span></span><br></pre></td></tr></table></figure>
+
+<p>循环采集要控制体积，避免日志本身把设备拖慢。关键是让指标能覆盖异常前的斜率，而不是只拿到异常后的静态值。</p>
+<h2 id="十二、检查清单"><a href="#十二、检查清单" class="headerlink" title="十二、检查清单"></a>十二、检查清单</h2><ul>
+<li>是否明确问题类型、发生时间、持续时间和恢复方式</li>
+<li>是否确认 adb 在线状态、boot id、uptime 和 firstboot</li>
+<li>是否保存完整 logcat、bugreport、dropbox 或对应底层文件</li>
+<li>是否按时间窗口提取关键日志，而不是只搜 error</li>
+<li>是否把 PSS, RSS, USS 等核心证据串成时间线</li>
+<li>是否区分根因、触发条件、伴随现象和恢复动作</li>
+<li>是否排除脚本误触、网络异常、设备离线、手动操作</li>
+<li>是否保留原始附件路径和命令版本</li>
+<li>是否写出未确认项和下一步需要的 owner</li>
+<li>是否提供可复现任务、参数和环境信息</li>
+</ul>
+<h2 id="十三、输出物模板"><a href="#十三、输出物模板" class="headerlink" title="十三、输出物模板"></a>十三、输出物模板</h2><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">问题标题：PSS、RSS、USS、Java Heap 和 Native Heap - 设备/版本/任务/发生时间</span><br><span class="line">设备信息：model、serial、build、Android version、root/userdebug 状态</span><br><span class="line">任务信息：脚本版本、参数、开始时间、压力类型</span><br><span class="line">现象：用户可见表现、持续时间、恢复方式、是否重启</span><br><span class="line">时间校准：宿主机时间、设备时间、差值、校准方法</span><br><span class="line"></span><br><span class="line">关键证据：</span><br><span class="line">1. logcat：文件名、时间窗口、关键行号</span><br><span class="line">2. bugreport/dumpsys：服务状态、关键字段</span><br><span class="line">3. dropbox/traces/tombstone/pstore：异常索引和展开证据</span><br><span class="line">4. Perfetto/指标：线程、CPU、内存、I/O 或显示时间线</span><br><span class="line"></span><br><span class="line">初步判断：基于证据链描述，不写超出证据的结论</span><br><span class="line">已排除：脚本误触、手动重启、单应用 crash、网络波动等</span><br><span class="line">待确认：需要哪个模块 owner 继续分析，以及还缺什么日志</span><br><span class="line">附件：原始文件路径和采集命令</span><br></pre></td></tr></table></figure>
+
+<h2 id="十四、提单时怎么写才有效"><a href="#十四、提单时怎么写才有效" class="headerlink" title="十四、提单时怎么写才有效"></a>十四、提单时怎么写才有效</h2><p>有效提单不追求把所有日志贴满正文，而是让读者 3 分钟内理解问题链路。正文写结论和证据摘要，附件放原始文件。关键日志要带文件名、时间点和检索关键词。对 <code>内存</code> 问题，要明确你判断的是“疑似方向”还是“已由多项证据支持的方向”。</p>
+<p>如果证据不足，也要诚实说明。比如“未抓到异常窗口 Perfetto，当前只能根据 dropbox 和 logcat 判断 system_server 可能被阻塞”。这种写法比强行下结论更容易推进，因为它告诉开发下一轮需要补什么。</p>
+<h2 id="十五、小结"><a href="#十五、小结" class="headerlink" title="十五、小结"></a>十五、小结</h2><p>Android 内存稳定性 的核心不是记命令，而是建立证据链。先定义现象，再固定时间窗口，然后按层采集：logcat 看过程，dumpsys 看状态，dropbox 看异常索引，Perfetto 看时间线，procfs&#x2F;pstore 看底层现场。最后用表格、案例、检查清单和模板把结论变成可复核的工程材料。</p>
+<p>稳定性问题通常不会因为一条日志就被解决，但一条组织良好的排查链路，能显著减少争论，把“偶现不好查”推进到“下一步由哪个模块验证”。</p>
+<h2 id="十六、采集目录和命名规范"><a href="#十六、采集目录和命名规范" class="headerlink" title="十六、采集目录和命名规范"></a>十六、采集目录和命名规范</h2><p>内存稳定性 问题最怕多轮采集后文件混在一起。建议目录使用 <code>serial_build_task_time</code> 命名，下面固定放 <code>00_meta</code>、<code>01_raw</code>、<code>02_filtered</code>、<code>03_trace</code>、<code>04_report</code>。<code>00_meta</code> 保存设备型号、系统版本、任务参数、开始时间、问题时间和操作者动作。<code>01_raw</code> 保存原始 bugreport、logcat、dumpsys、pstore 或 trace，任何过滤结果都不要覆盖原始文件。<code>02_filtered</code> 保存按时间窗口裁剪出来的关键片段。<code>03_trace</code> 放 Perfetto、systrace、录屏和截图。<code>04_report</code> 放时间线、初步结论和待确认项。</p>
+<p>文件命名要能从名字看出来源和时间，例如 <code>logcat_20260325_021000_022000_threadtime.txt</code>、<code>dumpsys_window_T_plus_10s.txt</code>、<code>perfetto_black_screen_30s.pftrace</code>。这样开发拿到附件后不需要反复询问“这份日志是什么时候抓的”。</p>
+<h2 id="十七、时间校准方法"><a href="#十七、时间校准方法" class="headerlink" title="十七、时间校准方法"></a>十七、时间校准方法</h2><p>内存稳定性 分析必须说明时间如何校准。自动化平台记录的是宿主机时间，Android 日志记录的是设备时间，bugreport 里还可能混有 elapsed realtime、uptime 和 wall clock。稳定性报告里至少写三项：宿主机当前时间、设备 <code>date</code> 输出、设备 <code>uptime</code> 输出。发生重启时，再补 <code>ro.runtime.firstboot</code>、<code>sys.boot_completed</code> 和 boot id。</p>
+<p>如果问题发生在凌晨或设备离线恢复后，时间漂移更常见。不要只写“约 2 点”。更可靠的写法是：“平台记录 02:14:30，设备 <code>date</code> 与宿主机差 +3 秒；logcat 以设备时间为准”。如果无法校准，也要写明无法校准，并扩大日志窗口。</p>
+<h2 id="十八、自动化平台应该提前埋哪些点"><a href="#十八、自动化平台应该提前埋哪些点" class="headerlink" title="十八、自动化平台应该提前埋哪些点"></a>十八、自动化平台应该提前埋哪些点</h2><p>事后定位依赖现场，但现场往往在问题发生后消失。因此平台侧要提前记录心跳：每分钟保存 <code>date</code>、<code>uptime</code>、adb 状态、前台包名、屏幕状态、关键进程 pid、top 摘要和最近 200 行事件日志。对长稳任务，还应保存任务动作流水，例如点击了哪个页面、执行了哪个 shell 命令、是否发生过 adb reconnect。</p>
+<p>这些信息看起来零碎，但在 内存稳定性 问题里经常决定方向。比如黑屏时如果前台包名已切到 Launcher，说明可能不是原应用页面；重启后 boot id 变化能证明确实重启；CPU 高之前动作流水显示正在批量扫描媒体，就能把复现范围缩小到媒体服务链路。</p>
+<h2 id="十九、如何做最小复现"><a href="#十九、如何做最小复现" class="headerlink" title="十九、如何做最小复现"></a>十九、如何做最小复现</h2><p>最小复现不是把长稳任务原样跑 12 小时，而是从时间线里找触发条件。先看异常前 5 到 15 分钟发生了哪些重复动作，再把动作拆成可控变量：应用页面、网络状态、亮灭屏、插拔电、后台切换、压力参数、温度、内存水位和并发任务。每次只改变一个变量，记录 内存稳定性 是否复现。</p>
+<p>如果问题只在长时间后出现，要保留“预热阶段”和“触发阶段”。例如先循环进入页面 300 次制造资源累积，再单独执行一次唤醒或切换动作触发异常。这样比直接跑整套任务更容易让开发在本地复现，也方便验证修复是否有效。</p>
+<h2 id="二十、如何区分根因、诱因和后果"><a href="#二十、如何区分根因、诱因和后果" class="headerlink" title="二十、如何区分根因、诱因和后果"></a>二十、如何区分根因、诱因和后果</h2><p>稳定性报告里常把三者混在一起。根因是直接导致系统进入异常状态的缺陷，诱因是触发缺陷的外部条件，后果是系统异常后的连锁表现。内存稳定性 问题尤其需要拆开写。例如 CPU 高可能是根因，也可能是异常恢复时的后果；ANR 可能是应用主线程问题，也可能是 system_server 已经阻塞后的表现；重启可能是 watchdog 主动拉起，也可能是 kernel panic 后的结果。</p>
+<p>判断标准是时间和因果：先发生且能解释后续现象的证据更接近根因；只在异常后出现的日志通常是后果；改变压力参数后复现概率变化的因素多半是诱因。报告中用“根因证据”“诱因条件”“伴随现象”分段，会比一句“疑似某模块问题”更有用。</p>
+<h2 id="二十一、版本差异和权限限制"><a href="#二十一、版本差异和权限限制" class="headerlink" title="二十一、版本差异和权限限制"></a>二十一、版本差异和权限限制</h2><p>不同 Android 版本、不同厂商 user 版本对日志权限限制不同。<code>/data/anr</code>、<code>/data/tombstones</code>、<code>/data/system/dropbox</code>、<code>/sys/fs/pstore</code>、binder debugfs 等路径在 user 版本上可能不可读。命令失败不代表没有证据，可能需要 bugreport、厂商诊断包、userdebug 复现或工程开关。</p>
+<p>因此提单时要把命令失败也记录下来：命令、返回值、权限错误、设备版本。开发看到权限限制后，可以判断是否需要提供 eng&#x2F;userdebug 包或打开额外日志。不要为了拿日志随意 root、remount 或清数据，因为这些动作可能改变复现条件。</p>
+<h2 id="二十二、证据摘录的尺度"><a href="#二十二、证据摘录的尺度" class="headerlink" title="二十二、证据摘录的尺度"></a>二十二、证据摘录的尺度</h2><p>正文摘录要短而准。每类证据摘 3 到 10 行关键内容即可，但必须附上原始文件名和行号或时间点。内存稳定性 问题常见的有效摘录包括：异常 tag、reason、blocked thread、pid&#x2F;tid、调用栈顶部、boot reason、资源数值、线程状态、Perfetto 时间范围。不要把几百行日志直接贴到正文里，读者会失去主线。</p>
+<p>摘录时保留原始大小写和关键字段，不要凭印象改写。比如 <code>Input dispatching timed out</code>、<code>system_server_watchdog</code>、<code>Kernel panic - not syncing</code>、<code>Too many open files</code> 这些字符串本身就是检索入口。中文解释可以放在摘录下面。</p>
+<h2 id="二十三、跨团队交接方式"><a href="#二十三、跨团队交接方式" class="headerlink" title="二十三、跨团队交接方式"></a>二十三、跨团队交接方式</h2><p>内存稳定性 往往需要应用、Framework、性能、内核、显示、厂商 HAL 多个 owner 协作。测试侧交接时不要只按组织结构派单，而要按证据指向派单。应用 owner 需要包名、版本、操作路径和应用栈；Framework owner 需要 system_server traces、dumpsys 和 event log；Kernel&#x2F;vendor owner 需要 pstore、dmesg、tombstone、符号版本和硬件批次。</p>
+<p>如果证据跨层，建议在报告开头写“当前优先 owner”和“需要协同 owner”。例如“优先显示 HAL，协同 Framework Window&#x2F;Display”，比同时抄送所有团队更有效。每个 owner 看到自己需要看的附件，推进速度会快很多。</p>
+<h2 id="二十四、回归验证怎么设计"><a href="#二十四、回归验证怎么设计" class="headerlink" title="二十四、回归验证怎么设计"></a>二十四、回归验证怎么设计</h2><p>修复后不能只跑一次原场景。要验证三个层面：第一，原始复现路径是否不再触发；第二，关键指标是否恢复到基线，例如 内存稳定性 相关计数、延迟、资源曲线或异常 tag 是否消失；第三，长稳压力下是否没有新的连锁问题。回归报告也要保留同样的采集目录，便于和修复前对比。</p>
+<p>如果原问题是偶现，要用概率表达结果，例如“修复前 5&#x2F;20 次复现，修复后同条件 0&#x2F;50 次复现，最长连续运行 24 小时”。这比“未复现”更有工程意义。若仍然出现相似现象，要确认是否同一根因，不要自动复用旧结论。</p>
+<h2 id="二十五、最终小结"><a href="#二十五、最终小结" class="headerlink" title="二十五、最终小结"></a>二十五、最终小结</h2><p>内存稳定性 的排查价值不在于某个单独命令，而在于把现场变成可复核的证据链。测试开发要做到三件事：第一，问题发生时尽快固定现场；第二，按时间线把日志、状态、trace 和平台动作串起来；第三，明确哪些是已证实结论，哪些只是下一步线索。</p>
+<p>当报告能同时包含具体背景、工具位置、命令入口、表格、案例、误判、检查清单和输出模板时，问题就不再是“偶现不好查”，而是一个可以被分层分析、跨团队交接和回归验证的工程任务。</p>
+<h2 id="二十六、异常分级和优先级判断"><a href="#二十六、异常分级和优先级判断" class="headerlink" title="二十六、异常分级和优先级判断"></a>二十六、异常分级和优先级判断</h2><p>内存稳定性 问题进入缺陷系统前，建议先做分级。影响单个三方应用且可恢复的问题，可以按普通应用稳定性处理；影响系统导航、锁屏、输入、显示、电源、电话、网络等核心能力的问题，应提高优先级；出现自动重启、数据丢失、无法恢复、反复 watchdog、kernel panic 或资源耗尽导致系统级不可用时，应按高优先级推进。</p>
+<p>分级不是为了夸大问题，而是为了匹配响应速度和日志要求。高优先级问题需要保存更完整的现场，包括原始 bugreport、trace、pstore、录屏和自动化动作流水；普通问题则可以先提供最小复现和关键日志。分级依据要写在报告中，例如“影响整机输入，adb 在线但屏幕 90 秒无响应，因此按系统级卡死处理”。</p>
+<h2 id="二十七、趋势采样比单点截图更重要"><a href="#二十七、趋势采样比单点截图更重要" class="headerlink" title="二十七、趋势采样比单点截图更重要"></a>二十七、趋势采样比单点截图更重要</h2><p>长稳问题往往不是瞬间发生，而是指标逐步偏离。对 内存稳定性，单点截图只能说明某一刻异常，趋势采样才能说明异常如何形成。建议把关键指标按固定周期落盘：CPU、内存、FD、线程数、binder 调用、前台窗口、屏幕状态、温度、电量、boot id 和任务阶段。采样间隔要根据问题类型选择，资源泄漏可以 30 到 60 秒，卡顿黑屏可以 1 到 5 秒，重启类问题至少要有心跳记录。</p>
+<p>趋势图不一定要复杂，CSV 加简单折线就能说明很多问题。比如 FD 每次进入页面增加 8 个且退出不下降，线程数每轮增加 1 个，PSS 每 30 分钟台阶式上涨，CPU 高峰与掉帧窗口完全重叠，这些都比“看起来变高了”更有说服力。趋势采样也能帮助排除误判：如果异常前指标长期稳定，根因可能不是资源累积。</p>
+<h2 id="二十八、附件验收标准"><a href="#二十八、附件验收标准" class="headerlink" title="二十八、附件验收标准"></a>二十八、附件验收标准</h2><p>提交 内存稳定性 问题前，自己先按附件验收一遍。第一，原始文件能打开，压缩包没有损坏。第二，文件名能看出设备、时间和来源。第三，关键证据在正文中有索引，开发不需要从头翻完整 bugreport。第四，隐私或账号信息已按团队规则脱敏，但没有破坏关键字段。第五，所有命令输出都来自同一台设备和同一次复现，不能把不同轮次的日志混成一个结论。</p>
+<p>如果必须混用多轮日志，要明确标注“复现 A”“复现 B”。例如第一轮只有 dropbox，第二轮补到了 Perfetto，就不能把第二轮 Perfetto 当成第一轮的直接证据，只能写“同路径二次复现补充证明”。这种严谨性会减少后续争论。</p>
+<h2 id="二十九、报告口径示例"><a href="#二十九、报告口径示例" class="headerlink" title="二十九、报告口径示例"></a>二十九、报告口径示例</h2><p>推荐报告口径是“事实、证据、判断、缺口”四段式。事实描述用户可见现象和发生条件；证据列出关键日志、状态和 trace；判断只写证据能支持的方向；缺口说明还需要谁继续分析。以 内存稳定性 为例，不要写“系统有 bug 导致异常”，而要写“在某任务压力下，T 时刻出现某系统状态异常，与用户可见现象时间一致，当前证据指向某链路；尚缺少某层日志确认具体函数或驱动返回”。</p>
+<p>这种口径看起来克制，但更容易被接受。它既没有把测试侧无法证明的内容说死，也没有把问题扔给开发自行猜测。稳定性测试的专业性，恰恰体现在能把不完整现场整理成边界清晰、方向明确、下一步可执行的材料。</p>
+<h2 id="三十、基线对比和环境控制"><a href="#三十、基线对比和环境控制" class="headerlink" title="三十、基线对比和环境控制"></a>三十、基线对比和环境控制</h2><p>分析 内存稳定性 时要有基线。基线可以来自同版本正常设备、同设备问题前的采样、上一版稳定构建或关闭压力项后的对照结果。没有基线时，很多数字无法解释：线程 180 个可能正常也可能异常，PSS 900MB 可能是业务需要也可能是泄漏，CPU 60% 可能是前台动画也可能是死循环。报告里写清楚基线来源，能让结论更稳。</p>
+<p>环境控制同样重要。电源、温度、网络、账号、SIM 卡、屏幕亮度、日志开关、Monkey seed、任务并发数都会影响稳定性表现。复现和回归时尽量保持一致；必须改变时，要在记录里说明。否则一次“修复后不复现”可能只是温度下降或压力减小带来的假象。</p>
+<h2 id="三十一、给开发的最短阅读路径"><a href="#三十一、给开发的最短阅读路径" class="headerlink" title="三十一、给开发的最短阅读路径"></a>三十一、给开发的最短阅读路径</h2><p>最后给开发留一条最短阅读路径：先看 <code>summary.md</code> 的 10 行摘要，再看 <code>timeline.md</code> 的核心时间线，然后按正文索引打开 3 到 5 个关键附件。摘要里写清楚“现象是什么、证据指向哪里、已排除什么、需要谁继续看”。对于 内存稳定性，建议在摘要末尾附上一个明确请求，例如“请 Display HAL owner 确认 T 时刻 present fence timeout 的返回路径”或“请 Framework owner 确认 system_server android.display 线程等待的 binder 对端”。</p>
+<p>这条路径能减少沟通成本。稳定性问题常常附件很多，如果没有阅读顺序，开发会先看到噪声；如果阅读顺序清楚，开发能快速进入关键上下文。测试开发的交付物不只是日志集合，而是经过筛选、排序和解释的工程证据包。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Android%E7%A8%B3%E5%AE%9A%E6%80%A7/" rel="tag"># Android稳定性</a>
+              <a href="/tags/Android/" rel="tag"># Android</a>
+              <a href="/tags/%E7%A8%B3%E5%AE%9A%E6%80%A7%E6%B5%8B%E8%AF%95/" rel="tag"># 稳定性测试</a>
+              <a href="/tags/%E5%86%85%E5%AD%98%E5%88%86%E6%9E%90/" rel="tag"># 内存分析</a>
+              <a href="/tags/PSS/" rel="tag"># PSS</a>
+              <a href="/tags/Native-Heap/" rel="tag"># Native Heap</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2026/03/19/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-39-%E4%B8%80%E6%AC%A1Android%E7%A8%B3%E5%AE%9A%E6%80%A7%E9%97%AE%E9%A2%98%E7%9A%84%E5%AE%8C%E6%95%B4%E5%AE%9A%E4%BD%8D%E8%BF%87%E7%A8%8B/" rel="prev" title="Android稳定性-39-一次 Android 稳定性问题的完整定位过程">
+                  <i class="fa fa-angle-left"></i> Android稳定性-39-一次 Android 稳定性问题的完整定位过程
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2026/03/23/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-41-AndroidFDThread%E5%92%8CBinder%E6%B3%84%E6%BC%8F%E6%80%8E%E4%B9%88%E5%8F%91%E7%8E%B0/" rel="next" title="Android稳定性-41-Android FD、Thread 和 Binder 泄漏怎么发现">
+                  Android稳定性-41-Android FD、Thread 和 Binder 泄漏怎么发现 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">1.1m</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">66:02</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="帧率、卡顿和响应延迟是用户最容易感知、也最容易被争论的一类 Android 稳定性问题。用户说“卡”，可能是点击后没有反馈，可能是列表滑动掉帧，可能是动画不连贯，可能是页面打开慢，可能是键盘弹出迟，可能是系统已经接到触摸但应用主线程还没处理。不同现象背后的链路完全不同，如果测试报告只写“操作不流畅”，研发很难判断该看业务代码、渲染、Binder、I&#x2F;O、调度、温控还是系统服务。 稳定性测">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Android稳定性-45-Android 帧率、卡顿和响应延迟：从用户感知到系统时间线">
+<meta property="og:url" content="https://paynewinnt.github.io/2026/03/31/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-45-Android%E5%B8%A7%E7%8E%87%E5%8D%A1%E9%A1%BF%E5%92%8C%E5%93%8D%E5%BA%94%E5%BB%B6%E8%BF%9F%E4%BB%8E%E7%94%A8%E6%88%B7%E6%84%9F%E7%9F%A5%E5%88%B0%E7%B3%BB%E7%BB%9F%E6%97%B6%E9%97%B4%E7%BA%BF/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="帧率、卡顿和响应延迟是用户最容易感知、也最容易被争论的一类 Android 稳定性问题。用户说“卡”，可能是点击后没有反馈，可能是列表滑动掉帧，可能是动画不连贯，可能是页面打开慢，可能是键盘弹出迟，可能是系统已经接到触摸但应用主线程还没处理。不同现象背后的链路完全不同，如果测试报告只写“操作不流畅”，研发很难判断该看业务代码、渲染、Binder、I&#x2F;O、调度、温控还是系统服务。 稳定性测">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-03-31T12:30:00.000Z">
+<meta property="article:modified_time" content="2026-03-31T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="Android稳定性">
+<meta property="article:tag" content="Android">
+<meta property="article:tag" content="稳定性测试">
+<meta property="article:tag" content="卡顿">
+<meta property="article:tag" content="Perfetto">
+<meta property="article:tag" content="帧率">
+<meta property="article:tag" content="响应延迟">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2026/03/31/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-45-Android%E5%B8%A7%E7%8E%87%E5%8D%A1%E9%A1%BF%E5%92%8C%E5%93%8D%E5%BA%94%E5%BB%B6%E8%BF%9F%E4%BB%8E%E7%94%A8%E6%88%B7%E6%84%9F%E7%9F%A5%E5%88%B0%E7%B3%BB%E7%BB%9F%E6%97%B6%E9%97%B4%E7%BA%BF/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2026/03/31/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-45-Android%E5%B8%A7%E7%8E%87%E5%8D%A1%E9%A1%BF%E5%92%8C%E5%93%8D%E5%BA%94%E5%BB%B6%E8%BF%9F%E4%BB%8E%E7%94%A8%E6%88%B7%E6%84%9F%E7%9F%A5%E5%88%B0%E7%B3%BB%E7%BB%9F%E6%97%B6%E9%97%B4%E7%BA%BF/","path":"2026/03/31/Android稳定性-45-Android帧率卡顿和响应延迟从用户感知到系统时间线/","title":"Android稳定性-45-Android 帧率、卡顿和响应延迟：从用户感知到系统时间线"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>Android稳定性-45-Android 帧率、卡顿和响应延迟：从用户感知到系统时间线 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E5%85%88%E5%8C%BA%E5%88%86%E4%B8%89%E7%A7%8D%E7%94%A8%E6%88%B7%E6%84%9F%E7%9F%A5"><span class="nav-number">1.</span> <span class="nav-text">一、先区分三种用户感知</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E5%BB%BA%E7%AB%8B%E4%B8%80%E6%9D%A1%E6%97%B6%E9%97%B4%E7%BA%BF"><span class="nav-number">2.</span> <span class="nav-text">二、建立一条时间线</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E5%9F%BA%E7%A1%80%E5%91%BD%E4%BB%A4%EF%BC%9A%E5%B8%A7%E7%8E%87%E3%80%81%E7%BA%BF%E7%A8%8B%E5%92%8C%E7%B3%BB%E7%BB%9F%E7%8A%B6%E6%80%81"><span class="nav-number">3.</span> <span class="nav-text">三、基础命令：帧率、线程和系统状态</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E6%8C%87%E6%A0%87%E8%A1%A8%EF%BC%9A%E4%B8%8D%E8%A6%81%E5%8F%AA%E5%86%99%E5%B9%B3%E5%9D%87%E5%B8%A7%E7%8E%87"><span class="nav-number">4.</span> <span class="nav-text">四、指标表：不要只写平均帧率</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E5%AE%8C%E6%95%B4%E6%A1%88%E4%BE%8B%EF%BC%9A%E6%B6%88%E6%81%AF%E5%88%97%E8%A1%A8%E6%BB%91%E5%8A%A8%E5%8D%A1%E9%A1%BF"><span class="nav-number">5.</span> <span class="nav-text">五、完整案例：消息列表滑动卡顿</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E8%BE%93%E5%85%A5%E5%BB%B6%E8%BF%9F%E6%80%8E%E4%B9%88%E6%9F%A5"><span class="nav-number">6.</span> <span class="nav-text">六、输入延迟怎么查</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E4%B8%BB%E7%BA%BF%E7%A8%8B%E3%80%81RenderThread-%E5%92%8C-SurfaceFlinger"><span class="nav-number">7.</span> <span class="nav-text">七、主线程、RenderThread 和 SurfaceFlinger</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E9%95%BF%E7%A8%B3%E5%90%8E%E6%9C%9F%E5%8D%A1%E9%A1%BF%E8%A6%81%E7%9C%8B%E8%B5%84%E6%BA%90%E9%80%80%E5%8C%96"><span class="nav-number">8.</span> <span class="nav-text">八、长稳后期卡顿要看资源退化</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E5%B8%B8%E8%A7%81%E8%AF%AF%E5%88%A4"><span class="nav-number">9.</span> <span class="nav-text">九、常见误判</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E6%A3%80%E6%9F%A5%E6%B8%85%E5%8D%95"><span class="nav-number">10.</span> <span class="nav-text">十、检查清单</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E8%BE%93%E5%87%BA%E7%89%A9%E6%A8%A1%E6%9D%BF"><span class="nav-number">11.</span> <span class="nav-text">十一、输出物模板</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E5%B0%8F%E7%BB%93"><span class="nav-number">12.</span> <span class="nav-text">十二、小结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81%E4%BF%AE%E5%A4%8D%E9%AA%8C%E8%AF%81%E8%A6%81%E5%9B%9E%E5%88%B0%E7%94%A8%E6%88%B7%E8%B7%AF%E5%BE%84"><span class="nav-number">13.</span> <span class="nav-text">十三、修复验证要回到用户路径</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81%E6%8A%8A%E5%8D%A1%E9%A1%BF%E7%BA%B3%E5%85%A5%E9%95%BF%E7%A8%B3%E6%97%A5%E6%8A%A5"><span class="nav-number">14.</span> <span class="nav-text">十四、把卡顿纳入长稳日报</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%94%E3%80%81%E8%B7%A8%E5%9B%A2%E9%98%9F%E5%8D%8F%E4%BD%9C%E6%97%B6%E5%A6%82%E4%BD%95%E5%87%8F%E5%B0%91%E4%BA%89%E8%AE%AE"><span class="nav-number">15.</span> <span class="nav-text">十五、跨团队协作时如何减少争议</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AD%E3%80%81%E5%90%AF%E5%8A%A8%E6%85%A2%E5%92%8C%E9%A1%B5%E9%9D%A2%E5%88%87%E6%8D%A2%E6%85%A2%E4%B9%9F%E8%A6%81%E7%BA%B3%E5%85%A5%E5%93%8D%E5%BA%94%E5%BB%B6%E8%BF%9F"><span class="nav-number">16.</span> <span class="nav-text">十六、启动慢和页面切换慢也要纳入响应延迟</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%83%E3%80%81%E5%88%B7%E6%96%B0%E7%8E%87%E5%92%8C%E5%B8%A7%E9%A2%84%E7%AE%97%E4%B8%8D%E8%83%BD%E6%B7%B7%E7%94%A8"><span class="nav-number">17.</span> <span class="nav-text">十七、刷新率和帧预算不能混用</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AB%E3%80%81%E8%84%9A%E6%9C%AC%E7%A8%B3%E5%AE%9A%E6%80%A7%E5%92%8C%E7%9C%9F%E5%AE%9E%E5%8D%A1%E9%A1%BF%E8%A6%81%E5%88%86%E5%BC%80"><span class="nav-number">18.</span> <span class="nav-text">十八、脚本稳定性和真实卡顿要分开</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B9%9D%E3%80%81%E5%85%B3%E9%97%AD%E5%8D%A1%E9%A1%BF%E9%97%AE%E9%A2%98%E5%89%8D%E7%9A%84%E5%9B%9E%E5%BD%92%E6%B1%A0"><span class="nav-number">19.</span> <span class="nav-text">十九、关闭卡顿问题前的回归池</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">298</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">27</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">513</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2026/03/31/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-45-Android%E5%B8%A7%E7%8E%87%E5%8D%A1%E9%A1%BF%E5%92%8C%E5%93%8D%E5%BA%94%E5%BB%B6%E8%BF%9F%E4%BB%8E%E7%94%A8%E6%88%B7%E6%84%9F%E7%9F%A5%E5%88%B0%E7%B3%BB%E7%BB%9F%E6%97%B6%E9%97%B4%E7%BA%BF/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="Android稳定性-45-Android 帧率、卡顿和响应延迟：从用户感知到系统时间线 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Android稳定性-45-Android 帧率、卡顿和响应延迟：从用户感知到系统时间线
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2026-03-31 20:30:00" itemprop="dateCreated datePublished" datetime="2026-03-31T20:30:00+08:00">2026-03-31</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/Android%E7%A8%B3%E5%AE%9A%E6%80%A7/" itemprop="url" rel="index"><span itemprop="name">Android稳定性</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>7k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>25 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>帧率、卡顿和响应延迟是用户最容易感知、也最容易被争论的一类 Android 稳定性问题。用户说“卡”，可能是点击后没有反馈，可能是列表滑动掉帧，可能是动画不连贯，可能是页面打开慢，可能是键盘弹出迟，可能是系统已经接到触摸但应用主线程还没处理。不同现象背后的链路完全不同，如果测试报告只写“操作不流畅”，研发很难判断该看业务代码、渲染、Binder、I&#x2F;O、调度、温控还是系统服务。</p>
+<p>稳定性测试里的卡顿还常常不是单点性能缺陷。长稳后期内存回收变频繁，日志写入变多，温度升高触发降频，后台任务抢 CPU，Binder 调用排队，RenderThread 等 GPU，SurfaceFlinger 合成错过 vsync，这些因素叠在一起，就会让前台场景从偶发掉帧变成持续迟滞。看起来是滑动卡，实际上可能是资源退化的结果。</p>
+<p>本文把帧率、卡顿和响应延迟放到“用户动作到系统时间线”的视角下讲：如何定义现象，如何采集帧数据和 Perfetto，如何区分输入延迟、主线程阻塞、渲染慢、合成慢和系统资源问题。文中包含完整案例、命令、表格、误判、检查清单、输出物模板和小结，目标是让卡顿问题能被复现、被量化、被评审。</p>
+<h2 id="一、先区分三种用户感知"><a href="#一、先区分三种用户感知" class="headerlink" title="一、先区分三种用户感知"></a>一、先区分三种用户感知</h2><p>“卡顿”这个词太宽。测试记录时最好先把它拆成三类用户感知：帧率不稳、响应延迟和长时间无响应。帧率不稳通常表现为滑动或动画不连续，用户仍能操作，但画面不顺。响应延迟是点击、输入、返回、打开页面后反馈慢，用户感到系统“慢半拍”。长时间无响应则接近 ANR 或卡死，用户动作多次没有结果。</p>
+<p>这三类感知对应的证据不同。帧率不稳要看 frame time、jank、SurfaceFlinger、RenderThread、GPU、刷新率。响应延迟要看输入事件、主线程消息、业务耗时、Binder 调用、启动链路。长时间无响应要看 traces、锁等待、I&#x2F;O、系统服务和调度。把它们混在一起，会导致证据和结论错位。</p>
+<p>同一个场景也可能同时包含多种问题。比如打开相机后预览首帧慢属于响应延迟，预览过程中画面抖动属于帧率问题，点击快门后保存转圈 6 秒可能是 I&#x2F;O 或业务等待。如果报告只写“相机卡”，每个模块都能解释一部分，却没人对完整体验负责。</p>
+<p>因此问题单第一段就要写清楚用户动作、预期反馈、实际延迟、发生频率和影响范围。最好附一段短视频，但视频不能替代数据。视频用于说明用户感知，数据用于说明系统链路。</p>
+<h2 id="二、建立一条时间线"><a href="#二、建立一条时间线" class="headerlink" title="二、建立一条时间线"></a>二、建立一条时间线</h2><p>卡顿分析最重要的是时间线。一次点击从手指落下到用户看到反馈，中间可能经历 InputReader、InputDispatcher、应用主线程、Choreographer、RenderThread、GPU、BufferQueue、SurfaceFlinger、Display。任何一个环节慢，用户都可能说卡。</p>
+<p>稳定性测试不需要每次都把 Android 渲染体系讲一遍，但要在证据里说明卡在哪个阶段。输入事件是否及时送达？应用主线程是否及时处理？业务代码是否阻塞？一帧是否按时提交？SurfaceFlinger 是否按时合成？CPU&#x2F;GPU 是否因为温度或后台负载不足以支撑目标帧率？这些问题决定了责任边界。</p>
+<p>Perfetto 是最适合做时间线分析的工具。它能把输入、调度、应用线程、Binder、SurfaceFlinger、频率、内存、I&#x2F;O 放到同一个视图里。如果项目暂时没有 Perfetto 流程，也要用 logcat 时间戳、<code>dumpsys gfxinfo</code>、<code>SurfaceFlinger --latency</code>、业务埋点和脚本日志拼出近似时间线。</p>
+<p>报告里建议用“用户动作 T0”作为锚点。例如 T0 点击消息列表，T0+35 ms 输入到达应用，T0+70 ms 主线程开始处理，T0+480 ms 数据库查询结束，T0+520 ms 第一帧提交，T0+760 ms SurfaceFlinger 显示结果。这样的描述一眼能看出主要延迟在业务查询，而不是合成。</p>
+<h2 id="三、基础命令：帧率、线程和系统状态"><a href="#三、基础命令：帧率、线程和系统状态" class="headerlink" title="三、基础命令：帧率、线程和系统状态"></a>三、基础命令：帧率、线程和系统状态</h2><p>帧率和响应延迟的基础采集可以从轻量命令开始。先确认前台窗口、目标包、帧统计和线程状态，再决定是否抓 Perfetto。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">adb shell dumpsys window | grep -E <span class="string">&quot;mCurrentFocus|mFocusedApp&quot;</span></span><br><span class="line">adb shell dumpsys activity top</span><br><span class="line">adb shell dumpsys gfxinfo com.example.app framestats</span><br><span class="line">adb shell dumpsys gfxinfo com.example.app reset</span><br><span class="line">adb shell dumpsys SurfaceFlinger --latency-clear</span><br><span class="line">adb shell dumpsys SurfaceFlinger --latency</span><br><span class="line">adb shell top -H -b -n 1</span><br><span class="line">adb shell logcat -b all -v threadtime -d &gt; logcat_frame_window.txt</span><br></pre></td></tr></table></figure>
+
+<p>如果出现接近 ANR 的响应延迟，要补 traces 和系统服务状态。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">adb shell <span class="built_in">kill</span> -3 $(adb shell pidof com.example.app | <span class="built_in">tr</span> -d <span class="string">&#x27;\r&#x27;</span>)</span><br><span class="line">adb shell <span class="built_in">cat</span> /data/anr/traces.txt 2&gt;/dev/null</span><br><span class="line">adb shell dumpsys input</span><br><span class="line">adb shell dumpsys activity anr</span><br><span class="line">adb shell dumpsys cpuinfo</span><br><span class="line">adb shell dumpsys meminfo com.example.app</span><br></pre></td></tr></table></figure>
+
+<p>Perfetto 采集可以使用项目统一配置。下面是一个简化思路，正式环境建议维护固定配置文件，避免每个人临时抓出来的 trace 不可比较。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">adb shell perfetto -o /data/misc/perfetto-traces/jank_trace.perfetto-trace \</span><br><span class="line">  -t 20s <span class="built_in">sched</span> freq idle am wm gfx view binder_driver hal input</span><br><span class="line">adb pull /data/misc/perfetto-traces/jank_trace.perfetto-trace .</span><br></pre></td></tr></table></figure>
+
+<p>命令采集要覆盖问题窗口。很多卡顿只发生在点击后 1 到 3 秒，抓晚了只剩恢复后的现场。自动化脚本最好能在检测到帧耗时或响应超阈值时立即打点并触发 trace。</p>
+<h2 id="四、指标表：不要只写平均帧率"><a href="#四、指标表：不要只写平均帧率" class="headerlink" title="四、指标表：不要只写平均帧率"></a>四、指标表：不要只写平均帧率</h2><p>平均帧率会掩盖很多问题。一个列表滑动 10 秒平均 58 fps，但其中连续 5 帧超过 100 ms，用户仍然会觉得明显卡。响应延迟也不能只写平均值，P95、P99、最大值和超阈值次数更接近用户感知。</p>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>适用场景</th>
+<th>说明</th>
+<th>风险信号</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>平均 FPS</td>
+<td>连续动画、滑动</td>
+<td>粗略衡量整体流畅度</td>
+<td>均值下降明显</td>
+</tr>
+<tr>
+<td>Jank 次数</td>
+<td>动画和滑动</td>
+<td>超过帧预算的帧数</td>
+<td>集中出现在关键动作</td>
+</tr>
+<tr>
+<td>P95 帧耗时</td>
+<td>长稳流畅度</td>
+<td>排除少量极端值后看尾部</td>
+<td>P95 超过 2 到 3 帧预算</td>
+</tr>
+<tr>
+<td>最大连续掉帧</td>
+<td>用户感知</td>
+<td>连续不顺比单帧更明显</td>
+<td>连续多帧超过 50 ms</td>
+</tr>
+<tr>
+<td>点击到首帧</td>
+<td>响应延迟</td>
+<td>用户动作到画面反馈</td>
+<td>超过业务阈值</td>
+</tr>
+<tr>
+<td>主线程最长消息</td>
+<td>应用响应</td>
+<td>单个 message 执行时间</td>
+<td>超过 200 ms 需分析</td>
+</tr>
+<tr>
+<td>SurfaceFlinger 合成耗时</td>
+<td>系统显示</td>
+<td>合成是否错过 vsync</td>
+<td>多窗口或高负载异常</td>
+</tr>
+</tbody></table>
+<p>表格中的阈值要按场景定。60 Hz、90 Hz、120 Hz 的帧预算不同；相机预览、桌面动画、长列表、地图缩放、游戏场景的容忍度也不同。稳定性报告可以写统一红线，但问题单里要说明该场景为什么采用这个阈值。</p>
+<p>另外，帧率指标需要和资源指标放在一起看。如果掉帧只在 CPU 降频后出现，根因可能在温控；如果掉帧伴随 <code>kswapd</code> 活跃和 GC 增多，可能是内存压力；如果点击后首帧慢且 traces 指向 SQLite，可能是数据库；如果 SurfaceFlinger 自身繁忙，就不能只推给应用。</p>
+<h2 id="五、完整案例：消息列表滑动卡顿"><a href="#五、完整案例：消息列表滑动卡顿" class="headerlink" title="五、完整案例：消息列表滑动卡顿"></a>五、完整案例：消息列表滑动卡顿</h2><p>某版本在长稳业务遍历中发现消息列表滑动不稳定。测试视频里可以看到，列表从第 3 屏开始出现明显停顿，停顿后又恢复。最初问题被写成“消息列表掉帧”，应用开发看了业务日志后认为接口耗时正常，渲染同学看 GPU 指标也没有明显异常，问题一度无法推进。</p>
+<p>测试重新设计复现：同一账号预置 5000 条消息，冷启动后等待同步完成，执行固定速度滑动 10 次，每次滑动 8 秒。采集 <code>gfxinfo framestats</code>、Perfetto、logcat 和内存。结果显示问题版本 P95 帧耗时 46 ms，最大连续掉帧 9 帧；基线版本 P95 为 22 ms，最大连续掉帧 3 帧。</p>
+<p>Perfetto 里看到，掉帧窗口并不是 GPU 忙，而是应用主线程在滑动过程中频繁做消息已读状态写入，每次触发 SQLite 事务，同时还有日志模块同步写文件。RenderThread 有时在等主线程提交新帧，SurfaceFlinger 大部分时间正常。更关键的是，长稳 24 小时后数据库文件变大，checkpoint 更频繁，掉帧比刚刷机时明显。</p>
+<p>修复方案不是简单“优化渲染”。业务把已读状态改成批量提交，滑动过程中只做内存标记，离开页面或空闲时合并写入；日志模块取消主路径同步写；测试侧增加 5000 条消息和 24 小时后复测两个场景。复测后 P95 帧耗时降到 24 ms，最大连续掉帧 3 帧，用户视频感知恢复。</p>
+<p>这个案例说明，卡顿问题要避免先入为主。用户看到的是列表不顺，但证据链指向主线程数据库写入和日志同步，而不是 GPU 或布局复杂度。只有时间线能把争论压下来。</p>
+<h2 id="六、输入延迟怎么查"><a href="#六、输入延迟怎么查" class="headerlink" title="六、输入延迟怎么查"></a>六、输入延迟怎么查</h2><p>响应延迟不一定发生在应用内部。触摸事件从硬件到应用，需要经过 InputReader 和 InputDispatcher。如果系统负载高、目标窗口不可接收、应用主线程忙、窗口焦点异常，都可能导致输入排队。典型日志包括 <code>Input dispatching timed out</code>、<code>Waiting because the touched window has not finished processing</code> 等。</p>
+<p>查输入问题时，先确认当前焦点和窗口状态，再看目标应用主线程是否忙。<code>dumpsys input</code> 可以看到 input dispatcher 状态，<code>dumpsys window</code> 可以确认焦点，traces 可以看到应用主线程当时在做什么。如果主线程正在执行长任务，输入慢只是结果；如果主线程空闲但事件没有送到，就要看窗口和系统输入链路。</p>
+<p>常见场景包括：弹窗遮挡但脚本仍点击底层窗口，Activity 切换中窗口未准备好，应用主线程长时间执行同步初始化，system_server 的输入相关线程被锁或 I&#x2F;O 阻塞，设备温控降频导致整体处理慢。测试记录里要写清楚点击坐标、目标控件、当前窗口和焦点，否则开发很难复现。</p>
+<p>自动化脚本也可能制造输入延迟假象。比如连续点击太快、页面还没稳定就滑动、动画未结束就断言、ADB input 与真实触摸差异。这些都要通过固定节奏、录屏和窗口状态来排除。</p>
+<h2 id="七、主线程、RenderThread-和-SurfaceFlinger"><a href="#七、主线程、RenderThread-和-SurfaceFlinger" class="headerlink" title="七、主线程、RenderThread 和 SurfaceFlinger"></a>七、主线程、RenderThread 和 SurfaceFlinger</h2><p>应用卡顿常见在三条线上：主线程、RenderThread、SurfaceFlinger。主线程负责处理输入、生命周期、布局、绘制命令生成；RenderThread 负责部分渲染工作；SurfaceFlinger 负责系统合成。三者任何一处超时都会影响画面，但修复方向不同。</p>
+<p>主线程问题常见原因是业务逻辑、锁等待、Binder 调用、数据库、I&#x2F;O、复杂布局、图片解码、GC。证据通常来自 traces、Perfetto slice、主线程消息耗时和业务埋点。RenderThread 问题可能和硬件加速、纹理、动画、GPU 工作有关。SurfaceFlinger 问题则可能涉及多窗口合成、显示驱动、系统负载和刷新率策略。</p>
+<p>报告里不要只写“UI 线程卡顿”，要写具体等待点。如果主线程等待 Binder 返回，对端是谁？如果等待锁，锁由哪个线程持有？如果是布局耗时，哪个页面、列表数量、图片尺寸？如果 RenderThread 忙，是否和特定动画或纹理上传相关？如果 SurfaceFlinger 掉帧，其他应用是否同时受影响？</p>
+<p>这类分析不要求测试同学直接修代码，但要求把问题交给正确的人。应用主线程数据库写入、Framework 输入调度、SurfaceFlinger 合成异常、thermal 降频导致全局掉帧，是四个完全不同的处理路径。</p>
+<h2 id="八、长稳后期卡顿要看资源退化"><a href="#八、长稳后期卡顿要看资源退化" class="headerlink" title="八、长稳后期卡顿要看资源退化"></a>八、长稳后期卡顿要看资源退化</h2><p>有些卡顿刚刷机不复现，跑 24 小时或 72 小时后才出现。这类问题往往和资源退化有关。常见原因包括内存泄漏导致 GC 频繁、线程和 FD 增长、日志文件膨胀、数据库变大、缓存清理不及时、温度升高、后台任务堆积。</p>
+<p>长稳后期的卡顿报告必须包含趋势数据。比如目标进程 PSS 从 500 MB 增到 1.6 GB，GC 次数增加，滑动 P95 帧耗时从 24 ms 增到 60 ms；或者温度从 32°C 升到 44°C 后 CPU 大核频率下降，点击响应从 300 ms 退化到 1.2 s。没有趋势，只贴最终卡顿窗口，很难说明为什么前期正常后期异常。</p>
+<p>资源退化类问题也要做恢复验证。杀掉目标进程是否恢复？清理日志是否恢复？降温是否恢复？删除数据库缓存是否恢复？恢复动作不是修复方案，但能帮助判断方向。比如降温后帧率恢复，说明温控链路很关键；清理数据库后恢复，说明数据规模和查询写入要重点看。</p>
+<p>稳定性测试的优势正是在长时间运行中发现这些变化。单次性能测试可能看不到，长稳数据能把“偶发卡”变成“随运行时长退化”的版本风险。</p>
+<h2 id="九、常见误判"><a href="#九、常见误判" class="headerlink" title="九、常见误判"></a>九、常见误判</h2><table>
+<thead>
+<tr>
+<th>误判</th>
+<th>为什么错</th>
+<th>更好的做法</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>平均 FPS 达标就认为不卡</td>
+<td>尾部帧耗时和连续掉帧更影响感知</td>
+<td>看 P95、P99、最大连续掉帧</td>
+</tr>
+<tr>
+<td>看到掉帧就找 GPU</td>
+<td>主线程、I&#x2F;O、温控都可能导致掉帧</td>
+<td>先看时间线里等待发生在哪</td>
+</tr>
+<tr>
+<td>点击慢一定是网络慢</td>
+<td>首帧慢可能来自初始化、Binder、数据库</td>
+<td>记录点击到各阶段耗时</td>
+</tr>
+<tr>
+<td>只测刚刷机</td>
+<td>长稳后资源退化更接近稳定性风险</td>
+<td>加入 24h&#x2F;72h 后复测</td>
+</tr>
+<tr>
+<td>自动化失败等于卡顿</td>
+<td>脚本节奏和断言也可能不合理</td>
+<td>用录屏、窗口状态和帧数据确认</td>
+</tr>
+<tr>
+<td>ANR 才算严重</td>
+<td>频繁 1 秒延迟不会触发 ANR 但用户很明显</td>
+<td>设置响应延迟阈值</td>
+</tr>
+</tbody></table>
+<p>卡顿问题的关键不是给它贴一个“性能”或“稳定性”的标签，而是用数据说明它是否影响真实用户路径，是否随版本退化，是否会在长稳后放大。</p>
+<h2 id="十、检查清单"><a href="#十、检查清单" class="headerlink" title="十、检查清单"></a>十、检查清单</h2><ul>
+<li>是否明确用户动作、目标页面、预期反馈和实际延迟。</li>
+<li>是否区分帧率不稳、响应慢和长时间无响应。</li>
+<li>是否有录屏、脚本日志和系统时间对齐。</li>
+<li>是否采集 <code>gfxinfo</code>、SurfaceFlinger、traces 或 Perfetto。</li>
+<li>是否记录刷新率、温度、CPU&#x2F;GPU 频率和后台负载。</li>
+<li>是否看 P95、P99、连续掉帧和点击到首帧，而不只看平均 FPS。</li>
+<li>是否确认问题是刚刷机复现还是长稳后复现。</li>
+<li>是否排除自动化脚本节奏、网络数据、账号数据规模差异。</li>
+<li>是否给出主线程、RenderThread、SurfaceFlinger、Input 或资源退化方向。</li>
+<li>是否完成修复前后同条件复测。</li>
+</ul>
+<p>这份清单适合做成卡顿问题单的必填项。少一个字段不一定不能定位，但缺得越多，问题越容易变成主观争论。</p>
+<h2 id="十一、输出物模板"><a href="#十一、输出物模板" class="headerlink" title="十一、输出物模板"></a>十一、输出物模板</h2><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><span class="line">问题标题：</span><br><span class="line">  [Jank][Message] V2026.03.31 消息列表长稳后滑动 P95 帧耗时退化到 46 ms</span><br><span class="line"></span><br><span class="line">测试场景：</span><br><span class="line">  账号预置 5000 条消息，冷启动后等待同步完成，固定速度滑动 10 次。</span><br><span class="line">  对比：基线版本 V2026.03.25，问题版本 V2026.03.31。</span><br><span class="line"></span><br><span class="line">用户现象：</span><br><span class="line">  第 3 屏后连续停顿，录屏可见滑动不连贯，未触发 ANR。</span><br><span class="line"></span><br><span class="line">量化结果：</span><br><span class="line">  基线：P95 22 ms，最大连续掉帧 3 帧。</span><br><span class="line">  问题：P95 46 ms，最大连续掉帧 9 帧，24 小时长稳后更明显。</span><br><span class="line"></span><br><span class="line">关键证据：</span><br><span class="line">  1. Perfetto 显示掉帧窗口主线程执行 SQLite 写入。</span><br><span class="line">  2. RenderThread 等待主线程提交，SurfaceFlinger 合成正常。</span><br><span class="line">  3. 日志模块在滑动路径同步写文件，放大等待。</span><br><span class="line"></span><br><span class="line">根因判断：</span><br><span class="line">  滑动过程中逐条提交已读状态并同步写日志，数据量变大后主线程帧提交延迟。</span><br><span class="line"></span><br><span class="line">修复验证：</span><br><span class="line">  批量提交已读状态并取消主路径同步写后，P95 回落到 24 ms。</span><br><span class="line"></span><br><span class="line">版本建议：</span><br><span class="line">  修复可进入准入；需保留 5000 条消息和长稳后滑动用例作为回归。</span><br></pre></td></tr></table></figure>
+
+<h2 id="十二、小结"><a href="#十二、小结" class="headerlink" title="十二、小结"></a>十二、小结</h2><h2 id="十三、修复验证要回到用户路径"><a href="#十三、修复验证要回到用户路径" class="headerlink" title="十三、修复验证要回到用户路径"></a>十三、修复验证要回到用户路径</h2><p>卡顿修复最容易出现“指标局部变好，用户仍然觉得慢”的情况。比如把某个方法耗时从 300 ms 降到 120 ms，但点击到首帧仍然超过 1 秒；把平均 FPS 提高到 58，但连续掉帧仍集中在页面进入动画；把日志同步写去掉后滑动恢复，但长稳 48 小时后数据库变大又退化。因此复测不能只验证研发给出的局部指标，要回到最初的用户路径。</p>
+<p>复测用例要保持账号、数据量、运行时长、网络和设备状态一致。如果问题是在 5000 条消息、长稳 24 小时后出现，复测就不能只用新账号滑动 2 分钟。如果问题是在温升后出现，复测就要让设备进入同等热状态。如果问题和低存储、后台同步、弱网有关，也要把这些条件带回去。卡顿问题对上下文很敏感，条件一变，结论就可能失真。</p>
+<p>复测结果建议同时给出用户视频和数据表。视频证明主观感知恢复，数据表证明 P95、P99、连续掉帧、点击到首帧、主线程最长消息等指标恢复。两者缺一不可：只有视频容易争议，只有数字又可能忽略真实感受。</p>
+<h2 id="十四、把卡顿纳入长稳日报"><a href="#十四、把卡顿纳入长稳日报" class="headerlink" title="十四、把卡顿纳入长稳日报"></a>十四、把卡顿纳入长稳日报</h2><p>很多团队的日报只统计 Crash、ANR 和重启，卡顿只有在严重到脚本失败时才出现。这会让版本在“没有硬失败”的情况下带着明显体验退化进入灰度。稳定性日报至少应该记录几类轻量指标：关键路径点击响应、列表滑动 P95 帧耗时、前台启动耗时、设备温度、CPU 频率、长稳运行时长后的变化。</p>
+<p>日报不需要每天给所有页面做完整性能报告，但要选高频路径做哨兵。比如桌面滑动、设置打开、相机预览、消息列表、通知栏下拉、键盘弹出。这些路径一旦退化，通常代表系统资源、输入链路或应用主路径出现变化。把它们作为长稳中的周期性检查，比最终用户反馈“版本变卡”更早发现风险。</p>
+<p>趋势比单次数字重要。如果某页面 P95 帧耗时从第一天 24 ms、第二天 31 ms、第三天 55 ms，哪怕没有 ANR，也应该进入风险观察。长稳稳定性不是只看进程有没有死，还要看用户路径是否随时间变慢。</p>
+<h2 id="十五、跨团队协作时如何减少争议"><a href="#十五、跨团队协作时如何减少争议" class="headerlink" title="十五、跨团队协作时如何减少争议"></a>十五、跨团队协作时如何减少争议</h2><p>卡顿问题天然跨团队。应用说系统调度慢，系统说应用主线程重，图形说 SurfaceFlinger 正常，性能说温控降频，测试说用户就是卡。减少争议的办法不是在会上反复描述感受，而是把同一条时间线给所有人看。T0 用户点击，T0+40 ms 输入送达，T0+80 到 T0+620 ms 主线程执行数据库写入，T0+650 ms 第一帧提交，SurfaceFlinger 合成正常。这样的证据能直接决定谁先处理。</p>
+<p>如果证据还不足，日报或问题单里要写下一步补什么，而不是让每个团队各自猜。比如需要应用加主线程消息耗时，需要系统提供 input trace，需要图形同学看 SurfaceFlinger，需要性能同学确认 thermal 状态。测试同学可以不拥有所有工具，但要负责把问题推进到下一份证据。</p>
+<p>跨团队结论还要避免绝对话。可以写“当前证据显示主要等待在应用主线程数据库写入，尚未发现 SurfaceFlinger 合成异常”，不要写“肯定不是系统问题”。稳定性定位经常随着证据增加而修正，报告要给出当前判断和证据边界。</p>
+<h2 id="十六、启动慢和页面切换慢也要纳入响应延迟"><a href="#十六、启动慢和页面切换慢也要纳入响应延迟" class="headerlink" title="十六、启动慢和页面切换慢也要纳入响应延迟"></a>十六、启动慢和页面切换慢也要纳入响应延迟</h2><p>很多团队把卡顿只理解成滑动掉帧，忽略启动和页面切换。实际上用户最敏感的响应延迟往往发生在点击图标、打开页面、返回桌面、弹出键盘、切换相机模式这些动作上。它们不一定表现为连续掉帧，但会让用户觉得系统迟钝。</p>
+<p>启动慢要拆成冷启动、温启动、热启动和页面首帧。冷启动受进程创建、类加载、资源加载、数据库初始化、网络同步影响；温启动可能受 Activity 恢复、缓存命中、后台任务影响；热启动更能暴露主线程和渲染路径。测试报告里不能只写“启动 2.3 秒”，要说明从哪个起点到哪个终点，是点击到进程创建、点击到首帧，还是点击到页面可操作。</p>
+<p>页面切换慢也要看中间状态。有些页面首帧很快，但骨架屏后内容 3 秒才可用；有些页面动画流畅，但点击后业务请求阻塞；有些页面返回时等待保存状态，用户感知是返回键不灵。稳定性测试要选择用户真正关心的终点，比如首帧、首个可点击控件、数据加载完成、输入框可输入。</p>
+<p>这些响应指标适合在自动化里长期采样。每次版本构建后，用固定账号和数据量跑启动、返回、切 tab、弹键盘、打开相机等动作，记录 P50、P95 和失败率。长稳后再跑一轮同样动作，可以发现运行时间带来的退化。</p>
+<h2 id="十七、刷新率和帧预算不能混用"><a href="#十七、刷新率和帧预算不能混用" class="headerlink" title="十七、刷新率和帧预算不能混用"></a>十七、刷新率和帧预算不能混用</h2><p>现在很多设备支持 60 Hz、90 Hz、120 Hz 或动态刷新率。不同刷新率下帧预算不同：60 Hz 约 16.6 ms，90 Hz 约 11.1 ms，120 Hz 约 8.3 ms。如果测试报告不写刷新率，帧耗时判断就会混乱。同样 18 ms 的帧，在 60 Hz 下可能只是轻微超时，在 120 Hz 下已经错过多个刷新机会。</p>
+<p>动态刷新率还会带来另一个问题：系统可能根据场景降低刷新率以省电，平均 FPS 下降不一定是卡顿。但如果用户正在快速滑动，刷新率却没有及时升高，或升高后应用帧提交跟不上，就会造成感知退化。报告里要记录测试时的刷新率策略、实际刷新率和目标场景。</p>
+<p>对于高刷设备，建议同时看“是否达到目标刷新率”和“帧间隔是否稳定”。一个页面在 120 Hz 下平均 90 fps，不一定差；如果它在关键动画中帧间隔波动很大，用户仍然会看到不顺。反过来，系统把静态页面降到 60 Hz 是正常省电策略，不应该误判为卡顿。</p>
+<p>测试平台可以把刷新率作为指标维度写入 CSV：设备、场景、目标刷新率、实际刷新率、P95 帧耗时、连续掉帧、温度、频率。没有这个维度，不同设备之间的结果很难比较。</p>
+<h2 id="十八、脚本稳定性和真实卡顿要分开"><a href="#十八、脚本稳定性和真实卡顿要分开" class="headerlink" title="十八、脚本稳定性和真实卡顿要分开"></a>十八、脚本稳定性和真实卡顿要分开</h2><p>自动化稳定性测试里经常出现“脚本超时”，但脚本超时不一定等于用户卡顿。可能是控件定位失败，可能是页面文案变化，可能是网络数据没回来，可能是脚本点击过快，也可能是真实响应慢。日报和问题单要先把脚本失败与用户体验问题分开，否则会造成大量误报。</p>
+<p>区分方法并不复杂。第一，看录屏中用户路径是否真的没有反馈。第二，看窗口焦点和当前 Activity 是否符合脚本预期。第三，看系统帧数据和主线程是否有异常。第四，手工按同样节奏复现一次，确认不是脚本等待条件写错。第五，如果脚本超时发生在固定运行时长后，要看资源趋势是否变化。</p>
+<p>脚本也要适配卡顿检测。对于关键路径，不要只等待某个控件出现，还要记录从动作到控件出现的耗时；不要只在失败时截图，也要在超阈值但未失败时记录；不要一超时就立刻重启应用，先保留现场。这样脚本才能成为发现稳定性退化的工具，而不是只给出“用例失败”。</p>
+<p>真实卡顿确认后，脚本失败可以作为影响证据。比如用户点击发送后 3 秒才出现消息，脚本等待 2 秒超时，这说明自动化阈值与用户体验阈值都被突破。此时问题就不是脚本不稳定，而是产品路径响应退化。</p>
+<h2 id="十九、关闭卡顿问题前的回归池"><a href="#十九、关闭卡顿问题前的回归池" class="headerlink" title="十九、关闭卡顿问题前的回归池"></a>十九、关闭卡顿问题前的回归池</h2><p>卡顿问题关闭后，最好把复现路径沉淀到回归池。回归池不一定很大，但要保留最容易暴露问题的条件：大数据账号、长稳后状态、低存储、热机、弱网、后台同步、固定滑动速度和固定点击节奏。以后只要应用框架、数据库、日志、渲染、温控或系统调度有改动，就能快速重跑。</p>
+<p>回归池还要保留原始阈值。比如消息列表 P95 帧耗时不得超过 30 ms，最大连续掉帧不得超过 4 帧，点击到首帧不得超过 500 ms。阈值不是为了机械拦截所有变化，而是为了让版本退化早一点被看到。没有阈值的回归，只能靠人看视频，效率和一致性都不够。</p>
+<p>回归池中的数据集也要定期刷新。真实用户的数据规模、图片尺寸、消息数量和业务入口会变化，如果测试一直使用几个月前的小样本，卡顿风险会被低估。稳定性团队可以每个大版本更新一次高频路径数据集，并保留旧数据集用于横向对比。</p>
+<p>帧率、卡顿和响应延迟不能靠一句“流畅”或“不流畅”判断。稳定性测试要把用户动作、帧数据、线程状态、系统资源和长稳趋势连起来，说明卡顿发生在哪个阶段、影响多大、是否退化、修复后是否恢复。</p>
+<p>一份好的卡顿分析，不一定一开始就找到代码行，但一定能缩小方向：输入链路、应用主线程、渲染线程、SurfaceFlinger、系统资源或温控。方向清楚，研发才能有效修复；数据清楚，版本评审才能决定是否放行。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Android%E7%A8%B3%E5%AE%9A%E6%80%A7/" rel="tag"># Android稳定性</a>
+              <a href="/tags/Android/" rel="tag"># Android</a>
+              <a href="/tags/%E7%A8%B3%E5%AE%9A%E6%80%A7%E6%B5%8B%E8%AF%95/" rel="tag"># 稳定性测试</a>
+              <a href="/tags/%E5%8D%A1%E9%A1%BF/" rel="tag"># 卡顿</a>
+              <a href="/tags/Perfetto/" rel="tag"># Perfetto</a>
+              <a href="/tags/%E5%B8%A7%E7%8E%87/" rel="tag"># 帧率</a>
+              <a href="/tags/%E5%93%8D%E5%BA%94%E5%BB%B6%E8%BF%9F/" rel="tag"># 响应延迟</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2026/03/29/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-44-Android%E5%8A%9F%E8%80%97%E4%B8%8E%E6%B8%A9%E5%8D%87%E5%BC%82%E5%B8%B8batterystatswakelock%E9%99%8D%E9%A2%91%E5%92%8C%E5%90%8E%E5%8F%B0%E8%A1%8C%E4%B8%BA/" rel="prev" title="Android稳定性-44-Android 功耗与温升异常：batterystats、wakelock、降频和后台行为">
+                  <i class="fa fa-angle-left"></i> Android稳定性-44-Android 功耗与温升异常：batterystats、wakelock、降频和后台行为
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2026/04/02/Android%E7%A8%B3%E5%AE%9A%E6%80%A7-46-Android%E7%A8%B3%E5%AE%9A%E6%80%A7%E6%B5%8B%E8%AF%95%E6%8A%A5%E5%91%8A%E6%80%8E%E4%B9%88%E5%86%99%E6%89%8D%E6%9C%89%E5%86%B3%E7%AD%96%E4%BB%B7%E5%80%BC/" rel="next" title="Android稳定性-46-Android 稳定性测试报告怎么写才有决策价值">
+                  Android稳定性-46-Android 稳定性测试报告怎么写才有决策价值 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">1.1m</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">66:02</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>
