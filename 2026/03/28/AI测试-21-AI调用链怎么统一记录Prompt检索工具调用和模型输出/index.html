@@ -1,0 +1,2220 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="一个普通 HTTP 接口失败时，测试和运维通常会沿着下面的线索定位：  request ID 服务日志 数据库调用 下游 RPC 错误码 时延分布  AI 应用的链路更长。 一次用户请求可能先后经过：  Prompt 模板渲染 历史会话裁剪 查询改写 向量检索 文档重排 第一次模型生成 工具参数解析 外部工具执行 第二次模型生成 Guardrail LLM Judge 结果持久化  最终现象可能只">
+<meta property="og:type" content="article">
+<meta property="og:title" content="AI测试-21-AI调用链怎么统一记录Prompt检索工具调用和模型输出">
+<meta property="og:url" content="https://paynewinnt.github.io/2026/03/28/AI%E6%B5%8B%E8%AF%95-21-AI%E8%B0%83%E7%94%A8%E9%93%BE%E6%80%8E%E4%B9%88%E7%BB%9F%E4%B8%80%E8%AE%B0%E5%BD%95Prompt%E6%A3%80%E7%B4%A2%E5%B7%A5%E5%85%B7%E8%B0%83%E7%94%A8%E5%92%8C%E6%A8%A1%E5%9E%8B%E8%BE%93%E5%87%BA/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="一个普通 HTTP 接口失败时，测试和运维通常会沿着下面的线索定位：  request ID 服务日志 数据库调用 下游 RPC 错误码 时延分布  AI 应用的链路更长。 一次用户请求可能先后经过：  Prompt 模板渲染 历史会话裁剪 查询改写 向量检索 文档重排 第一次模型生成 工具参数解析 外部工具执行 第二次模型生成 Guardrail LLM Judge 结果持久化  最终现象可能只">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://paynewinnt.github.io/images/ai-quality/ai-21-trace-topology.svg">
+<meta property="og:image" content="https://paynewinnt.github.io/images/ai-quality/ai-21-observability-schema.svg">
+<meta property="article:published_time" content="2026-03-28T12:30:00.000Z">
+<meta property="article:modified_time" content="2026-03-28T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="AI测试">
+<meta property="article:tag" content="RAG">
+<meta property="article:tag" content="LLMOps">
+<meta property="article:tag" content="可观测性">
+<meta property="article:tag" content="OpenTelemetry">
+<meta property="article:tag" content="Trace">
+<meta property="article:tag" content="Tool Calling">
+<meta property="article:tag" content="隐私治理">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://paynewinnt.github.io/images/ai-quality/ai-21-trace-topology.svg">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2026/03/28/AI%E6%B5%8B%E8%AF%95-21-AI%E8%B0%83%E7%94%A8%E9%93%BE%E6%80%8E%E4%B9%88%E7%BB%9F%E4%B8%80%E8%AE%B0%E5%BD%95Prompt%E6%A3%80%E7%B4%A2%E5%B7%A5%E5%85%B7%E8%B0%83%E7%94%A8%E5%92%8C%E6%A8%A1%E5%9E%8B%E8%BE%93%E5%87%BA/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2026/03/28/AI%E6%B5%8B%E8%AF%95-21-AI%E8%B0%83%E7%94%A8%E9%93%BE%E6%80%8E%E4%B9%88%E7%BB%9F%E4%B8%80%E8%AE%B0%E5%BD%95Prompt%E6%A3%80%E7%B4%A2%E5%B7%A5%E5%85%B7%E8%B0%83%E7%94%A8%E5%92%8C%E6%A8%A1%E5%9E%8B%E8%BE%93%E5%87%BA/","path":"2026/03/28/AI测试-21-AI调用链怎么统一记录Prompt检索工具调用和模型输出/","title":"AI测试-21-AI调用链怎么统一记录Prompt检索工具调用和模型输出"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>AI测试-21-AI调用链怎么统一记录Prompt检索工具调用和模型输出 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E9%97%AE%E9%A2%98%E8%BE%B9%E7%95%8C%EF%BC%9A%E5%8F%AF%E8%A7%82%E6%B5%8B%E6%80%A7%E4%B8%8D%E6%98%AF%E6%97%A0%E9%99%90%E5%88%B6%E8%AE%B0%E5%BD%95%E5%8E%9F%E6%96%87"><span class="nav-number">1.</span> <span class="nav-text">一、问题边界：可观测性不是无限制记录原文</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%B0%83%E7%94%A8%E9%93%BE%E4%B8%8D%E6%98%AF%E6%A8%A1%E5%9E%8B%E6%80%9D%E7%BB%B4%E8%AF%BB%E5%8F%96%E5%99%A8"><span class="nav-number">1.1.</span> <span class="nav-text">1. 调用链不是模型思维读取器</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Trace-%E4%B8%8D%E5%BA%94%E8%AF%A5%E6%88%90%E4%B8%BA%E5%86%85%E5%AE%B9%E6%95%B0%E6%8D%AE%E5%BA%93"><span class="nav-number">1.2.</span> <span class="nav-text">2. Trace 不应该成为内容数据库</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%AE%B0%E5%BD%95%E5%88%B0%E9%81%A5%E6%B5%8B%E7%B3%BB%E7%BB%9F%E4%B8%8D%E7%AD%89%E4%BA%8E%E5%8F%AF%E4%BB%A5%E5%85%AC%E5%BC%80%E8%AE%BF%E9%97%AE"><span class="nav-number">1.3.</span> <span class="nav-text">3. 记录到遥测系统不等于可以公开访问</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%8F%AF%E8%A7%82%E6%B5%8B%E6%80%A7%E4%B8%8D%E8%83%BD%E6%9B%BF%E4%BB%A3%E4%B8%9A%E5%8A%A1%E7%9C%9F%E5%80%BC"><span class="nav-number">1.4.</span> <span class="nav-text">4. 可观测性不能替代业务真值</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E4%B8%BA%E4%BB%80%E4%B9%88%E6%99%AE%E9%80%9A%E6%97%A5%E5%BF%97%E5%9C%A8-AI-%E9%93%BE%E8%B7%AF%E9%87%8C%E5%BE%88%E5%BF%AB%E5%A4%B1%E6%95%88"><span class="nav-number">2.</span> <span class="nav-text">二、为什么普通日志在 AI 链路里很快失效</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%97%A0%E6%B3%95%E5%8F%AF%E9%9D%A0%E5%85%B3%E8%81%94"><span class="nav-number">2.1.</span> <span class="nav-text">1. 无法可靠关联</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%97%A0%E6%B3%95%E8%A1%A8%E8%BE%BE%E7%88%B6%E5%AD%90%E5%85%B3%E7%B3%BB"><span class="nav-number">2.2.</span> <span class="nav-text">2. 无法表达父子关系</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%97%A0%E6%B3%95%E8%A1%A8%E8%BE%BE%E5%B9%B6%E8%A1%8C%E4%B8%8E%E5%BC%82%E6%AD%A5"><span class="nav-number">2.3.</span> <span class="nav-text">3. 无法表达并行与异步</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%AD%97%E6%AE%B5%E8%AF%AD%E4%B9%89%E4%B8%8D%E7%BB%9F%E4%B8%80"><span class="nav-number">2.4.</span> <span class="nav-text">4. 字段语义不统一</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%97%A0%E6%B3%95%E5%8C%BA%E5%88%86%E5%A4%A7%E5%86%85%E5%AE%B9%E4%B8%8E%E7%B4%A2%E5%BC%95%E5%AD%97%E6%AE%B5"><span class="nav-number">2.5.</span> <span class="nav-text">5. 无法区分大内容与索引字段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E6%97%B6%E5%BB%B6%E5%AE%9A%E4%B9%89%E4%B8%8D%E4%B8%80%E8%87%B4"><span class="nav-number">2.6.</span> <span class="nav-text">6. 时延定义不一致</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-%E6%88%90%E5%8A%9F%E7%8A%B6%E6%80%81%E5%AE%B9%E6%98%93%E8%AF%B4%E8%B0%8E"><span class="nav-number">2.7.</span> <span class="nav-text">7. 成功状态容易说谎</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E7%BB%9F%E4%B8%80%E8%A7%82%E6%B5%8B%E6%A8%A1%E5%9E%8B%EF%BC%9A%E5%85%AD%E7%B1%BB%E5%AF%B9%E8%B1%A1%E5%90%84%E8%B4%9F%E5%85%B6%E8%B4%A3"><span class="nav-number">3.</span> <span class="nav-text">三、统一观测模型：六类对象各负其责</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Trace"><span class="nav-number">3.1.</span> <span class="nav-text">1. Trace</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Span"><span class="nav-number">3.2.</span> <span class="nav-text">2. Span</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Event"><span class="nav-number">3.3.</span> <span class="nav-text">3. Event</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-Log"><span class="nav-number">3.4.</span> <span class="nav-text">4. Log</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-Metric"><span class="nav-number">3.5.</span> <span class="nav-text">5. Metric</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-Artifact"><span class="nav-number">3.6.</span> <span class="nav-text">6. Artifact</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E6%8B%93%E6%89%91%E5%9B%BE%EF%BC%9A%E7%88%B6%E5%AD%90-Span%E3%80%81%E9%87%8D%E8%AF%95%E4%B8%8E%E5%BC%82%E6%AD%A5-Link"><span class="nav-number">4.</span> <span class="nav-text">四、拓扑图：父子 Span、重试与异步 Link</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Root-Span-%E8%A6%86%E7%9B%96%E4%B8%9A%E5%8A%A1%E5%B7%A5%E4%BD%9C%E6%B5%81"><span class="nav-number">4.1.</span> <span class="nav-text">1. Root Span 覆盖业务工作流</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E9%80%BB%E8%BE%91%E8%B0%83%E7%94%A8%E4%B8%8E%E7%89%A9%E7%90%86-attempt-%E5%88%86%E5%BC%80"><span class="nav-number">4.2.</span> <span class="nav-text">2. 逻辑调用与物理 attempt 分开</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%BC%82%E6%AD%A5%E5%85%B3%E7%B3%BB%E4%BD%BF%E7%94%A8-Span-Link"><span class="nav-number">4.3.</span> <span class="nav-text">3. 异步关系使用 Span Link</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81ID-%E4%BD%93%E7%B3%BB%EF%BC%9ATrace-ID-%E4%B8%8D%E6%98%AF%E6%89%80%E6%9C%89-ID-%E7%9A%84%E6%9B%BF%E4%BB%A3%E5%93%81"><span class="nav-number">5.</span> <span class="nav-text">五、ID 体系：Trace ID 不是所有 ID 的替代品</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-trace-id"><span class="nav-number">5.1.</span> <span class="nav-text">1. trace_id</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-span-id"><span class="nav-number">5.2.</span> <span class="nav-text">2. span_id</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-parent-span-id"><span class="nav-number">5.3.</span> <span class="nav-text">3. parent_span_id</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-request-id"><span class="nav-number">5.4.</span> <span class="nav-text">4. request_id</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-session-id"><span class="nav-number">5.5.</span> <span class="nav-text">5. session_id</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-eval-run-id"><span class="nav-number">5.6.</span> <span class="nav-text">6. eval_run_id</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-tool-call-id"><span class="nav-number">5.7.</span> <span class="nav-text">7. tool_call_id</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-artifact-id"><span class="nav-number">5.8.</span> <span class="nav-text">8. artifact_id</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#ID-%E5%85%B3%E7%B3%BB%E7%A4%BA%E4%BE%8B"><span class="nav-number">5.9.</span> <span class="nav-text">ID 关系示例</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E4%BD%BF%E7%94%A8-W3C-Trace-Context-%E5%81%9A%E8%B7%A8%E6%9C%8D%E5%8A%A1%E4%BC%A0%E6%92%AD"><span class="nav-number">6.</span> <span class="nav-text">六、使用 W3C Trace Context 做跨服务传播</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BC%A0%E6%92%AD%E8%A7%84%E5%88%99"><span class="nav-number">6.1.</span> <span class="nav-text">传播规则</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%8D%E8%A6%81%E4%BF%A1%E4%BB%BB%E5%A4%96%E9%83%A8%E8%BE%93%E5%85%A5%E7%9A%84-traceparent"><span class="nav-number">6.2.</span> <span class="nav-text">不要信任外部输入的 traceparent</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#tracestate-%E4%B8%8D%E8%83%BD%E6%94%BE%E4%B8%9A%E5%8A%A1%E7%A7%98%E5%AF%86"><span class="nav-number">6.3.</span> <span class="nav-text">tracestate 不能放业务秘密</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Baggage-%E4%B9%9F%E8%A6%81%E8%B0%A8%E6%85%8E"><span class="nav-number">6.4.</span> <span class="nav-text">Baggage 也要谨慎</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81Span-%E5%91%BD%E5%90%8D%EF%BC%9A%E4%BD%8E%E5%9F%BA%E6%95%B0%E5%90%8D%E7%A7%B0%EF%BC%8C%E9%AB%98%E4%BB%B7%E5%80%BC%E5%B1%9E%E6%80%A7"><span class="nav-number">7.</span> <span class="nav-text">七、Span 命名：低基数名称，高价值属性</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Span-kind-%E7%9A%84%E9%80%89%E6%8B%A9"><span class="nav-number">7.1.</span> <span class="nav-text">Span kind 的选择</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E7%BB%9F%E4%B8%80-Span-%E6%9C%80%E5%B0%8F-Schema"><span class="nav-number">8.</span> <span class="nav-text">八、统一 Span 最小 Schema</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Identity"><span class="nav-number">8.1.</span> <span class="nav-text">1. Identity</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Operation"><span class="nav-number">8.2.</span> <span class="nav-text">2. Operation</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Version"><span class="nav-number">8.3.</span> <span class="nav-text">3. Version</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-Result"><span class="nav-number">8.4.</span> <span class="nav-text">4. Result</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-Evidence"><span class="nav-number">8.5.</span> <span class="nav-text">5. Evidence</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81Prompt%EF%BC%9A%E8%AE%B0%E5%BD%95%E7%89%88%E6%9C%AC%E5%92%8C%E6%91%98%E8%A6%81%EF%BC%8C%E4%B8%8D%E9%BB%98%E8%AE%A4%E6%8A%8A%E5%8E%9F%E6%96%87%E5%A1%9E%E8%BF%9B-Span"><span class="nav-number">9.</span> <span class="nav-text">九、Prompt：记录版本和摘要，不默认把原文塞进 Span</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%A8%A1%E6%9D%BF%E8%BA%AB%E4%BB%BD"><span class="nav-number">9.1.</span> <span class="nav-text">1. 模板身份</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%B8%B2%E6%9F%93%E9%85%8D%E7%BD%AE"><span class="nav-number">9.2.</span> <span class="nav-text">2. 渲染配置</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%B8%B2%E6%9F%93%E7%BB%93%E6%9E%9C%E6%91%98%E8%A6%81"><span class="nav-number">9.3.</span> <span class="nav-text">3. 渲染结果摘要</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%B8%B2%E6%9F%93%E5%8E%9F%E6%96%87-Artifact"><span class="nav-number">9.4.</span> <span class="nav-text">4. 渲染原文 Artifact</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%BA%E4%BB%80%E4%B9%88%E6%99%AE%E9%80%9A-SHA-256-%E4%B8%8D%E8%83%BD%E5%BD%93%E8%84%B1%E6%95%8F"><span class="nav-number">9.5.</span> <span class="nav-text">为什么普通 SHA-256 不能当脱敏</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81Retrieval%EF%BC%9A%E8%AE%B0%E5%BD%95%E2%80%9C%E6%89%BE%E4%BA%86%E4%BB%80%E4%B9%88%E2%80%9D%E5%92%8C%E2%80%9C%E4%B8%BA%E4%BB%80%E4%B9%88%E8%A2%AB%E9%80%89%E4%B8%AD%E2%80%9D"><span class="nav-number">10.</span> <span class="nav-text">十、Retrieval：记录“找了什么”和“为什么被选中”</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9F%A5%E8%AF%A2"><span class="nav-number">10.1.</span> <span class="nav-text">查询</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E6%BA%90"><span class="nav-number">10.2.</span> <span class="nav-text">数据源</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%BF%94%E5%9B%9E%E7%BB%93%E6%9E%9C"><span class="nav-number">10.3.</span> <span class="nav-text">返回结果</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Rerank"><span class="nav-number">10.4.</span> <span class="nav-text">Rerank</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%86%E6%95%B0%E4%B8%8D%E8%83%BD%E8%B7%A8%E7%AE%97%E6%B3%95%E7%9B%B4%E6%8E%A5%E6%AF%94%E8%BE%83"><span class="nav-number">10.5.</span> <span class="nav-text">分数不能跨算法直接比较</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%A9%BA%E5%8F%AC%E5%9B%9E%E8%A6%81%E5%8D%95%E7%8B%AC%E5%BB%BA%E6%A8%A1"><span class="nav-number">10.6.</span> <span class="nav-text">空召回要单独建模</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81Tool%EF%BC%9A%E6%9C%80%E9%87%8D%E8%A6%81%E7%9A%84%E6%98%AF%E5%89%AF%E4%BD%9C%E7%94%A8%E5%92%8C%E6%9C%80%E7%BB%88%E7%8A%B6%E6%80%81"><span class="nav-number">11.</span> <span class="nav-text">十一、Tool：最重要的是副作用和最终状态</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B7%A5%E5%85%B7%E8%BA%AB%E4%BB%BD"><span class="nav-number">11.1.</span> <span class="nav-text">工具身份</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8F%82%E6%95%B0"><span class="nav-number">11.2.</span> <span class="nav-text">参数</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%89%A7%E8%A1%8C"><span class="nav-number">11.3.</span> <span class="nav-text">执行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%89%AF%E4%BD%9C%E7%94%A8"><span class="nav-number">11.4.</span> <span class="nav-text">副作用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A8%A1%E5%9E%8B%E5%A3%B0%E7%A7%B0%E6%88%90%E5%8A%9F%E4%B8%8D%E8%83%BD%E6%9B%BF%E4%BB%A3-Outcome"><span class="nav-number">11.5.</span> <span class="nav-text">模型声称成功不能替代 Outcome</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81Model%EF%BC%9A%E5%8C%BA%E5%88%86%E9%80%BB%E8%BE%91%E8%B0%83%E7%94%A8%E3%80%81%E7%89%A9%E7%90%86%E8%AF%B7%E6%B1%82%E5%92%8C%E6%B5%81%E5%BC%8F%E4%BA%8B%E4%BB%B6"><span class="nav-number">12.</span> <span class="nav-text">十二、Model：区分逻辑调用、物理请求和流式事件</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%B7%E6%B1%82%E4%BE%A7"><span class="nav-number">12.1.</span> <span class="nav-text">请求侧</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%93%8D%E5%BA%94%E4%BE%A7"><span class="nav-number">12.2.</span> <span class="nav-text">响应侧</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%80%BB%E8%BE%91%E4%B8%8E%E7%89%A9%E7%90%86%E5%B1%82"><span class="nav-number">12.3.</span> <span class="nav-text">逻辑与物理层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%8D%E8%A6%81%E6%8A%8A%E9%87%8D%E8%AF%95%E5%89%8D%E5%A4%B1%E8%B4%A5%E8%A6%86%E7%9B%96%E6%8E%89"><span class="nav-number">12.4.</span> <span class="nav-text">不要把重试前失败覆盖掉</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81Judge-%E4%B8%8E-Guardrail%EF%BC%9A%E8%A3%81%E5%88%A4%E4%B9%9F%E5%BF%85%E9%A1%BB%E8%BF%9B%E5%85%A5%E8%B0%83%E7%94%A8%E9%93%BE"><span class="nav-number">13.</span> <span class="nav-text">十三、Judge 与 Guardrail：裁判也必须进入调用链</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Judge-Span-%E5%BB%BA%E8%AE%AE%E5%AD%97%E6%AE%B5"><span class="nav-number">13.1.</span> <span class="nav-text">Judge Span 建议字段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Guardrail-%E4%B8%8E-Judge-%E4%B8%8D%E5%BA%94%E6%B7%B7%E7%94%A8"><span class="nav-number">13.2.</span> <span class="nav-text">Guardrail 与 Judge 不应混用</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81%E4%B8%89%E8%B7%AF%E5%AD%98%E5%82%A8%EF%BC%9ATrace%E3%80%81Metric-%E4%B8%8E-Artifact"><span class="nav-number">14.</span> <span class="nav-text">十四、三路存储：Trace、Metric 与 Artifact</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Trace-%E4%B8%8E%E7%BB%93%E6%9E%84%E5%8C%96-Log"><span class="nav-number">14.1.</span> <span class="nav-text">1. Trace 与结构化 Log</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Metric-%E6%97%B6%E5%BA%8F%E5%BA%93"><span class="nav-number">14.2.</span> <span class="nav-text">2. Metric 时序库</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Artifact-%E5%AD%98%E5%82%A8"><span class="nav-number">14.3.</span> <span class="nav-text">3. Artifact 存储</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%94%E3%80%81%E6%97%B6%E5%BB%B6%E6%A8%A1%E5%9E%8B%EF%BC%9A%E5%85%88%E5%AE%9A%E4%B9%89%E8%BE%B9%E7%95%8C%EF%BC%8C%E5%86%8D%E8%B0%88-P95"><span class="nav-number">15.</span> <span class="nav-text">十五、时延模型：先定义边界，再谈 P95</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%AB%AF%E5%88%B0%E7%AB%AF%E6%97%B6%E5%BB%B6"><span class="nav-number">15.1.</span> <span class="nav-text">1. 端到端时延</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-TTFT"><span class="nav-number">15.2.</span> <span class="nav-text">2. TTFT</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Time-To-Last-Token"><span class="nav-number">15.3.</span> <span class="nav-text">3. Time To Last Token</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E7%94%9F%E6%88%90%E9%98%B6%E6%AE%B5%E6%97%B6%E9%95%BF"><span class="nav-number">15.4.</span> <span class="nav-text">4. 生成阶段时长</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%A3%80%E7%B4%A2%E6%97%B6%E5%BB%B6"><span class="nav-number">15.5.</span> <span class="nav-text">5. 检索时延</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E5%B7%A5%E5%85%B7%E6%97%B6%E5%BB%B6"><span class="nav-number">15.6.</span> <span class="nav-text">6. 工具时延</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-Judge-%E6%97%B6%E5%BB%B6"><span class="nav-number">15.7.</span> <span class="nav-text">7. Judge 时延</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B9%B6%E8%A1%8C-Span-%E4%B8%8D%E8%83%BD%E7%9B%B4%E6%8E%A5%E7%9B%B8%E5%8A%A0"><span class="nav-number">15.8.</span> <span class="nav-text">并行 Span 不能直接相加</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%97%B6%E9%92%9F%E9%97%AE%E9%A2%98"><span class="nav-number">15.9.</span> <span class="nav-text">时钟问题</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AD%E3%80%81Token-%E4%B8%8E%E6%88%90%E6%9C%AC%EF%BC%9A%E4%BD%BF%E7%94%A8%E9%87%8F%E6%98%AF%E4%BA%8B%E5%AE%9E%EF%BC%8C%E4%BB%B7%E6%A0%BC%E6%98%AF%E7%89%88%E6%9C%AC%E5%8C%96%E6%B4%BE%E7%94%9F%E6%95%B0%E6%8D%AE"><span class="nav-number">16.</span> <span class="nav-text">十六、Token 与成本：使用量是事实，价格是版本化派生数据</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Token-%E4%B8%8D%E6%98%AF%E8%B7%A8%E6%A8%A1%E5%9E%8B%E7%BB%9D%E5%AF%B9%E5%8F%AF%E6%AF%94%E5%8D%95%E4%BD%8D"><span class="nav-number">16.1.</span> <span class="nav-text">Token 不是跨模型绝对可比单位</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%88%90%E6%9C%AC%E8%AE%A1%E7%AE%97"><span class="nav-number">16.2.</span> <span class="nav-text">成本计算</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Metric-%E7%BB%B4%E5%BA%A6"><span class="nav-number">16.3.</span> <span class="nav-text">Metric 维度</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%83%E3%80%81%E5%A4%B1%E8%B4%A5%E5%BD%92%E5%9B%A0%EF%BC%9A%E9%94%99%E8%AF%AF%E5%8F%91%E7%94%9F%E7%82%B9%E4%B8%8D%E4%B8%80%E5%AE%9A%E6%98%AF%E6%A0%B9%E5%9B%A0"><span class="nav-number">17.</span> <span class="nav-text">十七、失败归因：错误发生点不一定是根因</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-first-fault"><span class="nav-number">17.1.</span> <span class="nav-text">1. first_fault</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-terminal-cause"><span class="nav-number">17.2.</span> <span class="nav-text">2. terminal_cause</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-contributing-factors"><span class="nav-number">17.3.</span> <span class="nav-text">3. contributing_factors</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BB%9F%E4%B8%80-error-type"><span class="nav-number">17.4.</span> <span class="nav-text">统一 error.type</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Span-Status-%E4%B8%8E%E4%B8%9A%E5%8A%A1-Outcome-%E5%88%86%E5%BC%80"><span class="nav-number">17.5.</span> <span class="nav-text">Span Status 与业务 Outcome 分开</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AB%E3%80%81%E4%B8%80%E4%B8%AA%E5%AE%8C%E6%95%B4%E4%BD%86%E7%BB%8F%E8%BF%87%E8%84%B1%E6%95%8F%E7%9A%84-Trace-JSON"><span class="nav-number">18.</span> <span class="nav-text">十八、一个完整但经过脱敏的 Trace JSON</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#JSON-%E7%A4%BA%E4%BE%8B%E9%87%8C%E7%9A%84%E5%87%A0%E4%B8%AA%E5%88%BB%E6%84%8F%E9%80%89%E6%8B%A9"><span class="nav-number">18.1.</span> <span class="nav-text">JSON 示例里的几个刻意选择</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B9%9D%E3%80%81%E4%B8%80%E4%B8%AA%E5%8F%AF%E8%BF%90%E8%A1%8C%E7%9A%84-OpenTelemetry-Python-%E7%A4%BA%E4%BE%8B"><span class="nav-number">19.</span> <span class="nav-text">十九、一个可运行的 OpenTelemetry Python 示例</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BB%A3%E7%A0%81%E8%AF%B4%E6%98%8E"><span class="nav-number">19.1.</span> <span class="nav-text">代码说明</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%BA%E4%BB%80%E4%B9%88%E4%BD%BF%E7%94%A8%E8%87%AA%E5%AE%9A%E4%B9%89-ai-%E5%B1%9E%E6%80%A7"><span class="nav-number">19.2.</span> <span class="nav-text">为什么使用自定义 ai 属性</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E3%80%81%E9%9A%90%E7%A7%81%E4%B8%8E%E8%84%B1%E6%95%8F%EF%BC%9A%E9%BB%98%E8%AE%A4-Content-Off"><span class="nav-number">20.</span> <span class="nav-text">二十、隐私与脱敏：默认 Content-Off</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E5%88%86%E7%B1%BB%E5%BB%BA%E8%AE%AE"><span class="nav-number">20.1.</span> <span class="nav-text">数据分类建议</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%84%B1%E6%95%8F%E9%A1%BA%E5%BA%8F"><span class="nav-number">20.2.</span> <span class="nav-text">脱敏顺序</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Prompt-%E4%B8%AD%E7%9A%84%E5%B5%8C%E5%A5%97%E6%95%8F%E6%84%9F%E4%BF%A1%E6%81%AF"><span class="nav-number">20.3.</span> <span class="nav-text">Prompt 中的嵌套敏感信息</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BF%9D%E7%95%99%E4%B8%8E%E5%88%A0%E9%99%A4"><span class="nav-number">20.4.</span> <span class="nav-text">保留与删除</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9D%83%E9%99%90"><span class="nav-number">20.5.</span> <span class="nav-text">权限</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%80%E3%80%81%E9%87%87%E6%A0%B7%EF%BC%9ATrace-%E5%8F%AF%E4%BB%A5%E9%87%87%E6%A0%B7%EF%BC%8C%E6%A0%B8%E5%BF%83%E6%8C%87%E6%A0%87%E4%B8%8D%E8%83%BD%E8%B7%9F%E7%9D%80%E4%B8%A2"><span class="nav-number">21.</span> <span class="nav-text">二十一、采样：Trace 可以采样，核心指标不能跟着丢</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Head-Sampling"><span class="nav-number">21.1.</span> <span class="nav-text">1. Head Sampling</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Tail-Sampling"><span class="nav-number">21.2.</span> <span class="nav-text">2. Tail Sampling</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%88%86%E7%8E%AF%E5%A2%83%E7%AD%96%E7%95%A5"><span class="nav-number">21.3.</span> <span class="nav-text">3. 分环境策略</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Metric-%E4%B8%8D%E5%BA%94%E4%BE%9D%E8%B5%96-Trace-%E6%A0%B7%E6%9C%AC"><span class="nav-number">21.4.</span> <span class="nav-text">Metric 不应依赖 Trace 样本</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%87%87%E6%A0%B7%E7%8A%B6%E6%80%81%E4%B8%8D%E6%98%AF%E5%AE%89%E5%85%A8%E6%8E%88%E6%9D%83"><span class="nav-number">21.5.</span> <span class="nav-text">采样状态不是安全授权</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%8C%E3%80%81%E5%BC%82%E6%AD%A5%E3%80%81%E6%B6%88%E6%81%AF%E9%98%9F%E5%88%97%E4%B8%8E%E6%89%B9%E5%A4%84%E7%90%86%E6%80%8E%E4%B9%88%E5%85%B3%E8%81%94"><span class="nav-number">22.</span> <span class="nav-text">二十二、异步、消息队列与批处理怎么关联</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Producer-Consumer"><span class="nav-number">22.1.</span> <span class="nav-text">1. Producer &#x2F; Consumer</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E9%95%BF%E6%97%B6%E9%97%B4%E4%BB%BB%E5%8A%A1"><span class="nav-number">22.2.</span> <span class="nav-text">2. 长时间任务</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%A8%A1%E5%9E%8B-Batch"><span class="nav-number">22.3.</span> <span class="nav-text">3. 模型 Batch</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-Fan-out-fan-in-%E5%B7%A5%E5%85%B7"><span class="nav-number">22.4.</span> <span class="nav-text">4. Fan-out &#x2F; fan-in 工具</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%89%E3%80%81%E7%BC%93%E5%AD%98%E6%80%8E%E4%B9%88%E5%BB%BA%E6%A8%A1"><span class="nav-number">23.</span> <span class="nav-text">二十三、缓存怎么建模</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BC%93%E5%AD%98%E5%91%BD%E4%B8%AD"><span class="nav-number">23.1.</span> <span class="nav-text">缓存命中</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BC%93%E5%AD%98%E6%9C%AA%E5%91%BD%E4%B8%AD"><span class="nav-number">23.2.</span> <span class="nav-text">缓存未命中</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BC%93%E5%AD%98%E9%94%AE%E4%B8%8D%E8%83%BD%E6%B3%84%E6%BC%8F-Prompt"><span class="nav-number">23.3.</span> <span class="nav-text">缓存键不能泄漏 Prompt</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%9B%9B%E3%80%81%E5%8F%AF%E8%A7%82%E6%B5%8B%E6%80%A7%E5%B9%B3%E5%8F%B0%E7%9A%84%E6%B5%8B%E8%AF%95%E8%AE%BE%E8%AE%A1"><span class="nav-number">24.</span> <span class="nav-text">二十四、可观测性平台的测试设计</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Schema-%E5%90%88%E5%90%8C%E6%B5%8B%E8%AF%95"><span class="nav-number">24.1.</span> <span class="nav-text">1. Schema 合同测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%8B%93%E6%89%91%E6%B5%8B%E8%AF%95"><span class="nav-number">24.2.</span> <span class="nav-text">2. 拓扑测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%BC%A0%E6%92%AD%E6%B5%8B%E8%AF%95"><span class="nav-number">24.3.</span> <span class="nav-text">3. 传播测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%97%B6%E9%97%B4%E5%AE%8C%E6%95%B4%E6%80%A7%E6%B5%8B%E8%AF%95"><span class="nav-number">24.4.</span> <span class="nav-text">4. 时间完整性测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E9%87%8D%E8%AF%95%E6%B5%8B%E8%AF%95"><span class="nav-number">24.5.</span> <span class="nav-text">5. 重试测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-Retrieval-%E6%B5%8B%E8%AF%95"><span class="nav-number">24.6.</span> <span class="nav-text">6. Retrieval 测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-Tool-%E6%B5%8B%E8%AF%95"><span class="nav-number">24.7.</span> <span class="nav-text">7. Tool 测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-Judge-%E6%B5%8B%E8%AF%95"><span class="nav-number">24.8.</span> <span class="nav-text">8. Judge 测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-%E9%9A%90%E7%A7%81%E6%B5%8B%E8%AF%95"><span class="nav-number">24.9.</span> <span class="nav-text">9. 隐私测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-%E9%87%87%E6%A0%B7%E6%B5%8B%E8%AF%95"><span class="nav-number">24.10.</span> <span class="nav-text">10. 采样测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-%E6%80%A7%E8%83%BD%E5%BC%80%E9%94%80%E6%B5%8B%E8%AF%95"><span class="nav-number">24.11.</span> <span class="nav-text">11. 性能开销测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-%E6%95%85%E9%9A%9C%E9%99%8D%E7%BA%A7%E6%B5%8B%E8%AF%95"><span class="nav-number">24.12.</span> <span class="nav-text">12. 故障降级测试</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%94%E3%80%81%E7%A4%BA%E4%BE%8B%E6%A1%88%E4%BE%8B%E4%B8%80%EF%BC%9A%E7%9C%8B%E8%B5%B7%E6%9D%A5%E6%98%AF%E6%A8%A1%E5%9E%8B%E6%85%A2%EF%BC%8C%E5%AE%9E%E9%99%85%E6%98%AF%E5%B7%A5%E5%85%B7%E9%87%8D%E8%AF%95"><span class="nav-number">25.</span> <span class="nav-text">二十五、示例案例一：看起来是模型慢，实际是工具重试</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%85%AD%E3%80%81%E7%A4%BA%E4%BE%8B%E6%A1%88%E4%BE%8B%E4%BA%8C%EF%BC%9A%E4%B8%BA%E4%BA%86%E6%8E%92%E9%9A%9C%E8%AE%B0%E5%BD%95-Prompt%EF%BC%8C%E5%8F%8D%E8%80%8C%E6%89%A9%E5%A4%A7%E6%B3%84%E6%BC%8F"><span class="nav-number">26.</span> <span class="nav-text">二十六、示例案例二：为了排障记录 Prompt，反而扩大泄漏</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%83%E3%80%81%E7%A4%BA%E4%BE%8B%E6%A1%88%E4%BE%8B%E4%B8%89%EF%BC%9AHTTP-200-%E6%8E%A9%E7%9B%96%E4%B8%9A%E5%8A%A1%E5%A4%B1%E8%B4%A5"><span class="nav-number">27.</span> <span class="nav-text">二十七、示例案例三：HTTP 200 掩盖业务失败</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%85%AB%E3%80%81%E5%B8%B8%E8%A7%81%E8%AF%AF%E5%8C%BA"><span class="nav-number">28.</span> <span class="nav-text">二十八、常见误区</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%AF%E5%8C%BA-1%EF%BC%9A%E6%8A%8A%E6%89%80%E6%9C%89%E5%86%85%E5%AE%B9%E7%9B%B4%E6%8E%A5%E5%86%99%E5%85%A5-Span-%E6%9C%80%E6%96%B9%E4%BE%BF"><span class="nav-number">28.1.</span> <span class="nav-text">误区 1：把所有内容直接写入 Span 最方便</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%AF%E5%8C%BA-2%EF%BC%9A%E4%B8%80%E4%B8%AA-request-ID-%E8%B6%B3%E4%BB%A5%E8%B4%AF%E7%A9%BF%E6%89%80%E6%9C%89%E7%B3%BB%E7%BB%9F"><span class="nav-number">28.2.</span> <span class="nav-text">误区 2：一个 request ID 足以贯穿所有系统</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%AF%E5%8C%BA-3%EF%BC%9A%E6%A8%A1%E5%9E%8B-HTTP-200-%E5%B0%B1%E6%8A%8A-Span-%E6%A0%87%E6%88%90%E5%85%A8%E9%93%BE%E8%B7%AF%E6%88%90%E5%8A%9F"><span class="nav-number">28.3.</span> <span class="nav-text">误区 3：模型 HTTP 200 就把 Span 标成全链路成功</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%AF%E5%8C%BA-4%EF%BC%9A%E5%8F%AA%E8%AE%B0%E5%BD%95%E6%A8%A1%E5%9E%8B%E5%90%8D%EF%BC%8C%E4%B8%8D%E8%AE%B0%E5%BD%95-Prompt-%E4%B8%8E%E7%B4%A2%E5%BC%95%E7%89%88%E6%9C%AC"><span class="nav-number">28.4.</span> <span class="nav-text">误区 4：只记录模型名，不记录 Prompt 与索引版本</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%AF%E5%8C%BA-5%EF%BC%9A%E7%9B%B4%E6%8E%A5%E6%8A%8A%E6%89%80%E6%9C%89%E5%AD%90-Span-%E6%97%B6%E9%95%BF%E7%9B%B8%E5%8A%A0"><span class="nav-number">28.5.</span> <span class="nav-text">误区 5：直接把所有子 Span 时长相加</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%AF%E5%8C%BA-6%EF%BC%9A%E5%8F%AA%E5%9C%A8%E5%BC%82%E5%B8%B8%E6%97%B6%E5%88%9B%E5%BB%BA-Trace"><span class="nav-number">28.6.</span> <span class="nav-text">误区 6：只在异常时创建 Trace</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%AF%E5%8C%BA-7%EF%BC%9AMetric-%E4%BB%8E%E9%87%87%E6%A0%B7-Trace-%E4%B8%B4%E6%97%B6%E8%AE%A1%E7%AE%97%E5%B0%B1%E5%A4%9F%E4%BA%86"><span class="nav-number">28.7.</span> <span class="nav-text">误区 7：Metric 从采样 Trace 临时计算就够了</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%AF%E5%8C%BA-8%EF%BC%9Atrace-flags-sampled-%E8%A1%A8%E7%A4%BA%E5%85%81%E8%AE%B8%E8%AE%B0%E5%BD%95%E5%86%85%E5%AE%B9"><span class="nav-number">28.8.</span> <span class="nav-text">误区 8：trace-flags sampled 表示允许记录内容</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%AF%E5%8C%BA-9%EF%BC%9A%E9%94%99%E8%AF%AF%E5%8F%91%E7%94%9F%E6%9C%80%E6%97%A9%E7%9A%84-Span-%E5%B0%B1%E4%B8%80%E5%AE%9A%E6%98%AF%E6%A0%B9%E5%9B%A0"><span class="nav-number">28.9.</span> <span class="nav-text">误区 9：错误发生最早的 Span 就一定是根因</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%AF%E5%8C%BA-10%EF%BC%9A%E6%8E%A5%E5%85%A5-OpenTelemetry-%E5%B0%B1%E8%87%AA%E5%8A%A8%E6%8B%A5%E6%9C%89%E6%AD%A3%E7%A1%AE%E8%AF%AD%E4%B9%89"><span class="nav-number">28.10.</span> <span class="nav-text">误区 10：接入 OpenTelemetry 就自动拥有正确语义</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%AF%E5%8C%BA-11%EF%BC%9A%E5%93%88%E5%B8%8C%E5%90%8E%E7%9A%84%E5%86%85%E5%AE%B9%E5%B0%B1%E4%B8%8D%E6%98%AF%E6%95%8F%E6%84%9F%E4%BF%A1%E6%81%AF"><span class="nav-number">28.11.</span> <span class="nav-text">误区 11：哈希后的内容就不是敏感信息</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%AF%E5%8C%BA-12%EF%BC%9A%E5%8F%AF%E8%A7%82%E6%B5%8B%E5%90%8E%E7%AB%AF%E4%B8%8D%E5%8F%AF%E7%94%A8%E6%97%B6%E5%8F%AF%E4%BB%A5%E9%98%BB%E5%A1%9E%E4%B8%BB%E4%B8%9A%E5%8A%A1"><span class="nav-number">28.12.</span> <span class="nav-text">误区 12：可观测后端不可用时可以阻塞主业务</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B9%9D%E3%80%81%E8%90%BD%E5%9C%B0%E6%A3%80%E6%9F%A5%E8%A1%A8"><span class="nav-number">29.</span> <span class="nav-text">二十九、落地检查表</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Trace-%E8%BE%B9%E7%95%8C"><span class="nav-number">29.1.</span> <span class="nav-text">Trace 边界</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#ID-%E4%B8%8E%E4%BC%A0%E6%92%AD"><span class="nav-number">29.2.</span> <span class="nav-text">ID 与传播</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Prompt"><span class="nav-number">29.3.</span> <span class="nav-text">Prompt</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Retrieval"><span class="nav-number">29.4.</span> <span class="nav-text">Retrieval</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Model"><span class="nav-number">29.5.</span> <span class="nav-text">Model</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Tool"><span class="nav-number">29.6.</span> <span class="nav-text">Tool</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Judge-%E4%B8%8E-Guardrail"><span class="nav-number">29.7.</span> <span class="nav-text">Judge 与 Guardrail</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8C%87%E6%A0%87"><span class="nav-number">29.8.</span> <span class="nav-text">指标</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%9A%90%E7%A7%81"><span class="nav-number">29.9.</span> <span class="nav-text">隐私</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%B5%8B%E8%AF%95"><span class="nav-number">29.10.</span> <span class="nav-text">测试</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E5%8D%81%E3%80%81%E6%80%BB%E7%BB%93"><span class="nav-number">30.</span> <span class="nav-text">三十、总结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8F%82%E8%80%83%E8%B5%84%E6%96%99"><span class="nav-number">31.</span> <span class="nav-text">参考资料</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">312</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">27</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">569</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2026/03/28/AI%E6%B5%8B%E8%AF%95-21-AI%E8%B0%83%E7%94%A8%E9%93%BE%E6%80%8E%E4%B9%88%E7%BB%9F%E4%B8%80%E8%AE%B0%E5%BD%95Prompt%E6%A3%80%E7%B4%A2%E5%B7%A5%E5%85%B7%E8%B0%83%E7%94%A8%E5%92%8C%E6%A8%A1%E5%9E%8B%E8%BE%93%E5%87%BA/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="AI测试-21-AI调用链怎么统一记录Prompt检索工具调用和模型输出 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          AI测试-21-AI调用链怎么统一记录Prompt检索工具调用和模型输出
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2026-03-28 20:30:00" itemprop="dateCreated datePublished" datetime="2026-03-28T20:30:00+08:00">2026-03-28</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/AI%E6%B5%8B%E8%AF%95/" itemprop="url" rel="index"><span itemprop="name">AI测试</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>12k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>42 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>一个普通 HTTP 接口失败时，测试和运维通常会沿着下面的线索定位：</p>
+<ul>
+<li>request ID</li>
+<li>服务日志</li>
+<li>数据库调用</li>
+<li>下游 RPC</li>
+<li>错误码</li>
+<li>时延分布</li>
+</ul>
+<p>AI 应用的链路更长。</p>
+<p>一次用户请求可能先后经过：</p>
+<ul>
+<li>Prompt 模板渲染</li>
+<li>历史会话裁剪</li>
+<li>查询改写</li>
+<li>向量检索</li>
+<li>文档重排</li>
+<li>第一次模型生成</li>
+<li>工具参数解析</li>
+<li>外部工具执行</li>
+<li>第二次模型生成</li>
+<li>Guardrail</li>
+<li>LLM Judge</li>
+<li>结果持久化</li>
+</ul>
+<p>最终现象可能只是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">回答很慢，而且内容不正确。</span><br></pre></td></tr></table></figure>
+
+<p>如果系统只记录最终 Prompt 和最终回答，团队很难回答：</p>
+<ul>
+<li>慢在排队、检索、模型首 Token，还是工具重试</li>
+<li>错在知识没有召回，还是模型忽略了正确证据</li>
+<li>工具到底有没有执行成功</li>
+<li>模型说“已经完成”时，外部状态是否真的改变</li>
+<li>Judge 为什么给出失败</li>
+<li>这次请求使用的是哪一版 Prompt、索引和工具 Schema</li>
+<li>日志里是否已经泄漏了用户隐私或访问令牌</li>
+</ul>
+<p>因此 AI 可观测性的目标不能只是“多打印一些日志”。</p>
+<p>它需要把 Prompt、Retrieval、Model、Tool、Judge 和最终 Outcome 放进同一条可关联、可查询、可脱敏的证据链。</p>
+<p>本文从平台工程和测试视角，设计一套不绑定单一厂商的统一调用链模型。</p>
+<p>核心思路来自分布式追踪和 OpenTelemetry，但不会把系统锁死在某个后端产品上。</p>
+<p>本文重点解决：</p>
+<ul>
+<li>Trace、Span、Event、Log、Metric、Artifact 分别记录什么</li>
+<li>trace ID 与业务 ID 怎样分工</li>
+<li>Prompt 和 RAG 怎样版本化</li>
+<li>模型逻辑调用与物理重试怎样建模</li>
+<li>TTFT、总时延和 Token 怎样定义</li>
+<li>失败原因怎样归到第一个有意义的责任层</li>
+<li>敏感内容怎样在采集前脱敏</li>
+<li>怎样测试调用链自身是否完整、准确和可用</li>
+</ul>
+<h2 id="一、问题边界：可观测性不是无限制记录原文"><a href="#一、问题边界：可观测性不是无限制记录原文" class="headerlink" title="一、问题边界：可观测性不是无限制记录原文"></a>一、问题边界：可观测性不是无限制记录原文</h2><p>在进入数据模型前，先明确四个边界。</p>
+<h3 id="1-调用链不是模型思维读取器"><a href="#1-调用链不是模型思维读取器" class="headerlink" title="1. 调用链不是模型思维读取器"></a>1. 调用链不是模型思维读取器</h3><p>可观测系统应记录可被系统直接观察的事实：</p>
+<ul>
+<li>输入消息</li>
+<li>模型响应</li>
+<li>工具调用</li>
+<li>工具结果</li>
+<li>检索文档</li>
+<li>外部状态</li>
+<li>评分结果</li>
+<li>时延与资源使用</li>
+</ul>
+<p>它不应该声称还原模型内部真实推理过程。</p>
+<p>如果服务提供了 reasoning summary 或其他可见字段，应把它当成一种模型输出 Artifact。</p>
+<p>不能把它等同于完整、忠实的内部因果解释。</p>
+<h3 id="2-Trace-不应该成为内容数据库"><a href="#2-Trace-不应该成为内容数据库" class="headerlink" title="2. Trace 不应该成为内容数据库"></a>2. Trace 不应该成为内容数据库</h3><p>Trace 后端擅长：</p>
+<ul>
+<li>按 trace ID 查询</li>
+<li>展示父子 Span</li>
+<li>聚合状态和时延</li>
+<li>定位错误节点</li>
+</ul>
+<p>它通常不适合长期存放：</p>
+<ul>
+<li>完整 Prompt</li>
+<li>大段检索文档</li>
+<li>工具返回的大型 JSON</li>
+<li>图片和音频</li>
+<li>长篇 Judge 理由</li>
+</ul>
+<p>这些内容既大，又可能高度敏感。</p>
+<p>更合理的设计是：</p>
+<ul>
+<li>Trace 保存可索引元数据</li>
+<li>Artifact 存储保存受控内容</li>
+<li>Trace 通过 URI 与摘要关联 Artifact</li>
+</ul>
+<h3 id="3-记录到遥测系统不等于可以公开访问"><a href="#3-记录到遥测系统不等于可以公开访问" class="headerlink" title="3. 记录到遥测系统不等于可以公开访问"></a>3. 记录到遥测系统不等于可以公开访问</h3><p>AI 调用内容可能包含：</p>
+<ul>
+<li>个人身份信息</li>
+<li>用户会话</li>
+<li>医疗或财务信息</li>
+<li>内部知识库</li>
+<li>源代码</li>
+<li>API Key</li>
+<li>Cookie</li>
+<li>工具访问令牌</li>
+</ul>
+<p>因此采集策略必须先于导出策略。</p>
+<p>“先全部写到 Trace，再在查询界面隐藏”并不安全。</p>
+<p>敏感内容一旦进入采集管道、队列和后端副本，泄漏面已经扩大。</p>
+<h3 id="4-可观测性不能替代业务真值"><a href="#4-可观测性不能替代业务真值" class="headerlink" title="4. 可观测性不能替代业务真值"></a>4. 可观测性不能替代业务真值</h3><p>Trace 可以告诉我们模型调用成功并返回 200。</p>
+<p>它不能自动证明：</p>
+<ul>
+<li>订单真的创建成功</li>
+<li>退款金额正确</li>
+<li>引用内容符合最新政策</li>
+<li>回答对用户有帮助</li>
+</ul>
+<p>所以调用链必须同时保留两类结果：</p>
+<ul>
+<li>operation status：这一跳技术上是否完成</li>
+<li>business outcome：最终业务目标是否达成</li>
+</ul>
+<p>二者不能混为一个 success 字段。</p>
+<h2 id="二、为什么普通日志在-AI-链路里很快失效"><a href="#二、为什么普通日志在-AI-链路里很快失效" class="headerlink" title="二、为什么普通日志在 AI 链路里很快失效"></a>二、为什么普通日志在 AI 链路里很快失效</h2><p>很多系统最初使用下面的日志：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">start request</span><br><span class="line">render prompt success</span><br><span class="line">retrieval success</span><br><span class="line">model call success</span><br><span class="line">tool call success</span><br><span class="line">finish request</span><br></pre></td></tr></table></figure>
+
+<p>单看每一行都没有错。</p>
+<p>但它存在七个结构性问题。</p>
+<h3 id="1-无法可靠关联"><a href="#1-无法可靠关联" class="headerlink" title="1. 无法可靠关联"></a>1. 无法可靠关联</h3><p>并发请求混在同一个日志流里。</p>
+<p>如果每一行没有统一 trace ID，无法确认哪些记录属于同一用户请求。</p>
+<h3 id="2-无法表达父子关系"><a href="#2-无法表达父子关系" class="headerlink" title="2. 无法表达父子关系"></a>2. 无法表达父子关系</h3><p>一次模型逻辑调用可能重试三次。</p>
+<p>普通日志很难直接表达：</p>
+<ul>
+<li>哪个是逻辑操作</li>
+<li>哪个是物理 attempt</li>
+<li>哪次失败</li>
+<li>哪次最终成功</li>
+</ul>
+<h3 id="3-无法表达并行与异步"><a href="#3-无法表达并行与异步" class="headerlink" title="3. 无法表达并行与异步"></a>3. 无法表达并行与异步</h3><p>Agent 可能并行调用多个工具。</p>
+<p>消息队列 Consumer 可能在 Root 请求结束后继续执行。</p>
+<p>线性日志顺序不等于真实因果顺序。</p>
+<h3 id="4-字段语义不统一"><a href="#4-字段语义不统一" class="headerlink" title="4. 字段语义不统一"></a>4. 字段语义不统一</h3><p>不同组件可能分别使用：</p>
+<ul>
+<li>model</li>
+<li>model_name</li>
+<li>deployment</li>
+<li>engine</li>
+<li>provider_model</li>
+</ul>
+<p>如果没有语义约定，跨组件查询和聚合会不断写适配代码。</p>
+<h3 id="5-无法区分大内容与索引字段"><a href="#5-无法区分大内容与索引字段" class="headerlink" title="5. 无法区分大内容与索引字段"></a>5. 无法区分大内容与索引字段</h3><p>团队为了定位问题，往往直接把 Prompt 和响应打印进日志。</p>
+<p>结果是：</p>
+<ul>
+<li>日志量快速膨胀</li>
+<li>高基数字段拖慢查询</li>
+<li>隐私范围失控</li>
+<li>保留和删除难以治理</li>
+</ul>
+<h3 id="6-时延定义不一致"><a href="#6-时延定义不一致" class="headerlink" title="6. 时延定义不一致"></a>6. 时延定义不一致</h3><p>“模型耗时 5 秒”可能指：</p>
+<ul>
+<li>从业务层开始组装请求到返回</li>
+<li>从网络请求发出到首 Token</li>
+<li>从网络请求发出到最后 Token</li>
+<li>包含重试后的总逻辑耗时</li>
+<li>单次物理请求耗时</li>
+</ul>
+<p>没有边界定义，数字不可比较。</p>
+<h3 id="7-成功状态容易说谎"><a href="#7-成功状态容易说谎" class="headerlink" title="7. 成功状态容易说谎"></a>7. 成功状态容易说谎</h3><p>HTTP 200 只说明服务返回成功。</p>
+<p>返回内容可能：</p>
+<ul>
+<li>解析失败</li>
+<li>被 Guardrail 拒绝</li>
+<li>没有满足任务</li>
+<li>工具调用参数非法</li>
+<li>引用不存在</li>
+</ul>
+<p>所以 AI 链路需要比普通 success 日志更细的状态模型。</p>
+<h2 id="三、统一观测模型：六类对象各负其责"><a href="#三、统一观测模型：六类对象各负其责" class="headerlink" title="三、统一观测模型：六类对象各负其责"></a>三、统一观测模型：六类对象各负其责</h2><p>先定义六个基础对象。</p>
+<h3 id="1-Trace"><a href="#1-Trace" class="headerlink" title="1. Trace"></a>1. Trace</h3><p>Trace 表示一个端到端工作流。</p>
+<p>常见边界是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">从 API 接收用户请求</span><br><span class="line">到最终响应提交或任务进入终态</span><br></pre></td></tr></table></figure>
+
+<p>Trace 负责回答：</p>
+<ul>
+<li>这次请求经历了哪些阶段</li>
+<li>阶段之间是什么因果关系</li>
+<li>总体在哪里失败或变慢</li>
+</ul>
+<h3 id="2-Span"><a href="#2-Span" class="headerlink" title="2. Span"></a>2. Span</h3><p>Span 表示一个有开始和结束时间的操作。</p>
+<p>典型 Span：</p>
+<ul>
+<li>prompt.render</li>
+<li>retrieval.query</li>
+<li>retrieval.rerank</li>
+<li>model.generate</li>
+<li>tool.execute</li>
+<li>judge.evaluate</li>
+</ul>
+<p>Span 适合记录：</p>
+<ul>
+<li>操作名称</li>
+<li>开始与结束时间</li>
+<li>父 Span</li>
+<li>属性</li>
+<li>状态</li>
+<li>事件</li>
+<li>Link</li>
+</ul>
+<h3 id="3-Event"><a href="#3-Event" class="headerlink" title="3. Event"></a>3. Event</h3><p>Event 是 Span 生命周期中的一个时间点。</p>
+<p>适合表示：</p>
+<ul>
+<li>收到首 Token</li>
+<li>开始重试</li>
+<li>Guardrail 拒绝</li>
+<li>流式连接被用户取消</li>
+<li>Artifact 写入完成</li>
+</ul>
+<p>如果一个动作有独立持续时间并且对性能分析有价值，更适合建 Span。</p>
+<p>如果只是瞬时状态变化，更适合建 Event。</p>
+<h3 id="4-Log"><a href="#4-Log" class="headerlink" title="4. Log"></a>4. Log</h3><p>Log 用于记录离散业务或诊断事件。</p>
+<p>结构化 Log 应附带：</p>
+<ul>
+<li>trace_id</li>
+<li>span_id</li>
+<li>severity</li>
+<li>event.name</li>
+<li>error.type</li>
+<li>经过脱敏的字段</li>
+</ul>
+<p>这样 Log 可以和 Trace 相互跳转。</p>
+<h3 id="5-Metric"><a href="#5-Metric" class="headerlink" title="5. Metric"></a>5. Metric</h3><p>Metric 用于低成本聚合趋势：</p>
+<ul>
+<li>请求量</li>
+<li>错误率</li>
+<li>TTFT 分布</li>
+<li>端到端时延</li>
+<li>Token 使用</li>
+<li>工具失败率</li>
+<li>检索空结果率</li>
+</ul>
+<p>Metric 不适合携带：</p>
+<ul>
+<li>用户 ID</li>
+<li>Prompt 摘要</li>
+<li>文档 ID 列表</li>
+<li>request ID</li>
+</ul>
+<p>这些高基数标签会导致时序数量爆炸。</p>
+<h3 id="6-Artifact"><a href="#6-Artifact" class="headerlink" title="6. Artifact"></a>6. Artifact</h3><p>Artifact 保存需要受控访问的大内容：</p>
+<ul>
+<li>脱敏后的 Prompt</li>
+<li>检索片段</li>
+<li>模型完整输出</li>
+<li>工具参数与结果</li>
+<li>图片、音频</li>
+<li>Judge 理由</li>
+<li>环境状态快照</li>
+</ul>
+<p>Trace 中只保存：</p>
+<ul>
+<li>artifact URI</li>
+<li>内容摘要</li>
+<li>数据分类</li>
+<li>大小</li>
+<li>编码</li>
+<li>保留策略 ID</li>
+</ul>
+<h2 id="四、拓扑图：父子-Span、重试与异步-Link"><a href="#四、拓扑图：父子-Span、重试与异步-Link" class="headerlink" title="四、拓扑图：父子 Span、重试与异步 Link"></a>四、拓扑图：父子 Span、重试与异步 Link</h2><p><img src="/images/ai-quality/ai-21-trace-topology.svg" alt="AI 调用链 Trace 与 Span 拓扑"></p>
+<p>图中有三个重要设计。</p>
+<h3 id="1-Root-Span-覆盖业务工作流"><a href="#1-Root-Span-覆盖业务工作流" class="headerlink" title="1. Root Span 覆盖业务工作流"></a>1. Root Span 覆盖业务工作流</h3><p>Root Span 不应只覆盖第一次模型 HTTP 请求。</p>
+<p>它应覆盖用户可感知的完整业务边界。</p>
+<p>否则：</p>
+<ul>
+<li>工具调用发生在 Trace 外</li>
+<li>第二次模型总结无法关联</li>
+<li>端到端时延被低估</li>
+</ul>
+<h3 id="2-逻辑调用与物理-attempt-分开"><a href="#2-逻辑调用与物理-attempt-分开" class="headerlink" title="2. 逻辑调用与物理 attempt 分开"></a>2. 逻辑调用与物理 attempt 分开</h3><p>假设模型调用最多重试两次。</p>
+<p>可以建模为：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">model.generate logical span</span><br><span class="line">  ├── model.attempt 1</span><br><span class="line">  └── model.attempt 2</span><br></pre></td></tr></table></figure>
+
+<p>逻辑 Span 表示业务层看到的一次调用。</p>
+<p>attempt Span 表示实际发出的每一次请求。</p>
+<p>这样可以同时得到：</p>
+<ul>
+<li>逻辑成功率</li>
+<li>首次成功率</li>
+<li>重试次数</li>
+<li>每次物理错误</li>
+<li>重试增加的时延和 Token</li>
+</ul>
+<h3 id="3-异步关系使用-Span-Link"><a href="#3-异步关系使用-Span-Link" class="headerlink" title="3. 异步关系使用 Span Link"></a>3. 异步关系使用 Span Link</h3><p>一个 Span 在标准父子模型里只有一个直接父上下文。</p>
+<p>但异步和批处理经常存在多来源关系：</p>
+<ul>
+<li>多个请求合并成一个 Batch</li>
+<li>消息 Consumer 与 Producer 分离</li>
+<li>工具结果晚于 Root 请求到达</li>
+<li>一个评测任务引用多个生产 Trace</li>
+</ul>
+<p>这时不要伪造树形父子关系。</p>
+<p>使用 Span Link 表达关联更准确。</p>
+<h2 id="五、ID-体系：Trace-ID-不是所有-ID-的替代品"><a href="#五、ID-体系：Trace-ID-不是所有-ID-的替代品" class="headerlink" title="五、ID 体系：Trace ID 不是所有 ID 的替代品"></a>五、ID 体系：Trace ID 不是所有 ID 的替代品</h2><p>一条调用链通常至少需要八类 ID。</p>
+<h3 id="1-trace-id"><a href="#1-trace-id" class="headerlink" title="1. trace_id"></a>1. trace_id</h3><p>表示端到端 Trace。</p>
+<p>W3C Trace Context 中 trace ID 是 16 字节，也就是 32 个小写十六进制字符。</p>
+<p>全 0 是非法值。</p>
+<p>它用于跨服务传播和关联 Span。</p>
+<h3 id="2-span-id"><a href="#2-span-id" class="headerlink" title="2. span_id"></a>2. span_id</h3><p>表示一个 Span。</p>
+<p>W3C Trace Context 中 span ID 是 8 字节，也就是 16 个小写十六进制字符。</p>
+<p>全 0 同样非法。</p>
+<h3 id="3-parent-span-id"><a href="#3-parent-span-id" class="headerlink" title="3. parent_span_id"></a>3. parent_span_id</h3><p>表示直接父操作。</p>
+<p>它帮助后端重建 Trace 树。</p>
+<h3 id="4-request-id"><a href="#4-request-id" class="headerlink" title="4. request_id"></a>4. request_id</h3><p>表示 API Gateway 或业务服务的一次请求。</p>
+<p>它可能早于 Trace 创建，也可能由外部系统定义。</p>
+<p>request ID 适合业务查询，但不应替代 trace ID 的分布式传播语义。</p>
+<h3 id="5-session-id"><a href="#5-session-id" class="headerlink" title="5. session_id"></a>5. session_id</h3><p>表示多轮会话。</p>
+<p>一个 session 通常包含多个 Trace。</p>
+<p>不要把整个长会话都做成一个持续数小时的 Span。</p>
+<p>更稳妥的是：</p>
+<ul>
+<li>每轮请求一个 Trace</li>
+<li>session ID 用作关联字段</li>
+<li>长期异步任务单独建 Trace，并通过 Link 关联</li>
+</ul>
+<h3 id="6-eval-run-id"><a href="#6-eval-run-id" class="headerlink" title="6. eval_run_id"></a>6. eval_run_id</h3><p>表示一次评测或回归运行。</p>
+<p>一个 eval run 通常包含成百上千个 Trace。</p>
+<p>它适合放在 Trace 属性或受控 Baggage 中，但要注意基数和信任边界。</p>
+<h3 id="7-tool-call-id"><a href="#7-tool-call-id" class="headerlink" title="7. tool_call_id"></a>7. tool_call_id</h3><p>关联：</p>
+<ul>
+<li>模型提出的工具调用</li>
+<li>工具执行 Span</li>
+<li>工具返回结果</li>
+<li>后续模型消息</li>
+</ul>
+<p>同一工具的重试还应有独立 attempt ID。</p>
+<h3 id="8-artifact-id"><a href="#8-artifact-id" class="headerlink" title="8. artifact_id"></a>8. artifact_id</h3><p>表示内容证据对象。</p>
+<p>它应支持：</p>
+<ul>
+<li>权限检查</li>
+<li>生命周期</li>
+<li>摘要校验</li>
+<li>删除</li>
+<li>访问审计</li>
+</ul>
+<h3 id="ID-关系示例"><a href="#ID-关系示例" class="headerlink" title="ID 关系示例"></a>ID 关系示例</h3><table>
+<thead>
+<tr>
+<th>ID</th>
+<th>典型基数</th>
+<th>生命周期</th>
+<th>主要用途</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>trace_id</td>
+<td>每个工作流一个</td>
+<td>一次调用链</td>
+<td>分布式追踪</td>
+</tr>
+<tr>
+<td>span_id</td>
+<td>每个操作一个</td>
+<td>单个操作</td>
+<td>拓扑与耗时</td>
+</tr>
+<tr>
+<td>request_id</td>
+<td>每次 API 请求一个</td>
+<td>网关请求</td>
+<td>业务查找</td>
+</tr>
+<tr>
+<td>session_id</td>
+<td>多个请求共享</td>
+<td>多轮会话</td>
+<td>会话分析</td>
+</tr>
+<tr>
+<td>eval_run_id</td>
+<td>多个 Trace 共享</td>
+<td>一次评测</td>
+<td>回归聚合</td>
+</tr>
+<tr>
+<td>tool_call_id</td>
+<td>每个调用一个</td>
+<td>Agent 步骤</td>
+<td>参数与结果关联</td>
+</tr>
+<tr>
+<td>artifact_id</td>
+<td>每份证据一个</td>
+<td>保留周期</td>
+<td>内容访问与审计</td>
+</tr>
+</tbody></table>
+<h2 id="六、使用-W3C-Trace-Context-做跨服务传播"><a href="#六、使用-W3C-Trace-Context-做跨服务传播" class="headerlink" title="六、使用 W3C Trace Context 做跨服务传播"></a>六、使用 W3C Trace Context 做跨服务传播</h2><p>W3C Trace Context 定义了标准 HTTP 头：</p>
+<ul>
+<li>traceparent</li>
+<li>tracestate</li>
+</ul>
+<p>一个 traceparent 示例：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01</span><br></pre></td></tr></table></figure>
+
+<p>四部分依次是：</p>
+<ul>
+<li>version</li>
+<li>trace-id</li>
+<li>parent-id</li>
+<li>trace-flags</li>
+</ul>
+<h3 id="传播规则"><a href="#传播规则" class="headerlink" title="传播规则"></a>传播规则</h3><p>跨 HTTP、RPC 或消息边界时：</p>
+<ol>
+<li>上游注入当前上下文</li>
+<li>下游校验并提取</li>
+<li>下游创建新的 Span</li>
+<li>新 Span 使用提取到的上下文作为远端父</li>
+</ol>
+<p>常用 Web 和 RPC 框架的 OpenTelemetry Instrumentation 可以自动完成。</p>
+<p>自定义协议和消息体需要显式适配。</p>
+<h3 id="不要信任外部输入的-traceparent"><a href="#不要信任外部输入的-traceparent" class="headerlink" title="不要信任外部输入的 traceparent"></a>不要信任外部输入的 traceparent</h3><p>traceparent 是外部输入。</p>
+<p>服务应：</p>
+<ul>
+<li>校验长度和字符</li>
+<li>拒绝非法全 0 ID</li>
+<li>限制 Header 大小</li>
+<li>防止解析异常</li>
+<li>在安全边界评估是否重新开始 Trace</li>
+</ul>
+<p>W3C 规范允许在特定信任边界重启 Trace。</p>
+<p>如果重启，为了内部调查可以在受控字段中记录旧 Trace 的 HMAC 关联值。</p>
+<p>不要把未经信任的原始值直接传播到所有内部系统。</p>
+<h3 id="tracestate-不能放业务秘密"><a href="#tracestate-不能放业务秘密" class="headerlink" title="tracestate 不能放业务秘密"></a>tracestate 不能放业务秘密</h3><p>tracestate 用于厂商或追踪系统的扩展状态。</p>
+<p>它不应该保存：</p>
+<ul>
+<li>用户名</li>
+<li>邮箱</li>
+<li>订单号</li>
+<li>Prompt</li>
+<li>Token</li>
+<li>内部权限</li>
+</ul>
+<p>W3C 规范明确要求不要在 tracestate 中放个人可识别信息。</p>
+<h3 id="Baggage-也要谨慎"><a href="#Baggage-也要谨慎" class="headerlink" title="Baggage 也要谨慎"></a>Baggage 也要谨慎</h3><p>Baggage 会随上下文跨服务传播。</p>
+<p>它适合低敏、必要的关联信息。</p>
+<p>它不自动等于安全存储。</p>
+<p>建议只允许白名单字段，例如：</p>
+<ul>
+<li>environment</li>
+<li>deployment_ring</li>
+<li>eval_suite</li>
+</ul>
+<p>不要传播：</p>
+<ul>
+<li>原始 user ID</li>
+<li>会话内容</li>
+<li>API Key</li>
+<li>文档正文</li>
+<li>权限 Token</li>
+</ul>
+<h2 id="七、Span-命名：低基数名称，高价值属性"><a href="#七、Span-命名：低基数名称，高价值属性" class="headerlink" title="七、Span 命名：低基数名称，高价值属性"></a>七、Span 命名：低基数名称，高价值属性</h2><p>Span 名称必须可聚合。</p>
+<p>推荐：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">ai.workflow</span><br><span class="line">prompt.render</span><br><span class="line">retrieval.query</span><br><span class="line">retrieval.rerank</span><br><span class="line">model.generate</span><br><span class="line">model.attempt</span><br><span class="line">tool.execute</span><br><span class="line">judge.evaluate</span><br><span class="line">guardrail.evaluate</span><br><span class="line">artifact.write</span><br></pre></td></tr></table></figure>
+
+<p>不推荐：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">call-model-family-a-for-user-12345</span><br><span class="line">search-query-how-to-refund-order-8891</span><br><span class="line">execute-tool-refund_order_8891</span><br></pre></td></tr></table></figure>
+
+<p>后者把高基数内容塞进 Span 名称，会导致：</p>
+<ul>
+<li>聚合困难</li>
+<li>存储索引膨胀</li>
+<li>隐私泄漏</li>
+<li>Dashboard 无法复用</li>
+</ul>
+<p>动态信息应放在属性或 Artifact 中。</p>
+<h3 id="Span-kind-的选择"><a href="#Span-kind-的选择" class="headerlink" title="Span kind 的选择"></a>Span kind 的选择</h3><p>OpenTelemetry 常见 SpanKind 包括：</p>
+<ul>
+<li>SERVER：接收同步远程请求</li>
+<li>CLIENT：发起同步远程请求</li>
+<li>PRODUCER：发送异步消息</li>
+<li>CONSUMER：消费异步消息</li>
+<li>INTERNAL：进程内操作</li>
+</ul>
+<p>示例：</p>
+<ul>
+<li>API Root：SERVER</li>
+<li>调模型服务：CLIENT</li>
+<li>调向量数据库：CLIENT</li>
+<li>进程内 Prompt 渲染：INTERNAL</li>
+<li>发评测消息：PRODUCER</li>
+<li>评测 Worker：CONSUMER</li>
+</ul>
+<p>SpanKind 描述调用边界。</p>
+<p>它不描述业务是否成功。</p>
+<h2 id="八、统一-Span-最小-Schema"><a href="#八、统一-Span-最小-Schema" class="headerlink" title="八、统一 Span 最小 Schema"></a>八、统一 Span 最小 Schema</h2><p>每个 Span 至少应有五组字段。</p>
+<h3 id="1-Identity"><a href="#1-Identity" class="headerlink" title="1. Identity"></a>1. Identity</h3><figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">trace_id:</span> <span class="string">4bf92f3577b34da6a3ce929d0e0e4736</span></span><br><span class="line"><span class="attr">span_id:</span> <span class="string">00f067aa0ba902b7</span></span><br><span class="line"><span class="attr">parent_span_id:</span> <span class="string">15d2a31fc0a1228f</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="2-Operation"><a href="#2-Operation" class="headerlink" title="2. Operation"></a>2. Operation</h3><figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">name:</span> <span class="string">model.generate</span></span><br><span class="line"><span class="attr">kind:</span> <span class="string">CLIENT</span></span><br><span class="line"><span class="attr">start_time:</span> <span class="string">&quot;2026-03-28T12:30:00.123456Z&quot;</span></span><br><span class="line"><span class="attr">end_time:</span> <span class="string">&quot;2026-03-28T12:30:02.891204Z&quot;</span></span><br><span class="line"><span class="attr">attempt:</span> <span class="number">1</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="3-Version"><a href="#3-Version" class="headerlink" title="3. Version"></a>3. Version</h3><figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">ai.prompt.template.id:</span> <span class="string">refund-agent</span></span><br><span class="line"><span class="attr">ai.prompt.template.version:</span> <span class="string">&quot;13&quot;</span></span><br><span class="line"><span class="attr">ai.prompt.rendered.digest:</span> <span class="string">&quot;sha256:b1260c...&quot;</span></span><br><span class="line"><span class="attr">ai.model.requested:</span> <span class="string">model-family-a</span></span><br><span class="line"><span class="attr">ai.model.resolved:</span> <span class="string">provider-value-if-available</span></span><br><span class="line"><span class="attr">ai.tool.schema.digest:</span> <span class="string">&quot;sha256:933cad...&quot;</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="4-Result"><a href="#4-Result" class="headerlink" title="4. Result"></a>4. Result</h3><figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">otel.status_code:</span> <span class="string">ERROR</span></span><br><span class="line"><span class="attr">error.type:</span> <span class="string">timeout</span></span><br><span class="line"><span class="attr">ai.outcome.status:</span> <span class="string">retryable_failure</span></span><br><span class="line"><span class="attr">ai.finish_reason:</span> <span class="string">timeout</span></span><br><span class="line"><span class="attr">ai.usage.input_tokens:</span> <span class="number">1842</span></span><br><span class="line"><span class="attr">ai.usage.output_tokens:</span> <span class="number">0</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="5-Evidence"><a href="#5-Evidence" class="headerlink" title="5. Evidence"></a>5. Evidence</h3><figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">ai.artifact.uri:</span> <span class="string">&quot;artifact://trace-id/span-id/model-response&quot;</span></span><br><span class="line"><span class="attr">ai.artifact.digest:</span> <span class="string">&quot;sha256:8e7dc1...&quot;</span></span><br><span class="line"><span class="attr">ai.artifact.classification:</span> <span class="string">confidential</span></span><br><span class="line"><span class="attr">ai.artifact.content_recorded:</span> <span class="literal">true</span></span><br></pre></td></tr></table></figure>
+
+<p>字段命名可以映射到 OpenTelemetry 当前 GenAI Semantic Conventions。</p>
+<p>但工程上要加一层内部 Schema Registry。</p>
+<p>原因是：</p>
+<ul>
+<li>GenAI 语义约定仍在演进</li>
+<li>不同语言 SDK 落地速度不同</li>
+<li>现有平台可能已有字段</li>
+<li>上游字段稳定性级别可能不同</li>
+</ul>
+<p>内部 Registry 至少要记录：</p>
+<ul>
+<li>字段名称</li>
+<li>数据类型</li>
+<li>单位</li>
+<li>基数预期</li>
+<li>是否敏感</li>
+<li>是否进入 Metric</li>
+<li>稳定性</li>
+<li>废弃与迁移规则</li>
+</ul>
+<h2 id="九、Prompt：记录版本和摘要，不默认把原文塞进-Span"><a href="#九、Prompt：记录版本和摘要，不默认把原文塞进-Span" class="headerlink" title="九、Prompt：记录版本和摘要，不默认把原文塞进 Span"></a>九、Prompt：记录版本和摘要，不默认把原文塞进 Span</h2><p>Prompt 可观测至少分四层。</p>
+<h3 id="1-模板身份"><a href="#1-模板身份" class="headerlink" title="1. 模板身份"></a>1. 模板身份</h3><ul>
+<li>template.id</li>
+<li>template.version</li>
+<li>template.digest</li>
+<li>owner</li>
+</ul>
+<p>它回答：</p>
+<blockquote>
+<p>使用的是哪一份逻辑模板？</p>
+</blockquote>
+<h3 id="2-渲染配置"><a href="#2-渲染配置" class="headerlink" title="2. 渲染配置"></a>2. 渲染配置</h3><ul>
+<li>locale</li>
+<li>experiment variant</li>
+<li>context policy version</li>
+<li>truncation policy</li>
+<li>few-shot set revision</li>
+</ul>
+<p>它回答：</p>
+<blockquote>
+<p>模板是怎样组装成最终输入的？</p>
+</blockquote>
+<h3 id="3-渲染结果摘要"><a href="#3-渲染结果摘要" class="headerlink" title="3. 渲染结果摘要"></a>3. 渲染结果摘要</h3><ul>
+<li>rendered digest</li>
+<li>message count</li>
+<li>character count</li>
+<li>estimated token count</li>
+<li>content classification</li>
+</ul>
+<p>它回答：</p>
+<blockquote>
+<p>两次运行是否真的使用了同一份渲染输入？</p>
+</blockquote>
+<h3 id="4-渲染原文-Artifact"><a href="#4-渲染原文-Artifact" class="headerlink" title="4. 渲染原文 Artifact"></a>4. 渲染原文 Artifact</h3><p>只有策略允许时才保存：</p>
+<ul>
+<li>system message</li>
+<li>user message</li>
+<li>history</li>
+<li>tool definitions</li>
+</ul>
+<p>保存前要完成：</p>
+<ul>
+<li>Secret 扫描</li>
+<li>PII 分类</li>
+<li>字段级脱敏</li>
+<li>大小截断</li>
+<li>独立加密</li>
+<li>ACL 分配</li>
+</ul>
+<h3 id="为什么普通-SHA-256-不能当脱敏"><a href="#为什么普通-SHA-256-不能当脱敏" class="headerlink" title="为什么普通 SHA-256 不能当脱敏"></a>为什么普通 SHA-256 不能当脱敏</h3><p>哈希可以验证内容完整性。</p>
+<p>它不一定能保护低熵信息。</p>
+<p>例如：</p>
+<ul>
+<li>是 &#x2F; 否</li>
+<li>国家代码</li>
+<li>少量枚举状态</li>
+<li>短手机号后四位</li>
+</ul>
+<p>攻击者可以枚举所有可能值再对比摘要。</p>
+<p>如果需要可关联但不可直接恢复的标识，考虑使用带密钥的 HMAC。</p>
+<p>同时要：</p>
+<ul>
+<li>管理密钥轮换</li>
+<li>记录 key version</li>
+<li>限制跨环境复用</li>
+<li>明确删除策略</li>
+</ul>
+<h2 id="十、Retrieval：记录“找了什么”和“为什么被选中”"><a href="#十、Retrieval：记录“找了什么”和“为什么被选中”" class="headerlink" title="十、Retrieval：记录“找了什么”和“为什么被选中”"></a>十、Retrieval：记录“找了什么”和“为什么被选中”</h2><p>RAG 的问题经常被错误归到模型。</p>
+<p>要区分至少四种情况：</p>
+<ol>
+<li>正确文档没有进入候选集</li>
+<li>正确文档召回了，但重排后被挤出</li>
+<li>正确文档进入上下文，模型没有使用</li>
+<li>文档本身已过期或冲突</li>
+</ol>
+<p>因此 Retrieval Span 至少记录下面信息。</p>
+<h3 id="查询"><a href="#查询" class="headerlink" title="查询"></a>查询</h3><ul>
+<li>query rewrite version</li>
+<li>脱敏 query Artifact 或 HMAC</li>
+<li>query language</li>
+<li>filters digest</li>
+<li>requested top_k</li>
+</ul>
+<p>不要直接把完整用户 Query 放进低权限 Trace 属性。</p>
+<h3 id="数据源"><a href="#数据源" class="headerlink" title="数据源"></a>数据源</h3><ul>
+<li>corpus ID</li>
+<li>corpus snapshot</li>
+<li>index revision</li>
+<li>embedding model ID</li>
+<li>chunker revision</li>
+<li>ACL policy revision</li>
+</ul>
+<h3 id="返回结果"><a href="#返回结果" class="headerlink" title="返回结果"></a>返回结果</h3><p>对每个文档或 Chunk：</p>
+<ul>
+<li>stable document ID</li>
+<li>document revision</li>
+<li>chunk ID</li>
+<li>rank</li>
+<li>raw score</li>
+<li>score type</li>
+<li>source URI</li>
+<li>access decision</li>
+</ul>
+<h3 id="Rerank"><a href="#Rerank" class="headerlink" title="Rerank"></a>Rerank</h3><ul>
+<li>reranker ID</li>
+<li>reranker revision</li>
+<li>input count</li>
+<li>output count</li>
+<li>rank changes</li>
+<li>duration</li>
+</ul>
+<h3 id="分数不能跨算法直接比较"><a href="#分数不能跨算法直接比较" class="headerlink" title="分数不能跨算法直接比较"></a>分数不能跨算法直接比较</h3><p>向量相似度、BM25 和 Reranker 分数的数值空间不同。</p>
+<p>即使同一种算法：</p>
+<ul>
+<li>模型变化</li>
+<li>归一化变化</li>
+<li>索引变化</li>
+</ul>
+<p>都可能改变分布。</p>
+<p>所以不要只记录一个含糊的 <code>score</code>。</p>
+<p>至少同时记录：</p>
+<ul>
+<li>score value</li>
+<li>score type</li>
+<li>producer revision</li>
+<li>rank</li>
+</ul>
+<h3 id="空召回要单独建模"><a href="#空召回要单独建模" class="headerlink" title="空召回要单独建模"></a>空召回要单独建模</h3><p>空召回不是普通成功。</p>
+<p>建议：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">otel.status_code:</span> <span class="string">UNSET</span></span><br><span class="line"><span class="attr">ai.retrieval.result:</span> <span class="string">empty</span></span><br><span class="line"><span class="attr">ai.retrieval.document_count:</span> <span class="number">0</span></span><br><span class="line"><span class="attr">ai.outcome.status:</span> <span class="string">degraded</span></span><br></pre></td></tr></table></figure>
+
+<p>技术调用可以成功。</p>
+<p>但业务链路进入了降级状态。</p>
+<h2 id="十一、Tool：最重要的是副作用和最终状态"><a href="#十一、Tool：最重要的是副作用和最终状态" class="headerlink" title="十一、Tool：最重要的是副作用和最终状态"></a>十一、Tool：最重要的是副作用和最终状态</h2><p>工具调用至少涉及三个对象：</p>
+<ul>
+<li>模型提出的 tool call</li>
+<li>Runtime 实际执行</li>
+<li>外部系统最终状态</li>
+</ul>
+<p>三者不能只用一个 success 表示。</p>
+<h3 id="工具身份"><a href="#工具身份" class="headerlink" title="工具身份"></a>工具身份</h3><ul>
+<li>tool.name</li>
+<li>tool.version</li>
+<li>schema.digest</li>
+<li>tool_call_id</li>
+<li>operation</li>
+</ul>
+<h3 id="参数"><a href="#参数" class="headerlink" title="参数"></a>参数</h3><ul>
+<li>sanitized args Artifact</li>
+<li>args digest</li>
+<li>validation result</li>
+<li>permission decision</li>
+</ul>
+<p>不得记录：</p>
+<ul>
+<li>Authorization Header</li>
+<li>Cookie</li>
+<li>数据库密码</li>
+<li>云访问密钥</li>
+<li>完整私钥</li>
+</ul>
+<p>这些字段应在进入遥测 SDK 前丢弃。</p>
+<h3 id="执行"><a href="#执行" class="headerlink" title="执行"></a>执行</h3><ul>
+<li>attempt</li>
+<li>timeout</li>
+<li>retry reason</li>
+<li>target service</li>
+<li>status code</li>
+<li>error.type</li>
+<li>duration</li>
+</ul>
+<h3 id="副作用"><a href="#副作用" class="headerlink" title="副作用"></a>副作用</h3><ul>
+<li>side_effect: none &#x2F; read &#x2F; write &#x2F; destructive</li>
+<li>idempotency key</li>
+<li>transaction ID</li>
+<li>rollback status</li>
+<li>final state Artifact</li>
+</ul>
+<h3 id="模型声称成功不能替代-Outcome"><a href="#模型声称成功不能替代-Outcome" class="headerlink" title="模型声称成功不能替代 Outcome"></a>模型声称成功不能替代 Outcome</h3><p>例如模型输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">已经为你取消订单。</span><br></pre></td></tr></table></figure>
+
+<p>真正的业务断言应检查：</p>
+<ul>
+<li>cancel API 是否成功</li>
+<li>订单状态是否变成 canceled</li>
+<li>是否产生重复操作</li>
+<li>是否写入正确订单</li>
+</ul>
+<p>Trace 应同时显示：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">model statement: success</span><br><span class="line">tool operation: success</span><br><span class="line">business outcome: verified</span><br></pre></td></tr></table></figure>
+
+<p>如果工具失败但模型仍声称成功，应归类为：</p>
+<ul>
+<li>tool failure</li>
+<li>unsupported success claim</li>
+</ul>
+<p>而不是只标一个 model error。</p>
+<h2 id="十二、Model：区分逻辑调用、物理请求和流式事件"><a href="#十二、Model：区分逻辑调用、物理请求和流式事件" class="headerlink" title="十二、Model：区分逻辑调用、物理请求和流式事件"></a>十二、Model：区分逻辑调用、物理请求和流式事件</h2><p>模型调用的最小记录包括：</p>
+<h3 id="请求侧"><a href="#请求侧" class="headerlink" title="请求侧"></a>请求侧</h3><ul>
+<li>provider</li>
+<li>requested model</li>
+<li>resolved model 或 deployment</li>
+<li>operation</li>
+<li>temperature</li>
+<li>top_p</li>
+<li>max output tokens</li>
+<li>seed，如果支持</li>
+<li>stream</li>
+<li>timeout</li>
+<li>retry policy</li>
+</ul>
+<h3 id="响应侧"><a href="#响应侧" class="headerlink" title="响应侧"></a>响应侧</h3><ul>
+<li>provider request ID</li>
+<li>finish reason</li>
+<li>input tokens</li>
+<li>output tokens</li>
+<li>cache read tokens，如果提供</li>
+<li>cache write tokens，如果提供</li>
+<li>response model revision，如果提供</li>
+<li>first token time</li>
+<li>last token time</li>
+</ul>
+<h3 id="逻辑与物理层"><a href="#逻辑与物理层" class="headerlink" title="逻辑与物理层"></a>逻辑与物理层</h3><p>假设第一次请求 429，退避后第二次成功。</p>
+<p>逻辑 Span：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">name:</span> <span class="string">model.generate</span></span><br><span class="line"><span class="attr">attempt.count:</span> <span class="number">2</span></span><br><span class="line"><span class="attr">outcome.status:</span> <span class="string">success_after_retry</span></span><br><span class="line"><span class="attr">duration_ms:</span> <span class="number">4200</span></span><br></pre></td></tr></table></figure>
+
+<p>物理 attempt 1：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">name:</span> <span class="string">model.attempt</span></span><br><span class="line"><span class="attr">attempt:</span> <span class="number">1</span></span><br><span class="line"><span class="attr">status:</span> <span class="string">error</span></span><br><span class="line"><span class="attr">error.type:</span> <span class="string">rate_limited</span></span><br><span class="line"><span class="attr">duration_ms:</span> <span class="number">180</span></span><br></pre></td></tr></table></figure>
+
+<p>物理 attempt 2：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">name:</span> <span class="string">model.attempt</span></span><br><span class="line"><span class="attr">attempt:</span> <span class="number">2</span></span><br><span class="line"><span class="attr">status:</span> <span class="string">ok</span></span><br><span class="line"><span class="attr">duration_ms:</span> <span class="number">2620</span></span><br><span class="line"><span class="attr">input_tokens:</span> <span class="number">1842</span></span><br><span class="line"><span class="attr">output_tokens:</span> <span class="number">316</span></span><br></pre></td></tr></table></figure>
+
+<p>剩余时间可能来自退避等待。</p>
+<p>可以用 Event 表示：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">event.name:</span> <span class="string">retry.scheduled</span></span><br><span class="line"><span class="attr">delay_ms:</span> <span class="number">1200</span></span><br><span class="line"><span class="attr">reason:</span> <span class="string">rate_limited</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="不要把重试前失败覆盖掉"><a href="#不要把重试前失败覆盖掉" class="headerlink" title="不要把重试前失败覆盖掉"></a>不要把重试前失败覆盖掉</h3><p>最终成功不等于过程无错误。</p>
+<p>至少保留：</p>
+<ul>
+<li>first attempt success rate</li>
+<li>logical success rate</li>
+<li>retry count</li>
+<li>retry reason</li>
+<li>retry cost</li>
+</ul>
+<p>否则服务会在“看起来成功”的同时，时延和费用不断恶化。</p>
+<h2 id="十三、Judge-与-Guardrail：裁判也必须进入调用链"><a href="#十三、Judge-与-Guardrail：裁判也必须进入调用链" class="headerlink" title="十三、Judge 与 Guardrail：裁判也必须进入调用链"></a>十三、Judge 与 Guardrail：裁判也必须进入调用链</h2><p>Judge 经常被放在业务 Trace 之外。</p>
+<p>这会导致：</p>
+<ul>
+<li>评分无法关联原始输出</li>
+<li>不知道使用了哪版 Rubric</li>
+<li>Judge 超时被误认为模型失败</li>
+<li>无法监控裁判自身 Token 与时延</li>
+</ul>
+<h3 id="Judge-Span-建议字段"><a href="#Judge-Span-建议字段" class="headerlink" title="Judge Span 建议字段"></a>Judge Span 建议字段</h3><ul>
+<li>grader.id</li>
+<li>grader.version</li>
+<li>rubric.id</li>
+<li>rubric.version</li>
+<li>rubric.digest</li>
+<li>judge model</li>
+<li>input Artifact digest</li>
+<li>score</li>
+<li>label</li>
+<li>confidence，如果有明确校准含义</li>
+<li>rationale Artifact</li>
+<li>parser version</li>
+<li>calibration set revision</li>
+</ul>
+<h3 id="Guardrail-与-Judge-不应混用"><a href="#Guardrail-与-Judge-不应混用" class="headerlink" title="Guardrail 与 Judge 不应混用"></a>Guardrail 与 Judge 不应混用</h3><p>Guardrail 通常用于硬风险控制：</p>
+<ul>
+<li>敏感数据</li>
+<li>越权</li>
+<li>有害内容</li>
+<li>输出 Schema</li>
+</ul>
+<p>Judge 通常用于质量评价：</p>
+<ul>
+<li>完整性</li>
+<li>相关性</li>
+<li>清晰度</li>
+<li>引用忠实度</li>
+</ul>
+<p>二者的失败语义不同。</p>
+<p>Guardrail 拒绝通常是业务链路的确定性状态。</p>
+<p>Judge 低分通常是质量评估结果。</p>
+<p>不要把二者都写成 <code>score = 0</code>。</p>
+<h2 id="十四、三路存储：Trace、Metric-与-Artifact"><a href="#十四、三路存储：Trace、Metric-与-Artifact" class="headerlink" title="十四、三路存储：Trace、Metric 与 Artifact"></a>十四、三路存储：Trace、Metric 与 Artifact</h2><p><img src="/images/ai-quality/ai-21-observability-schema.svg" alt="AI 可观测数据模型与隐私分层"></p>
+<p>这张图表达一个关键架构原则：</p>
+<p><strong>同一调用链的数据，不应该全部进入同一个后端。</strong></p>
+<h3 id="1-Trace-与结构化-Log"><a href="#1-Trace-与结构化-Log" class="headerlink" title="1. Trace 与结构化 Log"></a>1. Trace 与结构化 Log</h3><p>适合：</p>
+<ul>
+<li>低基数操作名称</li>
+<li>版本</li>
+<li>状态</li>
+<li>error.type</li>
+<li>时延</li>
+<li>Token 数量</li>
+<li>Artifact 引用</li>
+</ul>
+<p>主要用途：</p>
+<ul>
+<li>单请求定位</li>
+<li>拓扑分析</li>
+<li>失败下钻</li>
+</ul>
+<h3 id="2-Metric-时序库"><a href="#2-Metric-时序库" class="headerlink" title="2. Metric 时序库"></a>2. Metric 时序库</h3><p>适合：</p>
+<ul>
+<li>Counter</li>
+<li>Histogram</li>
+<li>Gauge 或 UpDownCounter</li>
+</ul>
+<p>主要用途：</p>
+<ul>
+<li>趋势</li>
+<li>告警</li>
+<li>SLO</li>
+<li>容量</li>
+</ul>
+<p>Metric 标签必须控制基数。</p>
+<h3 id="3-Artifact-存储"><a href="#3-Artifact-存储" class="headerlink" title="3. Artifact 存储"></a>3. Artifact 存储</h3><p>适合：</p>
+<ul>
+<li>大内容</li>
+<li>高敏内容</li>
+<li>多媒体</li>
+<li>完整证据</li>
+</ul>
+<p>主要用途：</p>
+<ul>
+<li>审计</li>
+<li>人工复核</li>
+<li>回归复现</li>
+<li>失败分析</li>
+</ul>
+<p>Artifact 存储必须有独立：</p>
+<ul>
+<li>加密</li>
+<li>权限</li>
+<li>保留</li>
+<li>删除</li>
+<li>审计</li>
+</ul>
+<h2 id="十五、时延模型：先定义边界，再谈-P95"><a href="#十五、时延模型：先定义边界，再谈-P95" class="headerlink" title="十五、时延模型：先定义边界，再谈 P95"></a>十五、时延模型：先定义边界，再谈 P95</h2><p>AI 链路至少需要下面几种时延。</p>
+<h3 id="1-端到端时延"><a href="#1-端到端时延" class="headerlink" title="1. 端到端时延"></a>1. 端到端时延</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">L_e2e = root_span.end - root_span.start</span><br></pre></td></tr></table></figure>
+
+<p>它最接近用户等待时间。</p>
+<h3 id="2-TTFT"><a href="#2-TTFT" class="headerlink" title="2. TTFT"></a>2. TTFT</h3><p>Time To First Token：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">TTFT = first_usable_token_time - model_request_start</span><br></pre></td></tr></table></figure>
+
+<p>这里要明确：</p>
+<ul>
+<li>起点是逻辑调用还是物理请求</li>
+<li>首 Token 是任意协议字节还是可展示内容</li>
+<li>是否包含排队</li>
+<li>重试时取第一次 attempt 还是最终成功 attempt</li>
+</ul>
+<p>建议同时记录：</p>
+<ul>
+<li>first_attempt_ttft</li>
+<li>successful_attempt_ttft</li>
+<li>logical_ttft</li>
+</ul>
+<h3 id="3-Time-To-Last-Token"><a href="#3-Time-To-Last-Token" class="headerlink" title="3. Time To Last Token"></a>3. Time To Last Token</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">TTLT = last_token_time - model_request_start</span><br></pre></td></tr></table></figure>
+
+<p>流式输出时，它代表完整生成完成时间。</p>
+<h3 id="4-生成阶段时长"><a href="#4-生成阶段时长" class="headerlink" title="4. 生成阶段时长"></a>4. 生成阶段时长</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">generation_duration =</span><br><span class="line">  last_token_time - first_usable_token_time</span><br></pre></td></tr></table></figure>
+
+<p>这个区间只包含相邻输出 Token 之间的 <code>N - 1</code> 个间隔。若服务端提供 Token 级时间戳，可计算：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">inter_token_output_rate =</span><br><span class="line">  (output_tokens - 1) / generation_duration_seconds</span><br></pre></td></tr></table></figure>
+
+<p>该公式只在 <code>output_tokens &gt; 1</code> 时有定义。若使用从解码开始到最后一个 Token 的完整时长作为分母，才可以用 <code>output_tokens / decode_duration_seconds</code>；两种口径不能混用。</p>
+<p>不能用总请求时长做分母。</p>
+<p>因为总时长可能包含排队和首 Token 等待。</p>
+<h3 id="5-检索时延"><a href="#5-检索时延" class="headerlink" title="5. 检索时延"></a>5. 检索时延</h3><p>拆成：</p>
+<ul>
+<li>query rewrite</li>
+<li>embedding</li>
+<li>vector search</li>
+<li>metadata filter</li>
+<li>rerank</li>
+<li>document fetch</li>
+</ul>
+<p>不要只记录一个 RAG duration。</p>
+<h3 id="6-工具时延"><a href="#6-工具时延" class="headerlink" title="6. 工具时延"></a>6. 工具时延</h3><p>拆成：</p>
+<ul>
+<li>参数验证</li>
+<li>权限检查</li>
+<li>排队</li>
+<li>网络调用</li>
+<li>重试退避</li>
+<li>最终状态校验</li>
+</ul>
+<h3 id="7-Judge-时延"><a href="#7-Judge-时延" class="headerlink" title="7. Judge 时延"></a>7. Judge 时延</h3><p>Judge 可能不在用户同步路径。</p>
+<p>需要明确：</p>
+<ul>
+<li>是否计入用户端到端时延</li>
+<li>是否作为异步 Link</li>
+<li>评测完成时延是多少</li>
+</ul>
+<h3 id="并行-Span-不能直接相加"><a href="#并行-Span-不能直接相加" class="headerlink" title="并行 Span 不能直接相加"></a>并行 Span 不能直接相加</h3><p>如果两个工具并行执行：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">tool A: 3 s</span><br><span class="line">tool B: 4 s</span><br></pre></td></tr></table></figure>
+
+<p>它们对关键路径的贡献接近 4 秒，而不是 7 秒。</p>
+<p>所以：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">L_e2e != sum(all child span durations)</span><br></pre></td></tr></table></figure>
+
+<p>性能归因应使用：</p>
+<ul>
+<li>时间轴</li>
+<li>Critical Path</li>
+<li>Span exclusive time</li>
+</ul>
+<p>Span exclusive time 是该 Span 持续时间减去所有子 Span 时间区间的并集。</p>
+<p>不是简单减去子 Span 时长总和。</p>
+<p>子 Span 重叠时，直接相减会得到错误甚至负数。</p>
+<h3 id="时钟问题"><a href="#时钟问题" class="headerlink" title="时钟问题"></a>时钟问题</h3><p>跨服务 Span 使用 wall clock 后可能受时钟偏差影响。</p>
+<p>每个进程内部计算 duration 应优先使用单调时钟。</p>
+<p>导出时仍记录统一时间戳。</p>
+<p>平台要测试：</p>
+<ul>
+<li>负 duration</li>
+<li>子 Span 超出父 Span</li>
+<li>明显时钟漂移</li>
+<li>NTP 调整</li>
+</ul>
+<h2 id="十六、Token-与成本：使用量是事实，价格是版本化派生数据"><a href="#十六、Token-与成本：使用量是事实，价格是版本化派生数据" class="headerlink" title="十六、Token 与成本：使用量是事实，价格是版本化派生数据"></a>十六、Token 与成本：使用量是事实，价格是版本化派生数据</h2><p>不同模型服务可能返回：</p>
+<ul>
+<li>input tokens</li>
+<li>output tokens</li>
+<li>cached input tokens</li>
+<li>reasoning tokens</li>
+<li>image units</li>
+<li>audio duration</li>
+</ul>
+<p>平台应先保存提供方返回的原始 usage。</p>
+<p>再映射到内部统一字段。</p>
+<h3 id="Token-不是跨模型绝对可比单位"><a href="#Token-不是跨模型绝对可比单位" class="headerlink" title="Token 不是跨模型绝对可比单位"></a>Token 不是跨模型绝对可比单位</h3><p>不同 Tokenizer 对同一文本计数可能不同。</p>
+<p>因此报告 Token 时必须带上：</p>
+<ul>
+<li>model 或 tokenizer identity</li>
+<li>usage type</li>
+<li>provider source</li>
+</ul>
+<p>不要用 Token 数直接比较完全不同模态或模型的“效率”。</p>
+<h3 id="成本计算"><a href="#成本计算" class="headerlink" title="成本计算"></a>成本计算</h3><p>成本可以表示为：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">estimated_cost =</span><br><span class="line">  input_units  * input_unit_price</span><br><span class="line">  + output_units * output_unit_price</span><br><span class="line">  + cache_units  * cache_unit_price</span><br><span class="line">  + tool_cost</span><br></pre></td></tr></table></figure>
+
+<p>价格会变化。</p>
+<p>所以不要只保存一个最终 cost。</p>
+<p>同时保存：</p>
+<ul>
+<li>原始 usage</li>
+<li>currency</li>
+<li>price table ID</li>
+<li>price table version</li>
+<li>计算时间</li>
+<li>估算或账单确认状态</li>
+</ul>
+<h3 id="Metric-维度"><a href="#Metric-维度" class="headerlink" title="Metric 维度"></a>Metric 维度</h3><p>建议按低基数字段聚合：</p>
+<ul>
+<li>service</li>
+<li>environment</li>
+<li>operation</li>
+<li>requested model family</li>
+<li>deployment ring</li>
+<li>status</li>
+</ul>
+<p>不要把下面字段放进 Metric 标签：</p>
+<ul>
+<li>trace ID</li>
+<li>request ID</li>
+<li>user ID</li>
+<li>session ID</li>
+<li>Prompt digest</li>
+<li>document ID</li>
+</ul>
+<h2 id="十七、失败归因：错误发生点不一定是根因"><a href="#十七、失败归因：错误发生点不一定是根因" class="headerlink" title="十七、失败归因：错误发生点不一定是根因"></a>十七、失败归因：错误发生点不一定是根因</h2><p>AI Trace 中经常出现多个错误。</p>
+<p>例如：</p>
+<ol>
+<li>检索超时</li>
+<li>系统降级为空上下文</li>
+<li>模型编造答案</li>
+<li>Judge 判为失败</li>
+</ol>
+<p>如果只看最后一个 Error Span，会把问题归给 Judge。</p>
+<p>如果只看第一个异常，又可能忽略系统本应阻止无证据回答。</p>
+<p>建议同时记录三种归因。</p>
+<h3 id="1-first-fault"><a href="#1-first-fault" class="headerlink" title="1. first_fault"></a>1. first_fault</h3><p>调用链中最早改变正常路径的故障。</p>
+<p>示例：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">retrieval.timeout</span><br></pre></td></tr></table></figure>
+
+<h3 id="2-terminal-cause"><a href="#2-terminal-cause" class="headerlink" title="2. terminal_cause"></a>2. terminal_cause</h3><p>让工作流进入失败终态的直接原因。</p>
+<p>示例：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">unsupported_answer_blocked</span><br></pre></td></tr></table></figure>
+
+<h3 id="3-contributing-factors"><a href="#3-contributing-factors" class="headerlink" title="3. contributing_factors"></a>3. contributing_factors</h3><p>扩大影响或未能兜底的因素。</p>
+<p>示例：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">fallback_without_evidence</span><br><span class="line">guardrail_policy_missing</span><br></pre></td></tr></table></figure>
+
+<h3 id="统一-error-type"><a href="#统一-error-type" class="headerlink" title="统一 error.type"></a>统一 error.type</h3><p>error.type 应是低基数、稳定枚举。</p>
+<p>建议按责任域分层：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">input.invalid</span><br><span class="line">prompt.render_failed</span><br><span class="line">retrieval.timeout</span><br><span class="line">retrieval.empty</span><br><span class="line">model.rate_limited</span><br><span class="line">model.timeout</span><br><span class="line">model.output_parse_failed</span><br><span class="line">tool.permission_denied</span><br><span class="line">tool.timeout</span><br><span class="line">tool.side_effect_mismatch</span><br><span class="line">judge.parse_failed</span><br><span class="line">judge.disagreement</span><br><span class="line">policy.blocked</span><br><span class="line">artifact.write_failed</span><br><span class="line">infra.cancelled</span><br><span class="line">unknown</span><br></pre></td></tr></table></figure>
+
+<p>不要直接把完整异常消息放进 error.type。</p>
+<p>异常消息可以进入经过脱敏的 Event 或受控 Log。</p>
+<h3 id="Span-Status-与业务-Outcome-分开"><a href="#Span-Status-与业务-Outcome-分开" class="headerlink" title="Span Status 与业务 Outcome 分开"></a>Span Status 与业务 Outcome 分开</h3><p>OpenTelemetry Span Status 主要表达操作是否错误。</p>
+<p>业务结果可以单独使用：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">otel.status_code:</span> <span class="string">UNSET</span></span><br><span class="line"><span class="attr">ai.outcome.status:</span> <span class="string">rejected_by_policy</span></span><br></pre></td></tr></table></figure>
+
+<p>策略拒绝可能是系统按设计运行。</p>
+<p>它不一定是遥测层 ERROR。</p>
+<p>但对业务仍然是一个明确终态。</p>
+<h2 id="十八、一个完整但经过脱敏的-Trace-JSON"><a href="#十八、一个完整但经过脱敏的-Trace-JSON" class="headerlink" title="十八、一个完整但经过脱敏的 Trace JSON"></a>十八、一个完整但经过脱敏的 Trace JSON</h2><p>下面的 JSON 用于说明统一数据结构。</p>
+<p>它不是 OTLP 原始 wire format。</p>
+<p>生产系统可以从内部模型映射到 OTLP。</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;trace_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;4bf92f3577b34da6a3ce929d0e0e4736&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;request_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;req-20260328-0182&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;session_ref&quot;</span><span class="punctuation">:</span> <span class="string">&quot;hmac:v3:86d3f4...&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;eval_run_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;eval-20260328-nightly&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;resource&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;service.name&quot;</span><span class="punctuation">:</span> <span class="string">&quot;support-agent&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;service.version&quot;</span><span class="punctuation">:</span> <span class="string">&quot;git:c09e4b1&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;deployment.environment.name&quot;</span><span class="punctuation">:</span> <span class="string">&quot;staging&quot;</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;root&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;span_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;00f067aa0ba902b7&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;name&quot;</span><span class="punctuation">:</span> <span class="string">&quot;ai.workflow&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;kind&quot;</span><span class="punctuation">:</span> <span class="string">&quot;SERVER&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;start_time&quot;</span><span class="punctuation">:</span> <span class="string">&quot;2026-03-28T12:30:00.123456Z&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;end_time&quot;</span><span class="punctuation">:</span> <span class="string">&quot;2026-03-28T12:30:04.992114Z&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;attributes&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;ai.workflow.name&quot;</span><span class="punctuation">:</span> <span class="string">&quot;refund-policy-answer&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;ai.outcome.status&quot;</span><span class="punctuation">:</span> <span class="string">&quot;verified&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;ai.prompt.template.id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;refund-agent&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;ai.prompt.template.version&quot;</span><span class="punctuation">:</span> <span class="string">&quot;13&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;ai.prompt.rendered.digest&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sha256:b1260c...&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;ai.content.recording&quot;</span><span class="punctuation">:</span> <span class="string">&quot;redacted-artifact&quot;</span></span><br><span class="line">    <span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;spans&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;span_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;15d2a31fc0a1228f&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;parent_span_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;00f067aa0ba902b7&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;name&quot;</span><span class="punctuation">:</span> <span class="string">&quot;prompt.render&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;kind&quot;</span><span class="punctuation">:</span> <span class="string">&quot;INTERNAL&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;duration_ms&quot;</span><span class="punctuation">:</span> <span class="number">12.4</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;attributes&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">        <span class="attr">&quot;ai.prompt.message_count&quot;</span><span class="punctuation">:</span> <span class="number">5</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;ai.prompt.character_count&quot;</span><span class="punctuation">:</span> <span class="number">6842</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;ai.artifact.uri&quot;</span><span class="punctuation">:</span> <span class="string">&quot;artifact://4bf9/prompt/redacted&quot;</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;ai.artifact.digest&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sha256:b1260c...&quot;</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;ai.artifact.classification&quot;</span><span class="punctuation">:</span> <span class="string">&quot;confidential&quot;</span></span><br><span class="line">      <span class="punctuation">&#125;</span></span><br><span class="line">    <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;span_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;938c12e909a401de&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;parent_span_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;00f067aa0ba902b7&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;name&quot;</span><span class="punctuation">:</span> <span class="string">&quot;retrieval.query&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;kind&quot;</span><span class="punctuation">:</span> <span class="string">&quot;CLIENT&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;duration_ms&quot;</span><span class="punctuation">:</span> <span class="number">188.7</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;attributes&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">        <span class="attr">&quot;ai.retrieval.corpus.id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;support-kb&quot;</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;ai.retrieval.corpus.snapshot&quot;</span><span class="punctuation">:</span> <span class="string">&quot;2026-03-26&quot;</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;ai.retrieval.index.revision&quot;</span><span class="punctuation">:</span> <span class="string">&quot;index:4e881a&quot;</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;ai.retrieval.requested_top_k&quot;</span><span class="punctuation">:</span> <span class="number">8</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;ai.retrieval.returned_count&quot;</span><span class="punctuation">:</span> <span class="number">8</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;ai.retrieval.selected_count&quot;</span><span class="punctuation">:</span> <span class="number">4</span></span><br><span class="line">      <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;events&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">        <span class="punctuation">&#123;</span></span><br><span class="line">          <span class="attr">&quot;name&quot;</span><span class="punctuation">:</span> <span class="string">&quot;retrieval.selected&quot;</span><span class="punctuation">,</span></span><br><span class="line">          <span class="attr">&quot;attributes&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">            <span class="attr">&quot;artifact_uri&quot;</span><span class="punctuation">:</span> <span class="string">&quot;artifact://4bf9/retrieval/selected&quot;</span><span class="punctuation">,</span></span><br><span class="line">            <span class="attr">&quot;artifact_digest&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sha256:7d12af...&quot;</span></span><br><span class="line">          <span class="punctuation">&#125;</span></span><br><span class="line">        <span class="punctuation">&#125;</span></span><br><span class="line">      <span class="punctuation">]</span></span><br><span class="line">    <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;span_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;b4e19f14a672cc31&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;parent_span_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;00f067aa0ba902b7&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;name&quot;</span><span class="punctuation">:</span> <span class="string">&quot;model.generate&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;kind&quot;</span><span class="punctuation">:</span> <span class="string">&quot;CLIENT&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;duration_ms&quot;</span><span class="punctuation">:</span> <span class="number">2850.2</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;attributes&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">        <span class="attr">&quot;ai.model.requested&quot;</span><span class="punctuation">:</span> <span class="string">&quot;model-family-a&quot;</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;ai.model.resolved&quot;</span><span class="punctuation">:</span> <span class="string">&quot;provider-value-if-available&quot;</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;ai.model.attempt_count&quot;</span><span class="punctuation">:</span> <span class="number">1</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;ai.model.stream&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;ai.model.ttft_ms&quot;</span><span class="punctuation">:</span> <span class="number">611.3</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;gen_ai.response.time_to_first_chunk&quot;</span><span class="punctuation">:</span> <span class="number">0.6113</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;ai.usage.input_tokens&quot;</span><span class="punctuation">:</span> <span class="number">1842</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;ai.usage.output_tokens&quot;</span><span class="punctuation">:</span> <span class="number">316</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;ai.finish_reason&quot;</span><span class="punctuation">:</span> <span class="string">&quot;stop&quot;</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;ai.artifact.uri&quot;</span><span class="punctuation">:</span> <span class="string">&quot;artifact://4bf9/model/response&quot;</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;ai.artifact.digest&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sha256:8e7dc1...&quot;</span></span><br><span class="line">      <span class="punctuation">&#125;</span></span><br><span class="line">    <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;span_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;e61f6e40adef3c12&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;parent_span_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;00f067aa0ba902b7&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;name&quot;</span><span class="punctuation">:</span> <span class="string">&quot;judge.evaluate&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;kind&quot;</span><span class="punctuation">:</span> <span class="string">&quot;CLIENT&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;duration_ms&quot;</span><span class="punctuation">:</span> <span class="number">704.8</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;attributes&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">        <span class="attr">&quot;ai.grader.id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;grounded-answer&quot;</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;ai.grader.version&quot;</span><span class="punctuation">:</span> <span class="string">&quot;6&quot;</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;ai.grader.rubric.digest&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sha256:934da2...&quot;</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;ai.evaluation.score&quot;</span><span class="punctuation">:</span> <span class="number">0.94</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;ai.evaluation.label&quot;</span><span class="punctuation">:</span> <span class="string">&quot;pass&quot;</span></span><br><span class="line">      <span class="punctuation">&#125;</span></span><br><span class="line">    <span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;failure_attribution&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;first_fault&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">null</span></span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;terminal_cause&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">null</span></span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;contributing_factors&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="punctuation">]</span></span><br><span class="line">  <span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="JSON-示例里的几个刻意选择"><a href="#JSON-示例里的几个刻意选择" class="headerlink" title="JSON 示例里的几个刻意选择"></a>JSON 示例里的几个刻意选择</h3><p>第一，session 使用 HMAC 引用，不存原始用户会话标识。</p>
+<p>第二，Prompt、检索文档和模型响应只存 Artifact URI 与摘要。</p>
+<p>第三，版本字段贯穿 Prompt、Corpus、Index、Model 和 Grader。</p>
+<p>第四，Judge 是独立 Span，不和模型生成混成一个 duration。</p>
+<p>第五，Trace JSON 是内部展示模型，不冒充 OTLP 格式。</p>
+<h2 id="十九、一个可运行的-OpenTelemetry-Python-示例"><a href="#十九、一个可运行的-OpenTelemetry-Python-示例" class="headerlink" title="十九、一个可运行的 OpenTelemetry Python 示例"></a>十九、一个可运行的 OpenTelemetry Python 示例</h2><p>下面代码使用 OpenTelemetry Python API 与 SDK。</p>
+<p>它使用 Console Exporter，便于本地直接观察。</p>
+<p>生产环境可以把 Exporter 替换为 OTLP，并通过 Collector 做脱敏、采样与路由。</p>
+<p>安装：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">python3 -m pip install opentelemetry-api opentelemetry-sdk</span><br></pre></td></tr></table></figure>
+
+<p>代码：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br><span class="line">146</span><br><span class="line">147</span><br><span class="line">148</span><br><span class="line">149</span><br><span class="line">150</span><br><span class="line">151</span><br><span class="line">152</span><br><span class="line">153</span><br><span class="line">154</span><br><span class="line">155</span><br><span class="line">156</span><br><span class="line">157</span><br><span class="line">158</span><br><span class="line">159</span><br><span class="line">160</span><br><span class="line">161</span><br><span class="line">162</span><br><span class="line">163</span><br><span class="line">164</span><br><span class="line">165</span><br><span class="line">166</span><br><span class="line">167</span><br><span class="line">168</span><br><span class="line">169</span><br><span class="line">170</span><br><span class="line">171</span><br><span class="line">172</span><br><span class="line">173</span><br><span class="line">174</span><br><span class="line">175</span><br><span class="line">176</span><br><span class="line">177</span><br><span class="line">178</span><br><span class="line">179</span><br><span class="line">180</span><br><span class="line">181</span><br><span class="line">182</span><br><span class="line">183</span><br><span class="line">184</span><br><span class="line">185</span><br><span class="line">186</span><br><span class="line">187</span><br><span class="line">188</span><br><span class="line">189</span><br><span class="line">190</span><br><span class="line">191</span><br><span class="line">192</span><br><span class="line">193</span><br><span class="line">194</span><br><span class="line">195</span><br><span class="line">196</span><br><span class="line">197</span><br><span class="line">198</span><br><span class="line">199</span><br><span class="line">200</span><br><span class="line">201</span><br><span class="line">202</span><br><span class="line">203</span><br><span class="line">204</span><br><span class="line">205</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">#!/usr/bin/env python3</span></span><br><span class="line"><span class="string">&quot;&quot;&quot;Vendor-neutral AI tracing example with content recording disabled.&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">from</span> __future__ <span class="keyword">import</span> annotations</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> hashlib</span><br><span class="line"><span class="keyword">import</span> json</span><br><span class="line"><span class="keyword">import</span> time</span><br><span class="line"><span class="keyword">from</span> typing <span class="keyword">import</span> <span class="type">Any</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">from</span> opentelemetry <span class="keyword">import</span> trace</span><br><span class="line"><span class="keyword">from</span> opentelemetry.propagate <span class="keyword">import</span> inject</span><br><span class="line"><span class="keyword">from</span> opentelemetry.sdk.resources <span class="keyword">import</span> Resource</span><br><span class="line"><span class="keyword">from</span> opentelemetry.sdk.trace <span class="keyword">import</span> TracerProvider</span><br><span class="line"><span class="keyword">from</span> opentelemetry.sdk.trace.export <span class="keyword">import</span> (</span><br><span class="line">    BatchSpanProcessor,</span><br><span class="line">    ConsoleSpanExporter,</span><br><span class="line">)</span><br><span class="line"><span class="keyword">from</span> opentelemetry.trace <span class="keyword">import</span> SpanKind, Status, StatusCode</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">sha256_text</span>(<span class="params">value: <span class="built_in">str</span></span>) -&gt; <span class="built_in">str</span>:</span><br><span class="line">    <span class="keyword">return</span> <span class="string">&quot;sha256:&quot;</span> + hashlib.sha256(value.encode(<span class="string">&quot;utf-8&quot;</span>)).hexdigest()</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">configure_tracing</span>() -&gt; TracerProvider:</span><br><span class="line">    resource = Resource.create(</span><br><span class="line">        &#123;</span><br><span class="line">            <span class="string">&quot;service.name&quot;</span>: <span class="string">&quot;ai-observability-demo&quot;</span>,</span><br><span class="line">            <span class="string">&quot;service.version&quot;</span>: <span class="string">&quot;local-demo&quot;</span>,</span><br><span class="line">            <span class="string">&quot;deployment.environment.name&quot;</span>: <span class="string">&quot;development&quot;</span>,</span><br><span class="line">        &#125;</span><br><span class="line">    )</span><br><span class="line">    provider = TracerProvider(resource=resource)</span><br><span class="line">    provider.add_span_processor(</span><br><span class="line">        BatchSpanProcessor(ConsoleSpanExporter())</span><br><span class="line">    )</span><br><span class="line">    trace.set_tracer_provider(provider)</span><br><span class="line">    <span class="keyword">return</span> provider</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">render_prompt</span>(<span class="params">template: <span class="built_in">str</span>, user_input: <span class="built_in">str</span></span>) -&gt; <span class="built_in">str</span>:</span><br><span class="line">    <span class="keyword">return</span> template.replace(<span class="string">&quot;&#123;&#123;USER_INPUT&#125;&#125;&quot;</span>, user_input)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">retrieve</span>(<span class="params">query: <span class="built_in">str</span></span>) -&gt; <span class="built_in">list</span>[<span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>]]:</span><br><span class="line">    <span class="keyword">del</span> query</span><br><span class="line">    time.sleep(<span class="number">0.02</span>)</span><br><span class="line">    <span class="keyword">return</span> [</span><br><span class="line">        &#123;</span><br><span class="line">            <span class="string">&quot;document_id&quot;</span>: <span class="string">&quot;refund-policy&quot;</span>,</span><br><span class="line">            <span class="string">&quot;revision&quot;</span>: <span class="string">&quot;2026-03-26&quot;</span>,</span><br><span class="line">            <span class="string">&quot;rank&quot;</span>: <span class="number">1</span>,</span><br><span class="line">            <span class="string">&quot;score&quot;</span>: <span class="number">0.91</span>,</span><br><span class="line">        &#125;</span><br><span class="line">    ]</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">generate</span>(<span class="params">prompt: <span class="built_in">str</span></span>) -&gt; <span class="built_in">tuple</span>[<span class="built_in">str</span>, <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="built_in">int</span>], <span class="built_in">float</span>]:</span><br><span class="line">    <span class="keyword">del</span> prompt</span><br><span class="line">    request_start = time.monotonic()</span><br><span class="line">    time.sleep(<span class="number">0.03</span>)</span><br><span class="line">    first_token_time = time.monotonic()</span><br><span class="line">    time.sleep(<span class="number">0.04</span>)</span><br><span class="line">    output = <span class="string">&quot;退款将按原支付路径处理。&quot;</span></span><br><span class="line">    usage = &#123;<span class="string">&quot;input_tokens&quot;</span>: <span class="number">128</span>, <span class="string">&quot;output_tokens&quot;</span>: <span class="number">16</span>&#125;</span><br><span class="line">    ttft_ms = (first_token_time - request_start) * <span class="number">1000.0</span></span><br><span class="line">    <span class="keyword">return</span> output, usage, ttft_ms</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">evaluate_answer</span>(<span class="params">answer: <span class="built_in">str</span></span>) -&gt; <span class="built_in">tuple</span>[<span class="built_in">str</span>, <span class="built_in">float</span>]:</span><br><span class="line">    expected_fact = <span class="string">&quot;原支付路径&quot;</span></span><br><span class="line">    <span class="keyword">return</span> (<span class="string">&quot;pass&quot;</span>, <span class="number">1.0</span>) <span class="keyword">if</span> expected_fact <span class="keyword">in</span> answer <span class="keyword">else</span> (<span class="string">&quot;fail&quot;</span>, <span class="number">0.0</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">run_workflow</span>(<span class="params">user_input: <span class="built_in">str</span></span>) -&gt; <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>]:</span><br><span class="line">    tracer = trace.get_tracer(<span class="string">&quot;example.ai.workflow&quot;</span>, <span class="string">&quot;1.0.0&quot;</span>)</span><br><span class="line">    template = <span class="string">&quot;根据已验证政策回答：&#123;&#123;USER_INPUT&#125;&#125;&quot;</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">with</span> tracer.start_as_current_span(</span><br><span class="line">        <span class="string">&quot;ai.workflow&quot;</span>,</span><br><span class="line">        kind=SpanKind.SERVER,</span><br><span class="line">    ) <span class="keyword">as</span> root:</span><br><span class="line">        root.set_attribute(<span class="string">&quot;ai.workflow.name&quot;</span>, <span class="string">&quot;refund-policy-answer&quot;</span>)</span><br><span class="line">        root.set_attribute(<span class="string">&quot;ai.content.recording&quot;</span>, <span class="string">&quot;off&quot;</span>)</span><br><span class="line"></span><br><span class="line">        <span class="keyword">with</span> tracer.start_as_current_span(</span><br><span class="line">            <span class="string">&quot;prompt.render&quot;</span>,</span><br><span class="line">            kind=SpanKind.INTERNAL,</span><br><span class="line">        ) <span class="keyword">as</span> span:</span><br><span class="line">            prompt = render_prompt(template, user_input)</span><br><span class="line">            span.set_attribute(<span class="string">&quot;ai.prompt.template.id&quot;</span>, <span class="string">&quot;refund-agent&quot;</span>)</span><br><span class="line">            span.set_attribute(<span class="string">&quot;ai.prompt.template.version&quot;</span>, <span class="string">&quot;13&quot;</span>)</span><br><span class="line">            span.set_attribute(</span><br><span class="line">                <span class="string">&quot;ai.prompt.rendered.digest&quot;</span>,</span><br><span class="line">                sha256_text(prompt),</span><br><span class="line">            )</span><br><span class="line">            span.set_attribute(<span class="string">&quot;ai.prompt.character_count&quot;</span>, <span class="built_in">len</span>(prompt))</span><br><span class="line">            <span class="comment"># Raw prompt content is intentionally not attached to this span.</span></span><br><span class="line"></span><br><span class="line">        <span class="keyword">with</span> tracer.start_as_current_span(</span><br><span class="line">            <span class="string">&quot;retrieval.query&quot;</span>,</span><br><span class="line">            kind=SpanKind.CLIENT,</span><br><span class="line">        ) <span class="keyword">as</span> span:</span><br><span class="line">            documents = retrieve(user_input)</span><br><span class="line">            span.set_attribute(</span><br><span class="line">                <span class="string">&quot;ai.retrieval.corpus.id&quot;</span>,</span><br><span class="line">                <span class="string">&quot;support-kb&quot;</span>,</span><br><span class="line">            )</span><br><span class="line">            span.set_attribute(</span><br><span class="line">                <span class="string">&quot;ai.retrieval.corpus.snapshot&quot;</span>,</span><br><span class="line">                <span class="string">&quot;2026-03-26&quot;</span>,</span><br><span class="line">            )</span><br><span class="line">            span.set_attribute(</span><br><span class="line">                <span class="string">&quot;ai.retrieval.returned_count&quot;</span>,</span><br><span class="line">                <span class="built_in">len</span>(documents),</span><br><span class="line">            )</span><br><span class="line">            span.add_event(</span><br><span class="line">                <span class="string">&quot;retrieval.selected&quot;</span>,</span><br><span class="line">                &#123;</span><br><span class="line">                    <span class="string">&quot;document.id&quot;</span>: documents[<span class="number">0</span>][<span class="string">&quot;document_id&quot;</span>],</span><br><span class="line">                    <span class="string">&quot;document.revision&quot;</span>: documents[<span class="number">0</span>][<span class="string">&quot;revision&quot;</span>],</span><br><span class="line">                    <span class="string">&quot;document.rank&quot;</span>: documents[<span class="number">0</span>][<span class="string">&quot;rank&quot;</span>],</span><br><span class="line">                &#125;,</span><br><span class="line">            )</span><br><span class="line"></span><br><span class="line">        <span class="keyword">try</span>:</span><br><span class="line">            <span class="keyword">with</span> tracer.start_as_current_span(</span><br><span class="line">                <span class="string">&quot;model.generate&quot;</span>,</span><br><span class="line">                kind=SpanKind.CLIENT,</span><br><span class="line">            ) <span class="keyword">as</span> logical_span:</span><br><span class="line">                logical_span.set_attribute(</span><br><span class="line">                    <span class="string">&quot;ai.model.requested&quot;</span>,</span><br><span class="line">                    <span class="string">&quot;model-family-demo&quot;</span>,</span><br><span class="line">                )</span><br><span class="line">                logical_span.set_attribute(<span class="string">&quot;ai.model.stream&quot;</span>, <span class="literal">True</span>)</span><br><span class="line"></span><br><span class="line">                <span class="keyword">with</span> tracer.start_as_current_span(</span><br><span class="line">                    <span class="string">&quot;model.attempt&quot;</span>,</span><br><span class="line">                    kind=SpanKind.CLIENT,</span><br><span class="line">                ) <span class="keyword">as</span> attempt_span:</span><br><span class="line">                    attempt_span.set_attribute(<span class="string">&quot;ai.attempt&quot;</span>, <span class="number">1</span>)</span><br><span class="line">                    outbound_headers: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="built_in">str</span>] = &#123;&#125;</span><br><span class="line">                    inject(outbound_headers)</span><br><span class="line">                    attempt_span.set_attribute(</span><br><span class="line">                        <span class="string">&quot;ai.trace_context.prepared&quot;</span>,</span><br><span class="line">                        <span class="string">&quot;traceparent&quot;</span> <span class="keyword">in</span> outbound_headers,</span><br><span class="line">                    )</span><br><span class="line"></span><br><span class="line">                    answer, usage, ttft_ms = generate(prompt)</span><br><span class="line">                    attempt_span.set_attribute(</span><br><span class="line">                        <span class="string">&quot;gen_ai.response.time_to_first_chunk&quot;</span>,</span><br><span class="line">                        ttft_ms / <span class="number">1000.0</span>,</span><br><span class="line">                    )</span><br><span class="line">                    attempt_span.set_attribute(</span><br><span class="line">                        <span class="string">&quot;ai.usage.input_tokens&quot;</span>,</span><br><span class="line">                        usage[<span class="string">&quot;input_tokens&quot;</span>],</span><br><span class="line">                    )</span><br><span class="line">                    attempt_span.set_attribute(</span><br><span class="line">                        <span class="string">&quot;ai.usage.output_tokens&quot;</span>,</span><br><span class="line">                        usage[<span class="string">&quot;output_tokens&quot;</span>],</span><br><span class="line">                    )</span><br><span class="line">                    attempt_span.set_attribute(</span><br><span class="line">                        <span class="string">&quot;ai.output.digest&quot;</span>,</span><br><span class="line">                        sha256_text(answer),</span><br><span class="line">                    )</span><br><span class="line"></span><br><span class="line">                logical_span.set_attribute(<span class="string">&quot;ai.model.attempt_count&quot;</span>, <span class="number">1</span>)</span><br><span class="line">                logical_span.set_attribute(<span class="string">&quot;ai.model.ttft_ms&quot;</span>, ttft_ms)</span><br><span class="line">        <span class="keyword">except</span> Exception <span class="keyword">as</span> exc:</span><br><span class="line">            root.record_exception(exc)</span><br><span class="line">            root.set_attribute(<span class="string">&quot;error.type&quot;</span>, <span class="built_in">type</span>(exc).__name__)</span><br><span class="line">            root.set_status(Status(StatusCode.ERROR))</span><br><span class="line">            <span class="keyword">raise</span></span><br><span class="line"></span><br><span class="line">        <span class="keyword">with</span> tracer.start_as_current_span(</span><br><span class="line">            <span class="string">&quot;judge.evaluate&quot;</span>,</span><br><span class="line">            kind=SpanKind.INTERNAL,</span><br><span class="line">        ) <span class="keyword">as</span> span:</span><br><span class="line">            label, score = evaluate_answer(answer)</span><br><span class="line">            span.set_attribute(<span class="string">&quot;ai.grader.id&quot;</span>, <span class="string">&quot;required-fact&quot;</span>)</span><br><span class="line">            span.set_attribute(<span class="string">&quot;ai.grader.version&quot;</span>, <span class="string">&quot;1&quot;</span>)</span><br><span class="line">            span.set_attribute(<span class="string">&quot;ai.evaluation.label&quot;</span>, label)</span><br><span class="line">            span.set_attribute(<span class="string">&quot;ai.evaluation.score&quot;</span>, score)</span><br><span class="line"></span><br><span class="line">        outcome = <span class="string">&quot;verified&quot;</span> <span class="keyword">if</span> label == <span class="string">&quot;pass&quot;</span> <span class="keyword">else</span> <span class="string">&quot;rejected&quot;</span></span><br><span class="line">        root.set_attribute(<span class="string">&quot;ai.outcome.status&quot;</span>, outcome)</span><br><span class="line">        <span class="keyword">return</span> &#123;</span><br><span class="line">            <span class="string">&quot;answer&quot;</span>: answer,</span><br><span class="line">            <span class="string">&quot;outcome&quot;</span>: outcome,</span><br><span class="line">            <span class="string">&quot;documents&quot;</span>: [item[<span class="string">&quot;document_id&quot;</span>] <span class="keyword">for</span> item <span class="keyword">in</span> documents],</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">main</span>() -&gt; <span class="literal">None</span>:</span><br><span class="line">    provider = configure_tracing()</span><br><span class="line">    <span class="keyword">try</span>:</span><br><span class="line">        result = run_workflow(<span class="string">&quot;退款会退到哪里？&quot;</span>)</span><br><span class="line">        <span class="built_in">print</span>(json.dumps(result, ensure_ascii=<span class="literal">False</span>, indent=<span class="number">2</span>))</span><br><span class="line">    <span class="keyword">finally</span>:</span><br><span class="line">        provider.shutdown()</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&quot;__main__&quot;</span>:</span><br><span class="line">    main()</span><br></pre></td></tr></table></figure>
+
+<h3 id="代码说明"><a href="#代码说明" class="headerlink" title="代码说明"></a>代码说明</h3><p>这段代码刻意不把原始 Prompt 和回答作为 Span 属性。</p>
+<p>示例里的 <code>generate()</code> 是本地替身，没有真实网络传输，所以只记录 <code>ai.trace_context.prepared</code>。接入实际模型客户端时，必须把 <code>outbound_headers</code> 作为 HTTP&#x2F;gRPC 请求头真正发送给下游；只有下游收到并继续该上下文后，才能声称 Trace 已传播。</p>
+<p>它只记录：</p>
+<ul>
+<li>模板版本</li>
+<li>内容摘要</li>
+<li>字符数</li>
+<li>检索身份</li>
+<li>usage</li>
+<li>TTFT</li>
+<li>Judge 结果</li>
+</ul>
+<p>真实系统要保存内容时，应先写入受控 Artifact 存储，再在 Span 中记录引用。</p>
+<h3 id="为什么使用自定义-ai-属性"><a href="#为什么使用自定义-ai-属性" class="headerlink" title="为什么使用自定义 ai 属性"></a>为什么使用自定义 ai 属性</h3><p>示例使用内部 <code>ai.*</code> 命名，目的是展示 Schema 隔离。</p>
+<p>落地时可以：</p>
+<ol>
+<li>优先采用已稳定的 OpenTelemetry 通用语义</li>
+<li>评估当前 GenAI Semantic Conventions 的稳定性</li>
+<li>通过适配层映射内部字段</li>
+<li>对实验性字段保留版本和迁移能力</li>
+</ol>
+<p>不要把业务代码散落地绑定到某个厂商后端字段。</p>
+<h2 id="二十、隐私与脱敏：默认-Content-Off"><a href="#二十、隐私与脱敏：默认-Content-Off" class="headerlink" title="二十、隐私与脱敏：默认 Content-Off"></a>二十、隐私与脱敏：默认 Content-Off</h2><p>最稳妥的默认策略是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">元数据默认采集</span><br><span class="line">内容默认关闭</span><br><span class="line">内容按场景显式开启</span><br></pre></td></tr></table></figure>
+
+<h3 id="数据分类建议"><a href="#数据分类建议" class="headerlink" title="数据分类建议"></a>数据分类建议</h3><p>可以定义四级：</p>
+<h4 id="P0：公开"><a href="#P0：公开" class="headerlink" title="P0：公开"></a>P0：公开</h4><ul>
+<li>公共文档 ID</li>
+<li>通用模型族</li>
+<li>公开 Benchmark 名称</li>
+</ul>
+<h4 id="P1：内部"><a href="#P1：内部" class="headerlink" title="P1：内部"></a>P1：内部</h4><ul>
+<li>服务版本</li>
+<li>Prompt 模板 ID</li>
+<li>内部工具名</li>
+<li>环境 ID</li>
+</ul>
+<h4 id="P2：机密或个人数据"><a href="#P2：机密或个人数据" class="headerlink" title="P2：机密或个人数据"></a>P2：机密或个人数据</h4><ul>
+<li>用户输入</li>
+<li>会话历史</li>
+<li>内部文档片段</li>
+<li>订单信息</li>
+<li>模型完整输出</li>
+</ul>
+<h4 id="P3：秘密"><a href="#P3：秘密" class="headerlink" title="P3：秘密"></a>P3：秘密</h4><ul>
+<li>API Key</li>
+<li>Cookie</li>
+<li>Access Token</li>
+<li>私钥</li>
+<li>数据库密码</li>
+</ul>
+<p>P3 不应进入遥测和 Artifact。</p>
+<p>应在采集前直接删除。</p>
+<h3 id="脱敏顺序"><a href="#脱敏顺序" class="headerlink" title="脱敏顺序"></a>脱敏顺序</h3><p>推荐顺序：</p>
+<ol>
+<li>字段白名单</li>
+<li>Secret 检测与丢弃</li>
+<li>PII 识别</li>
+<li>确定性字段遮盖或 Tokenization</li>
+<li>内容截断</li>
+<li>Artifact 加密</li>
+<li>写入摘要和分类</li>
+<li>导出遥测</li>
+</ol>
+<p>不要先导出，再依赖 Collector 末端补救。</p>
+<p>业务 SDK 端和 Collector 端可以双层防护。</p>
+<h3 id="Prompt-中的嵌套敏感信息"><a href="#Prompt-中的嵌套敏感信息" class="headerlink" title="Prompt 中的嵌套敏感信息"></a>Prompt 中的嵌套敏感信息</h3><p>只按 JSON 字段名脱敏不够。</p>
+<p>Prompt 可能把敏感字段嵌入自然语言：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">用户手机号是 138********，请查询订单……</span><br></pre></td></tr></table></figure>
+
+<p>因此需要：</p>
+<ul>
+<li>结构化字段脱敏</li>
+<li>文本内容检测</li>
+<li>工具参数专用规则</li>
+<li>模态专用规则</li>
+</ul>
+<p>图片和音频也可能含个人信息。</p>
+<h3 id="保留与删除"><a href="#保留与删除" class="headerlink" title="保留与删除"></a>保留与删除</h3><p>需要明确：</p>
+<ul>
+<li>Trace 保留多久</li>
+<li>Artifact 保留多久</li>
+<li>哪些场景允许延长</li>
+<li>用户删除请求怎样传播</li>
+<li>摘要和索引是否同步删除</li>
+<li>备份何时过期</li>
+</ul>
+<p>Trace 和 Artifact 分库存储后，删除流程必须能跨库追踪。</p>
+<h3 id="权限"><a href="#权限" class="headerlink" title="权限"></a>权限</h3><p>至少区分：</p>
+<ul>
+<li>只看聚合 Metric</li>
+<li>查看 Trace 元数据</li>
+<li>查看脱敏 Artifact</li>
+<li>查看高敏 Artifact</li>
+<li>导出</li>
+<li>修改保留策略</li>
+</ul>
+<p>所有 Artifact 访问都应有审计。</p>
+<h2 id="二十一、采样：Trace-可以采样，核心指标不能跟着丢"><a href="#二十一、采样：Trace-可以采样，核心指标不能跟着丢" class="headerlink" title="二十一、采样：Trace 可以采样，核心指标不能跟着丢"></a>二十一、采样：Trace 可以采样，核心指标不能跟着丢</h2><p>生产环境全量保存 Trace 成本可能过高。</p>
+<p>常见策略包括：</p>
+<h3 id="1-Head-Sampling"><a href="#1-Head-Sampling" class="headerlink" title="1. Head Sampling"></a>1. Head Sampling</h3><p>在 Trace 开始时决定是否采样。</p>
+<p>优点：</p>
+<ul>
+<li>简单</li>
+<li>开销可控</li>
+</ul>
+<p>缺点：</p>
+<ul>
+<li>决策时还不知道最终是否失败或变慢</li>
+</ul>
+<h3 id="2-Tail-Sampling"><a href="#2-Tail-Sampling" class="headerlink" title="2. Tail Sampling"></a>2. Tail Sampling</h3><p>在看到较完整 Trace 后决定是否保留。</p>
+<p>可以优先保留：</p>
+<ul>
+<li>ERROR</li>
+<li>policy blocked</li>
+<li>critical outcome failure</li>
+<li>P99 慢请求</li>
+<li>多次重试</li>
+<li>Judge 低分</li>
+<li>人工标记请求</li>
+</ul>
+<p>代价是 Collector 需要缓存 Trace，并承担更高资源开销。</p>
+<h3 id="3-分环境策略"><a href="#3-分环境策略" class="headerlink" title="3. 分环境策略"></a>3. 分环境策略</h3><p>建议：</p>
+<ul>
+<li>单元与集成测试：100% 元数据 Trace</li>
+<li>离线 eval：100% Trace，内容按评测策略</li>
+<li>预发布：高采样率</li>
+<li>生产正常流量：概率采样</li>
+<li>生产错误与慢请求：Tail Sampling 高保留</li>
+</ul>
+<h3 id="Metric-不应依赖-Trace-样本"><a href="#Metric-不应依赖-Trace-样本" class="headerlink" title="Metric 不应依赖 Trace 样本"></a>Metric 不应依赖 Trace 样本</h3><p>如果错误率直接从 10% Trace 样本计算，低频错误可能被漏掉。</p>
+<p>核心 Counter 与 Histogram 应由请求路径通过独立的 Metrics API 发射，不依赖某条 Span 最终是否被保留。</p>
+<p>它们不应因为某条 Trace 被丢弃就消失。</p>
+<p>Collector 只能基于已经到达它的 Span 派生 span metrics。Head Sampling 在 SDK 中丢弃的 Span 无法被 Collector 恢复；只有完整 Span 先到达指标处理器，再执行 Tail Sampling 等保留决策时，Collector 派生指标才可能覆盖全量。因此发布门禁和核心 SLO 不应默认依赖采样后的 Trace 反推。</p>
+<h3 id="采样状态不是安全授权"><a href="#采样状态不是安全授权" class="headerlink" title="采样状态不是安全授权"></a>采样状态不是安全授权</h3><p>W3C trace-flags 中 sampled 位是追踪建议。</p>
+<p>它不是：</p>
+<ul>
+<li>用户授权</li>
+<li>内容记录授权</li>
+<li>高敏数据访问授权</li>
+</ul>
+<p>是否记录 Prompt 原文必须由独立隐私策略控制。</p>
+<h2 id="二十二、异步、消息队列与批处理怎么关联"><a href="#二十二、异步、消息队列与批处理怎么关联" class="headerlink" title="二十二、异步、消息队列与批处理怎么关联"></a>二十二、异步、消息队列与批处理怎么关联</h2><h3 id="1-Producer-Consumer"><a href="#1-Producer-Consumer" class="headerlink" title="1. Producer &#x2F; Consumer"></a>1. Producer &#x2F; Consumer</h3><p>任务入队时创建 PRODUCER Span。</p>
+<p>Worker 消费时创建 CONSUMER Span。</p>
+<p>提取消息中的 Trace Context 作为父或 Link，取决于消息模型与生命周期。</p>
+<h3 id="2-长时间任务"><a href="#2-长时间任务" class="headerlink" title="2. 长时间任务"></a>2. 长时间任务</h3><p>如果任务可能运行数小时：</p>
+<ul>
+<li>API 接收请求形成一个短 Trace</li>
+<li>后台任务形成新的 Trace</li>
+<li>使用 Span Link 或 job ID 关联</li>
+</ul>
+<p>不要让一个同步 Root Span 长时间悬挂。</p>
+<h3 id="3-模型-Batch"><a href="#3-模型-Batch" class="headerlink" title="3. 模型 Batch"></a>3. 模型 Batch</h3><p>多个用户请求可能合并成一次模型 Batch。</p>
+<p>一个 Batch Span 不可能同时拥有多个父。</p>
+<p>可以：</p>
+<ul>
+<li>每个请求保留自己的逻辑 Span</li>
+<li>Batch 物理 Span 使用 Links 指向所有请求上下文</li>
+<li>Batch 响应再按 item ID 分发</li>
+</ul>
+<h3 id="4-Fan-out-fan-in-工具"><a href="#4-Fan-out-fan-in-工具" class="headerlink" title="4. Fan-out &#x2F; fan-in 工具"></a>4. Fan-out &#x2F; fan-in 工具</h3><p>Agent 并行调用三个搜索源时：</p>
+<ul>
+<li>每个工具独立 Span</li>
+<li>它们共享同一个规划父 Span</li>
+<li>汇总操作建立 fan-in Span</li>
+</ul>
+<p>时间轴能够直接看出：</p>
+<ul>
+<li>哪个工具最慢</li>
+<li>哪个工具失败</li>
+<li>是否等待了非必要分支</li>
+</ul>
+<h2 id="二十三、缓存怎么建模"><a href="#二十三、缓存怎么建模" class="headerlink" title="二十三、缓存怎么建模"></a>二十三、缓存怎么建模</h2><p>缓存命中会让调用链形态变化。</p>
+<p>建议将“获取模型结果”与“实际生成”分开理解。</p>
+<h3 id="缓存命中"><a href="#缓存命中" class="headerlink" title="缓存命中"></a>缓存命中</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">model.resolve</span><br><span class="line">  └── cache.get (hit)</span><br></pre></td></tr></table></figure>
+
+<p>此时没有真实 provider 调用。</p>
+<p>不要伪造一个 model.generate Span。</p>
+<p>记录：</p>
+<ul>
+<li>cache status</li>
+<li>cache policy version</li>
+<li>cache key HMAC</li>
+<li>cached artifact digest</li>
+<li>age</li>
+<li>saved latency</li>
+<li>estimated saved usage</li>
+</ul>
+<h3 id="缓存未命中"><a href="#缓存未命中" class="headerlink" title="缓存未命中"></a>缓存未命中</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">model.resolve</span><br><span class="line">  ├── cache.get (miss)</span><br><span class="line">  ├── model.generate</span><br><span class="line">  └── cache.put</span><br></pre></td></tr></table></figure>
+
+<h3 id="缓存键不能泄漏-Prompt"><a href="#缓存键不能泄漏-Prompt" class="headerlink" title="缓存键不能泄漏 Prompt"></a>缓存键不能泄漏 Prompt</h3><p>不要把原始 Prompt 直接作为可检索 cache key 写入 Trace。</p>
+<p>可以保存：</p>
+<ul>
+<li>HMAC key reference</li>
+<li>key schema version</li>
+<li>hit &#x2F; miss</li>
+</ul>
+<h2 id="二十四、可观测性平台的测试设计"><a href="#二十四、可观测性平台的测试设计" class="headerlink" title="二十四、可观测性平台的测试设计"></a>二十四、可观测性平台的测试设计</h2><p>调用链不是加上 SDK 就算完成。</p>
+<p>需要专门验证它是否准确。</p>
+<h3 id="1-Schema-合同测试"><a href="#1-Schema-合同测试" class="headerlink" title="1. Schema 合同测试"></a>1. Schema 合同测试</h3><p>对每类 Span 验证：</p>
+<ul>
+<li>必填字段</li>
+<li>数据类型</li>
+<li>单位</li>
+<li>枚举值</li>
+<li>敏感分类</li>
+<li>属性大小</li>
+<li>稳定性版本</li>
+</ul>
+<p>不合规字段应在 CI 中失败。</p>
+<h3 id="2-拓扑测试"><a href="#2-拓扑测试" class="headerlink" title="2. 拓扑测试"></a>2. 拓扑测试</h3><p>构造固定工作流，验证：</p>
+<ul>
+<li>只有一个 Root</li>
+<li>parent_span_id 存在</li>
+<li>不出现环</li>
+<li>同一 Trace ID 贯穿同步链路</li>
+<li>逻辑 Span 包含 attempt</li>
+<li>异步关系使用 Link</li>
+</ul>
+<h3 id="3-传播测试"><a href="#3-传播测试" class="headerlink" title="3. 传播测试"></a>3. 传播测试</h3><p>覆盖：</p>
+<ul>
+<li>HTTP</li>
+<li>gRPC</li>
+<li>消息队列</li>
+<li>定时任务</li>
+<li>WebSocket</li>
+<li>流式响应</li>
+</ul>
+<p>重点检查：</p>
+<ul>
+<li>traceparent 注入与提取</li>
+<li>非法 Header</li>
+<li>超长 Header</li>
+<li>安全边界重启</li>
+<li>sampled flag</li>
+</ul>
+<h3 id="4-时间完整性测试"><a href="#4-时间完整性测试" class="headerlink" title="4. 时间完整性测试"></a>4. 时间完整性测试</h3><p>验证：</p>
+<ul>
+<li>duration 非负</li>
+<li>start 早于 end</li>
+<li>TTFT 不大于 TTLT</li>
+<li>generation duration 非负</li>
+<li>同进程单调时钟</li>
+<li>并行 Span 不被错误相加</li>
+</ul>
+<h3 id="5-重试测试"><a href="#5-重试测试" class="headerlink" title="5. 重试测试"></a>5. 重试测试</h3><p>注入：</p>
+<ul>
+<li>429</li>
+<li>连接超时</li>
+<li>读超时</li>
+<li>5xx</li>
+<li>用户取消</li>
+</ul>
+<p>验证：</p>
+<ul>
+<li>每个 attempt 都存在</li>
+<li>retry event 有原因与退避</li>
+<li>最终逻辑状态正确</li>
+<li>首次成功率可计算</li>
+<li>Token 不重复或漏计</li>
+</ul>
+<h3 id="6-Retrieval-测试"><a href="#6-Retrieval-测试" class="headerlink" title="6. Retrieval 测试"></a>6. Retrieval 测试</h3><p>验证：</p>
+<ul>
+<li>空召回</li>
+<li>top_k</li>
+<li>文档顺序</li>
+<li>Rerank</li>
+<li>ACL 过滤</li>
+<li>Corpus snapshot</li>
+<li>文档 Artifact</li>
+</ul>
+<h3 id="7-Tool-测试"><a href="#7-Tool-测试" class="headerlink" title="7. Tool 测试"></a>7. Tool 测试</h3><p>验证：</p>
+<ul>
+<li>Schema 校验失败</li>
+<li>权限拒绝</li>
+<li>幂等重试</li>
+<li>部分成功</li>
+<li>回滚</li>
+<li>最终业务状态</li>
+</ul>
+<h3 id="8-Judge-测试"><a href="#8-Judge-测试" class="headerlink" title="8. Judge 测试"></a>8. Judge 测试</h3><p>验证：</p>
+<ul>
+<li>Rubric 版本</li>
+<li>Judge 超时</li>
+<li>输出解析失败</li>
+<li>评分明细</li>
+<li>Artifact 关联</li>
+<li>人工校准引用</li>
+</ul>
+<h3 id="9-隐私测试"><a href="#9-隐私测试" class="headerlink" title="9. 隐私测试"></a>9. 隐私测试</h3><p>构造包含下面内容的合成输入：</p>
+<ul>
+<li>邮箱</li>
+<li>手机号</li>
+<li>身份标识</li>
+<li>API Key 形态字符串</li>
+<li>Cookie</li>
+<li>数据库连接串</li>
+<li>工具嵌套参数</li>
+</ul>
+<p>检查所有出口：</p>
+<ul>
+<li>Span attributes</li>
+<li>Events</li>
+<li>Logs</li>
+<li>Metric labels</li>
+<li>Collector queue</li>
+<li>Artifact</li>
+<li>Exporter debug log</li>
+</ul>
+<p>不能只检查最终 Trace UI。</p>
+<h3 id="10-采样测试"><a href="#10-采样测试" class="headerlink" title="10. 采样测试"></a>10. 采样测试</h3><p>验证：</p>
+<ul>
+<li>正常请求按比例采样</li>
+<li>错误请求被 Tail Sampling 保留</li>
+<li>慢请求保留</li>
+<li>Trace 丢弃后 Metric 仍增加</li>
+<li>Artifact 策略不依赖 sampled 位</li>
+</ul>
+<h3 id="11-性能开销测试"><a href="#11-性能开销测试" class="headerlink" title="11. 性能开销测试"></a>11. 性能开销测试</h3><p>观测系统本身会带来：</p>
+<ul>
+<li>CPU</li>
+<li>内存</li>
+<li>序列化</li>
+<li>网络</li>
+<li>队列</li>
+<li>存储</li>
+</ul>
+<p>至少测量：</p>
+<ul>
+<li>SDK 增加的 P50 &#x2F; P95 时延</li>
+<li>高并发下 Span 丢弃率</li>
+<li>Exporter 队列深度</li>
+<li>Collector CPU 与内存</li>
+<li>后端写入失败</li>
+<li>Artifact 上传对主链路影响</li>
+</ul>
+<p>Artifact 上传适合异步时，要保证：</p>
+<ul>
+<li>Trace 先记录 pending</li>
+<li>上传完成后可关联</li>
+<li>上传失败有状态</li>
+<li>不阻塞业务成功</li>
+<li>关键证据场景可选择同步保证</li>
+</ul>
+<h3 id="12-故障降级测试"><a href="#12-故障降级测试" class="headerlink" title="12. 故障降级测试"></a>12. 故障降级测试</h3><p>可观测后端不可用时，业务系统不应整体瘫痪。</p>
+<p>需要定义：</p>
+<ul>
+<li>Span Buffer 上限</li>
+<li>丢弃策略</li>
+<li>本地回退</li>
+<li>错误计数</li>
+<li>告警</li>
+<li>高敏内容是否禁止落本地磁盘</li>
+</ul>
+<h2 id="二十五、示例案例一：看起来是模型慢，实际是工具重试"><a href="#二十五、示例案例一：看起来是模型慢，实际是工具重试" class="headerlink" title="二十五、示例案例一：看起来是模型慢，实际是工具重试"></a>二十五、示例案例一：看起来是模型慢，实际是工具重试</h2><p>下面是一个<strong>示例案例</strong>，用于展示 Trace 归因，不代表真实项目数据。</p>
+<p>用户感知总时延为 11.8 秒。</p>
+<p>原有日志只有：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">model call completed in 10.9s</span><br></pre></td></tr></table></figure>
+
+<p>团队最初准备更换模型。</p>
+<p>接入统一 Trace 后，时间轴显示：</p>
+<table>
+<thead>
+<tr>
+<th>Span</th>
+<th align="right">时长</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>prompt.render</td>
+<td align="right">18 ms</td>
+</tr>
+<tr>
+<td>retrieval.query</td>
+<td align="right">240 ms</td>
+</tr>
+<tr>
+<td>model.generate first turn</td>
+<td align="right">1.9 s</td>
+</tr>
+<tr>
+<td>tool.execute logical</td>
+<td align="right">7.4 s</td>
+</tr>
+<tr>
+<td>tool attempt 1</td>
+<td align="right">2.0 s timeout</td>
+</tr>
+<tr>
+<td>retry backoff</td>
+<td align="right">1.0 s</td>
+</tr>
+<tr>
+<td>tool attempt 2</td>
+<td align="right">2.0 s timeout</td>
+</tr>
+<tr>
+<td>retry backoff</td>
+<td align="right">1.0 s</td>
+</tr>
+<tr>
+<td>tool attempt 3</td>
+<td align="right">1.3 s success</td>
+</tr>
+<tr>
+<td>model.generate final turn</td>
+<td align="right">1.7 s</td>
+</tr>
+</tbody></table>
+<p>旧日志把整个 Agent Loop 统称为 model call。</p>
+<p>真正关键路径是工具超时与退避。</p>
+<p>修复动作应该是：</p>
+<ul>
+<li>修复工具服务连接池</li>
+<li>调整超时和重试预算</li>
+<li>增加幂等键</li>
+<li>对非关键工具允许提前降级</li>
+</ul>
+<p>而不是先替换生成模型。</p>
+<h2 id="二十六、示例案例二：为了排障记录-Prompt，反而扩大泄漏"><a href="#二十六、示例案例二：为了排障记录-Prompt，反而扩大泄漏" class="headerlink" title="二十六、示例案例二：为了排障记录 Prompt，反而扩大泄漏"></a>二十六、示例案例二：为了排障记录 Prompt，反而扩大泄漏</h2><p>下面同样是一个<strong>示例案例</strong>。</p>
+<p>某团队为排查回答错误，在 Span 属性中加入：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">prompt.full_text = 完整用户输入和系统 Prompt</span><br></pre></td></tr></table></figure>
+
+<p>随后发现：</p>
+<ul>
+<li>Trace 后端权限比业务数据库宽</li>
+<li>Collector Debug Exporter 会打印完整 Span</li>
+<li>备份保留期超过业务数据保留期</li>
+<li>Prompt 中包含订单号和内部政策</li>
+<li>工具 Schema 示例中误带测试 Token</li>
+</ul>
+<p>虽然查询界面后来遮盖了字段，原文已经存在于：</p>
+<ul>
+<li>SDK 内存队列</li>
+<li>Collector 日志</li>
+<li>Trace 后端</li>
+<li>备份</li>
+</ul>
+<p>正确改造是：</p>
+<ol>
+<li>默认关闭内容属性</li>
+<li>在业务侧采集前移除 Secret</li>
+<li>脱敏内容写独立 Artifact</li>
+<li>Span 只保留 URI、摘要和分类</li>
+<li>Artifact 使用更严格 ACL 和较短保留期</li>
+<li>为历史副本执行清理和审计</li>
+</ol>
+<p>这个案例说明：</p>
+<p><strong>可观测性缺失会妨碍定位，过度观测同样会制造风险。</strong></p>
+<h2 id="二十七、示例案例三：HTTP-200-掩盖业务失败"><a href="#二十七、示例案例三：HTTP-200-掩盖业务失败" class="headerlink" title="二十七、示例案例三：HTTP 200 掩盖业务失败"></a>二十七、示例案例三：HTTP 200 掩盖业务失败</h2><p>这是第三个<strong>示例案例</strong>。</p>
+<p>退款 Agent 的所有模型和工具请求都返回 HTTP 200。</p>
+<p>Dashboard 显示技术成功率 99.9%。</p>
+<p>但用户投诉仍在增加。</p>
+<p>统一 Outcome 后发现：</p>
+<ul>
+<li>工具调用成功</li>
+<li>工具参数中的 order_id 来自旧会话</li>
+<li>错误订单被查询，但只读操作没有报错</li>
+<li>模型根据错误订单回答</li>
+<li>Judge 只检查语言完整性，没有核对订单关联</li>
+</ul>
+<p>需要新增：</p>
+<ul>
+<li>session state version</li>
+<li>tool args digest</li>
+<li>order reference HMAC</li>
+<li>business outcome assertion</li>
+<li>Judge 中的实体一致性 Rubric</li>
+</ul>
+<p>最终指标被拆成：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">transport_success = 99.9%</span><br><span class="line">tool_operation_success = 99.4%</span><br><span class="line">entity_binding_success = 97.1%</span><br><span class="line">verified_task_success = 96.8%</span><br></pre></td></tr></table></figure>
+
+<p>只有最后一个接近用户真正关心的结果。</p>
+<h2 id="二十八、常见误区"><a href="#二十八、常见误区" class="headerlink" title="二十八、常见误区"></a>二十八、常见误区</h2><h3 id="误区-1：把所有内容直接写入-Span-最方便"><a href="#误区-1：把所有内容直接写入-Span-最方便" class="headerlink" title="误区 1：把所有内容直接写入 Span 最方便"></a>误区 1：把所有内容直接写入 Span 最方便</h3><p>短期方便。</p>
+<p>长期会遇到：</p>
+<ul>
+<li>隐私</li>
+<li>基数</li>
+<li>存储</li>
+<li>删除</li>
+<li>权限</li>
+</ul>
+<p>Trace 应做索引，内容应做受控 Artifact。</p>
+<h3 id="误区-2：一个-request-ID-足以贯穿所有系统"><a href="#误区-2：一个-request-ID-足以贯穿所有系统" class="headerlink" title="误区 2：一个 request ID 足以贯穿所有系统"></a>误区 2：一个 request ID 足以贯穿所有系统</h3><p>request ID 没有统一的父子 Span 与跨厂商传播语义。</p>
+<p>应该保留业务 request ID，同时使用标准 trace context。</p>
+<h3 id="误区-3：模型-HTTP-200-就把-Span-标成全链路成功"><a href="#误区-3：模型-HTTP-200-就把-Span-标成全链路成功" class="headerlink" title="误区 3：模型 HTTP 200 就把 Span 标成全链路成功"></a>误区 3：模型 HTTP 200 就把 Span 标成全链路成功</h3><p>传输成功不等于：</p>
+<ul>
+<li>解析成功</li>
+<li>工具成功</li>
+<li>业务成功</li>
+<li>Judge 通过</li>
+</ul>
+<p>状态需要分层。</p>
+<h3 id="误区-4：只记录模型名，不记录-Prompt-与索引版本"><a href="#误区-4：只记录模型名，不记录-Prompt-与索引版本" class="headerlink" title="误区 4：只记录模型名，不记录 Prompt 与索引版本"></a>误区 4：只记录模型名，不记录 Prompt 与索引版本</h3><p>AI 输出由完整上下文决定。</p>
+<p>没有 Prompt、数据和工具版本，模型名无法解释差异。</p>
+<h3 id="误区-5：直接把所有子-Span-时长相加"><a href="#误区-5：直接把所有子-Span-时长相加" class="headerlink" title="误区 5：直接把所有子 Span 时长相加"></a>误区 5：直接把所有子 Span 时长相加</h3><p>并行 Span 会重复计时。</p>
+<p>应分析端到端时间轴和 Critical Path。</p>
+<h3 id="误区-6：只在异常时创建-Trace"><a href="#误区-6：只在异常时创建-Trace" class="headerlink" title="误区 6：只在异常时创建 Trace"></a>误区 6：只在异常时创建 Trace</h3><p>没有正常样本，就无法建立：</p>
+<ul>
+<li>时延基线</li>
+<li>Token 基线</li>
+<li>正常拓扑</li>
+<li>错误对比</li>
+</ul>
+<p>可以采样正常 Trace，但不能完全没有。</p>
+<h3 id="误区-7：Metric-从采样-Trace-临时计算就够了"><a href="#误区-7：Metric-从采样-Trace-临时计算就够了" class="headerlink" title="误区 7：Metric 从采样 Trace 临时计算就够了"></a>误区 7：Metric 从采样 Trace 临时计算就够了</h3><p>采样会扭曲低频事件和请求量。</p>
+<p>核心 Metric 应独立产生。</p>
+<h3 id="误区-8：trace-flags-sampled-表示允许记录内容"><a href="#误区-8：trace-flags-sampled-表示允许记录内容" class="headerlink" title="误区 8：trace-flags sampled 表示允许记录内容"></a>误区 8：trace-flags sampled 表示允许记录内容</h3><p>sampled 是追踪采样提示。</p>
+<p>它不是隐私同意或数据访问授权。</p>
+<h3 id="误区-9：错误发生最早的-Span-就一定是根因"><a href="#误区-9：错误发生最早的-Span-就一定是根因" class="headerlink" title="误区 9：错误发生最早的 Span 就一定是根因"></a>误区 9：错误发生最早的 Span 就一定是根因</h3><p>最早故障、终态原因和兜底缺陷可能不同。</p>
+<p>应分别记录 first fault、terminal cause 和 contributing factors。</p>
+<h3 id="误区-10：接入-OpenTelemetry-就自动拥有正确语义"><a href="#误区-10：接入-OpenTelemetry-就自动拥有正确语义" class="headerlink" title="误区 10：接入 OpenTelemetry 就自动拥有正确语义"></a>误区 10：接入 OpenTelemetry 就自动拥有正确语义</h3><p>OpenTelemetry 提供数据与传输基础。</p>
+<p>业务仍需定义：</p>
+<ul>
+<li>Span 边界</li>
+<li>属性语义</li>
+<li>Outcome</li>
+<li>隐私</li>
+<li>版本</li>
+<li>失败分类</li>
+</ul>
+<h3 id="误区-11：哈希后的内容就不是敏感信息"><a href="#误区-11：哈希后的内容就不是敏感信息" class="headerlink" title="误区 11：哈希后的内容就不是敏感信息"></a>误区 11：哈希后的内容就不是敏感信息</h3><p>低熵内容可被枚举。</p>
+<p>稳定摘要还可能形成跨系统关联标识。</p>
+<p>应结合 HMAC、权限、最小化和保留策略。</p>
+<h3 id="误区-12：可观测后端不可用时可以阻塞主业务"><a href="#误区-12：可观测后端不可用时可以阻塞主业务" class="headerlink" title="误区 12：可观测后端不可用时可以阻塞主业务"></a>误区 12：可观测后端不可用时可以阻塞主业务</h3><p>大多数场景不应如此。</p>
+<p>需要有界队列、丢弃计数和降级。</p>
+<p>关键审计场景则应提前定义更强的一致性要求。</p>
+<h2 id="二十九、落地检查表"><a href="#二十九、落地检查表" class="headerlink" title="二十九、落地检查表"></a>二十九、落地检查表</h2><h3 id="Trace-边界"><a href="#Trace-边界" class="headerlink" title="Trace 边界"></a>Trace 边界</h3><ul>
+<li><input disabled="" type="checkbox"> Root Span 是否覆盖完整用户工作流</li>
+<li><input disabled="" type="checkbox"> 多轮会话是否使用 session ID 关联多个 Trace</li>
+<li><input disabled="" type="checkbox"> 长任务是否拆成独立 Trace 并使用 Link</li>
+<li><input disabled="" type="checkbox"> 异步与批处理是否没有伪造多父关系</li>
+</ul>
+<h3 id="ID-与传播"><a href="#ID-与传播" class="headerlink" title="ID 与传播"></a>ID 与传播</h3><ul>
+<li><input disabled="" type="checkbox"> 是否使用合法 trace ID 与 span ID</li>
+<li><input disabled="" type="checkbox"> 是否传播 W3C traceparent</li>
+<li><input disabled="" type="checkbox"> 是否校验外部 Trace Context</li>
+<li><input disabled="" type="checkbox"> 安全边界是否有明确重启策略</li>
+<li><input disabled="" type="checkbox"> tracestate 与 Baggage 是否禁止个人信息和秘密</li>
+<li><input disabled="" type="checkbox"> request、session、eval run 与 trace ID 是否各司其职</li>
+</ul>
+<h3 id="Prompt"><a href="#Prompt" class="headerlink" title="Prompt"></a>Prompt</h3><ul>
+<li><input disabled="" type="checkbox"> 是否记录模板 ID、版本和摘要</li>
+<li><input disabled="" type="checkbox"> 是否记录渲染策略与截断策略</li>
+<li><input disabled="" type="checkbox"> 是否默认关闭 Prompt 原文 Span 属性</li>
+<li><input disabled="" type="checkbox"> 原文 Artifact 是否先脱敏再写入</li>
+<li><input disabled="" type="checkbox"> 摘要是否用于完整性而不是冒充匿名化</li>
+</ul>
+<h3 id="Retrieval"><a href="#Retrieval" class="headerlink" title="Retrieval"></a>Retrieval</h3><ul>
+<li><input disabled="" type="checkbox"> 是否记录 Corpus snapshot</li>
+<li><input disabled="" type="checkbox"> 是否记录 Index、Embedding、Chunker 与 Reranker 版本</li>
+<li><input disabled="" type="checkbox"> 是否记录文档 ID、版本、Rank 与 Score Type</li>
+<li><input disabled="" type="checkbox"> 是否区分空召回、召回失败和模型未使用证据</li>
+<li><input disabled="" type="checkbox"> ACL 过滤版本是否可查</li>
+</ul>
+<h3 id="Model"><a href="#Model" class="headerlink" title="Model"></a>Model</h3><ul>
+<li><input disabled="" type="checkbox"> 是否区分逻辑调用和物理 attempt</li>
+<li><input disabled="" type="checkbox"> 每次重试是否单独留痕</li>
+<li><input disabled="" type="checkbox"> 是否记录 requested 与 resolved model</li>
+<li><input disabled="" type="checkbox"> TTFT 起点与首 Token 定义是否明确</li>
+<li><input disabled="" type="checkbox"> 是否记录 usage 和 finish reason</li>
+<li><input disabled="" type="checkbox"> 取消、限流、超时是否有稳定 error.type</li>
+</ul>
+<h3 id="Tool"><a href="#Tool" class="headerlink" title="Tool"></a>Tool</h3><ul>
+<li><input disabled="" type="checkbox"> tool name、version 与 schema digest 是否齐全</li>
+<li><input disabled="" type="checkbox"> args 是否脱敏并有摘要</li>
+<li><input disabled="" type="checkbox"> 是否记录权限决策</li>
+<li><input disabled="" type="checkbox"> 是否记录副作用等级和幂等键</li>
+<li><input disabled="" type="checkbox"> 是否验证最终业务状态</li>
+<li><input disabled="" type="checkbox"> 模型声称成功是否不能替代工具 Outcome</li>
+</ul>
+<h3 id="Judge-与-Guardrail"><a href="#Judge-与-Guardrail" class="headerlink" title="Judge 与 Guardrail"></a>Judge 与 Guardrail</h3><ul>
+<li><input disabled="" type="checkbox"> 是否各自建立 Span</li>
+<li><input disabled="" type="checkbox"> 是否记录 Rubric 和 Grader 版本</li>
+<li><input disabled="" type="checkbox"> 是否保存评分理由 Artifact</li>
+<li><input disabled="" type="checkbox"> 是否区分质量低分和风险拒绝</li>
+<li><input disabled="" type="checkbox"> Judge 自身失败是否不会归到被测模型</li>
+</ul>
+<h3 id="指标"><a href="#指标" class="headerlink" title="指标"></a>指标</h3><ul>
+<li><input disabled="" type="checkbox"> 是否有端到端时延</li>
+<li><input disabled="" type="checkbox"> 是否分别统计 TTFT 与 TTLT</li>
+<li><input disabled="" type="checkbox"> 是否按 P50、P95、P99 查看分布</li>
+<li><input disabled="" type="checkbox"> 是否独立统计 Token 与估算成本</li>
+<li><input disabled="" type="checkbox"> 价格表是否版本化</li>
+<li><input disabled="" type="checkbox"> Metric 标签是否低基数</li>
+<li><input disabled="" type="checkbox"> Trace 采样是否不影响核心计数</li>
+</ul>
+<h3 id="隐私"><a href="#隐私" class="headerlink" title="隐私"></a>隐私</h3><ul>
+<li><input disabled="" type="checkbox"> 是否采用字段白名单</li>
+<li><input disabled="" type="checkbox"> Secret 是否在采集前丢弃</li>
+<li><input disabled="" type="checkbox"> 是否对嵌套自然语言做内容检测</li>
+<li><input disabled="" type="checkbox"> Trace 与 Artifact 是否分权</li>
+<li><input disabled="" type="checkbox"> 是否有保留、删除和备份策略</li>
+<li><input disabled="" type="checkbox"> Artifact 访问是否审计</li>
+<li><input disabled="" type="checkbox"> Debug Exporter 和 Collector 日志是否纳入检查</li>
+</ul>
+<h3 id="测试"><a href="#测试" class="headerlink" title="测试"></a>测试</h3><ul>
+<li><input disabled="" type="checkbox"> 是否有 Span Schema 合同测试</li>
+<li><input disabled="" type="checkbox"> 是否有拓扑和传播测试</li>
+<li><input disabled="" type="checkbox"> 是否有重试、异步与批处理测试</li>
+<li><input disabled="" type="checkbox"> 是否有时间完整性测试</li>
+<li><input disabled="" type="checkbox"> 是否有隐私泄漏合成测试</li>
+<li><input disabled="" type="checkbox"> 是否测量 SDK、Exporter 与 Collector 开销</li>
+<li><input disabled="" type="checkbox"> 可观测后端故障时是否验证业务降级</li>
+</ul>
+<h2 id="三十、总结"><a href="#三十、总结" class="headerlink" title="三十、总结"></a>三十、总结</h2><p>AI 可观测性真正要解决的，不是“把 Prompt 打进日志”。</p>
+<p>它要建立的是一套统一、克制、可验证的数据模型：</p>
+<ol>
+<li>用一个 Trace 表示完整 AI 工作流</li>
+<li>用 Span 拆开 Prompt、Retrieval、Model、Tool 和 Judge</li>
+<li>用父子关系表达直接因果，用 Link 表达异步和批处理</li>
+<li>用逻辑 Span 与 attempt Span区分调用和重试</li>
+<li>用标准 Trace Context 跨服务传播</li>
+<li>用独立业务 ID 关联 session、eval run 和 Artifact</li>
+<li>用明确边界定义 TTFT、总时延、Token 和成本</li>
+<li>用 first fault、terminal cause 和 contributing factors 做失败归因</li>
+<li>用 Trace 做索引、Metric 做聚合、Artifact 保存受控证据</li>
+<li>默认 Content-Off，在采集前完成分类、脱敏和 Secret 丢弃</li>
+</ol>
+<p>当这套链路建立后，一次 AI 失败不再只剩一句：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">模型不稳定。</span><br></pre></td></tr></table></figure>
+
+<p>平台应该能够给出更具体的答案：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">本次请求使用 Prompt v13 和索引快照 2026-03-26；</span><br><span class="line">正确文档已进入上下文；</span><br><span class="line">第一次模型调用在 611 ms 返回首 Token；</span><br><span class="line">工具因连接超时重试两次，增加 3 秒退避；</span><br><span class="line">最终工具状态成功，但 Judge 因缺少必要政策引用判定失败；</span><br><span class="line">完整脱敏证据位于受控 Artifact，摘要与 Trace 一致。</span><br></pre></td></tr></table></figure>
+
+<p>这种答案才能驱动修复、回归和发布决策。</p>
+<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><ul>
+<li><a target="_blank" rel="noopener" href="https://www.w3.org/TR/trace-context/">W3C Recommendation：Trace Context</a></li>
+<li><a target="_blank" rel="noopener" href="https://www.w3.org/TR/baggage/">W3C Recommendation：Baggage</a></li>
+<li><a target="_blank" rel="noopener" href="https://opentelemetry.io/docs/">OpenTelemetry Documentation</a></li>
+<li><a target="_blank" rel="noopener" href="https://opentelemetry.io/docs/concepts/signals/traces/">OpenTelemetry：Traces</a></li>
+<li><a target="_blank" rel="noopener" href="https://opentelemetry.io/docs/specs/otel/trace/api/">OpenTelemetry Specification：Trace API</a></li>
+<li><a target="_blank" rel="noopener" href="https://opentelemetry.io/docs/specs/otel/logs/data-model/">OpenTelemetry Specification：Logs Data Model</a></li>
+<li><a target="_blank" rel="noopener" href="https://opentelemetry.io/docs/specs/semconv/">OpenTelemetry：Semantic Conventions</a></li>
+<li><a target="_blank" rel="noopener" href="https://opentelemetry.io/docs/specs/semconv/registry/attributes/gen-ai/">OpenTelemetry：GenAI Attribute Registry</a></li>
+<li><a target="_blank" rel="noopener" href="https://opentelemetry.io/docs/collector/">OpenTelemetry Collector</a></li>
+<li><a target="_blank" rel="noopener" href="https://csrc.nist.gov/pubs/sp/800/122/final">NIST SP 800-122：Guide to Protecting the Confidentiality of Personally Identifiable Information</a></li>
+<li><a target="_blank" rel="noopener" href="https://www.nist.gov/privacy-framework">NIST Privacy Framework</a></li>
+</ul>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/AI%E6%B5%8B%E8%AF%95/" rel="tag"># AI测试</a>
+              <a href="/tags/RAG/" rel="tag"># RAG</a>
+              <a href="/tags/LLMOps/" rel="tag"># LLMOps</a>
+              <a href="/tags/%E5%8F%AF%E8%A7%82%E6%B5%8B%E6%80%A7/" rel="tag"># 可观测性</a>
+              <a href="/tags/OpenTelemetry/" rel="tag"># OpenTelemetry</a>
+              <a href="/tags/Trace/" rel="tag"># Trace</a>
+              <a href="/tags/Tool-Calling/" rel="tag"># Tool Calling</a>
+              <a href="/tags/%E9%9A%90%E7%A7%81%E6%B2%BB%E7%90%86/" rel="tag"># 隐私治理</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2026/03/27/AI%E6%B5%8B%E8%AF%95-20-%E9%9D%9E%E7%A1%AE%E5%AE%9A%E6%80%A7AI%E5%BA%94%E7%94%A8%E6%80%8E%E4%B9%88%E5%81%9A%E7%A8%B3%E5%AE%9A%E7%9A%84%E8%87%AA%E5%8A%A8%E5%8C%96%E5%9B%9E%E5%BD%92%E6%B5%8B%E8%AF%95/" rel="prev" title="AI测试-20-非确定性AI应用怎么做稳定的自动化回归测试">
+                  <i class="fa fa-angle-left"></i> AI测试-20-非确定性AI应用怎么做稳定的自动化回归测试
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2026/03/30/AI%E6%B5%8B%E8%AF%95-22-Prompt-Injection%E5%92%8C%E9%97%B4%E6%8E%A5%E6%8F%90%E7%A4%BA%E6%B3%A8%E5%85%A5%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E6%B5%8B%E8%AF%95/" rel="next" title="AI测试-22-Prompt Injection和间接提示注入应该怎么测试">
+                  AI测试-22-Prompt Injection和间接提示注入应该怎么测试 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">1.2m</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">75:29</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

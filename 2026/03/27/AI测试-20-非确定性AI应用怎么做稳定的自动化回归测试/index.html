@@ -1,0 +1,1894 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="传统自动化测试默认一个重要前提： 相同代码、相同输入和相同环境，应该得到相同结果。 这个前提让回归测试可以直接使用二元结论：  以前通过，现在失败，通常就是回归 以前失败，现在通过，通常就是修复 连续执行结果不同，通常就是脚本或环境不稳定  AI 应用打破了这个简单模型。 相同 Prompt、相同模型名称、相同检索库，连续调用两次仍可能得到不同措辞、不同工具参数，甚至不同任务结果。 如果系统还包含">
+<meta property="og:type" content="article">
+<meta property="og:title" content="AI测试-20-非确定性AI应用怎么做稳定的自动化回归测试">
+<meta property="og:url" content="https://paynewinnt.github.io/2026/03/27/AI%E6%B5%8B%E8%AF%95-20-%E9%9D%9E%E7%A1%AE%E5%AE%9A%E6%80%A7AI%E5%BA%94%E7%94%A8%E6%80%8E%E4%B9%88%E5%81%9A%E7%A8%B3%E5%AE%9A%E7%9A%84%E8%87%AA%E5%8A%A8%E5%8C%96%E5%9B%9E%E5%BD%92%E6%B5%8B%E8%AF%95/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="传统自动化测试默认一个重要前提： 相同代码、相同输入和相同环境，应该得到相同结果。 这个前提让回归测试可以直接使用二元结论：  以前通过，现在失败，通常就是回归 以前失败，现在通过，通常就是修复 连续执行结果不同，通常就是脚本或环境不稳定  AI 应用打破了这个简单模型。 相同 Prompt、相同模型名称、相同检索库，连续调用两次仍可能得到不同措辞、不同工具参数，甚至不同任务结果。 如果系统还包含">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://paynewinnt.github.io/images/ai-quality/ai-20-regression-strategy.svg">
+<meta property="og:image" content="https://paynewinnt.github.io/images/ai-quality/ai-20-signal-noise.svg">
+<meta property="article:published_time" content="2026-03-27T12:30:00.000Z">
+<meta property="article:modified_time" content="2026-03-27T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="AI测试">
+<meta property="article:tag" content="证据链">
+<meta property="article:tag" content="自动化回归">
+<meta property="article:tag" content="非确定性">
+<meta property="article:tag" content="统计检验">
+<meta property="article:tag" content="置信区间">
+<meta property="article:tag" content="配对比较">
+<meta property="article:tag" content="Flaky Eval">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://paynewinnt.github.io/images/ai-quality/ai-20-regression-strategy.svg">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2026/03/27/AI%E6%B5%8B%E8%AF%95-20-%E9%9D%9E%E7%A1%AE%E5%AE%9A%E6%80%A7AI%E5%BA%94%E7%94%A8%E6%80%8E%E4%B9%88%E5%81%9A%E7%A8%B3%E5%AE%9A%E7%9A%84%E8%87%AA%E5%8A%A8%E5%8C%96%E5%9B%9E%E5%BD%92%E6%B5%8B%E8%AF%95/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2026/03/27/AI%E6%B5%8B%E8%AF%95-20-%E9%9D%9E%E7%A1%AE%E5%AE%9A%E6%80%A7AI%E5%BA%94%E7%94%A8%E6%80%8E%E4%B9%88%E5%81%9A%E7%A8%B3%E5%AE%9A%E7%9A%84%E8%87%AA%E5%8A%A8%E5%8C%96%E5%9B%9E%E5%BD%92%E6%B5%8B%E8%AF%95/","path":"2026/03/27/AI测试-20-非确定性AI应用怎么做稳定的自动化回归测试/","title":"AI测试-20-非确定性AI应用怎么做稳定的自动化回归测试"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>AI测试-20-非确定性AI应用怎么做稳定的自动化回归测试 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E5%85%88%E5%88%92%E6%B8%85%E9%97%AE%E9%A2%98%E8%BE%B9%E7%95%8C%EF%BC%9A%E6%88%91%E4%BB%AC%E8%A6%81%E7%A8%B3%E5%AE%9A%E7%9A%84%E6%98%AF%E2%80%9C%E5%86%B3%E7%AD%96%E2%80%9D%EF%BC%8C%E4%B8%8D%E6%98%AF%E2%80%9C%E6%AF%8F%E4%B8%AA%E5%AD%97%E2%80%9D"><span class="nav-number">1.</span> <span class="nav-text">一、先划清问题边界：我们要稳定的是“决策”，不是“每个字”</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%96%87%E6%9C%AC%E4%B8%8D%E4%B8%80%E8%87%B4%E4%B8%8D%E7%AD%89%E4%BA%8E%E4%BB%BB%E5%8A%A1%E5%A4%B1%E8%B4%A5"><span class="nav-number">1.1.</span> <span class="nav-text">1. 文本不一致不等于任务失败</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%BE%93%E5%87%BA%E5%8F%AF%E5%8F%98%E4%B8%8D%E7%AD%89%E4%BA%8E%E8%A1%8C%E4%B8%BA%E5%8F%AF%E4%BB%A5%E5%A4%B1%E6%8E%A7"><span class="nav-number">1.2.</span> <span class="nav-text">2. 输出可变不等于行为可以失控</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%87%AA%E5%8A%A8%E5%8C%96%E7%BB%93%E6%9E%9C%E7%A8%B3%E5%AE%9A%E4%B8%8D%E7%AD%89%E4%BA%8E%E7%BA%BF%E4%B8%8A%E8%B4%A8%E9%87%8F%E4%B8%80%E5%AE%9A%E7%A8%B3%E5%AE%9A"><span class="nav-number">1.3.</span> <span class="nav-text">3. 自动化结果稳定不等于线上质量一定稳定</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E6%8A%8A-AI-%E5%9B%9E%E5%BD%92%E9%87%8D%E6%96%B0%E5%AE%9A%E4%B9%89%E6%88%90%E4%B8%80%E4%B8%AA%E7%BB%9F%E8%AE%A1%E5%86%B3%E7%AD%96%E9%97%AE%E9%A2%98"><span class="nav-number">2.</span> <span class="nav-text">二、把 AI 回归重新定义成一个统计决策问题</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%9D%9E%E5%8A%A3%E8%BE%B9%E7%95%8C%E5%BF%85%E9%A1%BB%E5%9C%A8%E8%BF%90%E8%A1%8C%E5%89%8D%E7%A1%AE%E5%AE%9A"><span class="nav-number">2.1.</span> <span class="nav-text">非劣边界必须在运行前确定</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E9%9A%8F%E6%9C%BA%E6%80%A7%E5%88%B0%E5%BA%95%E6%9D%A5%E8%87%AA%E5%93%AA%E9%87%8C"><span class="nav-number">3.</span> <span class="nav-text">三、随机性到底来自哪里</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%A8%A1%E5%9E%8B%E7%94%9F%E6%88%90%E5%B1%82"><span class="nav-number">3.1.</span> <span class="nav-text">1. 模型生成层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Prompt-%E4%B8%8E%E4%B8%8A%E4%B8%8B%E6%96%87%E7%BB%84%E8%A3%85%E5%B1%82"><span class="nav-number">3.2.</span> <span class="nav-text">2. Prompt 与上下文组装层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-RAG-%E6%A3%80%E7%B4%A2%E5%B1%82"><span class="nav-number">3.3.</span> <span class="nav-text">3. RAG 检索层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-Agent-%E8%A7%84%E5%88%92%E4%B8%8E%E5%B7%A5%E5%85%B7%E5%B1%82"><span class="nav-number">3.4.</span> <span class="nav-text">4. Agent 规划与工具层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-Judge-%E4%B8%8E%E8%AF%84%E5%88%86%E5%B1%82"><span class="nav-number">3.5.</span> <span class="nav-text">5. Judge 与评分层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E8%AF%84%E6%B5%8B%E5%9F%BA%E7%A1%80%E8%AE%BE%E6%96%BD%E5%B1%82"><span class="nav-number">3.6.</span> <span class="nav-text">6. 评测基础设施层</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E6%95%B4%E4%BD%93%E7%AD%96%E7%95%A5%E5%9B%BE%EF%BC%9A%E4%BB%8E%E5%8D%95%E6%AC%A1%E7%BB%93%E6%9E%9C%E8%BD%AC%E5%90%91%E5%88%86%E5%B1%82%E8%AF%81%E6%8D%AE"><span class="nav-number">4.</span> <span class="nav-text">四、整体策略图：从单次结果转向分层证据</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E5%85%88%E5%BB%BA%E7%AB%8B%E2%80%9C%E5%8F%AF%E5%A4%8D%E7%8E%B0%E5%90%88%E5%90%8C%E2%80%9D"><span class="nav-number">5.</span> <span class="nav-text">五、先建立“可复现合同”</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%A2%AB%E6%B5%8B%E7%B3%BB%E7%BB%9F%E7%89%88%E6%9C%AC"><span class="nav-number">5.1.</span> <span class="nav-text">1. 被测系统版本</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%A3%80%E7%B4%A2%E7%89%88%E6%9C%AC"><span class="nav-number">5.2.</span> <span class="nav-text">2. 数据与检索版本</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Judge-%E7%89%88%E6%9C%AC"><span class="nav-number">5.3.</span> <span class="nav-text">3. Judge 版本</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%89%A7%E8%A1%8C%E7%8E%AF%E5%A2%83"><span class="nav-number">5.4.</span> <span class="nav-text">4. 执行环境</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E9%9A%8F%E6%9C%BA%E6%8E%A7%E5%88%B6"><span class="nav-number">5.5.</span> <span class="nav-text">5. 随机控制</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E8%AF%81%E6%8D%AE%E5%AE%8C%E6%95%B4%E6%80%A7"><span class="nav-number">5.6.</span> <span class="nav-text">6. 证据完整性</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%80%E4%B8%AA%E5%8F%AF%E6%89%A7%E8%A1%8C%E7%9A%84%E5%9B%9E%E5%BD%92%E6%B8%85%E5%8D%95%E7%A4%BA%E4%BE%8B"><span class="nav-number">5.7.</span> <span class="nav-text">一个可执行的回归清单示例</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E5%86%BB%E7%BB%93%E5%9F%BA%E7%BA%BF%E5%88%B0%E5%BA%95%E8%A6%81%E5%86%BB%E7%BB%93%E4%BB%80%E4%B9%88"><span class="nav-number">6.</span> <span class="nav-text">六、冻结基线到底要冻结什么</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9F%BA%E7%BA%BF%E5%8C%85%E7%9A%84%E6%9C%80%E5%B0%8F%E5%86%85%E5%AE%B9"><span class="nav-number">6.1.</span> <span class="nav-text">基线包的最小内容</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%86%BB%E7%BB%93%E8%BE%93%E5%87%BA%E4%B8%8D%E7%AD%89%E4%BA%8E%E6%B0%B8%E8%BF%9C%E4%B8%8D%E9%87%8D%E8%B7%91%E5%9F%BA%E7%BA%BF"><span class="nav-number">6.2.</span> <span class="nav-text">冻结输出不等于永远不重跑基线</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BA%A4%E6%9B%BF%E6%89%A7%E8%A1%8C%E5%87%8F%E5%B0%91%E6%97%B6%E9%97%B4%E5%81%8F%E5%B7%AE"><span class="nav-number">6.3.</span> <span class="nav-text">交替执行减少时间偏差</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E4%B8%BA%E4%BB%80%E4%B9%88%E5%BF%85%E9%A1%BB%E9%87%8D%E5%A4%8D%E8%BF%90%E8%A1%8C"><span class="nav-number">7.</span> <span class="nav-text">七、为什么必须重复运行</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%87%8D%E5%A4%8D%E6%AC%A1%E6%95%B0%E4%B8%8D%E8%83%BD%E4%B8%80%E5%88%80%E5%88%87"><span class="nav-number">7.1.</span> <span class="nav-text">重复次数不能一刀切</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%87%AA%E9%80%82%E5%BA%94%E9%87%8D%E5%A4%8D%E6%AF%94%E5%9B%BA%E5%AE%9A%E9%87%8D%E5%A4%8D%E6%9B%B4%E7%9C%81%E6%88%90%E6%9C%AC"><span class="nav-number">7.2.</span> <span class="nav-text">自适应重复比固定重复更省成本</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E9%80%9A%E8%BF%87%E7%8E%87%E5%BF%85%E9%A1%BB%E5%92%8C%E7%BD%AE%E4%BF%A1%E5%8C%BA%E9%97%B4%E4%B8%80%E8%B5%B7%E6%8A%A5%E5%91%8A"><span class="nav-number">8.</span> <span class="nav-text">八、通过率必须和置信区间一起报告</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%BA%E4%BB%80%E4%B9%88%E4%B8%8D%E4%BC%98%E5%85%88%E4%BD%BF%E7%94%A8%E7%AE%80%E5%8D%95%E6%AD%A3%E6%80%81%E5%8C%BA%E9%97%B4"><span class="nav-number">8.1.</span> <span class="nav-text">为什么不优先使用简单正态区间</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Wilson-%E5%8C%BA%E9%97%B4"><span class="nav-number">8.2.</span> <span class="nav-text">Wilson 区间</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%AD%A3%E7%A1%AE%E8%A7%A3%E9%87%8A%E7%BD%AE%E4%BF%A1%E5%8C%BA%E9%97%B4"><span class="nav-number">8.3.</span> <span class="nav-text">正确解释置信区间</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Wilson-%E5%8C%BA%E9%97%B4%E4%B9%9F%E6%9C%89%E5%89%8D%E6%8F%90"><span class="nav-number">8.4.</span> <span class="nav-text">Wilson 区间也有前提</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E5%85%88%E6%8C%89%E4%BB%BB%E5%8A%A1%E8%81%9A%E5%90%88%EF%BC%8C%E5%86%8D%E8%B7%A8%E4%BB%BB%E5%8A%A1%E6%B1%87%E6%80%BB"><span class="nav-number">9.</span> <span class="nav-text">九、先按任务聚合，再跨任务汇总</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#micro-%E4%B8%8E-macro-%E9%83%BD%E5%BA%94%E4%BF%9D%E7%95%99"><span class="nav-number">9.1.</span> <span class="nav-text">micro 与 macro 都应保留</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%86%E5%B1%82%E4%B8%8D%E8%83%BD%E5%8F%AA%E5%9C%A8%E6%8A%A5%E5%91%8A%E9%87%8C%E5%B1%95%E7%A4%BA"><span class="nav-number">9.2.</span> <span class="nav-text">分层不能只在报告里展示</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81paired-comparison%EF%BC%9A%E6%AF%94%E8%BE%83%E5%90%8C%E4%B8%80%E6%89%B9%E4%BB%BB%E5%8A%A1%E4%B8%8A%E7%9A%84%E5%8F%98%E5%8C%96"><span class="nav-number">10.</span> <span class="nav-text">十、paired comparison：比较同一批任务上的变化</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%BF%9E%E7%BB%AD%E5%88%86%E6%95%B0%E7%9A%84%E9%85%8D%E5%AF%B9%E5%B7%AE"><span class="nav-number">10.1.</span> <span class="nav-text">连续分数的配对差</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BA%8C%E5%85%83%E7%BB%93%E6%9E%9C%E7%9A%84%E9%85%8D%E5%AF%B9%E7%9F%A9%E9%98%B5"><span class="nav-number">10.2.</span> <span class="nav-text">二元结果的配对矩阵</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%8D%E8%A6%81%E5%8F%AA%E7%9C%8B-p-value"><span class="nav-number">10.3.</span> <span class="nav-text">不要只看 p-value</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%85%8D%E5%AF%B9%E4%B8%8D%E7%AD%89%E4%BA%8E%E5%85%B1%E4%BA%AB%E9%9A%8F%E6%9C%BA%E6%95%B0"><span class="nav-number">10.4.</span> <span class="nav-text">配对不等于共享随机数</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81pass-k-%E4%B8%8D%E8%83%BD%E9%9A%8F%E4%BE%BF%E5%BD%93%E6%88%90%E7%94%9F%E4%BA%A7%E6%88%90%E5%8A%9F%E7%8E%87"><span class="nav-number">11.</span> <span class="nav-text">十一、pass@k 不能随便当成生产成功率</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%BF%98%E8%A6%81%E5%8C%BA%E5%88%86%E2%80%9C%E8%87%B3%E5%B0%91%E4%B8%80%E6%AC%A1%E6%88%90%E5%8A%9F%E2%80%9D%E5%92%8C%E2%80%9C%E6%8C%81%E7%BB%AD%E7%A8%B3%E5%AE%9A%E2%80%9D"><span class="nav-number">11.1.</span> <span class="nav-text">还要区分“至少一次成功”和“持续稳定”</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E5%99%AA%E5%A3%B0%E9%A2%84%E7%AE%97%EF%BC%9A%E5%85%88%E8%AF%81%E6%98%8E%E8%AF%84%E6%B5%8B%E7%B3%BB%E7%BB%9F%E5%80%BC%E5%BE%97%E4%BF%A1%E4%BB%BB"><span class="nav-number">12.</span> <span class="nav-text">十二、噪声预算：先证明评测系统值得信任</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-invalid-trial-rate"><span class="nav-number">12.1.</span> <span class="nav-text">1. invalid trial rate</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-outcome-flip-rate"><span class="nav-number">12.2.</span> <span class="nav-text">2. outcome flip rate</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-judge-disagreement-rate"><span class="nav-number">12.3.</span> <span class="nav-text">3. judge disagreement rate</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%99%AA%E5%A3%B0%E8%B6%85%E9%A2%84%E7%AE%97%E6%97%B6%E6%80%8E%E4%B9%88%E5%8A%9E"><span class="nav-number">12.4.</span> <span class="nav-text">噪声超预算时怎么办</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81flaky-eval-%E5%BA%94%E5%BD%93%E6%80%8E%E6%A0%B7%E8%AF%86%E5%88%AB%E5%92%8C%E6%B2%BB%E7%90%86"><span class="nav-number">13.</span> <span class="nav-text">十三、flaky eval 应当怎样识别和治理</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%85%88%E5%81%9A%E5%BD%92%E5%9B%A0%EF%BC%8C%E4%B8%8D%E8%A6%81%E7%9B%B4%E6%8E%A5-quarantine"><span class="nav-number">13.1.</span> <span class="nav-text">先做归因，不要直接 quarantine</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#quarantine-%E4%B8%8D%E6%98%AF%E5%88%A0%E9%99%A4"><span class="nav-number">13.2.</span> <span class="nav-text">quarantine 不是删除</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%BB%BA%E7%AB%8B-flaky-eval-SLO"><span class="nav-number">13.3.</span> <span class="nav-text">建立 flaky eval SLO</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81%E5%88%86%E5%B1%82%E9%97%A8%E7%A6%81%EF%BC%9A%E4%B8%80%E6%AC%A1%E6%8F%90%E4%BA%A4%E4%B8%8D%E9%9C%80%E8%A6%81%E8%B7%91%E5%AE%8C%E6%95%B4%E7%BB%9F%E8%AE%A1%E5%AE%9E%E9%AA%8C"><span class="nav-number">14.</span> <span class="nav-text">十四、分层门禁：一次提交不需要跑完整统计实验</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#L0%EF%BC%9A%E7%A1%AC%E7%BA%A6%E6%9D%9F%E9%97%A8%E7%A6%81"><span class="nav-number">14.1.</span> <span class="nav-text">L0：硬约束门禁</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#L1%EF%BC%9A%E5%BF%AB%E9%80%9F%E9%85%8D%E5%AF%B9%E5%9B%9E%E5%BD%92"><span class="nav-number">14.2.</span> <span class="nav-text">L1：快速配对回归</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#L2%EF%BC%9A%E7%BB%9F%E8%AE%A1%E5%9B%9E%E5%BD%92"><span class="nav-number">14.3.</span> <span class="nav-text">L2：统计回归</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#L3%EF%BC%9A%E7%BA%BF%E4%B8%8A%E9%AA%8C%E8%AF%81"><span class="nav-number">14.4.</span> <span class="nav-text">L3：线上验证</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%94%E3%80%81%E4%B8%80%E4%B8%AA%E5%8F%AF%E6%89%A7%E8%A1%8C%E7%9A%84%E9%85%8D%E5%AF%B9%E5%9B%9E%E5%BD%92%E9%97%A8%E7%A6%81"><span class="nav-number">15.</span> <span class="nav-text">十五、一个可执行的配对回归门禁</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%BF%99%E6%AE%B5%E4%BB%A3%E7%A0%81%E5%88%BB%E6%84%8F%E4%BF%9D%E7%95%99%E7%9A%84%E8%BE%B9%E7%95%8C"><span class="nav-number">15.1.</span> <span class="nav-text">这段代码刻意保留的边界</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AD%E3%80%81%E6%B5%8B%E8%AF%95%E8%AE%BE%E8%AE%A1%EF%BC%9A%E5%9B%9E%E5%BD%92%E4%BD%93%E7%B3%BB%E6%9C%AC%E8%BA%AB%E4%B9%9F%E8%A6%81%E8%A2%AB%E6%B5%8B%E8%AF%95"><span class="nav-number">16.</span> <span class="nav-text">十六、测试设计：回归体系本身也要被测试</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%95%B0%E6%8D%AE%E5%90%88%E5%90%8C%E6%B5%8B%E8%AF%95"><span class="nav-number">16.1.</span> <span class="nav-text">1. 数据合同测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E9%85%8D%E5%AF%B9%E5%AE%8C%E6%95%B4%E6%80%A7%E6%B5%8B%E8%AF%95"><span class="nav-number">16.2.</span> <span class="nav-text">2. 配对完整性测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%BB%9F%E8%AE%A1%E5%87%BD%E6%95%B0%E5%8D%95%E5%85%83%E6%B5%8B%E8%AF%95"><span class="nav-number">16.3.</span> <span class="nav-text">3. 统计函数单元测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E9%97%A8%E7%A6%81%E8%BE%B9%E7%95%8C%E6%B5%8B%E8%AF%95"><span class="nav-number">16.4.</span> <span class="nav-text">4. 门禁边界测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%B9%B6%E5%8F%91%E4%B8%8E%E5%B9%82%E7%AD%89%E6%B5%8B%E8%AF%95"><span class="nav-number">16.5.</span> <span class="nav-text">5. 并发与幂等测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E5%88%A4%E5%BA%9F%E8%A7%84%E5%88%99%E6%B5%8B%E8%AF%95"><span class="nav-number">16.6.</span> <span class="nav-text">6. 判废规则测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-Judge-%E7%A8%B3%E5%AE%9A%E6%80%A7%E6%B5%8B%E8%AF%95"><span class="nav-number">16.7.</span> <span class="nav-text">7. Judge 稳定性测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-%E8%AF%81%E6%8D%AE%E5%8F%AF%E5%9B%9E%E6%94%BE%E6%B5%8B%E8%AF%95"><span class="nav-number">16.8.</span> <span class="nav-text">8. 证据可回放测试</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%83%E3%80%81%E7%A4%BA%E4%BE%8B%E6%A1%88%E4%BE%8B%E4%B8%80%EF%BC%9A%E5%B9%B3%E5%9D%87%E5%88%86%E6%8F%90%E5%8D%87%EF%BC%8C%E5%8D%B4%E8%A2%AB%E5%85%B3%E9%94%AE%E5%9B%9E%E9%80%80%E9%98%BB%E6%96%AD"><span class="nav-number">17.</span> <span class="nav-text">十七、示例案例一：平均分提升，却被关键回退阻断</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AB%E3%80%81%E7%A4%BA%E4%BE%8B%E6%A1%88%E4%BE%8B%E4%BA%8C%EF%BC%9A%E5%80%99%E9%80%89%E4%B8%8B%E9%99%8D%E5%85%B6%E5%AE%9E%E6%9D%A5%E8%87%AA-Judge-%E6%B3%A2%E5%8A%A8"><span class="nav-number">18.</span> <span class="nav-text">十八、示例案例二：候选下降其实来自 Judge 波动</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B9%9D%E3%80%81%E7%A4%BA%E4%BE%8B%E6%A1%88%E4%BE%8B%E4%B8%89%EF%BC%9A%E4%B8%8D%E6%96%AD%E9%87%8D%E8%B7%91%E6%8A%8A%E5%A4%B1%E8%B4%A5%E6%B4%97%E6%88%90%E6%88%90%E5%8A%9F"><span class="nav-number">19.</span> <span class="nav-text">十九、示例案例三：不断重跑把失败洗成成功</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E3%80%81%E5%8F%AF%E5%A4%8D%E7%8E%B0%E8%AF%81%E6%8D%AE%EF%BC%9A%E5%A4%8D%E7%8E%B0%E6%9D%A1%E4%BB%B6%EF%BC%8C%E4%B8%8D%E5%BC%BA%E6%B1%82%E5%A4%8D%E7%8E%B0%E6%AF%8F%E4%B8%AA-Token"><span class="nav-number">20.</span> <span class="nav-text">二十、可复现证据：复现条件，不强求复现每个 Token</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%9D%A1%E4%BB%B6%E5%A4%8D%E7%8E%B0"><span class="nav-number">20.1.</span> <span class="nav-text">1. 条件复现</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%BD%A8%E8%BF%B9%E5%9B%9E%E6%94%BE"><span class="nav-number">20.2.</span> <span class="nav-text">2. 轨迹回放</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%86%8D%E6%89%A7%E8%A1%8C"><span class="nav-number">20.3.</span> <span class="nav-text">3. 再执行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%81%E6%8D%AE%E5%8C%85%E5%BB%BA%E8%AE%AE%E7%BB%93%E6%9E%84"><span class="nav-number">20.4.</span> <span class="nav-text">证据包建议结构</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%81%E6%8D%AE%E4%BF%9D%E5%AD%98%E8%BF%98%E8%A6%81%E8%80%83%E8%99%91%E9%9A%90%E7%A7%81"><span class="nav-number">20.5.</span> <span class="nav-text">证据保存还要考虑隐私</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%80%E3%80%81%E4%BB%8E%E5%A4%B1%E8%B4%A5%E7%BB%93%E6%9E%9C%E5%88%B0%E5%8F%AF%E6%89%A7%E8%A1%8C%E5%BD%92%E5%9B%A0"><span class="nav-number">21.</span> <span class="nav-text">二十一、从失败结果到可执行归因</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#PRODUCT"><span class="nav-number">21.1.</span> <span class="nav-text">PRODUCT</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#EVAL-DATA"><span class="nav-number">21.2.</span> <span class="nav-text">EVAL_DATA</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#GRADER"><span class="nav-number">21.3.</span> <span class="nav-text">GRADER</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#INFRA"><span class="nav-number">21.4.</span> <span class="nav-text">INFRA</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#UNKNOWN"><span class="nav-number">21.5.</span> <span class="nav-text">UNKNOWN</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%8C%E3%80%81%E6%8A%A5%E5%91%8A%E5%BA%94%E8%AF%A5%E6%80%8E%E6%A0%B7%E5%B1%95%E7%A4%BA"><span class="nav-number">22.</span> <span class="nav-text">二十二、报告应该怎样展示</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%B8%80%E5%B1%8F%EF%BC%9A%E7%BB%93%E8%AE%BA"><span class="nav-number">22.1.</span> <span class="nav-text">第一屏：结论</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%BA%8C%E5%B1%8F%EF%BC%9A%E8%B4%A8%E9%87%8F%E5%B7%AE%E5%BC%82"><span class="nav-number">22.2.</span> <span class="nav-text">第二屏：质量差异</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%B8%89%E5%B1%8F%EF%BC%9A%E7%A8%B3%E5%AE%9A%E6%80%A7"><span class="nav-number">22.3.</span> <span class="nav-text">第三屏：稳定性</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E5%9B%9B%E5%B1%8F%EF%BC%9A%E8%AF%81%E6%8D%AE"><span class="nav-number">22.4.</span> <span class="nav-text">第四屏：证据</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%8D%E8%A6%81%E5%8F%AA%E7%BB%99%E4%B8%80%E4%B8%AA%E6%80%BB%E5%88%86"><span class="nav-number">22.5.</span> <span class="nav-text">不要只给一个总分</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%89%E3%80%81%E5%B8%B8%E8%A7%81%E8%AF%AF%E5%8C%BA"><span class="nav-number">23.</span> <span class="nav-text">二十三、常见误区</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%AF%E5%8C%BA-1%EF%BC%9Atemperature-%E8%AE%BE%E4%B8%BA-0-%E5%B0%B1%E5%8F%AF%E4%BB%A5%E5%8F%AA%E8%B7%91%E4%B8%80%E6%AC%A1"><span class="nav-number">23.1.</span> <span class="nav-text">误区 1：temperature 设为 0 就可以只跑一次</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%AF%E5%8C%BA-2%EF%BC%9A%E8%AE%BE%E7%BD%AE-seed-%E5%B0%B1%E8%83%BD%E8%B7%A8%E6%97%B6%E9%97%B4%E5%AE%8C%E5%85%A8%E5%A4%8D%E7%8E%B0"><span class="nav-number">23.2.</span> <span class="nav-text">误区 2：设置 seed 就能跨时间完全复现</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%AF%E5%8C%BA-3%EF%BC%9A%E5%80%99%E9%80%89%E9%80%9A%E8%BF%87%E7%8E%87%E9%AB%98%E4%BA%8E%E5%9F%BA%E7%BA%BF%E5%B0%B1%E5%8F%AF%E4%BB%A5%E5%8F%91%E5%B8%83"><span class="nav-number">23.3.</span> <span class="nav-text">误区 3：候选通过率高于基线就可以发布</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%AF%E5%8C%BA-4%EF%BC%9A%E6%A0%B7%E6%9C%AC%E8%B6%8A%E5%A4%9A%E8%B6%8A%E5%A5%BD"><span class="nav-number">23.4.</span> <span class="nav-text">误区 4：样本越多越好</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%AF%E5%8C%BA-5%EF%BC%9A%E5%A4%B1%E8%B4%A5%E9%87%8D%E8%B7%91%E9%80%9A%E8%BF%87%E5%90%8E%E5%B0%B1%E7%AE%97%E9%80%9A%E8%BF%87"><span class="nav-number">23.5.</span> <span class="nav-text">误区 5：失败重跑通过后就算通过</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%AF%E5%8C%BA-6%EF%BC%9Aflaky-%E7%94%A8%E4%BE%8B%E7%A7%BB%E5%87%BA%E9%97%A8%E7%A6%81%E5%B0%B1%E8%A7%A3%E5%86%B3%E4%BA%86"><span class="nav-number">23.6.</span> <span class="nav-text">误区 6：flaky 用例移出门禁就解决了</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%AF%E5%8C%BA-7%EF%BC%9Ap-value-%E5%B0%8F%E5%B0%B1%E8%A1%A8%E7%A4%BA%E6%94%B9%E8%BF%9B%E5%BE%88%E5%A4%A7"><span class="nav-number">23.7.</span> <span class="nav-text">误区 7：p-value 小就表示改进很大</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%AF%E5%8C%BA-8%EF%BC%9A%E7%BD%AE%E4%BF%A1%E5%8C%BA%E9%97%B4%E8%B7%A8-0-%E5%B0%B1%E7%AD%89%E4%BA%8E%E4%B8%A4%E4%B8%AA%E7%89%88%E6%9C%AC%E5%AE%8C%E5%85%A8%E4%B8%80%E6%A0%B7"><span class="nav-number">23.8.</span> <span class="nav-text">误区 8：置信区间跨 0 就等于两个版本完全一样</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%AF%E5%8C%BA-9%EF%BC%9AJudge-%E7%BB%99%E5%87%BA%E7%9A%84%E6%95%B0%E5%AD%97%E5%B0%B1%E6%98%AF%E5%AE%A2%E8%A7%82%E7%9C%9F%E5%80%BC"><span class="nav-number">23.9.</span> <span class="nav-text">误区 9：Judge 给出的数字就是客观真值</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%AF%E5%8C%BA-10%EF%BC%9A%E4%BF%9D%E5%AD%98%E6%9C%80%E7%BB%88%E7%AD%94%E6%A1%88%E5%B0%B1%E8%B6%B3%E5%A4%9F%E5%A4%8D%E7%8E%B0"><span class="nav-number">23.10.</span> <span class="nav-text">误区 10：保存最终答案就足够复现</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%9B%9B%E3%80%81%E8%90%BD%E5%9C%B0%E6%A3%80%E6%9F%A5%E8%A1%A8"><span class="nav-number">24.</span> <span class="nav-text">二十四、落地检查表</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9B%9E%E5%BD%92%E5%90%88%E5%90%8C"><span class="nav-number">24.1.</span> <span class="nav-text">回归合同</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%95%E9%AA%8C%E8%AE%BE%E8%AE%A1"><span class="nav-number">24.2.</span> <span class="nav-text">试验设计</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8C%87%E6%A0%87"><span class="nav-number">24.3.</span> <span class="nav-text">指标</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%99%AA%E5%A3%B0%E6%B2%BB%E7%90%86"><span class="nav-number">24.4.</span> <span class="nav-text">噪声治理</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%A3%8E%E9%99%A9%E9%97%A8%E7%A6%81"><span class="nav-number">24.5.</span> <span class="nav-text">风险门禁</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%81%E6%8D%AE"><span class="nav-number">24.6.</span> <span class="nav-text">证据</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%94%E3%80%81%E6%80%BB%E7%BB%93"><span class="nav-number">25.</span> <span class="nav-text">二十五、总结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8F%82%E8%80%83%E8%B5%84%E6%96%99"><span class="nav-number">26.</span> <span class="nav-text">参考资料</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">312</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">27</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">569</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2026/03/27/AI%E6%B5%8B%E8%AF%95-20-%E9%9D%9E%E7%A1%AE%E5%AE%9A%E6%80%A7AI%E5%BA%94%E7%94%A8%E6%80%8E%E4%B9%88%E5%81%9A%E7%A8%B3%E5%AE%9A%E7%9A%84%E8%87%AA%E5%8A%A8%E5%8C%96%E5%9B%9E%E5%BD%92%E6%B5%8B%E8%AF%95/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="AI测试-20-非确定性AI应用怎么做稳定的自动化回归测试 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          AI测试-20-非确定性AI应用怎么做稳定的自动化回归测试
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2026-03-27 20:30:00" itemprop="dateCreated datePublished" datetime="2026-03-27T20:30:00+08:00">2026-03-27</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/AI%E6%B5%8B%E8%AF%95/" itemprop="url" rel="index"><span itemprop="name">AI测试</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>13k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>45 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>传统自动化测试默认一个重要前提：</p>
+<p><strong>相同代码、相同输入和相同环境，应该得到相同结果。</strong></p>
+<p>这个前提让回归测试可以直接使用二元结论：</p>
+<ul>
+<li>以前通过，现在失败，通常就是回归</li>
+<li>以前失败，现在通过，通常就是修复</li>
+<li>连续执行结果不同，通常就是脚本或环境不稳定</li>
+</ul>
+<p>AI 应用打破了这个简单模型。</p>
+<p>相同 Prompt、相同模型名称、相同检索库，连续调用两次仍可能得到不同措辞、不同工具参数，甚至不同任务结果。</p>
+<p>如果系统还包含 RAG、Agent、外部工具和 LLM Judge，随机性会沿调用链逐层放大：</p>
+<ul>
+<li>检索结果顺序发生轻微变化</li>
+<li>模型选择了不同但都合理的计划</li>
+<li>工具响应时间改变了后续分支</li>
+<li>Judge 对边界样本给出不同评分</li>
+<li>并发执行改变了共享环境状态</li>
+</ul>
+<p>于是一个看似简单的问题变得很难：</p>
+<p><strong>候选版本从 89% 上升到 91%，究竟是真改进，还是一次随机波动？</strong></p>
+<p>反过来也一样：</p>
+<p><strong>一次关键用例失败，究竟应该阻断发布，还是可以用“模型有随机性”解释掉？</strong></p>
+<p>这篇文章不讨论如何让模型绝对确定。</p>
+<p>绝对确定通常既做不到，也不是产品真正需要的目标。</p>
+<p>本文要解决的是更工程化的问题：</p>
+<blockquote>
+<p>在承认输出具有随机性的前提下，怎样构建一套结果稳定、结论可解释、失败可复现的自动化回归体系。</p>
+</blockquote>
+<p>前面的文章已经讨论过 AI 测试平台分层、状态管理、证据链以及误判治理。</p>
+<p>本文只聚焦回归判定本身，重点包括：</p>
+<ul>
+<li>随机性来自哪里</li>
+<li>为什么必须重复运行</li>
+<li>通过率怎样配合置信区间解释</li>
+<li>为什么候选版本要和基线做 paired comparison</li>
+<li>分层门禁怎样兼顾速度与可信度</li>
+<li>基线应该冻结什么</li>
+<li>噪声预算与 flaky eval 怎样治理</li>
+<li>一次结论需要保存哪些可复现证据</li>
+</ul>
+<h2 id="一、先划清问题边界：我们要稳定的是“决策”，不是“每个字”"><a href="#一、先划清问题边界：我们要稳定的是“决策”，不是“每个字”" class="headerlink" title="一、先划清问题边界：我们要稳定的是“决策”，不是“每个字”"></a>一、先划清问题边界：我们要稳定的是“决策”，不是“每个字”</h2><p>讨论非确定性回归前，必须先区分三个层次。</p>
+<h3 id="1-文本不一致不等于任务失败"><a href="#1-文本不一致不等于任务失败" class="headerlink" title="1. 文本不一致不等于任务失败"></a>1. 文本不一致不等于任务失败</h3><p>下面两个回答措辞不同：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">回答 A：订单已经取消，退款预计在三个工作日内原路返回。</span><br><span class="line">回答 B：已为你取消订单；款项通常会在三个工作日内退回原支付方式。</span><br></pre></td></tr></table></figure>
+
+<p>如果业务目标是“正确取消订单并说明退款路径”，两个回答可能都通过。</p>
+<p>对全文做精确字符串比较，只会把自然语言的正常变化误报成回归。</p>
+<p>因此回归对象应优先是：</p>
+<ul>
+<li>最终业务状态</li>
+<li>必须满足的事实</li>
+<li>不允许出现的风险</li>
+<li>工具调用与副作用</li>
+<li>可接受的质量区间</li>
+</ul>
+<p>而不是表面措辞。</p>
+<h3 id="2-输出可变不等于行为可以失控"><a href="#2-输出可变不等于行为可以失控" class="headerlink" title="2. 输出可变不等于行为可以失控"></a>2. 输出可变不等于行为可以失控</h3><p>模型可以用不同方式表达同一个结论。</p>
+<p>但下面这些约束不应该靠概率解释：</p>
+<ul>
+<li>JSON 必须满足 Schema</li>
+<li>不得调用未授权工具</li>
+<li>不得泄漏敏感字段</li>
+<li>退款金额必须与订单一致</li>
+<li>只读任务不得产生写操作</li>
+<li>工具失败后不得编造成功结果</li>
+</ul>
+<p>这些是硬约束。</p>
+<p>只要一次违反，就应该形成明确失败证据。</p>
+<p>不能因为总体通过率仍然很高，就把安全、权限和数据完整性问题平均掉。</p>
+<h3 id="3-自动化结果稳定不等于线上质量一定稳定"><a href="#3-自动化结果稳定不等于线上质量一定稳定" class="headerlink" title="3. 自动化结果稳定不等于线上质量一定稳定"></a>3. 自动化结果稳定不等于线上质量一定稳定</h3><p>离线回归只能覆盖评测集代表的分布。</p>
+<p>它不能自动证明：</p>
+<ul>
+<li>真实用户输入没有分布漂移</li>
+<li>外部知识库始终及时更新</li>
+<li>线上限流和超时不会改变行为</li>
+<li>第三方模型服务没有静默变更</li>
+<li>用户对答案质量的定义没有变化</li>
+</ul>
+<p>所以完整质量闭环至少包含：</p>
+<ul>
+<li>离线自动化回归</li>
+<li>灰度或影子流量</li>
+<li>线上指标与失败采样</li>
+<li>用户反馈和人工复核</li>
+</ul>
+<p>本文主要讲第一项，但会说明它怎样与后面三项衔接。</p>
+<h2 id="二、把-AI-回归重新定义成一个统计决策问题"><a href="#二、把-AI-回归重新定义成一个统计决策问题" class="headerlink" title="二、把 AI 回归重新定义成一个统计决策问题"></a>二、把 AI 回归重新定义成一个统计决策问题</h2><p>传统单元测试常把一次执行当成事实。</p>
+<p>非确定性 AI 回归更接近一次受控实验。</p>
+<p>设：</p>
+<ul>
+<li><code>C</code> 表示固定的用例集合</li>
+<li><code>B</code> 表示基线系统</li>
+<li><code>N</code> 表示候选系统</li>
+<li><code>Y(i, r, v)</code> 表示系统版本 <code>v</code> 在用例 <code>i</code> 第 <code>r</code> 次试验的结果</li>
+</ul>
+<p>如果结果是二元通过或失败：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Y(i, r, v) ∈ &#123;0, 1&#125;</span><br></pre></td></tr></table></figure>
+
+<p>我们真正关心的通常不是某一个 <code>Y</code>，而是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">P(Y = 1 | case, version, declared_environment)</span><br></pre></td></tr></table></figure>
+
+<p>也就是在声明好的条件下，系统完成任务的概率。</p>
+<p>候选版本的回归判定可以进一步写成：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">delta = quality(candidate) - quality(baseline)</span><br></pre></td></tr></table></figure>
+
+<p>然后根据业务风险预先选择一种假设：</p>
+<ul>
+<li>优越性：候选必须显著优于基线</li>
+<li>非劣性：候选允许轻微波动，但不能差过容忍边界</li>
+<li>等效性：候选与基线差异必须落在上下两个等效边界内</li>
+</ul>
+<p>大多数模型、Prompt 或检索策略升级更适合使用非劣性思路。</p>
+<p>因为升级可能主要为了：</p>
+<ul>
+<li>降低时延</li>
+<li>降低 Token 成本</li>
+<li>修复某一类风险</li>
+<li>增加新能力</li>
+</ul>
+<p>只要求“平均分必须严格更高”会阻止很多有价值的工程改进。</p>
+<p>更合理的发布问题是：</p>
+<blockquote>
+<p>在关键能力不退化、整体质量不低于容忍边界的前提下，候选版本是否带来了目标收益？</p>
+</blockquote>
+<h3 id="非劣边界必须在运行前确定"><a href="#非劣边界必须在运行前确定" class="headerlink" title="非劣边界必须在运行前确定"></a>非劣边界必须在运行前确定</h3><p>设业务允许的最大退化为 <code>m</code>：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">candidate - baseline &gt;= -m</span><br></pre></td></tr></table></figure>
+
+<p>如果 <code>m = 0.02</code>，表示候选最多允许下降 2 个百分点。</p>
+<p>这个数不能看完结果再决定。</p>
+<p>否则团队很容易根据结果临时移动门槛：</p>
+<ul>
+<li>下降 1.8% 时说 2% 可以接受</li>
+<li>下降 2.4% 时又说 3% 也不明显</li>
+<li>关键用例失败时再把它改成普通用例</li>
+</ul>
+<p>预先声明的边界，才是门禁。</p>
+<p>事后解释的边界，只是为结果找理由。</p>
+<h2 id="三、随机性到底来自哪里"><a href="#三、随机性到底来自哪里" class="headerlink" title="三、随机性到底来自哪里"></a>三、随机性到底来自哪里</h2><p>把所有波动都归因于 temperature，是最常见也最危险的简化。</p>
+<p>真实 AI 应用至少有六层随机性。</p>
+<h3 id="1-模型生成层"><a href="#1-模型生成层" class="headerlink" title="1. 模型生成层"></a>1. 模型生成层</h3><p>常见因素包括：</p>
+<ul>
+<li>temperature</li>
+<li>top_p</li>
+<li>top_k</li>
+<li>候选采样</li>
+<li>服务端动态批处理</li>
+<li>浮点计算和并行归约差异</li>
+<li>模型服务内部路由</li>
+<li>未公开的服务端修订</li>
+</ul>
+<p>即使设置 temperature 为 0，也不应直接承诺逐字节复现。</p>
+<p>原因可能包括：</p>
+<ul>
+<li>多个 Token 的概率非常接近</li>
+<li>后端计算路径发生变化</li>
+<li>服务商更新了权重、推理栈或安全策略</li>
+<li>请求被路由到不同硬件或模型快照</li>
+</ul>
+<p>seed 如果接口支持，可以帮助降低变化。</p>
+<p>但 seed 更适合视为“可复现提示”，不是跨时间、跨后端的绝对保证。</p>
+<h3 id="2-Prompt-与上下文组装层"><a href="#2-Prompt-与上下文组装层" class="headerlink" title="2. Prompt 与上下文组装层"></a>2. Prompt 与上下文组装层</h3><p>系统 Prompt 看似没变，最终输入仍可能变化：</p>
+<ul>
+<li>时间、地域和用户状态被动态注入</li>
+<li>历史会话截断位置变化</li>
+<li>Few-shot 样本顺序变化</li>
+<li>字典或集合遍历顺序不稳定</li>
+<li>模板依赖项被独立更新</li>
+<li>Token 超限后采用了不同压缩结果</li>
+</ul>
+<p>所以只记录一个 Prompt 文件名不够。</p>
+<p>必须同时记录：</p>
+<ul>
+<li>模板身份</li>
+<li>模板版本</li>
+<li>渲染后内容摘要</li>
+<li>上下文选择策略</li>
+<li>截断与压缩参数</li>
+</ul>
+<h3 id="3-RAG-检索层"><a href="#3-RAG-检索层" class="headerlink" title="3. RAG 检索层"></a>3. RAG 检索层</h3><p>RAG 的随机性和漂移来自：</p>
+<ul>
+<li>文档集合发生变化</li>
+<li>Chunk 切分策略变化</li>
+<li>Embedding 模型变化</li>
+<li>索引重建</li>
+<li>近似最近邻搜索</li>
+<li>同分文档排序不稳定</li>
+<li>过滤条件依赖动态权限</li>
+<li>Reranker 版本变化</li>
+</ul>
+<p>两个请求即使查询文本相同，也可能拿到不同证据。</p>
+<p>模型输出变化可能只是检索输入变化的结果。</p>
+<p>如果回归记录里没有保留文档 ID、版本、排名和分数，就无法分清：</p>
+<ul>
+<li>是生成模型退化</li>
+<li>是检索召回退化</li>
+<li>是知识本身发生了变化</li>
+</ul>
+<h3 id="4-Agent-规划与工具层"><a href="#4-Agent-规划与工具层" class="headerlink" title="4. Agent 规划与工具层"></a>4. Agent 规划与工具层</h3><p>Agent 通常不是一次生成，而是一个多步闭环：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">观察 -&gt; 规划 -&gt; 调用工具 -&gt; 读取结果 -&gt; 再规划 -&gt; 输出</span><br></pre></td></tr></table></figure>
+
+<p>任一步差异都可能改变后续轨迹。</p>
+<p>常见变量包括：</p>
+<ul>
+<li>工具返回顺序</li>
+<li>网络抖动和超时</li>
+<li>重试次数</li>
+<li>外部状态变化</li>
+<li>工具 Schema 变化</li>
+<li>幂等键缺失</li>
+<li>并发任务争用同一资源</li>
+</ul>
+<p>因此 Agent 回归不能只保存最终答案。</p>
+<p>至少还要保存：</p>
+<ul>
+<li>每一步选择</li>
+<li>工具参数</li>
+<li>工具结果</li>
+<li>状态变更</li>
+<li>重试和异常</li>
+<li>最终环境状态</li>
+</ul>
+<h3 id="5-Judge-与评分层"><a href="#5-Judge-与评分层" class="headerlink" title="5. Judge 与评分层"></a>5. Judge 与评分层</h3><p>如果用另一个模型做裁判，评测系统本身也具有随机性。</p>
+<p>Judge 的变化可能来自：</p>
+<ul>
+<li>评分 Prompt 变化</li>
+<li>Rubric 边界不清</li>
+<li>Judge 模型变化</li>
+<li>输出解析失败</li>
+<li>样本顺序偏差</li>
+<li>位置偏差</li>
+<li>对长答案的注意力偏差</li>
+</ul>
+<p>这意味着评测分数不是天然真值。</p>
+<p>Judge 必须像被测系统一样：</p>
+<ul>
+<li>版本化</li>
+<li>回归测试</li>
+<li>与人工标注校准</li>
+<li>监控分歧率</li>
+<li>保存评分证据</li>
+</ul>
+<h3 id="6-评测基础设施层"><a href="#6-评测基础设施层" class="headerlink" title="6. 评测基础设施层"></a>6. 评测基础设施层</h3><p>最后一层噪声来自测试系统：</p>
+<ul>
+<li>共享环境不干净</li>
+<li>Mock 数据随时间变化</li>
+<li>并发任务相互污染</li>
+<li>队列超时</li>
+<li>账号额度不足</li>
+<li>日志或产物丢失</li>
+<li>测试 Harness 自己升级</li>
+</ul>
+<p>如果不把这类失败单独识别，团队会得到两个错误结论：</p>
+<ul>
+<li>把平台故障当成模型回归</li>
+<li>把模型失败当成平台偶发问题</li>
+</ul>
+<h2 id="四、整体策略图：从单次结果转向分层证据"><a href="#四、整体策略图：从单次结果转向分层证据" class="headerlink" title="四、整体策略图：从单次结果转向分层证据"></a>四、整体策略图：从单次结果转向分层证据</h2><p><img src="/images/ai-quality/ai-20-regression-strategy.svg" alt="非确定性 AI 自动化回归的分层门禁"></p>
+<p>这张图表达四个关键原则。</p>
+<p>第一，先冻结比较合同，再运行任务。</p>
+<p>第二，基线和候选应尽量在相同任务、相同试验槽位和相同时间窗口中比较。</p>
+<p>第三，硬约束与统计质量分开判定。</p>
+<p>第四，回归结论必须能下钻到原始输入、调用轨迹和评分证据。</p>
+<p>这四点缺一不可。</p>
+<p>只有重复运行，没有冻结合同，得到的是不可解释的重复。</p>
+<p>只有平均通过率，没有关键风险门禁，得到的是被平均数掩盖的事故。</p>
+<p>只有统计结论，没有证据归档，得到的是无法定位和复现的数字。</p>
+<h2 id="五、先建立“可复现合同”"><a href="#五、先建立“可复现合同”" class="headerlink" title="五、先建立“可复现合同”"></a>五、先建立“可复现合同”</h2><p>非确定性系统做不到保证输出完全一致。</p>
+<p>但可以保证比较条件被明确记录。</p>
+<p>这就是可复现合同。</p>
+<p>一份最小合同至少包含下面六组信息。</p>
+<h3 id="1-被测系统版本"><a href="#1-被测系统版本" class="headerlink" title="1. 被测系统版本"></a>1. 被测系统版本</h3><ul>
+<li>应用提交 SHA</li>
+<li>Prompt 模板 ID 与版本</li>
+<li>Prompt 渲染器版本</li>
+<li>模型请求名称</li>
+<li>可获得时记录解析后的模型或快照标识</li>
+<li>采样参数</li>
+<li>工具集合版本</li>
+<li>Agent Harness 版本</li>
+<li>安全策略版本</li>
+</ul>
+<h3 id="2-数据与检索版本"><a href="#2-数据与检索版本" class="headerlink" title="2. 数据与检索版本"></a>2. 数据与检索版本</h3><ul>
+<li>eval suite ID</li>
+<li>dataset revision</li>
+<li>case ID</li>
+<li>输入内容摘要</li>
+<li>知识库 snapshot</li>
+<li>Chunker 版本</li>
+<li>Embedding 模型标识</li>
+<li>索引构建版本</li>
+<li>Reranker 版本</li>
+<li>过滤策略版本</li>
+</ul>
+<h3 id="3-Judge-版本"><a href="#3-Judge-版本" class="headerlink" title="3. Judge 版本"></a>3. Judge 版本</h3><ul>
+<li>grader ID</li>
+<li>Rubric 版本</li>
+<li>Judge Prompt 摘要</li>
+<li>Judge 模型标识</li>
+<li>解析器版本</li>
+<li>校准集版本</li>
+<li>人工复核策略</li>
+</ul>
+<h3 id="4-执行环境"><a href="#4-执行环境" class="headerlink" title="4. 执行环境"></a>4. 执行环境</h3><ul>
+<li>环境 ID</li>
+<li>区域</li>
+<li>依赖服务版本</li>
+<li>固定时钟或时间窗口</li>
+<li>账号与权限角色</li>
+<li>并发配置</li>
+<li>超时与重试策略</li>
+<li>Feature Flag 快照</li>
+</ul>
+<h3 id="5-随机控制"><a href="#5-随机控制" class="headerlink" title="5. 随机控制"></a>5. 随机控制</h3><ul>
+<li>seed，如果接口支持</li>
+<li>trial_slot</li>
+<li>执行顺序</li>
+<li>baseline 与 candidate 的交替策略</li>
+<li>重试是否计入试验</li>
+<li>模型服务返回的请求 ID</li>
+</ul>
+<h3 id="6-证据完整性"><a href="#6-证据完整性" class="headerlink" title="6. 证据完整性"></a>6. 证据完整性</h3><ul>
+<li>原始响应摘要</li>
+<li>工具调用轨迹</li>
+<li>最终状态快照</li>
+<li>评分明细</li>
+<li>Artifact URI</li>
+<li>Artifact 内容摘要</li>
+<li>生成时间</li>
+<li>保留策略</li>
+</ul>
+<h3 id="一个可执行的回归清单示例"><a href="#一个可执行的回归清单示例" class="headerlink" title="一个可执行的回归清单示例"></a>一个可执行的回归清单示例</h3><p>下面是一份 YAML 形式的比较合同。</p>
+<p>它不是某个框架的专用格式，可以作为内部平台 Schema 的起点。</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">apiVersion:</span> <span class="string">ai-quality/v1</span></span><br><span class="line"><span class="attr">kind:</span> <span class="string">RegressionRun</span></span><br><span class="line"><span class="attr">metadata:</span></span><br><span class="line">  <span class="attr">runId:</span> <span class="string">reg-20260327-001</span></span><br><span class="line">  <span class="attr">suiteId:</span> <span class="string">customer-service-core</span></span><br><span class="line">  <span class="attr">datasetRevision:</span> <span class="string">sha256:7b1b4f...</span></span><br><span class="line">  <span class="attr">createdAt:</span> <span class="string">&quot;2026-03-27T12:30:00Z&quot;</span></span><br><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">baseline:</span></span><br><span class="line">    <span class="attr">applicationRevision:</span> <span class="string">&quot;git:8f31c2a&quot;</span></span><br><span class="line">    <span class="attr">prompt:</span></span><br><span class="line">      <span class="attr">templateId:</span> <span class="string">refund-agent</span></span><br><span class="line">      <span class="attr">version:</span> <span class="string">&quot;12&quot;</span></span><br><span class="line">      <span class="attr">digest:</span> <span class="string">&quot;sha256:3f79aa...&quot;</span></span><br><span class="line">    <span class="attr">model:</span></span><br><span class="line">      <span class="attr">requestedName:</span> <span class="string">model-family-a</span></span><br><span class="line">      <span class="attr">resolvedRevision:</span> <span class="string">provider-value-if-available</span></span><br><span class="line">      <span class="attr">temperature:</span> <span class="number">0.2</span></span><br><span class="line">      <span class="attr">topP:</span> <span class="number">0.9</span></span><br><span class="line">      <span class="attr">seed:</span> <span class="number">20260327</span></span><br><span class="line">    <span class="attr">toolsRevision:</span> <span class="string">&quot;tools:17&quot;</span></span><br><span class="line">  <span class="attr">candidate:</span></span><br><span class="line">    <span class="attr">applicationRevision:</span> <span class="string">&quot;git:c09e4b1&quot;</span></span><br><span class="line">    <span class="attr">prompt:</span></span><br><span class="line">      <span class="attr">templateId:</span> <span class="string">refund-agent</span></span><br><span class="line">      <span class="attr">version:</span> <span class="string">&quot;13&quot;</span></span><br><span class="line">      <span class="attr">digest:</span> <span class="string">&quot;sha256:b1260c...&quot;</span></span><br><span class="line">    <span class="attr">model:</span></span><br><span class="line">      <span class="attr">requestedName:</span> <span class="string">model-family-a</span></span><br><span class="line">      <span class="attr">resolvedRevision:</span> <span class="string">provider-value-if-available</span></span><br><span class="line">      <span class="attr">temperature:</span> <span class="number">0.2</span></span><br><span class="line">      <span class="attr">topP:</span> <span class="number">0.9</span></span><br><span class="line">      <span class="attr">seed:</span> <span class="number">20260327</span></span><br><span class="line">    <span class="attr">toolsRevision:</span> <span class="string">&quot;tools:17&quot;</span></span><br><span class="line">  <span class="attr">retrieval:</span></span><br><span class="line">    <span class="attr">corpusSnapshot:</span> <span class="string">&quot;support-kb:2026-03-26&quot;</span></span><br><span class="line">    <span class="attr">chunkerRevision:</span> <span class="string">&quot;chunker:5&quot;</span></span><br><span class="line">    <span class="attr">embeddingRevision:</span> <span class="string">&quot;embedding-family-b&quot;</span></span><br><span class="line">    <span class="attr">indexRevision:</span> <span class="string">&quot;index:4e881a&quot;</span></span><br><span class="line">    <span class="attr">rerankerRevision:</span> <span class="string">&quot;reranker:9&quot;</span></span><br><span class="line">  <span class="attr">grader:</span></span><br><span class="line">    <span class="attr">rubricId:</span> <span class="string">refund-quality</span></span><br><span class="line">    <span class="attr">rubricRevision:</span> <span class="string">&quot;6&quot;</span></span><br><span class="line">    <span class="attr">promptDigest:</span> <span class="string">&quot;sha256:934da2...&quot;</span></span><br><span class="line">    <span class="attr">judgeModel:</span> <span class="string">judge-family-c</span></span><br><span class="line">    <span class="attr">calibrationSet:</span> <span class="string">&quot;judge-calibration:11&quot;</span></span><br><span class="line">  <span class="attr">execution:</span></span><br><span class="line">    <span class="attr">trialsPerCase:</span> <span class="number">8</span></span><br><span class="line">    <span class="attr">pairing:</span> <span class="string">case-and-trial-slot</span></span><br><span class="line">    <span class="attr">order:</span> <span class="string">alternating</span></span><br><span class="line">    <span class="attr">maxConcurrency:</span> <span class="number">12</span></span><br><span class="line">    <span class="attr">timeoutSeconds:</span> <span class="number">90</span></span><br><span class="line">    <span class="attr">retryPolicy:</span> <span class="literal">no</span><span class="string">-hidden-retry</span></span><br><span class="line">  <span class="attr">gate:</span></span><br><span class="line">    <span class="attr">primaryMetric:</span> <span class="string">task_success</span></span><br><span class="line">    <span class="attr">minCandidatePassRate:</span> <span class="number">0.82</span></span><br><span class="line">    <span class="attr">nonInferiorityMargin:</span> <span class="number">0.02</span></span><br><span class="line">    <span class="attr">confidenceLevel:</span> <span class="number">0.95</span></span><br><span class="line">    <span class="attr">maxInvalidRate:</span> <span class="number">0.01</span></span><br><span class="line">    <span class="attr">blockOnCriticalRegression:</span> <span class="literal">true</span></span><br></pre></td></tr></table></figure>
+
+<p>注意其中的 <code>no-hidden-retry</code>。</p>
+<p>测试 Harness 如果在后台静默重试，最终通过率会被人为抬高。</p>
+<p>每一次物理尝试都应该留下记录。</p>
+<p>产品本身允许重试时，应把“包含产品重试后的最终结果”作为业务指标，同时单独记录：</p>
+<ul>
+<li>首次尝试成功率</li>
+<li>平均重试次数</li>
+<li>重试后成功率</li>
+<li>重试带来的时延和成本</li>
+</ul>
+<h2 id="六、冻结基线到底要冻结什么"><a href="#六、冻结基线到底要冻结什么" class="headerlink" title="六、冻结基线到底要冻结什么"></a>六、冻结基线到底要冻结什么</h2><p>“冻结基线”经常被误解成保存一个总分。</p>
+<p>总分远远不够。</p>
+<p>真正需要冻结的是一个可审计的基线包。</p>
+<h3 id="基线包的最小内容"><a href="#基线包的最小内容" class="headerlink" title="基线包的最小内容"></a>基线包的最小内容</h3><ul>
+<li>用例输入与分层标签</li>
+<li>每个用例的期望约束</li>
+<li>基线系统版本清单</li>
+<li>每个 trial 的原始结果</li>
+<li>判废记录</li>
+<li>确定性断言结果</li>
+<li>Judge 评分明细</li>
+<li>聚合算法版本</li>
+<li>置信区间算法与参数</li>
+<li>通过门槛和非劣边界</li>
+<li>全部 Artifact 摘要</li>
+</ul>
+<h3 id="冻结输出不等于永远不重跑基线"><a href="#冻结输出不等于永远不重跑基线" class="headerlink" title="冻结输出不等于永远不重跑基线"></a>冻结输出不等于永远不重跑基线</h3><p>这里需要区分两种基线。</p>
+<h4 id="1-历史制品基线"><a href="#1-历史制品基线" class="headerlink" title="1. 历史制品基线"></a>1. 历史制品基线</h4><p>历史制品基线用于回答：</p>
+<ul>
+<li>上一个发布版本当时表现如何</li>
+<li>当时使用了什么数据和规则</li>
+<li>为什么当时允许发布</li>
+<li>当前结果与历史趋势是否一致</li>
+</ul>
+<p>它必须不可变。</p>
+<h4 id="2-同期控制基线"><a href="#2-同期控制基线" class="headerlink" title="2. 同期控制基线"></a>2. 同期控制基线</h4><p>同期控制基线用于回答：</p>
+<ul>
+<li>在今天的外部环境下，旧版本和新版本谁更好</li>
+<li>第三方模型服务或知识依赖是否共同漂移</li>
+<li>当前时间窗口是否存在系统性噪声</li>
+</ul>
+<p>它需要与候选版本在同一时间窗口重跑。</p>
+<p>当上游模型是可变的托管服务时，只拿今天的候选结果与三个月前的基线分数比较，会把时间漂移混入版本差异。</p>
+<p>更稳妥的做法是同时保留：</p>
+<ul>
+<li>不可变的历史基线包</li>
+<li>本次实验重跑的同期控制组</li>
+</ul>
+<h3 id="交替执行减少时间偏差"><a href="#交替执行减少时间偏差" class="headerlink" title="交替执行减少时间偏差"></a>交替执行减少时间偏差</h3><p>如果一次运行持续数小时，不要先跑完全部基线，再跑全部候选。</p>
+<p>服务负载、知识库和网络状态可能随时间改变。</p>
+<p>可以按任务采用下面的顺序：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">case 001: baseline -&gt; candidate</span><br><span class="line">case 002: candidate -&gt; baseline</span><br><span class="line">case 003: baseline -&gt; candidate</span><br><span class="line">case 004: candidate -&gt; baseline</span><br></pre></td></tr></table></figure>
+
+<p>更长的试验可以使用 ABBA 或随机区组顺序。</p>
+<p>目标不是让两次生成使用相同随机路径。</p>
+<p>目标是让两个版本承受尽量相似的外部条件。</p>
+<h2 id="七、为什么必须重复运行"><a href="#七、为什么必须重复运行" class="headerlink" title="七、为什么必须重复运行"></a>七、为什么必须重复运行</h2><p>一次运行只能观察一个样本。</p>
+<p>它无法告诉我们：</p>
+<ul>
+<li>通过是稳定能力还是偶然命中</li>
+<li>失败是稳定缺陷还是低概率波动</li>
+<li>候选版本的方差是否变大</li>
+<li>Judge 是否在边界样本上反复翻转</li>
+</ul>
+<p>假设一个任务真实成功概率是 0.8。</p>
+<p>一次执行仍有 20% 概率失败。</p>
+<p>如果只跑一次：</p>
+<ul>
+<li>失败会让团队误以为能力为 0</li>
+<li>通过又会让团队误以为能力为 1</li>
+</ul>
+<p>两个结论都过度自信。</p>
+<h3 id="重复次数不能一刀切"><a href="#重复次数不能一刀切" class="headerlink" title="重复次数不能一刀切"></a>重复次数不能一刀切</h3><p>试验次数应由四个因素决定：</p>
+<ul>
+<li>需要识别的最小质量变化</li>
+<li>当前结果方差</li>
+<li>可接受的误判风险</li>
+<li>成本与反馈时间</li>
+</ul>
+<p>工程上可以采用分层预算：</p>
+<ul>
+<li>提交级：核心用例每个 1 次</li>
+<li>合并级：高风险用例每个 1 到 3 次</li>
+<li>夜间级：分层用例每个 5 到 20 次</li>
+<li>发布级：根据历史方差做功效或精度预算</li>
+</ul>
+<p>这里的数字只是运行层级示例，不是通用标准。</p>
+<p>真正的次数应根据本系统历史数据计算。</p>
+<h3 id="自适应重复比固定重复更省成本"><a href="#自适应重复比固定重复更省成本" class="headerlink" title="自适应重复比固定重复更省成本"></a>自适应重复比固定重复更省成本</h3><p>可以先运行较少次数，再根据结果决定是否追加：</p>
+<ol>
+<li>先运行 3 次</li>
+<li>如果全通过且历史稳定，进入下一用例</li>
+<li>如果结果翻转或靠近门槛，追加到 8 次</li>
+<li>如果区间仍跨过门槛，追加到预设上限</li>
+<li>达到上限仍不确定，结论标记为 inconclusive</li>
+</ol>
+<p>关键约束是：</p>
+<ul>
+<li>追加规则必须预先声明</li>
+<li>不能只对候选失败追加，直到它通过</li>
+<li>baseline 与 candidate 要使用对称规则</li>
+<li>多次查看结果会影响传统显著性解释</li>
+</ul>
+<p>如果需要严格的序贯统计，应使用专门的序贯检验方法。</p>
+<p>简单平台至少要避免“失败就一直重跑”的选择性停止。</p>
+<h2 id="八、通过率必须和置信区间一起报告"><a href="#八、通过率必须和置信区间一起报告" class="headerlink" title="八、通过率必须和置信区间一起报告"></a>八、通过率必须和置信区间一起报告</h2><p>设一共运行 <code>n</code> 次，其中 <code>x</code> 次通过。</p>
+<p>样本通过率是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">p_hat = x / n</span><br></pre></td></tr></table></figure>
+
+<p>如果 10 次通过 9 次，<code>p_hat = 90%</code>。</p>
+<p>如果 1000 次通过 900 次，仍然是 90%。</p>
+<p>但两者可信程度完全不同。</p>
+<p>因此报告不能只写 90%，还要写区间。</p>
+<h3 id="为什么不优先使用简单正态区间"><a href="#为什么不优先使用简单正态区间" class="headerlink" title="为什么不优先使用简单正态区间"></a>为什么不优先使用简单正态区间</h3><p>常见的简单区间是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">p_hat ± z * sqrt(p_hat * (1 - p_hat) / n)</span><br></pre></td></tr></table></figure>
+
+<p>它在样本较少或通过率接近 0、1 时可能表现较差，甚至给出小于 0 或大于 1 的边界。</p>
+<p>二元结果更适合优先使用 Wilson score interval。</p>
+<h3 id="Wilson-区间"><a href="#Wilson-区间" class="headerlink" title="Wilson 区间"></a>Wilson 区间</h3><p>令 <code>z</code> 为置信水平对应的标准正态分位数。</p>
+<p>95% 置信水平通常使用约 1.96。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">denominator = 1 + z² / n</span><br><span class="line"></span><br><span class="line">center = (p_hat + z² / (2n)) / denominator</span><br><span class="line"></span><br><span class="line">half_width =</span><br><span class="line">  z / denominator</span><br><span class="line">  * sqrt(</span><br><span class="line">      p_hat * (1 - p_hat) / n</span><br><span class="line">      + z² / (4n²)</span><br><span class="line">    )</span><br><span class="line"></span><br><span class="line">interval = [center - half_width, center + half_width]</span><br></pre></td></tr></table></figure>
+
+<p>例如 10 次通过 9 次，95% Wilson 区间仍然会比较宽。</p>
+<p>这提醒我们：</p>
+<p><strong>90% 只是点估计，不代表已经精确知道真实通过概率。</strong></p>
+<h3 id="正确解释置信区间"><a href="#正确解释置信区间" class="headerlink" title="正确解释置信区间"></a>正确解释置信区间</h3><p>频率学派的 95% 置信区间，不应被简单解释为：</p>
+<p>“真实通过率有 95% 概率落在这个已计算出的区间里。”</p>
+<p>更准确的工程表达是：</p>
+<blockquote>
+<p>如果按同样方法反复抽样并构造区间，长期看约 95% 的区间会覆盖真实参数。</p>
+</blockquote>
+<p>博客和测试报告不必展开统计哲学。</p>
+<p>但至少要避免把区间当成模型质量的概率承诺。</p>
+<h3 id="Wilson-区间也有前提"><a href="#Wilson-区间也有前提" class="headerlink" title="Wilson 区间也有前提"></a>Wilson 区间也有前提</h3><p>它把观测近似看成独立同分布的 Bernoulli 试验。</p>
+<p>AI 回归里经常存在聚类：</p>
+<ul>
+<li>同一个 case 重复 10 次</li>
+<li>同一用户下有多个相似输入</li>
+<li>同一文档派生出多个问题</li>
+<li>同一故障簇有大量样本</li>
+</ul>
+<p>把这些记录全部当成完全独立，会让区间过窄。</p>
+<p>因此 Wilson 区间适合作为：</p>
+<ul>
+<li>单一同质层的诊断</li>
+<li>快速展示二元比例不确定性</li>
+</ul>
+<p>跨任务总门禁更建议同时使用：</p>
+<ul>
+<li>以 case 为单位的 paired bootstrap</li>
+<li>分层 bootstrap</li>
+<li>聚类稳健方法</li>
+</ul>
+<h2 id="九、先按任务聚合，再跨任务汇总"><a href="#九、先按任务聚合，再跨任务汇总" class="headerlink" title="九、先按任务聚合，再跨任务汇总"></a>九、先按任务聚合，再跨任务汇总</h2><p>假设：</p>
+<ul>
+<li>case A 重复 20 次</li>
+<li>case B 重复 2 次</li>
+</ul>
+<p>直接把 22 次试验放在一起计算 micro pass rate，case A 的权重会是 case B 的 10 倍。</p>
+<p>这不一定符合业务价值。</p>
+<p>更合理的计算顺序通常是：</p>
+<ol>
+<li>先计算每个 case 的通过率</li>
+<li>再按业务权重聚合 case</li>
+</ol>
+<p>设 case <code>i</code> 的通过率为 <code>p_i</code>，业务权重为 <code>w_i</code>：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">macro_quality =</span><br><span class="line">  sum(w_i * p_i) / sum(w_i)</span><br></pre></td></tr></table></figure>
+
+<h3 id="micro-与-macro-都应保留"><a href="#micro-与-macro-都应保留" class="headerlink" title="micro 与 macro 都应保留"></a>micro 与 macro 都应保留</h3><p>micro pass rate 回答：</p>
+<blockquote>
+<p>所有物理试验中，有多少比例通过？</p>
+</blockquote>
+<p>macro quality 回答：</p>
+<blockquote>
+<p>把每个任务视为质量单位，平均完成能力如何？</p>
+</blockquote>
+<p>两者可能差异很大。</p>
+<p>如果高频重复的简单任务全部通过，micro 很高。</p>
+<p>但少量关键复杂任务持续失败，macro 或关键层指标会更差。</p>
+<p>因此报告至少要包含：</p>
+<ul>
+<li>总体 micro</li>
+<li>case-level macro</li>
+<li>分层 macro</li>
+<li>critical case 明细</li>
+<li>每个 case 的重复结果分布</li>
+</ul>
+<h3 id="分层不能只在报告里展示"><a href="#分层不能只在报告里展示" class="headerlink" title="分层不能只在报告里展示"></a>分层不能只在报告里展示</h3><p>评测集通常应提前定义层：</p>
+<ul>
+<li>业务域</li>
+<li>风险等级</li>
+<li>输入难度</li>
+<li>是否调用工具</li>
+<li>是否依赖检索</li>
+<li>单轮或多轮</li>
+<li>新鲜样本或历史失败样本</li>
+</ul>
+<p>门禁也应按层执行。</p>
+<p>否则某一大类简单样本可以掩盖小类关键回归。</p>
+<h2 id="十、paired-comparison：比较同一批任务上的变化"><a href="#十、paired-comparison：比较同一批任务上的变化" class="headerlink" title="十、paired comparison：比较同一批任务上的变化"></a>十、paired comparison：比较同一批任务上的变化</h2><p>如果基线和候选使用不同任务集合，差异会混入任务难度。</p>
+<p>最简单的控制方式是配对：</p>
+<ul>
+<li>同一个 case</li>
+<li>同一个数据快照</li>
+<li>同一个 grader</li>
+<li>同一个 trial_slot</li>
+<li>尽量接近的执行时间</li>
+</ul>
+<p>然后先在配对内计算差值。</p>
+<h3 id="连续分数的配对差"><a href="#连续分数的配对差" class="headerlink" title="连续分数的配对差"></a>连续分数的配对差</h3><p>假设每个 case 最终得到 0 到 1 的质量分数。</p>
+<p>对 case <code>i</code>：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">d_i = score_candidate_i - score_baseline_i</span><br></pre></td></tr></table></figure>
+
+<p>总体差异：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">delta_hat = mean(d_i)</span><br></pre></td></tr></table></figure>
+
+<p>再对 case 级差值进行 bootstrap，可以得到差值区间。</p>
+<p>这种方式比“分别计算两个均值再相减”更能利用配对关系。</p>
+<p>因为每个任务本身的难度会在做差时部分抵消。</p>
+<h3 id="二元结果的配对矩阵"><a href="#二元结果的配对矩阵" class="headerlink" title="二元结果的配对矩阵"></a>二元结果的配对矩阵</h3><p><img src="/images/ai-quality/ai-20-signal-noise.svg" alt="AI 回归测试中的信号与噪声"></p>
+<p>对每一对二元结果，可以形成四格表：</p>
+<table>
+<thead>
+<tr>
+<th>基线</th>
+<th>候选</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>通过</td>
+<td>通过</td>
+<td>共同通过</td>
+</tr>
+<tr>
+<td>通过</td>
+<td>失败</td>
+<td>回退，记为 b</td>
+</tr>
+<tr>
+<td>失败</td>
+<td>通过</td>
+<td>改进，记为 c</td>
+</tr>
+<tr>
+<td>失败</td>
+<td>失败</td>
+<td>共同失败</td>
+</tr>
+</tbody></table>
+<p>McNemar 检验关注的是不一致对 <code>b</code> 与 <code>c</code>。</p>
+<p>直觉上：</p>
+<ul>
+<li>如果 b 与 c 接近，变化方向没有明显倾向</li>
+<li>如果 c 明显多于 b，候选更可能改进</li>
+<li>如果 b 明显多于 c，候选更可能回退</li>
+</ul>
+<p>在不一致对较少时，应考虑精确二项版本，而不是只依赖大样本卡方近似。</p>
+<h3 id="不要只看-p-value"><a href="#不要只看-p-value" class="headerlink" title="不要只看 p-value"></a>不要只看 p-value</h3><p>p-value 回答的是在特定零假设下，数据有多异常。</p>
+<p>它不直接回答：</p>
+<ul>
+<li>回退是否达到业务不可接受程度</li>
+<li>改进是否值得增加成本</li>
+<li>关键用例是否可以失败</li>
+<li>区间是否足够窄</li>
+</ul>
+<p>所以发布门禁更适合组合：</p>
+<ul>
+<li>预先声明的非劣边界</li>
+<li>配对差值区间</li>
+<li>critical case 硬门禁</li>
+<li>成本和时延约束</li>
+<li>McNemar 或其他统计诊断</li>
+</ul>
+<h3 id="配对不等于共享随机数"><a href="#配对不等于共享随机数" class="headerlink" title="配对不等于共享随机数"></a>配对不等于共享随机数</h3><p>很多托管模型无法让基线和候选真正使用同一随机流。</p>
+<p>即使都传同一个 seed，也不能假设它们得到了严格相同的随机扰动。</p>
+<p>这里的 pairing 主要控制：</p>
+<ul>
+<li>任务组成</li>
+<li>数据快照</li>
+<li>Judge</li>
+<li>执行时间</li>
+<li>环境状态</li>
+</ul>
+<p>它仍然比两组完全独立抽样更有解释力。</p>
+<h2 id="十一、pass-k-不能随便当成生产成功率"><a href="#十一、pass-k-不能随便当成生产成功率" class="headerlink" title="十一、pass@k 不能随便当成生产成功率"></a>十一、pass@k 不能随便当成生产成功率</h2><p>当一个任务运行 <code>k</code> 次，只要至少一次成功就算通过，得到的是 pass@k 类指标。</p>
+<p>如果每次独立且单次成功概率为 <code>p</code>：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">P(at least one success in k trials) = 1 - (1 - p)^k</span><br></pre></td></tr></table></figure>
+
+<p>这个数会随着 k 增大而上升。</p>
+<p>因此 pass@k 适用于：</p>
+<ul>
+<li>产品确实会生成 k 个候选并选择</li>
+<li>产品确实允许最多 k 次重试</li>
+<li>用户可以从 k 个结果中挑选</li>
+</ul>
+<p>它不适用于：</p>
+<ul>
+<li>线上只调用一次</li>
+<li>测试失败后人工挑一个最好结果</li>
+<li>为了让报表好看而增加重跑次数</li>
+</ul>
+<h3 id="还要区分“至少一次成功”和“持续稳定”"><a href="#还要区分“至少一次成功”和“持续稳定”" class="headerlink" title="还要区分“至少一次成功”和“持续稳定”"></a>还要区分“至少一次成功”和“持续稳定”</h3><p>如果关心连续 k 次全部成功，在独立假设下是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">P(all k trials succeed) = p^k</span><br></pre></td></tr></table></figure>
+
+<p>两者回答完全不同的问题。</p>
+<p>例如单次成功率 0.8：</p>
+<ul>
+<li>至少一次成功会随重试快速提升</li>
+<li>连续全部成功会随次数快速下降</li>
+</ul>
+<p>测试报告必须明确指标语义。</p>
+<p>不要只写一个含糊的 “pass@5 &#x3D; 95%”。</p>
+<p>还要说明：</p>
+<ul>
+<li>五次是否都对用户可用</li>
+<li>谁负责选择成功结果</li>
+<li>重试成本是否计入</li>
+<li>重试是否产生副作用</li>
+</ul>
+<h2 id="十二、噪声预算：先证明评测系统值得信任"><a href="#十二、噪声预算：先证明评测系统值得信任" class="headerlink" title="十二、噪声预算：先证明评测系统值得信任"></a>十二、噪声预算：先证明评测系统值得信任</h2><p>噪声预算不是允许模型随便失败。</p>
+<p>它约束的是评测过程自身的健康度。</p>
+<p>可以至少监控三类噪声。</p>
+<h3 id="1-invalid-trial-rate"><a href="#1-invalid-trial-rate" class="headerlink" title="1. invalid trial rate"></a>1. invalid trial rate</h3><p>判废试验比例：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">invalid_rate = invalid_trials / scheduled_trials</span><br></pre></td></tr></table></figure>
+
+<p>合法判废原因应预先列举，例如：</p>
+<ul>
+<li>测试环境整体不可用</li>
+<li>必需的 Mock 服务未启动</li>
+<li>观测产物写入失败，无法评分</li>
+<li>基线和候选没有获得同一数据快照</li>
+</ul>
+<p>下面这些通常不能直接判废：</p>
+<ul>
+<li>模型超时</li>
+<li>工具参数错误</li>
+<li>产品重试耗尽</li>
+<li>输出不满足 Schema</li>
+</ul>
+<p>因为它们可能就是被测系统的失败。</p>
+<h3 id="2-outcome-flip-rate"><a href="#2-outcome-flip-rate" class="headerlink" title="2. outcome flip rate"></a>2. outcome flip rate</h3><p>在完全相同声明配置下，同一 case 的结果反复翻转，说明它是 flaky eval 或被测能力不稳定。</p>
+<p>如果某 case 有 <code>n</code> 次试验，其中 <code>x</code> 次通过，所有无序试验对中的结果分歧率是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">flip_rate =</span><br><span class="line">  2 * x * (n - x) / (n * (n - 1))</span><br></pre></td></tr></table></figure>
+
+<p>当全通过或全失败时，flip rate 为 0。</p>
+<p>当通过与失败接近各半时，flip rate 较高。</p>
+<p>注意：</p>
+<p>低 flip rate 不代表质量高。</p>
+<p>一个稳定失败的用例，flip rate 也是 0。</p>
+<p>所以必须同时看：</p>
+<ul>
+<li>pass rate</li>
+<li>flip rate</li>
+</ul>
+<h3 id="3-judge-disagreement-rate"><a href="#3-judge-disagreement-rate" class="headerlink" title="3. judge disagreement rate"></a>3. judge disagreement rate</h3><p>在人工校准集上：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">judge_disagreement =</span><br><span class="line">  count(judge_label != reference_label)</span><br><span class="line">  / calibrated_samples</span><br></pre></td></tr></table></figure>
+
+<p>对于多级评分，还应监控：</p>
+<ul>
+<li>绝对误差</li>
+<li>严重分歧率</li>
+<li>分层混淆矩阵</li>
+<li>不同 Rubric 维度的偏差</li>
+</ul>
+<h3 id="噪声超预算时怎么办"><a href="#噪声超预算时怎么办" class="headerlink" title="噪声超预算时怎么办"></a>噪声超预算时怎么办</h3><p>正确动作不是提高容忍阈值。</p>
+<p>而是：</p>
+<ol>
+<li>将本次回归标记为不可信或 inconclusive</li>
+<li>阻止不可靠结果自动放行</li>
+<li>定位噪声来自环境、Harness、Judge 还是数据</li>
+<li>修复后按同一冻结合同重跑</li>
+<li>保留原始失败运行，不覆盖证据</li>
+</ol>
+<h2 id="十三、flaky-eval-应当怎样识别和治理"><a href="#十三、flaky-eval-应当怎样识别和治理" class="headerlink" title="十三、flaky eval 应当怎样识别和治理"></a>十三、flaky eval 应当怎样识别和治理</h2><p>flaky eval 的操作性定义可以是：</p>
+<blockquote>
+<p>在声明的系统版本、输入、数据、评分和环境都未变化时，同一用例的最终判定仍会翻转。</p>
+</blockquote>
+<p>它可能来自被测系统，也可能来自测试系统。</p>
+<h3 id="先做归因，不要直接-quarantine"><a href="#先做归因，不要直接-quarantine" class="headerlink" title="先做归因，不要直接 quarantine"></a>先做归因，不要直接 quarantine</h3><p>建议按下面顺序排查：</p>
+<h4 id="第一步：检查输入是否真的相同"><a href="#第一步：检查输入是否真的相同" class="headerlink" title="第一步：检查输入是否真的相同"></a>第一步：检查输入是否真的相同</h4><ul>
+<li>模板摘要是否一致</li>
+<li>检索文档是否一致</li>
+<li>时间与用户状态是否一致</li>
+<li>Feature Flag 是否一致</li>
+<li>工具 Schema 是否一致</li>
+</ul>
+<h4 id="第二步：检查确定性断言"><a href="#第二步：检查确定性断言" class="headerlink" title="第二步：检查确定性断言"></a>第二步：检查确定性断言</h4><ul>
+<li>JSON 解析是否偶发失败</li>
+<li>断言是否依赖无序集合</li>
+<li>浮点比较是否没有容差</li>
+<li>文本归一化是否不一致</li>
+<li>Harness 是否存在竞态</li>
+</ul>
+<h4 id="第三步：检查-Judge"><a href="#第三步：检查-Judge" class="headerlink" title="第三步：检查 Judge"></a>第三步：检查 Judge</h4><ul>
+<li>Rubric 是否存在边界歧义</li>
+<li>Judge 输出是否解析失败</li>
+<li>同一答案重复评分是否翻转</li>
+<li>位置顺序是否影响比较结果</li>
+</ul>
+<h4 id="第四步：检查模型与工具轨迹"><a href="#第四步：检查模型与工具轨迹" class="headerlink" title="第四步：检查模型与工具轨迹"></a>第四步：检查模型与工具轨迹</h4><ul>
+<li>是否选了不同计划</li>
+<li>哪个工具调用首次产生分叉</li>
+<li>工具是否依赖动态外部状态</li>
+<li>超时和重试是否改变最终结果</li>
+</ul>
+<h3 id="quarantine-不是删除"><a href="#quarantine-不是删除" class="headerlink" title="quarantine 不是删除"></a>quarantine 不是删除</h3><p>高噪声用例可以暂时从“阻断式总门禁”移到专门的 flaky suite。</p>
+<p>但必须满足：</p>
+<ul>
+<li>仍然持续运行</li>
+<li>仍然计入质量健康报告</li>
+<li>有 owner</li>
+<li>有原因分类</li>
+<li>有修复期限</li>
+<li>不得从历史趋势中静默消失</li>
+</ul>
+<p>否则 quarantine 会变成失败样本回收站。</p>
+<h3 id="建立-flaky-eval-SLO"><a href="#建立-flaky-eval-SLO" class="headerlink" title="建立 flaky eval SLO"></a>建立 flaky eval SLO</h3><p>可以按评测套件跟踪：</p>
+<ul>
+<li>结果翻转用例占比</li>
+<li>无效试验占比</li>
+<li>Judge 分歧率</li>
+<li>无 owner 的 flaky 用例数</li>
+<li>超期未修复数</li>
+<li>因 flaky 导致的门禁重跑成本</li>
+</ul>
+<p>这些指标用于治理评测系统。</p>
+<p>不要把它们与产品成功率混成一个分数。</p>
+<h2 id="十四、分层门禁：一次提交不需要跑完整统计实验"><a href="#十四、分层门禁：一次提交不需要跑完整统计实验" class="headerlink" title="十四、分层门禁：一次提交不需要跑完整统计实验"></a>十四、分层门禁：一次提交不需要跑完整统计实验</h2><p>可信不等于每次都昂贵。</p>
+<p>可以把门禁拆成四层。</p>
+<h3 id="L0：硬约束门禁"><a href="#L0：硬约束门禁" class="headerlink" title="L0：硬约束门禁"></a>L0：硬约束门禁</h3><p>触发时机：</p>
+<ul>
+<li>每次提交</li>
+<li>Prompt 或工具 Schema 变化</li>
+</ul>
+<p>覆盖：</p>
+<ul>
+<li>输出 Schema</li>
+<li>必要字段</li>
+<li>权限边界</li>
+<li>敏感数据</li>
+<li>工具副作用</li>
+<li>关键事实</li>
+</ul>
+<p>特点：</p>
+<ul>
+<li>速度快</li>
+<li>尽量确定性</li>
+<li>一次违规即可阻断</li>
+</ul>
+<h3 id="L1：快速配对回归"><a href="#L1：快速配对回归" class="headerlink" title="L1：快速配对回归"></a>L1：快速配对回归</h3><p>触发时机：</p>
+<ul>
+<li>合并请求</li>
+<li>小范围配置变化</li>
+</ul>
+<p>覆盖：</p>
+<ul>
+<li>核心业务样本</li>
+<li>历史高频失败</li>
+<li>关键风险簇</li>
+<li>候选与基线配对差</li>
+<li>时延和成本粗门槛</li>
+</ul>
+<p>特点：</p>
+<ul>
+<li>少量 trial</li>
+<li>快速反馈</li>
+<li>边界结果进入 L2，不自动放行</li>
+</ul>
+<h3 id="L2：统计回归"><a href="#L2：统计回归" class="headerlink" title="L2：统计回归"></a>L2：统计回归</h3><p>触发时机：</p>
+<ul>
+<li>夜间构建</li>
+<li>发布候选版</li>
+<li>模型或检索重大升级</li>
+</ul>
+<p>覆盖：</p>
+<ul>
+<li>完整分层样本</li>
+<li>每 case 多次试验</li>
+<li>配对 bootstrap</li>
+<li>Wilson 诊断</li>
+<li>flaky eval 健康度</li>
+<li>Judge 校准</li>
+</ul>
+<p>特点：</p>
+<ul>
+<li>输出非劣、改进、回退或不确定</li>
+<li>保存完整证据包</li>
+</ul>
+<h3 id="L3：线上验证"><a href="#L3：线上验证" class="headerlink" title="L3：线上验证"></a>L3：线上验证</h3><p>触发时机：</p>
+<ul>
+<li>灰度发布</li>
+<li>模型服务迁移</li>
+<li>知识库大规模更新</li>
+</ul>
+<p>覆盖：</p>
+<ul>
+<li>影子流量</li>
+<li>真实输入分层</li>
+<li>任务完成率</li>
+<li>用户结果</li>
+<li>线上失败预算</li>
+<li>漂移与回滚信号</li>
+</ul>
+<p>特点：</p>
+<ul>
+<li>不依赖离线评测集假装覆盖所有真实场景</li>
+<li>将新失败脱敏后回流到候选样本池</li>
+</ul>
+<h2 id="十五、一个可执行的配对回归门禁"><a href="#十五、一个可执行的配对回归门禁" class="headerlink" title="十五、一个可执行的配对回归门禁"></a>十五、一个可执行的配对回归门禁</h2><p>下面的 Python 脚本只依赖标准库。</p>
+<p>它演示五件事：</p>
+<ul>
+<li>Wilson 区间</li>
+<li>case 级配对差</li>
+<li>case 级 bootstrap 区间</li>
+<li>二元配对的精确 McNemar 诊断</li>
+<li>critical 回退与 invalid rate 门禁</li>
+</ul>
+<p>它不是完整统计平台。</p>
+<p>真实系统还需要处理分层权重、多指标校正、顺序试验和 Artifact 存储。</p>
+<p>但这份代码可以直接运行，并验证核心数据流。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br><span class="line">146</span><br><span class="line">147</span><br><span class="line">148</span><br><span class="line">149</span><br><span class="line">150</span><br><span class="line">151</span><br><span class="line">152</span><br><span class="line">153</span><br><span class="line">154</span><br><span class="line">155</span><br><span class="line">156</span><br><span class="line">157</span><br><span class="line">158</span><br><span class="line">159</span><br><span class="line">160</span><br><span class="line">161</span><br><span class="line">162</span><br><span class="line">163</span><br><span class="line">164</span><br><span class="line">165</span><br><span class="line">166</span><br><span class="line">167</span><br><span class="line">168</span><br><span class="line">169</span><br><span class="line">170</span><br><span class="line">171</span><br><span class="line">172</span><br><span class="line">173</span><br><span class="line">174</span><br><span class="line">175</span><br><span class="line">176</span><br><span class="line">177</span><br><span class="line">178</span><br><span class="line">179</span><br><span class="line">180</span><br><span class="line">181</span><br><span class="line">182</span><br><span class="line">183</span><br><span class="line">184</span><br><span class="line">185</span><br><span class="line">186</span><br><span class="line">187</span><br><span class="line">188</span><br><span class="line">189</span><br><span class="line">190</span><br><span class="line">191</span><br><span class="line">192</span><br><span class="line">193</span><br><span class="line">194</span><br><span class="line">195</span><br><span class="line">196</span><br><span class="line">197</span><br><span class="line">198</span><br><span class="line">199</span><br><span class="line">200</span><br><span class="line">201</span><br><span class="line">202</span><br><span class="line">203</span><br><span class="line">204</span><br><span class="line">205</span><br><span class="line">206</span><br><span class="line">207</span><br><span class="line">208</span><br><span class="line">209</span><br><span class="line">210</span><br><span class="line">211</span><br><span class="line">212</span><br><span class="line">213</span><br><span class="line">214</span><br><span class="line">215</span><br><span class="line">216</span><br><span class="line">217</span><br><span class="line">218</span><br><span class="line">219</span><br><span class="line">220</span><br><span class="line">221</span><br><span class="line">222</span><br><span class="line">223</span><br><span class="line">224</span><br><span class="line">225</span><br><span class="line">226</span><br><span class="line">227</span><br><span class="line">228</span><br><span class="line">229</span><br><span class="line">230</span><br><span class="line">231</span><br><span class="line">232</span><br><span class="line">233</span><br><span class="line">234</span><br><span class="line">235</span><br><span class="line">236</span><br><span class="line">237</span><br><span class="line">238</span><br><span class="line">239</span><br><span class="line">240</span><br><span class="line">241</span><br><span class="line">242</span><br><span class="line">243</span><br><span class="line">244</span><br><span class="line">245</span><br><span class="line">246</span><br><span class="line">247</span><br><span class="line">248</span><br><span class="line">249</span><br><span class="line">250</span><br><span class="line">251</span><br><span class="line">252</span><br><span class="line">253</span><br><span class="line">254</span><br><span class="line">255</span><br><span class="line">256</span><br><span class="line">257</span><br><span class="line">258</span><br><span class="line">259</span><br><span class="line">260</span><br><span class="line">261</span><br><span class="line">262</span><br><span class="line">263</span><br><span class="line">264</span><br><span class="line">265</span><br><span class="line">266</span><br><span class="line">267</span><br><span class="line">268</span><br><span class="line">269</span><br><span class="line">270</span><br><span class="line">271</span><br><span class="line">272</span><br><span class="line">273</span><br><span class="line">274</span><br><span class="line">275</span><br><span class="line">276</span><br><span class="line">277</span><br><span class="line">278</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">#!/usr/bin/env python3</span></span><br><span class="line"><span class="string">&quot;&quot;&quot;A small, vendor-neutral gate for paired stochastic AI regression.&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">from</span> __future__ <span class="keyword">import</span> annotations</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> argparse</span><br><span class="line"><span class="keyword">import</span> json</span><br><span class="line"><span class="keyword">import</span> math</span><br><span class="line"><span class="keyword">import</span> random</span><br><span class="line"><span class="keyword">from</span> collections <span class="keyword">import</span> defaultdict</span><br><span class="line"><span class="keyword">from</span> pathlib <span class="keyword">import</span> Path</span><br><span class="line"><span class="keyword">from</span> statistics <span class="keyword">import</span> mean</span><br><span class="line"><span class="keyword">from</span> typing <span class="keyword">import</span> <span class="type">Any</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line">ALLOWED_TIERS = &#123;<span class="string">&quot;normal&quot;</span>, <span class="string">&quot;high&quot;</span>, <span class="string">&quot;critical&quot;</span>&#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">wilson_interval</span>(<span class="params"></span></span><br><span class="line"><span class="params">    successes: <span class="built_in">int</span>,</span></span><br><span class="line"><span class="params">    total: <span class="built_in">int</span>,</span></span><br><span class="line"><span class="params">    z: <span class="built_in">float</span> = <span class="number">1.959963984540054</span>,</span></span><br><span class="line"><span class="params"></span>) -&gt; <span class="built_in">tuple</span>[<span class="built_in">float</span>, <span class="built_in">float</span>]:</span><br><span class="line">    <span class="keyword">if</span> total &lt;= <span class="number">0</span>:</span><br><span class="line">        <span class="keyword">raise</span> ValueError(<span class="string">&quot;total must be positive&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> successes &lt; <span class="number">0</span> <span class="keyword">or</span> successes &gt; total:</span><br><span class="line">        <span class="keyword">raise</span> ValueError(<span class="string">&quot;successes must be in [0, total]&quot;</span>)</span><br><span class="line"></span><br><span class="line">    p_hat = successes / total</span><br><span class="line">    denominator = <span class="number">1.0</span> + z * z / total</span><br><span class="line">    center = (p_hat + z * z / (<span class="number">2.0</span> * total)) / denominator</span><br><span class="line">    half_width = (</span><br><span class="line">        z</span><br><span class="line">        / denominator</span><br><span class="line">        * math.sqrt(</span><br><span class="line">            p_hat * (<span class="number">1.0</span> - p_hat) / total</span><br><span class="line">            + z * z / (<span class="number">4.0</span> * total * total)</span><br><span class="line">        )</span><br><span class="line">    )</span><br><span class="line">    <span class="keyword">return</span> center - half_width, center + half_width</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">exact_mcnemar_p_value</span>(<span class="params">regressions: <span class="built_in">int</span>, improvements: <span class="built_in">int</span></span>) -&gt; <span class="built_in">float</span>:</span><br><span class="line">    <span class="string">&quot;&quot;&quot;Two-sided exact binomial test on discordant pairs.&quot;&quot;&quot;</span></span><br><span class="line">    discordant = regressions + improvements</span><br><span class="line">    <span class="keyword">if</span> discordant == <span class="number">0</span>:</span><br><span class="line">        <span class="keyword">return</span> <span class="number">1.0</span></span><br><span class="line"></span><br><span class="line">    tail = <span class="built_in">min</span>(regressions, improvements)</span><br><span class="line">    probability = <span class="built_in">sum</span>(</span><br><span class="line">        math.comb(discordant, k) * (<span class="number">0.5</span> ** discordant)</span><br><span class="line">        <span class="keyword">for</span> k <span class="keyword">in</span> <span class="built_in">range</span>(tail + <span class="number">1</span>)</span><br><span class="line">    )</span><br><span class="line">    <span class="keyword">return</span> <span class="built_in">min</span>(<span class="number">1.0</span>, <span class="number">2.0</span> * probability)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">percentile</span>(<span class="params">sorted_values: <span class="built_in">list</span>[<span class="built_in">float</span>], q: <span class="built_in">float</span></span>) -&gt; <span class="built_in">float</span>:</span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> sorted_values:</span><br><span class="line">        <span class="keyword">raise</span> ValueError(<span class="string">&quot;cannot take percentile of empty values&quot;</span>)</span><br><span class="line">    position = q * (<span class="built_in">len</span>(sorted_values) - <span class="number">1</span>)</span><br><span class="line">    lower = math.floor(position)</span><br><span class="line">    upper = math.ceil(position)</span><br><span class="line">    <span class="keyword">if</span> lower == upper:</span><br><span class="line">        <span class="keyword">return</span> sorted_values[lower]</span><br><span class="line">    fraction = position - lower</span><br><span class="line">    <span class="keyword">return</span> (</span><br><span class="line">        sorted_values[lower] * (<span class="number">1.0</span> - fraction)</span><br><span class="line">        + sorted_values[upper] * fraction</span><br><span class="line">    )</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">case_bootstrap_interval</span>(<span class="params"></span></span><br><span class="line"><span class="params">    case_values: <span class="built_in">list</span>[<span class="built_in">float</span>],</span></span><br><span class="line"><span class="params">    rounds: <span class="built_in">int</span>,</span></span><br><span class="line"><span class="params">    confidence: <span class="built_in">float</span>,</span></span><br><span class="line"><span class="params">    seed: <span class="built_in">int</span>,</span></span><br><span class="line"><span class="params"></span>) -&gt; <span class="built_in">tuple</span>[<span class="built_in">float</span>, <span class="built_in">float</span>]:</span><br><span class="line">    <span class="string">&quot;&quot;&quot;Resample cases, not individual attempts, to preserve task clusters.&quot;&quot;&quot;</span></span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> case_values:</span><br><span class="line">        <span class="keyword">raise</span> ValueError(<span class="string">&quot;case_values must not be empty&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> rounds &lt;= <span class="number">0</span>:</span><br><span class="line">        <span class="keyword">raise</span> ValueError(<span class="string">&quot;rounds must be positive&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> <span class="number">0.0</span> &lt; confidence &lt; <span class="number">1.0</span>:</span><br><span class="line">        <span class="keyword">raise</span> ValueError(<span class="string">&quot;confidence must be between zero and one&quot;</span>)</span><br><span class="line"></span><br><span class="line">    rng = random.Random(seed)</span><br><span class="line">    size = <span class="built_in">len</span>(case_values)</span><br><span class="line">    estimates = []</span><br><span class="line">    <span class="keyword">for</span> _ <span class="keyword">in</span> <span class="built_in">range</span>(rounds):</span><br><span class="line">        sample = [case_values[rng.randrange(size)] <span class="keyword">for</span> _ <span class="keyword">in</span> <span class="built_in">range</span>(size)]</span><br><span class="line">        estimates.append(mean(sample))</span><br><span class="line"></span><br><span class="line">    estimates.sort()</span><br><span class="line">    alpha = <span class="number">1.0</span> - confidence</span><br><span class="line">    <span class="keyword">return</span> (</span><br><span class="line">        percentile(estimates, alpha / <span class="number">2.0</span>),</span><br><span class="line">        percentile(estimates, <span class="number">1.0</span> - alpha / <span class="number">2.0</span>),</span><br><span class="line">    )</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">validate_record</span>(<span class="params">record: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>]</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    required = &#123;</span><br><span class="line">        <span class="string">&quot;case_id&quot;</span>,</span><br><span class="line">        <span class="string">&quot;tier&quot;</span>,</span><br><span class="line">        <span class="string">&quot;trial_slot&quot;</span>,</span><br><span class="line">        <span class="string">&quot;baseline&quot;</span>,</span><br><span class="line">        <span class="string">&quot;candidate&quot;</span>,</span><br><span class="line">        <span class="string">&quot;valid&quot;</span>,</span><br><span class="line">    &#125;</span><br><span class="line">    missing = required.difference(record)</span><br><span class="line">    <span class="keyword">if</span> missing:</span><br><span class="line">        <span class="keyword">raise</span> ValueError(</span><br><span class="line">            <span class="string">f&quot;record is missing fields: <span class="subst">&#123;<span class="built_in">sorted</span>(missing)&#125;</span>&quot;</span></span><br><span class="line">        )</span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> <span class="built_in">isinstance</span>(record[<span class="string">&quot;case_id&quot;</span>], <span class="built_in">str</span>) <span class="keyword">or</span> <span class="keyword">not</span> record[<span class="string">&quot;case_id&quot;</span>].strip():</span><br><span class="line">        <span class="keyword">raise</span> ValueError(<span class="string">&quot;case_id must be a non-blank string&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> <span class="built_in">isinstance</span>(record[<span class="string">&quot;tier&quot;</span>], <span class="built_in">str</span>) <span class="keyword">or</span> record[<span class="string">&quot;tier&quot;</span>] <span class="keyword">not</span> <span class="keyword">in</span> ALLOWED_TIERS:</span><br><span class="line">        <span class="keyword">raise</span> ValueError(<span class="string">f&quot;tier must be one of <span class="subst">&#123;<span class="built_in">sorted</span>(ALLOWED_TIERS)&#125;</span>&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> (</span><br><span class="line">        <span class="keyword">not</span> <span class="built_in">isinstance</span>(record[<span class="string">&quot;trial_slot&quot;</span>], <span class="built_in">int</span>)</span><br><span class="line">        <span class="keyword">or</span> <span class="built_in">isinstance</span>(record[<span class="string">&quot;trial_slot&quot;</span>], <span class="built_in">bool</span>)</span><br><span class="line">        <span class="keyword">or</span> record[<span class="string">&quot;trial_slot&quot;</span>] &lt;= <span class="number">0</span></span><br><span class="line">    ):</span><br><span class="line">        <span class="keyword">raise</span> ValueError(<span class="string">&quot;trial_slot must be a positive integer&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> <span class="built_in">isinstance</span>(record[<span class="string">&quot;baseline&quot;</span>], <span class="built_in">bool</span>):</span><br><span class="line">        <span class="keyword">raise</span> ValueError(<span class="string">&quot;baseline must be boolean&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> <span class="built_in">isinstance</span>(record[<span class="string">&quot;candidate&quot;</span>], <span class="built_in">bool</span>):</span><br><span class="line">        <span class="keyword">raise</span> ValueError(<span class="string">&quot;candidate must be boolean&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> <span class="built_in">isinstance</span>(record[<span class="string">&quot;valid&quot;</span>], <span class="built_in">bool</span>):</span><br><span class="line">        <span class="keyword">raise</span> ValueError(<span class="string">&quot;valid must be boolean&quot;</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">evaluate</span>(<span class="params">payload: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>]</span>) -&gt; <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>]:</span><br><span class="line">    policy = payload[<span class="string">&quot;policy&quot;</span>]</span><br><span class="line">    records = payload[<span class="string">&quot;records&quot;</span>]</span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> <span class="built_in">isinstance</span>(records, <span class="built_in">list</span>) <span class="keyword">or</span> <span class="keyword">not</span> records:</span><br><span class="line">        <span class="keyword">raise</span> ValueError(<span class="string">&quot;records must be a non-empty list&quot;</span>)</span><br><span class="line"></span><br><span class="line">    seen_slots: <span class="built_in">set</span>[<span class="built_in">tuple</span>[<span class="built_in">str</span>, <span class="built_in">int</span>]] = <span class="built_in">set</span>()</span><br><span class="line">    case_tiers: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="built_in">str</span>] = &#123;&#125;</span><br><span class="line">    <span class="keyword">for</span> record <span class="keyword">in</span> records:</span><br><span class="line">        validate_record(record)</span><br><span class="line">        pair_key = (record[<span class="string">&quot;case_id&quot;</span>], record[<span class="string">&quot;trial_slot&quot;</span>])</span><br><span class="line">        <span class="keyword">if</span> pair_key <span class="keyword">in</span> seen_slots:</span><br><span class="line">            <span class="keyword">raise</span> ValueError(<span class="string">f&quot;duplicate paired trial slot: <span class="subst">&#123;pair_key&#125;</span>&quot;</span>)</span><br><span class="line">        seen_slots.add(pair_key)</span><br><span class="line"></span><br><span class="line">        previous_tier = case_tiers.setdefault(</span><br><span class="line">            record[<span class="string">&quot;case_id&quot;</span>],</span><br><span class="line">            record[<span class="string">&quot;tier&quot;</span>],</span><br><span class="line">        )</span><br><span class="line">        <span class="keyword">if</span> previous_tier != record[<span class="string">&quot;tier&quot;</span>]:</span><br><span class="line">            <span class="keyword">raise</span> ValueError(</span><br><span class="line">                <span class="string">f&quot;case <span class="subst">&#123;record[<span class="string">&#x27;case_id&#x27;</span>]&#125;</span> mixes tiers: &quot;</span></span><br><span class="line">                <span class="string">f&quot;<span class="subst">&#123;previous_tier&#125;</span> and <span class="subst">&#123;record[<span class="string">&#x27;tier&#x27;</span>]&#125;</span>&quot;</span></span><br><span class="line">            )</span><br><span class="line"></span><br><span class="line">    valid = [record <span class="keyword">for</span> record <span class="keyword">in</span> records <span class="keyword">if</span> record[<span class="string">&quot;valid&quot;</span>]]</span><br><span class="line">    invalid_rate = <span class="number">1.0</span> - <span class="built_in">len</span>(valid) / <span class="built_in">len</span>(records) <span class="keyword">if</span> records <span class="keyword">else</span> <span class="number">1.0</span></span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> valid:</span><br><span class="line">        <span class="keyword">raise</span> ValueError(<span class="string">&quot;no valid paired records&quot;</span>)</span><br><span class="line"></span><br><span class="line">    candidate_successes = <span class="built_in">sum</span>(record[<span class="string">&quot;candidate&quot;</span>] <span class="keyword">for</span> record <span class="keyword">in</span> valid)</span><br><span class="line">    baseline_successes = <span class="built_in">sum</span>(record[<span class="string">&quot;baseline&quot;</span>] <span class="keyword">for</span> record <span class="keyword">in</span> valid)</span><br><span class="line">    candidate_rate = candidate_successes / <span class="built_in">len</span>(valid)</span><br><span class="line">    baseline_rate = baseline_successes / <span class="built_in">len</span>(valid)</span><br><span class="line">    candidate_interval = wilson_interval(</span><br><span class="line">        candidate_successes,</span><br><span class="line">        <span class="built_in">len</span>(valid),</span><br><span class="line">    )</span><br><span class="line"></span><br><span class="line">    by_case: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="built_in">list</span>[<span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>]]] = defaultdict(<span class="built_in">list</span>)</span><br><span class="line">    <span class="keyword">for</span> record <span class="keyword">in</span> valid:</span><br><span class="line">        by_case[record[<span class="string">&quot;case_id&quot;</span>]].append(record)</span><br><span class="line"></span><br><span class="line">    case_results = []</span><br><span class="line">    critical_regressions = []</span><br><span class="line">    <span class="keyword">for</span> case_id, attempts <span class="keyword">in</span> <span class="built_in">sorted</span>(by_case.items()):</span><br><span class="line">        baseline_case_rate = mean(</span><br><span class="line">            <span class="built_in">float</span>(item[<span class="string">&quot;baseline&quot;</span>]) <span class="keyword">for</span> item <span class="keyword">in</span> attempts</span><br><span class="line">        )</span><br><span class="line">        candidate_case_rate = mean(</span><br><span class="line">            <span class="built_in">float</span>(item[<span class="string">&quot;candidate&quot;</span>]) <span class="keyword">for</span> item <span class="keyword">in</span> attempts</span><br><span class="line">        )</span><br><span class="line">        delta = candidate_case_rate - baseline_case_rate</span><br><span class="line">        tier = attempts[<span class="number">0</span>][<span class="string">&quot;tier&quot;</span>]</span><br><span class="line">        case_result = &#123;</span><br><span class="line">            <span class="string">&quot;case_id&quot;</span>: case_id,</span><br><span class="line">            <span class="string">&quot;tier&quot;</span>: tier,</span><br><span class="line">            <span class="string">&quot;attempts&quot;</span>: <span class="built_in">len</span>(attempts),</span><br><span class="line">            <span class="string">&quot;baseline_rate&quot;</span>: baseline_case_rate,</span><br><span class="line">            <span class="string">&quot;candidate_rate&quot;</span>: candidate_case_rate,</span><br><span class="line">            <span class="string">&quot;delta&quot;</span>: delta,</span><br><span class="line">        &#125;</span><br><span class="line">        case_results.append(case_result)</span><br><span class="line">        <span class="keyword">if</span> tier == <span class="string">&quot;critical&quot;</span> <span class="keyword">and</span> delta &lt; <span class="number">0.0</span>:</span><br><span class="line">            critical_regressions.append(case_id)</span><br><span class="line"></span><br><span class="line">    case_deltas = [item[<span class="string">&quot;delta&quot;</span>] <span class="keyword">for</span> item <span class="keyword">in</span> case_results]</span><br><span class="line">    paired_delta = mean(case_deltas)</span><br><span class="line">    paired_interval = case_bootstrap_interval(</span><br><span class="line">        case_values=case_deltas,</span><br><span class="line">        rounds=<span class="built_in">int</span>(policy[<span class="string">&quot;bootstrap_rounds&quot;</span>]),</span><br><span class="line">        confidence=<span class="built_in">float</span>(policy[<span class="string">&quot;confidence&quot;</span>]),</span><br><span class="line">        seed=<span class="built_in">int</span>(policy[<span class="string">&quot;bootstrap_seed&quot;</span>]),</span><br><span class="line">    )</span><br><span class="line">    candidate_case_rates = [</span><br><span class="line">        item[<span class="string">&quot;candidate_rate&quot;</span>]</span><br><span class="line">        <span class="keyword">for</span> item <span class="keyword">in</span> case_results</span><br><span class="line">    ]</span><br><span class="line">    candidate_case_rate = mean(candidate_case_rates)</span><br><span class="line">    candidate_case_interval = case_bootstrap_interval(</span><br><span class="line">        case_values=candidate_case_rates,</span><br><span class="line">        rounds=<span class="built_in">int</span>(policy[<span class="string">&quot;bootstrap_rounds&quot;</span>]),</span><br><span class="line">        confidence=<span class="built_in">float</span>(policy[<span class="string">&quot;confidence&quot;</span>]),</span><br><span class="line">        seed=<span class="built_in">int</span>(policy[<span class="string">&quot;bootstrap_seed&quot;</span>]) + <span class="number">1</span>,</span><br><span class="line">    )</span><br><span class="line"></span><br><span class="line">    regressions = <span class="built_in">sum</span>(</span><br><span class="line">        record[<span class="string">&quot;baseline&quot;</span>] <span class="keyword">and</span> <span class="keyword">not</span> record[<span class="string">&quot;candidate&quot;</span>]</span><br><span class="line">        <span class="keyword">for</span> record <span class="keyword">in</span> valid</span><br><span class="line">    )</span><br><span class="line">    improvements = <span class="built_in">sum</span>(</span><br><span class="line">        <span class="keyword">not</span> record[<span class="string">&quot;baseline&quot;</span>] <span class="keyword">and</span> record[<span class="string">&quot;candidate&quot;</span>]</span><br><span class="line">        <span class="keyword">for</span> record <span class="keyword">in</span> valid</span><br><span class="line">    )</span><br><span class="line">    mcnemar_p = exact_mcnemar_p_value(regressions, improvements)</span><br><span class="line"></span><br><span class="line">    reasons = []</span><br><span class="line">    <span class="keyword">if</span> candidate_case_interval[<span class="number">0</span>] &lt; policy[<span class="string">&quot;min_candidate_pass_rate&quot;</span>]:</span><br><span class="line">        reasons.append(<span class="string">&quot;candidate case-clustered lower bound is below floor&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> paired_interval[<span class="number">0</span>] &lt; -policy[<span class="string">&quot;non_inferiority_margin&quot;</span>]:</span><br><span class="line">        reasons.append(<span class="string">&quot;paired delta crosses non-inferiority margin&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> invalid_rate &gt; policy[<span class="string">&quot;max_invalid_rate&quot;</span>]:</span><br><span class="line">        reasons.append(<span class="string">&quot;invalid trial rate exceeds noise budget&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> (</span><br><span class="line">        policy[<span class="string">&quot;block_on_critical_regression&quot;</span>]</span><br><span class="line">        <span class="keyword">and</span> critical_regressions</span><br><span class="line">    ):</span><br><span class="line">        reasons.append(<span class="string">&quot;critical case regression detected&quot;</span>)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> &#123;</span><br><span class="line">        <span class="string">&quot;decision&quot;</span>: <span class="string">&quot;pass&quot;</span> <span class="keyword">if</span> <span class="keyword">not</span> reasons <span class="keyword">else</span> <span class="string">&quot;block&quot;</span>,</span><br><span class="line">        <span class="string">&quot;reasons&quot;</span>: reasons,</span><br><span class="line">        <span class="string">&quot;attempt_level&quot;</span>: &#123;</span><br><span class="line">            <span class="string">&quot;baseline_rate&quot;</span>: baseline_rate,</span><br><span class="line">            <span class="string">&quot;candidate_rate&quot;</span>: candidate_rate,</span><br><span class="line">            <span class="string">&quot;candidate_wilson_95&quot;</span>: candidate_interval,</span><br><span class="line">            <span class="string">&quot;valid_pairs&quot;</span>: <span class="built_in">len</span>(valid),</span><br><span class="line">            <span class="string">&quot;invalid_rate&quot;</span>: invalid_rate,</span><br><span class="line">        &#125;,</span><br><span class="line">        <span class="string">&quot;case_level&quot;</span>: &#123;</span><br><span class="line">            <span class="string">&quot;candidate_rate&quot;</span>: candidate_case_rate,</span><br><span class="line">            <span class="string">&quot;candidate_bootstrap_interval&quot;</span>: candidate_case_interval,</span><br><span class="line">            <span class="string">&quot;paired_delta&quot;</span>: paired_delta,</span><br><span class="line">            <span class="string">&quot;paired_bootstrap_interval&quot;</span>: paired_interval,</span><br><span class="line">            <span class="string">&quot;critical_regressions&quot;</span>: critical_regressions,</span><br><span class="line">            <span class="string">&quot;cases&quot;</span>: case_results,</span><br><span class="line">        &#125;,</span><br><span class="line">        <span class="string">&quot;mcnemar_diagnostic&quot;</span>: &#123;</span><br><span class="line">            <span class="string">&quot;regressions_b&quot;</span>: regressions,</span><br><span class="line">            <span class="string">&quot;improvements_c&quot;</span>: improvements,</span><br><span class="line">            <span class="string">&quot;exact_two_sided_p&quot;</span>: mcnemar_p,</span><br><span class="line">        &#125;,</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">main</span>() -&gt; <span class="literal">None</span>:</span><br><span class="line">    parser = argparse.ArgumentParser()</span><br><span class="line">    parser.add_argument(<span class="string">&quot;input&quot;</span>, <span class="built_in">type</span>=Path)</span><br><span class="line">    args = parser.parse_args()</span><br><span class="line">    payload = json.loads(args.<span class="built_in">input</span>.read_text(encoding=<span class="string">&quot;utf-8&quot;</span>))</span><br><span class="line">    result = evaluate(payload)</span><br><span class="line">    <span class="built_in">print</span>(json.dumps(result, ensure_ascii=<span class="literal">False</span>, indent=<span class="number">2</span>))</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&quot;__main__&quot;</span>:</span><br><span class="line">    main()</span><br></pre></td></tr></table></figure>
+
+<p>对应输入可以写成：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;policy&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;min_candidate_pass_rate&quot;</span><span class="punctuation">:</span> <span class="number">0.55</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;non_inferiority_margin&quot;</span><span class="punctuation">:</span> <span class="number">0.1</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;confidence&quot;</span><span class="punctuation">:</span> <span class="number">0.95</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;bootstrap_rounds&quot;</span><span class="punctuation">:</span> <span class="number">5000</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;bootstrap_seed&quot;</span><span class="punctuation">:</span> <span class="number">20260327</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;max_invalid_rate&quot;</span><span class="punctuation">:</span> <span class="number">0.1</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;block_on_critical_regression&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;records&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;case_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;refund-amount&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;tier&quot;</span><span class="punctuation">:</span> <span class="string">&quot;critical&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;trial_slot&quot;</span><span class="punctuation">:</span> <span class="number">1</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;baseline&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;candidate&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;valid&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span></span><br><span class="line">    <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;case_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;refund-amount&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;tier&quot;</span><span class="punctuation">:</span> <span class="string">&quot;critical&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;trial_slot&quot;</span><span class="punctuation">:</span> <span class="number">2</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;baseline&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;candidate&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;valid&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span></span><br><span class="line">    <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;case_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;policy-citation&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;tier&quot;</span><span class="punctuation">:</span> <span class="string">&quot;high&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;trial_slot&quot;</span><span class="punctuation">:</span> <span class="number">1</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;baseline&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">false</span></span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;candidate&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;valid&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span></span><br><span class="line">    <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;case_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;policy-citation&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;tier&quot;</span><span class="punctuation">:</span> <span class="string">&quot;high&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;trial_slot&quot;</span><span class="punctuation">:</span> <span class="number">2</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;baseline&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;candidate&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;valid&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span></span><br><span class="line">    <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;case_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;handoff&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;tier&quot;</span><span class="punctuation">:</span> <span class="string">&quot;normal&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;trial_slot&quot;</span><span class="punctuation">:</span> <span class="number">1</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;baseline&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;candidate&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">false</span></span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;valid&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span></span><br><span class="line">    <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;case_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;handoff&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;tier&quot;</span><span class="punctuation">:</span> <span class="string">&quot;normal&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;trial_slot&quot;</span><span class="punctuation">:</span> <span class="number">2</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;baseline&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">false</span></span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;candidate&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;valid&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span></span><br><span class="line">    <span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">]</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>运行方式：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">python3 regression_gate.py sample.json</span><br></pre></td></tr></table></figure>
+
+<h3 id="这段代码刻意保留的边界"><a href="#这段代码刻意保留的边界" class="headerlink" title="这段代码刻意保留的边界"></a>这段代码刻意保留的边界</h3><p>第一，Wilson 区间按 attempt 展示，只作为诊断。</p>
+<p>总门禁中的差值区间按 case 级 bootstrap，避免简单把同一 case 的重复试验当成完全独立样本。</p>
+<p>第二，McNemar 结果只作为方向诊断。</p>
+<p>如果同一 case 有大量重复记录，记录间仍有聚类相关性，不应该只凭这个 p-value 发布。</p>
+<p>第三，critical case 使用硬门禁。</p>
+<p>这体现了风险不能被总体平均值稀释。</p>
+<p>第四，bootstrap seed 只让统计重采样可复现。</p>
+<p>它不代表模型生成过程可复现。</p>
+<h2 id="十六、测试设计：回归体系本身也要被测试"><a href="#十六、测试设计：回归体系本身也要被测试" class="headerlink" title="十六、测试设计：回归体系本身也要被测试"></a>十六、测试设计：回归体系本身也要被测试</h2><p>一个统计公式正确，不代表平台实现正确。</p>
+<p>需要专门测试评测 Harness。</p>
+<h3 id="1-数据合同测试"><a href="#1-数据合同测试" class="headerlink" title="1. 数据合同测试"></a>1. 数据合同测试</h3><p>验证：</p>
+<ul>
+<li>case ID 唯一</li>
+<li>trial_slot 在配对内唯一</li>
+<li>baseline 与 candidate 字段齐全</li>
+<li>tier 取值合法</li>
+<li>权重非负</li>
+<li>Dataset revision 不为空</li>
+<li>Artifact 摘要格式正确</li>
+</ul>
+<p>异常样本必须显式拒绝。</p>
+<p>不能静默补默认值后继续聚合。</p>
+<h3 id="2-配对完整性测试"><a href="#2-配对完整性测试" class="headerlink" title="2. 配对完整性测试"></a>2. 配对完整性测试</h3><p>构造下面场景：</p>
+<ul>
+<li>只有 baseline，没有 candidate</li>
+<li>candidate 超时但 baseline 成功</li>
+<li>两边 trial 数不同</li>
+<li>同一 slot 被重复写入</li>
+<li>两边数据 snapshot 不同</li>
+</ul>
+<p>平台应该：</p>
+<ul>
+<li>标记缺失配对</li>
+<li>保留原始记录</li>
+<li>根据预先规则判定失败或 invalid</li>
+<li>不得自动删除不完整记录</li>
+</ul>
+<h3 id="3-统计函数单元测试"><a href="#3-统计函数单元测试" class="headerlink" title="3. 统计函数单元测试"></a>3. 统计函数单元测试</h3><p>Wilson 区间至少覆盖：</p>
+<ul>
+<li>0&#x2F;1</li>
+<li>1&#x2F;1</li>
+<li>0&#x2F;n</li>
+<li>n&#x2F;n</li>
+<li>小样本</li>
+<li>大样本</li>
+</ul>
+<p>McNemar 至少覆盖：</p>
+<ul>
+<li>b &#x3D; 0, c &#x3D; 0</li>
+<li>b &#x3D; c</li>
+<li>只有回退</li>
+<li>只有改进</li>
+<li>不一致对很少</li>
+</ul>
+<p>bootstrap 至少覆盖：</p>
+<ul>
+<li>单个 case</li>
+<li>全部差值为 0</li>
+<li>差值正负混合</li>
+<li>固定 seed 重复结果一致</li>
+</ul>
+<h3 id="4-门禁边界测试"><a href="#4-门禁边界测试" class="headerlink" title="4. 门禁边界测试"></a>4. 门禁边界测试</h3><p>门槛附近最容易出现比较符号错误。</p>
+<p>必须覆盖：</p>
+<ul>
+<li>正好等于质量下限</li>
+<li>正好等于非劣边界</li>
+<li>浮点误差附近</li>
+<li>invalid rate 正好等于预算</li>
+<li>critical delta 正好为 0</li>
+</ul>
+<p>门禁规范要明确使用：</p>
+<ul>
+<li>大于</li>
+<li>大于等于</li>
+<li>小于</li>
+<li>小于等于</li>
+</ul>
+<p>不要把这个决定留给实现人员猜。</p>
+<h3 id="5-并发与幂等测试"><a href="#5-并发与幂等测试" class="headerlink" title="5. 并发与幂等测试"></a>5. 并发与幂等测试</h3><p>回归平台常并发执行大量试验。</p>
+<p>需要验证：</p>
+<ul>
+<li>相同 run ID 重复提交不会重复计数</li>
+<li>相同 trial ID 只能产生一个最终态</li>
+<li>迟到结果不会覆盖已确认结果</li>
+<li>重试有独立 attempt ID</li>
+<li>聚合只读取完整快照</li>
+<li>任务取消后不会继续写入成功</li>
+</ul>
+<h3 id="6-判废规则测试"><a href="#6-判废规则测试" class="headerlink" title="6. 判废规则测试"></a>6. 判废规则测试</h3><p>为每个 invalid reason 建立合成故障：</p>
+<ul>
+<li>环境服务不可达</li>
+<li>Artifact 存储失败</li>
+<li>模型自身超时</li>
+<li>工具返回业务错误</li>
+<li>Judge 解析错误</li>
+</ul>
+<p>然后确认只有预先声明的基础设施原因被判废。</p>
+<p>尤其要防止把模型超时和产品失败判成 invalid。</p>
+<h3 id="7-Judge-稳定性测试"><a href="#7-Judge-稳定性测试" class="headerlink" title="7. Judge 稳定性测试"></a>7. Judge 稳定性测试</h3><p>在人工校准集上重复评分：</p>
+<ul>
+<li>同一答案重复评分</li>
+<li>候选顺序交换</li>
+<li>无关措辞扰动</li>
+<li>长短答案对比</li>
+<li>边界分数样本</li>
+<li>明确违规样本</li>
+</ul>
+<p>观察：</p>
+<ul>
+<li>一致率</li>
+<li>位置偏差</li>
+<li>严重分歧</li>
+<li>各 Rubric 维度偏差</li>
+</ul>
+<h3 id="8-证据可回放测试"><a href="#8-证据可回放测试" class="headerlink" title="8. 证据可回放测试"></a>8. 证据可回放测试</h3><p>随机抽取一个已完成 trial，验证仅依靠证据包能回答：</p>
+<ul>
+<li>输入是什么</li>
+<li>使用了哪个版本</li>
+<li>检索到了什么</li>
+<li>调用了哪些工具</li>
+<li>最终环境状态是什么</li>
+<li>为什么被判为通过或失败</li>
+<li>聚合时如何影响门禁</li>
+</ul>
+<p>如果只能看到一段最终回答，就不算可回放。</p>
+<h2 id="十七、示例案例一：平均分提升，却被关键回退阻断"><a href="#十七、示例案例一：平均分提升，却被关键回退阻断" class="headerlink" title="十七、示例案例一：平均分提升，却被关键回退阻断"></a>十七、示例案例一：平均分提升，却被关键回退阻断</h2><p>下面是一个<strong>示例案例</strong>，只用于说明判定方法，不代表任何真实项目数据。</p>
+<p>某客服 Agent 候选版本调整了检索 Prompt。</p>
+<p>运行结果：</p>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th align="right">基线</th>
+<th align="right">候选</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>总体 attempt 通过率</td>
+<td align="right">89.2%</td>
+<td align="right">91.0%</td>
+</tr>
+<tr>
+<td>普通咨询</td>
+<td align="right">91.5%</td>
+<td align="right">94.1%</td>
+</tr>
+<tr>
+<td>政策引用</td>
+<td align="right">84.0%</td>
+<td align="right">90.2%</td>
+</tr>
+<tr>
+<td>退款金额正确性</td>
+<td align="right">99.8%</td>
+<td align="right">98.7%</td>
+</tr>
+<tr>
+<td>平均 Token</td>
+<td align="right">2400</td>
+<td align="right">2150</td>
+</tr>
+</tbody></table>
+<p>只看总体结果，候选更好：</p>
+<ul>
+<li>通过率提高</li>
+<li>Token 降低</li>
+<li>政策引用改善</li>
+</ul>
+<p>但“退款金额正确性”属于 critical 层。</p>
+<p>配对明细发现：</p>
+<ul>
+<li>8 个 case 从基线通过变成候选失败</li>
+<li>2 个 case 从基线失败变成候选通过</li>
+<li>失败集中在优惠券与现金混合支付</li>
+</ul>
+<p>进一步查看轨迹：</p>
+<ul>
+<li>检索结果正确</li>
+<li>模型正确识别原始金额</li>
+<li>新 Prompt 要求“用一句话直接给出退款结论”</li>
+<li>模型省略了优惠券不可现金退回的约束</li>
+</ul>
+<p>正确门禁结论应是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">BLOCK</span><br><span class="line">reason: critical case regression</span><br><span class="line">overall improvement: observed</span><br><span class="line">release decision: rejected until refund constraint is fixed</span><br></pre></td></tr></table></figure>
+
+<p>这不是统计方法失效。</p>
+<p>恰恰是分层硬门禁避免了平均值掩盖高风险回退。</p>
+<h2 id="十八、示例案例二：候选下降其实来自-Judge-波动"><a href="#十八、示例案例二：候选下降其实来自-Judge-波动" class="headerlink" title="十八、示例案例二：候选下降其实来自 Judge 波动"></a>十八、示例案例二：候选下降其实来自 Judge 波动</h2><p>下面同样是一个<strong>示例案例</strong>。</p>
+<p>候选版本的会话礼貌度从 4.42 降到 4.31。</p>
+<p>团队最初认为 Prompt 变差。</p>
+<p>但复查发现：</p>
+<ul>
+<li>确定性任务完成率没有下降</li>
+<li>人工抽检差异很小</li>
+<li>同一批答案重复送 Judge 三次，边界样本评分频繁变化</li>
+<li>Judge 模型在运行前一天被替换</li>
+<li>grader manifest 只记录了模型别名，没有记录可用的修订信息</li>
+</ul>
+<p>将原始答案固定后，旧 Judge 和新 Judge 的配对结果显示：</p>
+<ul>
+<li>新 Judge 对短回答普遍降低约 0.2 分</li>
+<li>基线历史分数来自旧 Judge</li>
+<li>候选分数来自新 Judge</li>
+</ul>
+<p>所以原比较把“裁判变化”误当成“被测系统变化”。</p>
+<p>正确处理是：</p>
+<ol>
+<li>将本次结果标记为不可信</li>
+<li>冻结同一个 Judge 与 Rubric</li>
+<li>同期重跑 baseline 和 candidate</li>
+<li>补充 Judge 版本与校准集字段</li>
+<li>为 Judge 建立独立升级门禁</li>
+</ol>
+<h2 id="十九、示例案例三：不断重跑把失败洗成成功"><a href="#十九、示例案例三：不断重跑把失败洗成成功" class="headerlink" title="十九、示例案例三：不断重跑把失败洗成成功"></a>十九、示例案例三：不断重跑把失败洗成成功</h2><p>这是第三个<strong>示例案例</strong>。</p>
+<p>某回归平台的规则是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">失败后最多重试两次，只展示最后一次结果。</span><br></pre></td></tr></table></figure>
+
+<p>单次成功概率约为 0.7 时，三次内至少一次成功的理论概率是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">1 - (1 - 0.7)^3 = 0.973</span><br></pre></td></tr></table></figure>
+
+<p>报表看起来接近 97.3%。</p>
+<p>但线上产品并没有自动重试。</p>
+<p>真实用户只得到一次调用。</p>
+<p>这套回归把“测试系统允许三次挑最好结果”误当成“产品单次成功率”。</p>
+<p>修复方式：</p>
+<ul>
+<li>所有 attempt 独立留证</li>
+<li>首次成功率作为主门禁</li>
+<li>重试后成功率作为辅助指标</li>
+<li>明确重试时延与 Token 成本</li>
+<li>只有线上同样具备重试策略时，才把最终成功率当业务指标</li>
+</ul>
+<h2 id="二十、可复现证据：复现条件，不强求复现每个-Token"><a href="#二十、可复现证据：复现条件，不强求复现每个-Token" class="headerlink" title="二十、可复现证据：复现条件，不强求复现每个 Token"></a>二十、可复现证据：复现条件，不强求复现每个 Token</h2><p>对非确定性系统，“复现”应该分成三层。</p>
+<h3 id="1-条件复现"><a href="#1-条件复现" class="headerlink" title="1. 条件复现"></a>1. 条件复现</h3><p>能够恢复：</p>
+<ul>
+<li>输入</li>
+<li>系统版本</li>
+<li>数据快照</li>
+<li>采样参数</li>
+<li>工具版本</li>
+<li>Judge 版本</li>
+<li>执行策略</li>
+</ul>
+<p>这是最低要求。</p>
+<h3 id="2-轨迹回放"><a href="#2-轨迹回放" class="headerlink" title="2. 轨迹回放"></a>2. 轨迹回放</h3><p>不重新调用外部系统，直接查看：</p>
+<ul>
+<li>渲染后的 Prompt</li>
+<li>检索文档</li>
+<li>模型原始响应</li>
+<li>工具请求与响应</li>
+<li>状态变更</li>
+<li>Judge 评分</li>
+</ul>
+<p>它用于解释“当时为什么得到这个结论”。</p>
+<h3 id="3-再执行"><a href="#3-再执行" class="headerlink" title="3. 再执行"></a>3. 再执行</h3><p>使用同一合同重新运行。</p>
+<p>结果不一定逐字相同，但应能判断：</p>
+<ul>
+<li>是否落在历史分布内</li>
+<li>同一失败是否高概率重现</li>
+<li>修复是否改变失败方向</li>
+<li>Judge 是否仍然给出相同结论</li>
+</ul>
+<h3 id="证据包建议结构"><a href="#证据包建议结构" class="headerlink" title="证据包建议结构"></a>证据包建议结构</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line">run/</span><br><span class="line">  manifest.json</span><br><span class="line">  policy.json</span><br><span class="line">  aggregate.json</span><br><span class="line">  cases/</span><br><span class="line">    case-001/</span><br><span class="line">      input.json</span><br><span class="line">      baseline/</span><br><span class="line">        trial-001/</span><br><span class="line">          prompt.json</span><br><span class="line">          retrieval.json</span><br><span class="line">          model-response.json</span><br><span class="line">          tools.jsonl</span><br><span class="line">          outcome.json</span><br><span class="line">          grade.json</span><br><span class="line">      candidate/</span><br><span class="line">        trial-001/</span><br><span class="line">          prompt.json</span><br><span class="line">          retrieval.json</span><br><span class="line">          model-response.json</span><br><span class="line">          tools.jsonl</span><br><span class="line">          outcome.json</span><br><span class="line">          grade.json</span><br></pre></td></tr></table></figure>
+
+<p>每个文件应有内容摘要。</p>
+<p>JSON 如果用于签名或跨系统一致摘要，需要定义规范化方式。</p>
+<p>不能假设普通 JSON 序列化天然具有稳定字节表示。</p>
+<p>可以参考 RFC 8785 的 JSON Canonicalization Scheme。</p>
+<h3 id="证据保存还要考虑隐私"><a href="#证据保存还要考虑隐私" class="headerlink" title="证据保存还要考虑隐私"></a>证据保存还要考虑隐私</h3><p>完整 Prompt 和工具结果可能包含：</p>
+<ul>
+<li>用户身份</li>
+<li>订单数据</li>
+<li>内部文档</li>
+<li>访问令牌</li>
+<li>商业敏感信息</li>
+</ul>
+<p>因此证据链不等于无限制记录原文。</p>
+<p>至少要实现：</p>
+<ul>
+<li>采集前字段分类</li>
+<li>默认脱敏</li>
+<li>密钥与 Token 禁止入库</li>
+<li>内容与元数据分库存储</li>
+<li>最小权限</li>
+<li>保留期限</li>
+<li>删除与审计</li>
+</ul>
+<p>调用链的隐私设计会在下一篇文章展开。</p>
+<h2 id="二十一、从失败结果到可执行归因"><a href="#二十一、从失败结果到可执行归因" class="headerlink" title="二十一、从失败结果到可执行归因"></a>二十一、从失败结果到可执行归因</h2><p>一个回归失败至少要落到下面某个责任域。</p>
+<h3 id="PRODUCT"><a href="#PRODUCT" class="headerlink" title="PRODUCT"></a>PRODUCT</h3><ul>
+<li>Prompt 逻辑错误</li>
+<li>模型能力不足</li>
+<li>RAG 召回错误</li>
+<li>工具选择错误</li>
+<li>产品重试失败</li>
+</ul>
+<h3 id="EVAL-DATA"><a href="#EVAL-DATA" class="headerlink" title="EVAL_DATA"></a>EVAL_DATA</h3><ul>
+<li>期望过期</li>
+<li>样本歧义</li>
+<li>标签错误</li>
+<li>业务规则变更未同步</li>
+</ul>
+<h3 id="GRADER"><a href="#GRADER" class="headerlink" title="GRADER"></a>GRADER</h3><ul>
+<li>Rubric 不清</li>
+<li>Judge 翻转</li>
+<li>解析器错误</li>
+<li>位置偏差</li>
+</ul>
+<h3 id="INFRA"><a href="#INFRA" class="headerlink" title="INFRA"></a>INFRA</h3><ul>
+<li>环境不可用</li>
+<li>Artifact 丢失</li>
+<li>调度器故障</li>
+<li>共享状态污染</li>
+</ul>
+<h3 id="UNKNOWN"><a href="#UNKNOWN" class="headerlink" title="UNKNOWN"></a>UNKNOWN</h3><ul>
+<li>证据不足</li>
+<li>暂时无法定位</li>
+</ul>
+<p>UNKNOWN 不能被当成普通失败长期堆积。</p>
+<p>它反映的是可观测性缺口。</p>
+<p>团队应跟踪：</p>
+<ul>
+<li>UNKNOWN 占比</li>
+<li>平均归因时间</li>
+<li>重复 UNKNOWN 模式</li>
+<li>因证据缺失无法判定的发布次数</li>
+</ul>
+<h2 id="二十二、报告应该怎样展示"><a href="#二十二、报告应该怎样展示" class="headerlink" title="二十二、报告应该怎样展示"></a>二十二、报告应该怎样展示</h2><p>一份面向发布决策的报告，建议按下面顺序展示。</p>
+<h3 id="第一屏：结论"><a href="#第一屏：结论" class="headerlink" title="第一屏：结论"></a>第一屏：结论</h3><ul>
+<li>PASS &#x2F; BLOCK &#x2F; INCONCLUSIVE</li>
+<li>阻断原因</li>
+<li>比较合同摘要</li>
+<li>主指标与非劣边界</li>
+<li>critical 回退数</li>
+<li>噪声预算状态</li>
+</ul>
+<h3 id="第二屏：质量差异"><a href="#第二屏：质量差异" class="headerlink" title="第二屏：质量差异"></a>第二屏：质量差异</h3><ul>
+<li>baseline 与 candidate 点估计</li>
+<li>配对差值区间</li>
+<li>分层差异</li>
+<li>改进与回退 case 数</li>
+<li>成本和时延变化</li>
+</ul>
+<h3 id="第三屏：稳定性"><a href="#第三屏：稳定性" class="headerlink" title="第三屏：稳定性"></a>第三屏：稳定性</h3><ul>
+<li>每 case 通过率</li>
+<li>flip rate</li>
+<li>invalid rate</li>
+<li>Judge 分歧</li>
+<li>历史趋势</li>
+</ul>
+<h3 id="第四屏：证据"><a href="#第四屏：证据" class="headerlink" title="第四屏：证据"></a>第四屏：证据</h3><ul>
+<li>回退 case 列表</li>
+<li>第一次分叉位置</li>
+<li>Prompt &#x2F; retrieval &#x2F; tool &#x2F; output 差异</li>
+<li>Artifact 链接</li>
+<li>owner 与处置状态</li>
+</ul>
+<h3 id="不要只给一个总分"><a href="#不要只给一个总分" class="headerlink" title="不要只给一个总分"></a>不要只给一个总分</h3><p>总分适合排序。</p>
+<p>它不适合单独承担发布决策。</p>
+<p>一个 92.3 分无法告诉读者：</p>
+<ul>
+<li>是哪类任务变差</li>
+<li>区间有多宽</li>
+<li>是否存在权限违规</li>
+<li>Judge 是否稳定</li>
+<li>结果能否复现</li>
+</ul>
+<h2 id="二十三、常见误区"><a href="#二十三、常见误区" class="headerlink" title="二十三、常见误区"></a>二十三、常见误区</h2><h3 id="误区-1：temperature-设为-0-就可以只跑一次"><a href="#误区-1：temperature-设为-0-就可以只跑一次" class="headerlink" title="误区 1：temperature 设为 0 就可以只跑一次"></a>误区 1：temperature 设为 0 就可以只跑一次</h3><p>temperature 为 0 可以降低一部分生成随机性。</p>
+<p>它不能冻结：</p>
+<ul>
+<li>模型服务实现</li>
+<li>RAG</li>
+<li>工具</li>
+<li>环境</li>
+<li>Judge</li>
+</ul>
+<p>仍然需要版本记录和风险分层。</p>
+<h3 id="误区-2：设置-seed-就能跨时间完全复现"><a href="#误区-2：设置-seed-就能跨时间完全复现" class="headerlink" title="误区 2：设置 seed 就能跨时间完全复现"></a>误区 2：设置 seed 就能跨时间完全复现</h3><p>seed 只能在提供方承诺的边界内使用。</p>
+<p>模型、后端和参数变化后，不应假设相同 seed 得到相同输出。</p>
+<h3 id="误区-3：候选通过率高于基线就可以发布"><a href="#误区-3：候选通过率高于基线就可以发布" class="headerlink" title="误区 3：候选通过率高于基线就可以发布"></a>误区 3：候选通过率高于基线就可以发布</h3><p>点估计可能来自噪声。</p>
+<p>还要看：</p>
+<ul>
+<li>配对差值</li>
+<li>置信区间</li>
+<li>关键层</li>
+<li>成本</li>
+<li>时延</li>
+<li>风险违规</li>
+</ul>
+<h3 id="误区-4：样本越多越好"><a href="#误区-4：样本越多越好" class="headerlink" title="误区 4：样本越多越好"></a>误区 4：样本越多越好</h3><p>大量重复、同质、低价值样本会制造虚假的精确度。</p>
+<p>样本需要：</p>
+<ul>
+<li>覆盖真实分布</li>
+<li>覆盖高风险尾部</li>
+<li>去重</li>
+<li>分层</li>
+<li>版本化</li>
+</ul>
+<h3 id="误区-5：失败重跑通过后就算通过"><a href="#误区-5：失败重跑通过后就算通过" class="headerlink" title="误区 5：失败重跑通过后就算通过"></a>误区 5：失败重跑通过后就算通过</h3><p>这会隐藏真实单次失败率。</p>
+<p>除非线上产品也有完全相同的重试与选择策略。</p>
+<h3 id="误区-6：flaky-用例移出门禁就解决了"><a href="#误区-6：flaky-用例移出门禁就解决了" class="headerlink" title="误区 6：flaky 用例移出门禁就解决了"></a>误区 6：flaky 用例移出门禁就解决了</h3><p>移出主门禁只是暂时隔离。</p>
+<p>没有 owner、期限和持续运行，问题只会被隐藏。</p>
+<h3 id="误区-7：p-value-小就表示改进很大"><a href="#误区-7：p-value-小就表示改进很大" class="headerlink" title="误区 7：p-value 小就表示改进很大"></a>误区 7：p-value 小就表示改进很大</h3><p>统计显著不等于业务重要。</p>
+<p>样本足够大时，很小差异也可能得到很小的 p-value。</p>
+<p>仍要检查效果量和业务边界。</p>
+<h3 id="误区-8：置信区间跨-0-就等于两个版本完全一样"><a href="#误区-8：置信区间跨-0-就等于两个版本完全一样" class="headerlink" title="误区 8：置信区间跨 0 就等于两个版本完全一样"></a>误区 8：置信区间跨 0 就等于两个版本完全一样</h3><p>它通常只表示当前数据不足以排除某些差异。</p>
+<p>可能是：</p>
+<ul>
+<li>真差异很小</li>
+<li>样本太少</li>
+<li>方差太大</li>
+<li>配对设计不佳</li>
+</ul>
+<p>正确结论可能是 inconclusive，而不是“完全相同”。</p>
+<h3 id="误区-9：Judge-给出的数字就是客观真值"><a href="#误区-9：Judge-给出的数字就是客观真值" class="headerlink" title="误区 9：Judge 给出的数字就是客观真值"></a>误区 9：Judge 给出的数字就是客观真值</h3><p>Judge 是测量工具。</p>
+<p>测量工具也需要校准、版本化和误差监控。</p>
+<h3 id="误区-10：保存最终答案就足够复现"><a href="#误区-10：保存最终答案就足够复现" class="headerlink" title="误区 10：保存最终答案就足够复现"></a>误区 10：保存最终答案就足够复现</h3><p>没有 Prompt、检索、工具和评分轨迹，只能看到症状。</p>
+<p>无法解释第一次分叉发生在哪里。</p>
+<h2 id="二十四、落地检查表"><a href="#二十四、落地检查表" class="headerlink" title="二十四、落地检查表"></a>二十四、落地检查表</h2><h3 id="回归合同"><a href="#回归合同" class="headerlink" title="回归合同"></a>回归合同</h3><ul>
+<li><input disabled="" type="checkbox"> 是否冻结 dataset revision</li>
+<li><input disabled="" type="checkbox"> 是否记录 Prompt 模板与渲染摘要</li>
+<li><input disabled="" type="checkbox"> 是否记录模型名称、可用修订和采样参数</li>
+<li><input disabled="" type="checkbox"> 是否记录 RAG 全链路版本</li>
+<li><input disabled="" type="checkbox"> 是否记录工具与 Agent Harness 版本</li>
+<li><input disabled="" type="checkbox"> 是否冻结 Judge、Rubric 与校准集</li>
+<li><input disabled="" type="checkbox"> 是否记录执行环境、并发、超时和重试策略</li>
+</ul>
+<h3 id="试验设计"><a href="#试验设计" class="headerlink" title="试验设计"></a>试验设计</h3><ul>
+<li><input disabled="" type="checkbox"> baseline 与 candidate 是否使用同一批 case</li>
+<li><input disabled="" type="checkbox"> 是否采用 trial_slot 配对</li>
+<li><input disabled="" type="checkbox"> 是否交替或随机区组执行</li>
+<li><input disabled="" type="checkbox"> 重复次数是否与风险和历史方差匹配</li>
+<li><input disabled="" type="checkbox"> 是否避免只对失败结果选择性重跑</li>
+<li><input disabled="" type="checkbox"> 是否预先声明追加试验规则</li>
+</ul>
+<h3 id="指标"><a href="#指标" class="headerlink" title="指标"></a>指标</h3><ul>
+<li><input disabled="" type="checkbox"> 是否同时报告点估计和区间</li>
+<li><input disabled="" type="checkbox"> 是否区分 micro 与 macro</li>
+<li><input disabled="" type="checkbox"> 是否按风险和业务域分层</li>
+<li><input disabled="" type="checkbox"> 是否使用 case 级配对差</li>
+<li><input disabled="" type="checkbox"> 是否预先声明非劣边界</li>
+<li><input disabled="" type="checkbox"> 是否分开报告首次与重试后成功率</li>
+</ul>
+<h3 id="噪声治理"><a href="#噪声治理" class="headerlink" title="噪声治理"></a>噪声治理</h3><ul>
+<li><input disabled="" type="checkbox"> invalid reason 是否预先定义</li>
+<li><input disabled="" type="checkbox"> 是否避免把产品超时判成环境无效</li>
+<li><input disabled="" type="checkbox"> 是否监控 flip rate</li>
+<li><input disabled="" type="checkbox"> 是否监控 Judge 分歧</li>
+<li><input disabled="" type="checkbox"> flaky eval 是否有 owner 和期限</li>
+<li><input disabled="" type="checkbox"> 噪声超预算时是否返回 inconclusive 或 block</li>
+</ul>
+<h3 id="风险门禁"><a href="#风险门禁" class="headerlink" title="风险门禁"></a>风险门禁</h3><ul>
+<li><input disabled="" type="checkbox"> 权限和安全违规是否一次即阻断</li>
+<li><input disabled="" type="checkbox"> critical case 是否独立门禁</li>
+<li><input disabled="" type="checkbox"> 总体平均分是否无法掩盖关键回退</li>
+<li><input disabled="" type="checkbox"> 时延和成本是否与质量一起评估</li>
+<li><input disabled="" type="checkbox"> 是否有明确回滚条件</li>
+</ul>
+<h3 id="证据"><a href="#证据" class="headerlink" title="证据"></a>证据</h3><ul>
+<li><input disabled="" type="checkbox"> 是否保存每个物理 attempt</li>
+<li><input disabled="" type="checkbox"> 是否保存渲染 Prompt 与摘要</li>
+<li><input disabled="" type="checkbox"> 是否保存检索文档身份与顺序</li>
+<li><input disabled="" type="checkbox"> 是否保存工具参数、结果与副作用</li>
+<li><input disabled="" type="checkbox"> 是否保存最终环境状态</li>
+<li><input disabled="" type="checkbox"> 是否保存 Judge 评分明细</li>
+<li><input disabled="" type="checkbox"> Artifact 是否有摘要、权限和保留策略</li>
+<li><input disabled="" type="checkbox"> 是否可以从门禁结论下钻到单个 trial</li>
+</ul>
+<h2 id="二十五、总结"><a href="#二十五、总结" class="headerlink" title="二十五、总结"></a>二十五、总结</h2><p>非确定性 AI 应用并不意味着自动化回归失效。</p>
+<p>它意味着回归测试需要从“一次执行给一个布尔值”升级为“受控比较给一个带证据的决策”。</p>
+<p>一套可信方案至少需要：</p>
+<ol>
+<li>冻结系统、数据、Judge 和环境构成的比较合同</li>
+<li>在同一 case 和 trial_slot 上配对 baseline 与 candidate</li>
+<li>通过重复试验估计能力与波动</li>
+<li>同时报告通过率、置信区间和 case 级差值</li>
+<li>用分层硬门禁保护关键风险</li>
+<li>用噪声预算约束 Harness、环境和 Judge</li>
+<li>把 flaky eval 当成评测系统缺陷持续治理</li>
+<li>保存足以解释和回放每次结论的证据</li>
+</ol>
+<p>最终应该追求的不是：</p>
+<blockquote>
+<p>每次都生成完全相同的答案。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p>在相同、可审计的条件下，系统质量落在可接受范围；当它偏离时，门禁能稳定发现，证据能解释原因，团队能重复验证修复。</p>
+</blockquote>
+<p>这才是非确定性系统真正可依赖的自动化回归。</p>
+<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><ul>
+<li><a target="_blank" rel="noopener" href="https://www.nist.gov/itl/ai-risk-management-framework">NIST AI Risk Management Framework 1.0</a></li>
+<li><a target="_blank" rel="noopener" href="https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.600-1.pdf">NIST AI 600-1：Generative Artificial Intelligence Profile</a></li>
+<li><a target="_blank" rel="noopener" href="https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents">Anthropic Engineering：Demystifying evals for AI agents</a></li>
+<li><a target="_blank" rel="noopener" href="https://platform.openai.com/docs/guides/evals">OpenAI Documentation：Evals design guide</a></li>
+<li><a target="_blank" rel="noopener" href="https://arxiv.org/abs/2211.09110">HELM：Holistic Evaluation of Language Models</a></li>
+<li><a target="_blank" rel="noopener" href="https://doi.org/10.1080/01621459.1927.10502953">Wilson, 1927：Probable Inference, the Law of Succession, and Statistical Inference</a></li>
+<li><a target="_blank" rel="noopener" href="https://doi.org/10.1007/BF02295996">McNemar, 1947：Note on the Sampling Error of the Difference Between Correlated Proportions or Percentages</a></li>
+<li><a target="_blank" rel="noopener" href="https://research.google/pubs/the-ml-test-score-a-rubric-for-ml-production-readiness-and-technical-debt-reduction/">Google Research：The ML Test Score</a></li>
+<li><a target="_blank" rel="noopener" href="https://www.rfc-editor.org/rfc/rfc8785">RFC 8785：JSON Canonicalization Scheme</a></li>
+</ul>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/AI%E6%B5%8B%E8%AF%95/" rel="tag"># AI测试</a>
+              <a href="/tags/%E8%AF%81%E6%8D%AE%E9%93%BE/" rel="tag"># 证据链</a>
+              <a href="/tags/%E8%87%AA%E5%8A%A8%E5%8C%96%E5%9B%9E%E5%BD%92/" rel="tag"># 自动化回归</a>
+              <a href="/tags/%E9%9D%9E%E7%A1%AE%E5%AE%9A%E6%80%A7/" rel="tag"># 非确定性</a>
+              <a href="/tags/%E7%BB%9F%E8%AE%A1%E6%A3%80%E9%AA%8C/" rel="tag"># 统计检验</a>
+              <a href="/tags/%E7%BD%AE%E4%BF%A1%E5%8C%BA%E9%97%B4/" rel="tag"># 置信区间</a>
+              <a href="/tags/%E9%85%8D%E5%AF%B9%E6%AF%94%E8%BE%83/" rel="tag"># 配对比较</a>
+              <a href="/tags/Flaky-Eval/" rel="tag"># Flaky Eval</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2026/03/26/AI%E6%B5%8B%E8%AF%95-19-Agent%E6%80%8E%E4%B9%88%E8%AF%84%E6%B5%8B%E4%BB%BB%E5%8A%A1%E5%AE%8C%E6%88%90%E7%8E%87%E5%B7%A5%E5%85%B7%E6%AD%A3%E7%A1%AE%E7%8E%87%E5%92%8C%E6%81%A2%E5%A4%8D%E8%83%BD%E5%8A%9B/" rel="prev" title="AI测试-19-Agent怎么评测任务完成率工具正确率和恢复能力">
+                  <i class="fa fa-angle-left"></i> AI测试-19-Agent怎么评测任务完成率工具正确率和恢复能力
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2026/03/28/AI%E6%B5%8B%E8%AF%95-21-AI%E8%B0%83%E7%94%A8%E9%93%BE%E6%80%8E%E4%B9%88%E7%BB%9F%E4%B8%80%E8%AE%B0%E5%BD%95Prompt%E6%A3%80%E7%B4%A2%E5%B7%A5%E5%85%B7%E8%B0%83%E7%94%A8%E5%92%8C%E6%A8%A1%E5%9E%8B%E8%BE%93%E5%87%BA/" rel="next" title="AI测试-21-AI调用链怎么统一记录Prompt检索工具调用和模型输出">
+                  AI测试-21-AI调用链怎么统一记录Prompt检索工具调用和模型输出 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">1.2m</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">75:29</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

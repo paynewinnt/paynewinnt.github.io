@@ -1,0 +1,1064 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="AI 评测平台跑出一张分数表，并不代表它已经进入研发流程。 只要评测结果还停留在报告页面里，发布人员就会继续面对这些问题：  Prompt 改了两行，是否必须完整回归 知识库更新以后，应该测检索还是测最终回答 候选模型总分提高，但安全样本退化，能不能发布 同一版本重复运行结果波动，下降 1% 算真实回退还是随机噪声 LLM-as-Judge 自己不稳定，门禁到底应该相信谁 评测服务超时，是代码失败">
+<meta property="og:type" content="article">
+<meta property="og:title" content="AI测试-23-AI评测结果怎么接入CI-CD质量门禁">
+<meta property="og:url" content="https://paynewinnt.github.io/2026/03/31/AI%E6%B5%8B%E8%AF%95-23-AI%E8%AF%84%E6%B5%8B%E7%BB%93%E6%9E%9C%E6%80%8E%E4%B9%88%E6%8E%A5%E5%85%A5CI-CD%E8%B4%A8%E9%87%8F%E9%97%A8%E7%A6%81/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="AI 评测平台跑出一张分数表，并不代表它已经进入研发流程。 只要评测结果还停留在报告页面里，发布人员就会继续面对这些问题：  Prompt 改了两行，是否必须完整回归 知识库更新以后，应该测检索还是测最终回答 候选模型总分提高，但安全样本退化，能不能发布 同一版本重复运行结果波动，下降 1% 算真实回退还是随机噪声 LLM-as-Judge 自己不稳定，门禁到底应该相信谁 评测服务超时，是代码失败">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://paynewinnt.github.io/images/ai-quality/ai-23-quality-gate.svg">
+<meta property="og:image" content="https://paynewinnt.github.io/images/ai-quality/ai-23-release-flow.svg">
+<meta property="article:published_time" content="2026-03-31T12:30:00.000Z">
+<meta property="article:modified_time" content="2026-03-31T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="AI测试">
+<meta property="article:tag" content="LLMOps">
+<meta property="article:tag" content="AI评测">
+<meta property="article:tag" content="质量门禁">
+<meta property="article:tag" content="CI&#x2F;CD">
+<meta property="article:tag" content="持续交付">
+<meta property="article:tag" content="回归测试">
+<meta property="article:tag" content="灰度发布">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://paynewinnt.github.io/images/ai-quality/ai-23-quality-gate.svg">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2026/03/31/AI%E6%B5%8B%E8%AF%95-23-AI%E8%AF%84%E6%B5%8B%E7%BB%93%E6%9E%9C%E6%80%8E%E4%B9%88%E6%8E%A5%E5%85%A5CI-CD%E8%B4%A8%E9%87%8F%E9%97%A8%E7%A6%81/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2026/03/31/AI%E6%B5%8B%E8%AF%95-23-AI%E8%AF%84%E6%B5%8B%E7%BB%93%E6%9E%9C%E6%80%8E%E4%B9%88%E6%8E%A5%E5%85%A5CI-CD%E8%B4%A8%E9%87%8F%E9%97%A8%E7%A6%81/","path":"2026/03/31/AI测试-23-AI评测结果怎么接入CI-CD质量门禁/","title":"AI测试-23-AI评测结果怎么接入CI-CD质量门禁"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>AI测试-23-AI评测结果怎么接入CI-CD质量门禁 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E5%85%88%E7%BB%99%E7%BB%93%E8%AE%BA%EF%BC%9A%E8%B4%A8%E9%87%8F%E9%97%A8%E7%A6%81%E6%8E%A7%E5%88%B6%E7%9A%84%E6%98%AF%E5%8F%91%E5%B8%83%E9%A3%8E%E9%99%A9%EF%BC%8C%E4%B8%8D%E6%98%AF%E8%BF%BD%E6%B1%82%E4%B8%80%E4%B8%AA%E6%9C%80%E9%AB%98%E6%80%BB%E5%88%86"><span class="nav-number">1.</span> <span class="nav-text">一、先给结论：质量门禁控制的是发布风险，不是追求一个最高总分</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E4%B8%BA%E4%BB%80%E4%B9%88%E4%BC%A0%E7%BB%9F%E2%80%9C%E6%B5%8B%E8%AF%95%E9%80%9A%E8%BF%87%E7%8E%87%E9%97%A8%E7%A6%81%E2%80%9D%E4%B8%8D%E5%A4%9F"><span class="nav-number">2.</span> <span class="nav-text">二、为什么传统“测试通过率门禁”不够</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E7%AC%AC%E4%B8%80%E6%AD%A5%E4%B8%8D%E6%98%AF%E8%B7%91%E8%AF%84%E6%B5%8B%EF%BC%8C%E8%80%8C%E6%98%AF%E7%BB%99%E5%8F%98%E6%9B%B4%E5%81%9A%E5%88%86%E7%B1%BB"><span class="nav-number">3.</span> <span class="nav-text">三、第一步不是跑评测，而是给变更做分类</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Prompt-%E5%8F%98%E6%9B%B4"><span class="nav-number">3.1.</span> <span class="nav-text">1. Prompt 变更</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%A8%A1%E5%9E%8B%E6%88%96%E6%8E%A8%E7%90%86%E5%8F%82%E6%95%B0%E5%8F%98%E6%9B%B4"><span class="nav-number">3.2.</span> <span class="nav-text">2. 模型或推理参数变更</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-RAG-%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%A3%80%E7%B4%A2%E5%8F%98%E6%9B%B4"><span class="nav-number">3.3.</span> <span class="nav-text">3. RAG 数据与检索变更</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%B7%A5%E5%85%B7%E5%92%8C-Agent-%E5%8F%98%E6%9B%B4"><span class="nav-number">3.4.</span> <span class="nav-text">4. 工具和 Agent 变更</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E8%AF%84%E6%B5%8B%E5%99%A8%E5%8F%98%E6%9B%B4"><span class="nav-number">3.5.</span> <span class="nav-text">5. 评测器变更</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E5%BB%BA%E7%AB%8B%E5%8F%98%E6%9B%B4%E9%A3%8E%E9%99%A9%E5%88%86%E7%BA%A7"><span class="nav-number">4.</span> <span class="nav-text">四、建立变更风险分级</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E6%8A%8A%E8%AF%84%E6%B5%8B%E5%A5%97%E4%BB%B6%E6%8B%86%E6%88%90%E5%A4%9A%E5%B1%82%EF%BC%8C%E4%B8%8D%E8%A6%81%E6%AF%8F%E6%AC%A1%E9%83%BD%E8%B7%91%E5%90%8C%E4%B8%80%E6%89%B9"><span class="nav-number">5.</span> <span class="nav-text">五、把评测套件拆成多层，不要每次都跑同一批</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-L0%EF%BC%9A%E7%A1%AE%E5%AE%9A%E6%80%A7%E9%9D%99%E6%80%81%E6%A3%80%E6%9F%A5"><span class="nav-number">5.1.</span> <span class="nav-text">1. L0：确定性静态检查</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-L1%EF%BC%9A%E6%A0%B8%E5%BF%83%E5%86%92%E7%83%9F%E8%AF%84%E6%B5%8B"><span class="nav-number">5.2.</span> <span class="nav-text">2. L1：核心冒烟评测</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-L2%EF%BC%9A%E5%AE%8C%E6%95%B4%E7%A6%BB%E7%BA%BF%E5%9B%9E%E5%BD%92"><span class="nav-number">5.3.</span> <span class="nav-text">3. L2：完整离线回归</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-L3%EF%BC%9A%E9%B2%81%E6%A3%92%E6%80%A7%E4%B8%8E%E5%AE%89%E5%85%A8%E8%AF%84%E6%B5%8B"><span class="nav-number">5.4.</span> <span class="nav-text">4. L3：鲁棒性与安全评测</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-L4%EF%BC%9A%E5%BD%B1%E5%AD%90%E4%B8%8E%E9%87%91%E4%B8%9D%E9%9B%80%E9%AA%8C%E8%AF%81"><span class="nav-number">5.5.</span> <span class="nav-text">5. L4：影子与金丝雀验证</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E5%88%86%E5%B1%82%E9%97%A8%E7%A6%81%E7%9A%84%E5%AE%8C%E6%95%B4%E6%B5%81%E6%B0%B4%E7%BA%BF"><span class="nav-number">6.</span> <span class="nav-text">六、分层门禁的完整流水线</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%85%88%E5%BF%AB%E5%90%8E%E6%85%A2"><span class="nav-number">6.1.</span> <span class="nav-text">1. 先快后慢</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%85%88%E7%A1%AC%E5%BA%95%E7%BA%BF%E5%90%8E%E7%BB%BC%E5%90%88%E6%94%B6%E7%9B%8A"><span class="nav-number">6.2.</span> <span class="nav-text">2. 先硬底线后综合收益</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%A6%BB%E7%BA%BF%E9%80%9A%E8%BF%87%E4%B8%8D%E7%AD%89%E4%BA%8E%E7%9B%B4%E6%8E%A5%E5%85%A8%E9%87%8F"><span class="nav-number">6.3.</span> <span class="nav-text">3. 离线通过不等于直接全量</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E5%9F%BA%E7%BA%BF%E4%B8%8D%E6%98%AF%E4%B8%80%E4%B8%AA%E5%88%86%E6%95%B0%EF%BC%8C%E8%80%8C%E6%98%AF%E4%B8%80%E7%BB%84%E5%86%BB%E7%BB%93%E7%89%88%E6%9C%AC"><span class="nav-number">7.</span> <span class="nav-text">七、基线不是一个分数，而是一组冻结版本</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E6%8C%87%E6%A0%87%E5%BF%85%E9%A1%BB%E5%88%86%E5%B1%82%EF%BC%8C%E5%90%A6%E5%88%99%E5%B9%B3%E5%9D%87%E6%95%B0%E4%BC%9A%E9%9A%90%E8%97%8F%E9%A3%8E%E9%99%A9"><span class="nav-number">8.</span> <span class="nav-text">八、指标必须分层，否则平均数会隐藏风险</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%BE%93%E5%85%A5%E5%92%8C%E6%A3%80%E7%B4%A2%E5%B1%82"><span class="nav-number">8.1.</span> <span class="nav-text">1. 输入和检索层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%A8%A1%E5%9E%8B%E8%BE%93%E5%87%BA%E5%B1%82"><span class="nav-number">8.2.</span> <span class="nav-text">2. 模型输出层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Agent-%E8%BD%A8%E8%BF%B9%E5%B1%82"><span class="nav-number">8.3.</span> <span class="nav-text">3. Agent 轨迹层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E7%B3%BB%E7%BB%9F%E8%B4%A8%E9%87%8F%E5%B1%82"><span class="nav-number">8.4.</span> <span class="nav-text">4. 系统质量层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E4%B8%9A%E5%8A%A1%E4%B8%8E%E9%A3%8E%E9%99%A9%E5%B1%82"><span class="nav-number">8.5.</span> <span class="nav-text">5. 业务与风险层</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E5%85%88%E5%AE%9A%E4%B9%89%E4%B8%8D%E5%8F%AF%E5%A6%A5%E5%8D%8F%E7%9A%84%E7%A1%AC%E9%97%A8%E7%A6%81"><span class="nav-number">9.</span> <span class="nav-text">九、先定义不可妥协的硬门禁</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E7%BB%9D%E5%AF%B9%E9%98%88%E5%80%BC%E5%92%8C%E7%9B%B8%E5%AF%B9%E9%80%80%E5%8C%96%E8%A6%81%E5%90%8C%E6%97%B6%E4%BD%BF%E7%94%A8"><span class="nav-number">10.</span> <span class="nav-text">十、绝对阈值和相对退化要同时使用</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E5%B0%BD%E9%87%8F%E4%BD%BF%E7%94%A8%E5%90%8C%E4%B8%80%E6%A0%B7%E6%9C%AC%E7%9A%84%E9%85%8D%E5%AF%B9%E6%AF%94%E8%BE%83"><span class="nav-number">11.</span> <span class="nav-text">十一、尽量使用同一样本的配对比较</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E9%9D%9E%E7%A1%AE%E5%AE%9A%E6%80%A7%E7%BB%93%E6%9E%9C%E5%BF%85%E9%A1%BB%E5%B8%A6%E4%B8%8D%E7%A1%AE%E5%AE%9A%E5%8C%BA%E9%97%B4"><span class="nav-number">12.</span> <span class="nav-text">十二、非确定性结果必须带不确定区间</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E9%87%8D%E5%A4%8D%E8%BF%90%E8%A1%8C"><span class="nav-number">12.1.</span> <span class="nav-text">1. 重复运行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%AF%94%E4%BE%8B%E6%8C%87%E6%A0%87%E7%9A%84%E5%8C%BA%E9%97%B4"><span class="nav-number">12.2.</span> <span class="nav-text">2. 比例指标的区间</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%B8%8D%E7%A1%AE%E5%AE%9A%E4%B8%8D%E6%98%AF%E9%80%9A%E8%BF%87"><span class="nav-number">12.3.</span> <span class="nav-text">3. 不确定不是通过</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%8E%A7%E5%88%B6%E5%A4%9A%E9%87%8D%E6%AF%94%E8%BE%83"><span class="nav-number">12.4.</span> <span class="nav-text">4. 控制多重比较</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81%E4%B8%BA%E9%97%A8%E7%A6%81%E4%BF%9D%E7%95%99%E6%98%8E%E7%A1%AE%E7%9A%84%E4%B8%89%E4%B8%AA%E5%86%B3%E7%AD%96%E5%8C%BA"><span class="nav-number">13.</span> <span class="nav-text">十三、为门禁保留明确的三个决策区</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E9%80%9A%E8%BF%87%E5%8C%BA"><span class="nav-number">13.1.</span> <span class="nav-text">1. 通过区</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%BA%BA%E5%B7%A5%E5%A4%8D%E6%A0%B8%E5%8C%BA"><span class="nav-number">13.2.</span> <span class="nav-text">2. 人工复核区</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E9%98%BB%E6%96%AD%E5%8C%BA"><span class="nav-number">13.3.</span> <span class="nav-text">3. 阻断区</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81%E9%97%A8%E7%A6%81%E7%AD%96%E7%95%A5%E5%BA%94%E8%AF%A5%E9%85%8D%E7%BD%AE%E5%8C%96%EF%BC%8C%E4%BD%86%E4%B8%8D%E8%83%BD%E5%A4%B1%E5%8E%BB%E5%AE%A1%E6%9F%A5"><span class="nav-number">14.</span> <span class="nav-text">十四、门禁策略应该配置化，但不能失去审查</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%94%E3%80%81%E5%9C%A8-CI-CD-%E4%B8%AD%E6%8B%86%E5%BC%80%E5%BF%AB%E9%80%9F%E8%AF%84%E6%B5%8B%E5%92%8C%E5%AE%8C%E6%95%B4%E8%AF%84%E6%B5%8B"><span class="nav-number">15.</span> <span class="nav-text">十五、在 CI&#x2F;CD 中拆开快速评测和完整评测</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AD%E3%80%81%E9%97%A8%E7%A6%81%E8%BE%93%E5%85%A5%E5%BF%85%E9%A1%BB%E6%98%AF%E6%A0%B7%E6%9C%AC%E7%BA%A7%E6%8A%A5%E5%91%8A%EF%BC%8C%E4%B8%8D%E5%8F%AA%E6%98%AF%E8%81%9A%E5%90%88%E5%88%86%E6%95%B0"><span class="nav-number">16.</span> <span class="nav-text">十六、门禁输入必须是样本级报告，不只是聚合分数</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%83%E3%80%81%E9%97%A8%E7%A6%81%E5%88%A4%E5%AE%9A%E5%99%A8%E8%A6%81%E5%85%88%E6%A3%80%E6%9F%A5%E8%AF%81%E6%8D%AE%EF%BC%8C%E5%86%8D%E6%A3%80%E6%9F%A5%E5%88%86%E6%95%B0"><span class="nav-number">17.</span> <span class="nav-text">十七、门禁判定器要先检查证据，再检查分数</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AB%E3%80%81%E8%AF%84%E6%B5%8B%E5%99%A8%E6%9C%AC%E8%BA%AB%E4%B9%9F%E8%A6%81%E6%9C%89%E9%97%A8%E7%A6%81"><span class="nav-number">18.</span> <span class="nav-text">十八、评测器本身也要有门禁</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%A7%84%E5%88%99%E5%88%A4%E5%AE%9A%E4%BC%98%E5%85%88"><span class="nav-number">18.1.</span> <span class="nav-text">1. 规则判定优先</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%A3%81%E5%88%A4%E7%89%88%E6%9C%AC%E5%BF%85%E9%A1%BB%E5%9B%BA%E5%AE%9A"><span class="nav-number">18.2.</span> <span class="nav-text">2. 裁判版本必须固定</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%94%A8%E4%BA%BA%E5%B7%A5%E6%A0%A1%E5%87%86%E9%9B%86%E9%AA%8C%E8%AF%81%E8%A3%81%E5%88%A4"><span class="nav-number">18.3.</span> <span class="nav-text">3. 用人工校准集验证裁判</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E8%A3%81%E5%88%A4%E5%8F%98%E5%8C%96%E8%A6%81%E9%87%8D%E5%BB%BA%E5%9F%BA%E7%BA%BF"><span class="nav-number">18.4.</span> <span class="nav-text">4. 裁判变化要重建基线</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%88%86%E6%AD%A7%E8%BF%9B%E5%85%A5%E5%A4%8D%E6%A0%B8%E5%8C%BA"><span class="nav-number">18.5.</span> <span class="nav-text">5. 分歧进入复核区</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B9%9D%E3%80%81%E6%AD%A3%E7%A1%AE%E5%A4%84%E7%90%86-Flaky-Eval-%E5%92%8C%E5%9F%BA%E7%A1%80%E8%AE%BE%E6%96%BD%E5%99%AA%E5%A3%B0"><span class="nav-number">19.</span> <span class="nav-text">十九、正确处理 Flaky Eval 和基础设施噪声</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E9%A2%84%E5%85%88%E5%AE%9A%E4%B9%89%E9%87%8D%E8%AF%95%E7%AD%96%E7%95%A5"><span class="nav-number">19.1.</span> <span class="nav-text">1. 预先定义重试策略</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%BF%9D%E7%95%99%E6%89%80%E6%9C%89%E5%B0%9D%E8%AF%95"><span class="nav-number">19.2.</span> <span class="nav-text">2. 保留所有尝试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%AF%B9%E4%B8%8D%E7%A8%B3%E5%AE%9A%E6%A0%B7%E6%9C%AC%E5%8D%95%E7%8B%AC%E6%B2%BB%E7%90%86"><span class="nav-number">19.3.</span> <span class="nav-text">3. 对不稳定样本单独治理</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E8%AE%BE%E5%AE%9A%E5%99%AA%E5%A3%B0%E9%A2%84%E7%AE%97"><span class="nav-number">19.4.</span> <span class="nav-text">4. 设定噪声预算</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E3%80%81%E8%B1%81%E5%85%8D%E5%BF%85%E9%A1%BB%E6%98%AF%E6%9C%89%E6%9C%9F%E9%99%90%E7%9A%84%E9%A3%8E%E9%99%A9%E6%8E%A5%E5%8F%97"><span class="nav-number">20.</span> <span class="nav-text">二十、豁免必须是有期限的风险接受</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%80%E3%80%81%E7%A6%BB%E7%BA%BF%E9%97%A8%E7%A6%81%E5%90%8E%E8%BF%98%E9%9C%80%E8%A6%81%E7%BA%BF%E4%B8%8A%E6%8A%A4%E6%A0%8F"><span class="nav-number">21.</span> <span class="nav-text">二十一、离线门禁后还需要线上护栏</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%BD%B1%E5%AD%90%E6%B5%81%E9%87%8F"><span class="nav-number">21.1.</span> <span class="nav-text">1. 影子流量</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E9%87%91%E4%B8%9D%E9%9B%80%E5%8F%91%E5%B8%83"><span class="nav-number">21.2.</span> <span class="nav-text">2. 金丝雀发布</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%BA%BF%E4%B8%8A%E7%A1%AC%E6%8A%A4%E6%A0%8F"><span class="nav-number">21.3.</span> <span class="nav-text">3. 线上硬护栏</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%BB%B6%E8%BF%9F%E7%BB%93%E6%9E%9C%E5%9B%9E%E5%A1%AB"><span class="nav-number">21.4.</span> <span class="nav-text">4. 延迟结果回填</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%8C%E3%80%81%E4%B8%80%E4%B8%AA%E7%A4%BA%E4%BE%8B%EF%BC%9A%E6%80%BB%E5%88%86%E6%8F%90%E9%AB%98%E4%BD%86%E9%80%80%E6%AC%BE-Agent-%E8%A2%AB%E9%97%A8%E7%A6%81%E9%98%BB%E6%96%AD"><span class="nav-number">22.</span> <span class="nav-text">二十二、一个示例：总分提高但退款 Agent 被门禁阻断</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%8F%98%E6%9B%B4"><span class="nav-number">22.1.</span> <span class="nav-text">1. 变更</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%BF%AB%E9%80%9F%E8%AF%84%E6%B5%8B"><span class="nav-number">22.2.</span> <span class="nav-text">2. 快速评测</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%AE%8C%E6%95%B4%E8%AF%84%E6%B5%8B"><span class="nav-number">22.3.</span> <span class="nav-text">3. 完整评测</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E9%97%A8%E7%A6%81%E5%88%A4%E6%96%AD"><span class="nav-number">22.4.</span> <span class="nav-text">4. 门禁判断</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E4%BF%AE%E5%A4%8D"><span class="nav-number">22.5.</span> <span class="nav-text">5. 修复</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E9%87%8D%E6%96%B0%E8%AF%84%E6%B5%8B%E4%B8%8E%E7%81%B0%E5%BA%A6"><span class="nav-number">22.6.</span> <span class="nav-text">6. 重新评测与灰度</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%89%E3%80%81%E9%97%A8%E7%A6%81%E8%AF%81%E6%8D%AE%E5%8C%85%E5%BA%94%E8%AF%A5%E5%8C%85%E5%90%AB%E4%BB%80%E4%B9%88"><span class="nav-number">23.</span> <span class="nav-text">二十三、门禁证据包应该包含什么</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%9B%9B%E3%80%81%E6%9C%80%E5%B8%B8%E8%A7%81%E7%9A%84%E5%8D%81%E4%B8%AA%E9%94%99%E8%AF%AF"><span class="nav-number">24.</span> <span class="nav-text">二十四、最常见的十个错误</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%8F%AA%E8%AE%BE%E4%B8%80%E4%B8%AA%E6%80%BB%E5%88%86%E9%98%88%E5%80%BC"><span class="nav-number">24.1.</span> <span class="nav-text">1. 只设一个总分阈值</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%8F%AA%E6%9C%89%E7%BB%9D%E5%AF%B9%E9%98%88%E5%80%BC%EF%BC%8C%E6%B2%A1%E6%9C%89%E7%9B%B8%E5%AF%B9%E5%9F%BA%E7%BA%BF"><span class="nav-number">24.2.</span> <span class="nav-text">2. 只有绝对阈值，没有相对基线</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%8F%AA%E6%9C%89%E7%9B%B8%E5%AF%B9%E6%8F%90%E5%8D%87%EF%BC%8C%E6%B2%A1%E6%9C%89%E4%B8%9A%E5%8A%A1%E5%BA%95%E7%BA%BF"><span class="nav-number">24.3.</span> <span class="nav-text">3. 只有相对提升，没有业务底线</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%80%99%E9%80%89%E5%92%8C%E5%9F%BA%E7%BA%BF%E4%BD%BF%E7%94%A8%E4%B8%8D%E5%90%8C%E6%95%B0%E6%8D%AE%E9%9B%86%E6%88%96%E4%B8%8D%E5%90%8C%E8%A3%81%E5%88%A4"><span class="nav-number">24.4.</span> <span class="nav-text">4. 候选和基线使用不同数据集或不同裁判</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%AF%8F%E4%B8%AA%E6%A0%B7%E6%9C%AC%E5%8F%AA%E8%BF%90%E8%A1%8C%E4%B8%80%E6%AC%A1"><span class="nav-number">24.5.</span> <span class="nav-text">5. 每个样本只运行一次</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E5%A4%B1%E8%B4%A5%E5%90%8E%E4%B8%80%E7%9B%B4%E9%87%8D%E8%B7%91%E5%88%B0%E9%80%9A%E8%BF%87"><span class="nav-number">24.6.</span> <span class="nav-text">6. 失败后一直重跑到通过</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-%E8%AF%84%E6%B5%8B%E5%9F%BA%E7%A1%80%E8%AE%BE%E6%96%BD%E9%94%99%E8%AF%AF%E8%A2%AB%E5%BD%93%E6%88%90%E8%B4%A8%E9%87%8F%E9%80%9A%E8%BF%87"><span class="nav-number">24.7.</span> <span class="nav-text">7. 评测基础设施错误被当成质量通过</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-%E5%BC%80%E5%8F%91%E5%8F%98%E6%9B%B4%E5%90%8C%E6%97%B6%E9%99%8D%E4%BD%8E%E9%97%A8%E7%A6%81%E9%98%88%E5%80%BC"><span class="nav-number">24.8.</span> <span class="nav-text">8. 开发变更同时降低门禁阈值</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-%E8%B1%81%E5%85%8D%E6%B0%B8%E4%B9%85%E6%9C%89%E6%95%88"><span class="nav-number">24.9.</span> <span class="nav-text">9. 豁免永久有效</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-%E7%A6%BB%E7%BA%BF%E9%80%9A%E8%BF%87%E5%90%8E%E7%9B%B4%E6%8E%A5%E5%85%A8%E9%87%8F"><span class="nav-number">24.10.</span> <span class="nav-text">10. 离线通过后直接全量</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%94%E3%80%81%E8%B4%A8%E9%87%8F%E9%97%A8%E7%A6%81%E6%88%90%E7%86%9F%E5%BA%A6%E5%8F%AF%E4%BB%A5%E5%88%86%E5%9B%9B%E7%BA%A7"><span class="nav-number">25.</span> <span class="nav-text">二十五、质量门禁成熟度可以分四级</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%B8%80%E7%BA%A7%EF%BC%9A%E6%8A%A5%E5%91%8A%E5%8C%96"><span class="nav-number">25.1.</span> <span class="nav-text">第一级：报告化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%BA%8C%E7%BA%A7%EF%BC%9A%E5%9F%BA%E7%A1%80%E9%97%A8%E7%A6%81%E5%8C%96"><span class="nav-number">25.2.</span> <span class="nav-text">第二级：基础门禁化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%B8%89%E7%BA%A7%EF%BC%9A%E9%A3%8E%E9%99%A9%E5%88%86%E5%B1%82%E5%8C%96"><span class="nav-number">25.3.</span> <span class="nav-text">第三级：风险分层化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E5%9B%9B%E7%BA%A7%EF%BC%9A%E6%8C%81%E7%BB%AD%E4%BA%A4%E4%BB%98%E9%97%AD%E7%8E%AF"><span class="nav-number">25.4.</span> <span class="nav-text">第四级：持续交付闭环</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%85%AD%E3%80%81%E8%90%BD%E5%9C%B0%E6%A3%80%E6%9F%A5%E8%A1%A8"><span class="nav-number">26.</span> <span class="nav-text">二十六、落地检查表</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%89%88%E6%9C%AC%E5%92%8C%E5%8F%98%E6%9B%B4"><span class="nav-number">26.1.</span> <span class="nav-text">版本和变更</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%84%E6%B5%8B%E8%AE%BE%E8%AE%A1"><span class="nav-number">26.2.</span> <span class="nav-text">评测设计</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%97%A8%E7%A6%81%E7%AD%96%E7%95%A5"><span class="nav-number">26.3.</span> <span class="nav-text">门禁策略</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%84%E6%B5%8B%E5%99%A8"><span class="nav-number">26.4.</span> <span class="nav-text">评测器</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8F%91%E5%B8%83%E5%92%8C%E5%AE%A1%E8%AE%A1"><span class="nav-number">26.5.</span> <span class="nav-text">发布和审计</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%83%E3%80%81%E5%B0%8F%E7%BB%93"><span class="nav-number">27.</span> <span class="nav-text">二十七、小结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8F%82%E8%80%83%E8%B5%84%E6%96%99"><span class="nav-number">28.</span> <span class="nav-text">参考资料</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">312</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">27</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">569</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2026/03/31/AI%E6%B5%8B%E8%AF%95-23-AI%E8%AF%84%E6%B5%8B%E7%BB%93%E6%9E%9C%E6%80%8E%E4%B9%88%E6%8E%A5%E5%85%A5CI-CD%E8%B4%A8%E9%87%8F%E9%97%A8%E7%A6%81/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="AI测试-23-AI评测结果怎么接入CI-CD质量门禁 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          AI测试-23-AI评测结果怎么接入CI-CD质量门禁
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2026-03-31 20:30:00" itemprop="dateCreated datePublished" datetime="2026-03-31T20:30:00+08:00">2026-03-31</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/AI%E6%B5%8B%E8%AF%95/" itemprop="url" rel="index"><span itemprop="name">AI测试</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>7.2k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>26 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>AI 评测平台跑出一张分数表，并不代表它已经进入研发流程。</p>
+<p>只要评测结果还停留在报告页面里，发布人员就会继续面对这些问题：</p>
+<ul>
+<li>Prompt 改了两行，是否必须完整回归</li>
+<li>知识库更新以后，应该测检索还是测最终回答</li>
+<li>候选模型总分提高，但安全样本退化，能不能发布</li>
+<li>同一版本重复运行结果波动，下降 1% 算真实回退还是随机噪声</li>
+<li>LLM-as-Judge 自己不稳定，门禁到底应该相信谁</li>
+<li>评测服务超时，是代码失败、环境失败，还是可以重跑后放行</li>
+<li>离线评测通过以后，线上灰度发现成本翻倍或工具误调用，如何自动回退</li>
+<li>特殊业务需要带风险发布，谁能豁免，豁免多久，证据保存在哪里</li>
+</ul>
+<p>传统单元测试通常有比较明确的布尔结果：断言通过或失败。</p>
+<p>AI 系统则同时存在非确定性输出、语义判定、分层风险、数据版本和外部模型依赖。把一个平均分和一条 <code>score &gt;= 0.8</code> 写进流水线，形式上有门禁，实际上很容易误放行或长期误阻断。</p>
+<p>这篇文章讨论的重点，是怎样把 AI 评测结果变成一套可以执行、解释、审计和回滚的 CI&#x2F;CD 质量门禁。</p>
+<h2 id="一、先给结论：质量门禁控制的是发布风险，不是追求一个最高总分"><a href="#一、先给结论：质量门禁控制的是发布风险，不是追求一个最高总分" class="headerlink" title="一、先给结论：质量门禁控制的是发布风险，不是追求一个最高总分"></a>一、先给结论：质量门禁控制的是发布风险，不是追求一个最高总分</h2><p>一个可用的 AI 质量门禁，至少要同时回答六个问题：</p>
+<ol>
+<li>这次变更影响了什么。</li>
+<li>哪些风险必须重新验证。</li>
+<li>候选版本相对基线在哪里变好或变差。</li>
+<li>观察到的差异是否超过随机波动和评测器误差。</li>
+<li>哪些指标属于不可妥协的硬底线。</li>
+<li>离线结论失败时如何阻断，线上结论失效时如何回滚。</li>
+</ol>
+<p>因此，门禁不应该只有“通过”和“失败”两个内部状态。</p>
+<p>更合理的状态包括：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">PASS            证据充分，满足硬底线和退化预算</span><br><span class="line">REVIEW          统计不确定、评测器分歧或需要业务权衡</span><br><span class="line">BLOCK           硬底线失败或关键场景明确退化</span><br><span class="line">INFRA_ERROR     评测基础设施失败，未形成质量结论</span><br><span class="line">WAIVED          有期限、有责任人、有补偿措施的风险接受</span><br></pre></td></tr></table></figure>
+
+<p>对外的流水线最终仍可以映射成成功、等待审批或失败，但内部必须保留真实原因。</p>
+<h2 id="二、为什么传统“测试通过率门禁”不够"><a href="#二、为什么传统“测试通过率门禁”不够" class="headerlink" title="二、为什么传统“测试通过率门禁”不够"></a>二、为什么传统“测试通过率门禁”不够</h2><p>AI 应用不是只有模型。</p>
+<p>一次行为变化可能来自：</p>
+<ul>
+<li>模型标识或服务版本</li>
+<li>System Prompt 和模板</li>
+<li>Few-shot 示例</li>
+<li>温度、Top-p、最大输出长度等生成参数</li>
+<li>检索索引、Embedding、切片和重排</li>
+<li>工具描述、Schema 和权限策略</li>
+<li>Agent 编排和状态恢复逻辑</li>
+<li>评测数据集</li>
+<li>规则判定器和 LLM 裁判</li>
+<li>外部 API 与运行环境</li>
+</ul>
+<p>如果流水线只记录 Git Commit，就无法完整复现一次评测。</p>
+<p>如果只看总通过率，也会掩盖局部风险。</p>
+<p>例如：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">通用问答：从 86% 提升到 91%</span><br><span class="line">格式正确率：从 93% 提升到 96%</span><br><span class="line">高风险越权场景：从 100% 下降到 92%</span><br><span class="line">总体加权分：从 88.2 提升到 90.4</span><br></pre></td></tr></table></figure>
+
+<p>总分提高不能抵消安全底线下降。</p>
+<p>这说明 AI 门禁必须同时具备：</p>
+<ul>
+<li>版本指纹</li>
+<li>分层评测</li>
+<li>硬门禁</li>
+<li>相对退化判断</li>
+<li>统计不确定处理</li>
+<li>线上护栏</li>
+</ul>
+<h2 id="三、第一步不是跑评测，而是给变更做分类"><a href="#三、第一步不是跑评测，而是给变更做分类" class="headerlink" title="三、第一步不是跑评测，而是给变更做分类"></a>三、第一步不是跑评测，而是给变更做分类</h2><p>不同变更需要触发不同评测。</p>
+<h3 id="1-Prompt-变更"><a href="#1-Prompt-变更" class="headerlink" title="1. Prompt 变更"></a>1. Prompt 变更</h3><p>可能影响：</p>
+<ul>
+<li>指令遵循</li>
+<li>输出格式</li>
+<li>工具选择</li>
+<li>拒答边界</li>
+<li>回答风格和长度</li>
+</ul>
+<p>至少触发 Prompt 核心集、工具调用集、安全集和格式集。</p>
+<h3 id="2-模型或推理参数变更"><a href="#2-模型或推理参数变更" class="headerlink" title="2. 模型或推理参数变更"></a>2. 模型或推理参数变更</h3><p>可能影响几乎所有生成行为。</p>
+<p>应触发完整离线评测，并根据风险决定是否做影子流量或金丝雀发布。</p>
+<h3 id="3-RAG-数据与检索变更"><a href="#3-RAG-数据与检索变更" class="headerlink" title="3. RAG 数据与检索变更"></a>3. RAG 数据与检索变更</h3><p>更新单篇知识文档和更换 Embedding 模型不是同一风险等级。</p>
+<p>需要区分：</p>
+<ul>
+<li>内容增删改</li>
+<li>权限元数据变化</li>
+<li>切片策略变化</li>
+<li>索引重建</li>
+<li>召回参数变化</li>
+<li>重排模型变化</li>
+</ul>
+<p>这类变更至少要分别评测检索和生成，不能只看最终答案。</p>
+<h3 id="4-工具和-Agent-变更"><a href="#4-工具和-Agent-变更" class="headerlink" title="4. 工具和 Agent 变更"></a>4. 工具和 Agent 变更</h3><p>工具 Schema、新增权限、重试策略和编排顺序变化，可能产生现实副作用。</p>
+<p>应触发：</p>
+<ul>
+<li>Schema 测试</li>
+<li>权限测试</li>
+<li>轨迹评测</li>
+<li>故障恢复测试</li>
+<li>幂等与补偿测试</li>
+<li>Prompt Injection 安全集</li>
+</ul>
+<h3 id="5-评测器变更"><a href="#5-评测器变更" class="headerlink" title="5. 评测器变更"></a>5. 评测器变更</h3><p>规则、阈值、裁判 Prompt 或裁判模型变化，会改变“尺子”。</p>
+<p>不能直接拿新尺子得到的分数和旧历史基线比较。必须先在校准集上做一致性分析，再建立新基线。</p>
+<h2 id="四、建立变更风险分级"><a href="#四、建立变更风险分级" class="headerlink" title="四、建立变更风险分级"></a>四、建立变更风险分级</h2><p>可以用四个维度做初步分级。</p>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>低风险</th>
+<th>中风险</th>
+<th>高风险</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>影响范围</td>
+<td>单一文案或非关键场景</td>
+<td>一个业务域或一种能力</td>
+<td>全局模型、Prompt、检索或执行链</td>
+</tr>
+<tr>
+<td>权限与副作用</td>
+<td>只读、无敏感数据</td>
+<td>内部写操作、可补偿</td>
+<td>外发、删除、支付、终端、管理员能力</td>
+</tr>
+<tr>
+<td>可逆性</td>
+<td>立即回滚，无数据影响</td>
+<td>需要迁移或重新执行</td>
+<td>不可逆动作或已产生外部影响</td>
+</tr>
+<tr>
+<td>可观测性</td>
+<td>结果易验证</td>
+<td>部分依赖语义评测</td>
+<td>结果延迟、隐蔽或难以获得真值</td>
+</tr>
+</tbody></table>
+<p>风险级别不应该只影响审批流程，还应该决定：</p>
+<ul>
+<li>评测集范围</li>
+<li>重复运行次数</li>
+<li>允许的退化预算</li>
+<li>是否需要人工复核</li>
+<li>灰度比例和时长</li>
+<li>线上回滚条件</li>
+</ul>
+<p>示例策略：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">低风险：快速集 + 核心硬门禁</span><br><span class="line">中风险：完整离线集 + 分层比较 + 小流量灰度</span><br><span class="line">高风险：完整评测 + 安全红队 + 人工审批 + 影子/金丝雀 + 自动回滚</span><br></pre></td></tr></table></figure>
+
+<h2 id="五、把评测套件拆成多层，不要每次都跑同一批"><a href="#五、把评测套件拆成多层，不要每次都跑同一批" class="headerlink" title="五、把评测套件拆成多层，不要每次都跑同一批"></a>五、把评测套件拆成多层，不要每次都跑同一批</h2><p>质量门禁既要快，也要覆盖风险。</p>
+<p>一种实用分层如下。</p>
+<h3 id="1-L0：确定性静态检查"><a href="#1-L0：确定性静态检查" class="headerlink" title="1. L0：确定性静态检查"></a>1. L0：确定性静态检查</h3><p>秒级到分钟级完成：</p>
+<ul>
+<li>Prompt 模板可渲染</li>
+<li>变量完整</li>
+<li>JSON Schema 合法</li>
+<li>工具描述和参数兼容</li>
+<li>安全策略可加载</li>
+<li>数据集格式和引用完整</li>
+<li>模型配置在允许清单中</li>
+</ul>
+<h3 id="2-L1：核心冒烟评测"><a href="#2-L1：核心冒烟评测" class="headerlink" title="2. L1：核心冒烟评测"></a>2. L1：核心冒烟评测</h3><p>选取数量少、价值高、历史稳定的样本：</p>
+<ul>
+<li>核心任务</li>
+<li>关键格式</li>
+<li>典型工具调用</li>
+<li>高风险拒绝</li>
+<li>历史严重缺陷</li>
+</ul>
+<p>它适合每次 Pull Request 运行，但不能代替完整评测。</p>
+<h3 id="3-L2：完整离线回归"><a href="#3-L2：完整离线回归" class="headerlink" title="3. L2：完整离线回归"></a>3. L2：完整离线回归</h3><p>按业务、语言、难度、风险、输入长度、工具和数据来源分层运行。</p>
+<p>这层用于发现局部退化，并形成候选与基线的配对结果。</p>
+<h3 id="4-L3：鲁棒性与安全评测"><a href="#4-L3：鲁棒性与安全评测" class="headerlink" title="4. L3：鲁棒性与安全评测"></a>4. L3：鲁棒性与安全评测</h3><p>覆盖：</p>
+<ul>
+<li>Prompt Injection</li>
+<li>越权与数据泄漏</li>
+<li>长上下文和噪声</li>
+<li>检索污染</li>
+<li>工具失败</li>
+<li>限流、超时和重试</li>
+<li>对抗与边界样本</li>
+</ul>
+<h3 id="5-L4：影子与金丝雀验证"><a href="#5-L4：影子与金丝雀验证" class="headerlink" title="5. L4：影子与金丝雀验证"></a>5. L4：影子与金丝雀验证</h3><p>离线数据无法完全代表真实流量。</p>
+<p>线上阶段观察：</p>
+<ul>
+<li>任务完成率</li>
+<li>人工接管率</li>
+<li>用户纠正率</li>
+<li>工具失败和副作用</li>
+<li>时延与 Token 成本</li>
+<li>安全护栏命中</li>
+<li>业务结果</li>
+</ul>
+<h2 id="六、分层门禁的完整流水线"><a href="#六、分层门禁的完整流水线" class="headerlink" title="六、分层门禁的完整流水线"></a>六、分层门禁的完整流水线</h2><p>下面这张图展示了从变更到灰度的主链路。</p>
+<p><img src="/images/ai-quality/ai-23-quality-gate.svg" alt="AI评测接入CI-CD的分层质量门禁"></p>
+<p>这条链路有三个重要原则。</p>
+<h3 id="1-先快后慢"><a href="#1-先快后慢" class="headerlink" title="1. 先快后慢"></a>1. 先快后慢</h3><p>确定性失败应尽早反馈，不必等待昂贵模型调用完成。</p>
+<h3 id="2-先硬底线后综合收益"><a href="#2-先硬底线后综合收益" class="headerlink" title="2. 先硬底线后综合收益"></a>2. 先硬底线后综合收益</h3><p>越权、泄漏和关键任务失败不能被平均分抵消。</p>
+<h3 id="3-离线通过不等于直接全量"><a href="#3-离线通过不等于直接全量" class="headerlink" title="3. 离线通过不等于直接全量"></a>3. 离线通过不等于直接全量</h3><p>离线评测证明候选版本在已知样本上满足条件，线上灰度用于验证流量分布、依赖和业务行为。</p>
+<h2 id="七、基线不是一个分数，而是一组冻结版本"><a href="#七、基线不是一个分数，而是一组冻结版本" class="headerlink" title="七、基线不是一个分数，而是一组冻结版本"></a>七、基线不是一个分数，而是一组冻结版本</h2><p>要比较候选和基线，至少需要冻结以下信息：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">baseline:</span></span><br><span class="line">  <span class="attr">release_id:</span> <span class="string">ai-assistant-2026-03-20.2</span></span><br><span class="line">  <span class="attr">git_commit:</span> <span class="string">4f2c1ab</span></span><br><span class="line">  <span class="attr">model:</span></span><br><span class="line">    <span class="attr">provider:</span> <span class="string">provider_a</span></span><br><span class="line">    <span class="attr">model_id:</span> <span class="string">model_family_x</span></span><br><span class="line">    <span class="attr">serving_revision:</span> <span class="string">revision_17</span></span><br><span class="line">    <span class="attr">parameters:</span></span><br><span class="line">      <span class="attr">temperature:</span> <span class="number">0.2</span></span><br><span class="line">      <span class="attr">max_output_tokens:</span> <span class="number">1200</span></span><br><span class="line">  <span class="attr">prompt:</span></span><br><span class="line">    <span class="attr">template_version:</span> <span class="string">support-agent-v18</span></span><br><span class="line">    <span class="attr">content_sha256:</span> <span class="string">&quot;...&quot;</span></span><br><span class="line">  <span class="attr">retrieval:</span></span><br><span class="line">    <span class="attr">corpus_version:</span> <span class="string">kb-2026-03-19</span></span><br><span class="line">    <span class="attr">embedding_version:</span> <span class="string">embedding-v4</span></span><br><span class="line">    <span class="attr">chunk_policy:</span> <span class="string">semantic-800-v2</span></span><br><span class="line">    <span class="attr">reranker_version:</span> <span class="string">reranker-v3</span></span><br><span class="line">  <span class="attr">tools:</span></span><br><span class="line">    <span class="attr">registry_version:</span> <span class="string">tools-42</span></span><br><span class="line">    <span class="attr">policy_version:</span> <span class="string">policy-19</span></span><br><span class="line">  <span class="attr">evaluation:</span></span><br><span class="line">    <span class="attr">dataset_version:</span> <span class="string">support-eval-31</span></span><br><span class="line">    <span class="attr">grader_version:</span> <span class="string">graders-12</span></span><br><span class="line">    <span class="attr">runtime_image:</span> <span class="string">eval-runner@sha256:...</span></span><br></pre></td></tr></table></figure>
+
+<p>这里记录 <code>serving_revision</code>，是因为同一公开模型名背后的服务行为可能发生变化。具体供应商是否提供固定版本能力，要按实际接口确认，不能假设字符串相同就一定可复现。</p>
+<p>评测基线还应该保存样本级结果和 Trace，而不是只存一个聚合分。</p>
+<h2 id="八、指标必须分层，否则平均数会隐藏风险"><a href="#八、指标必须分层，否则平均数会隐藏风险" class="headerlink" title="八、指标必须分层，否则平均数会隐藏风险"></a>八、指标必须分层，否则平均数会隐藏风险</h2><p>至少建议从五个层级组织指标。</p>
+<h3 id="1-输入和检索层"><a href="#1-输入和检索层" class="headerlink" title="1. 输入和检索层"></a>1. 输入和检索层</h3><ul>
+<li>权限过滤正确率</li>
+<li>Recall@k</li>
+<li>MRR 或 nDCG</li>
+<li>上下文相关性</li>
+<li>引用覆盖率</li>
+</ul>
+<h3 id="2-模型输出层"><a href="#2-模型输出层" class="headerlink" title="2. 模型输出层"></a>2. 模型输出层</h3><ul>
+<li>Schema 合法率</li>
+<li>事实支持率</li>
+<li>任务相关性</li>
+<li>拒答正确率</li>
+<li>敏感信息暴露率</li>
+</ul>
+<h3 id="3-Agent-轨迹层"><a href="#3-Agent-轨迹层" class="headerlink" title="3. Agent 轨迹层"></a>3. Agent 轨迹层</h3><ul>
+<li>工具选择正确率</li>
+<li>参数正确率</li>
+<li>非必要工具调用数</li>
+<li>状态一致性</li>
+<li>故障恢复率</li>
+</ul>
+<h3 id="4-系统质量层"><a href="#4-系统质量层" class="headerlink" title="4. 系统质量层"></a>4. 系统质量层</h3><ul>
+<li>端到端任务完成率</li>
+<li>P50&#x2F;P95&#x2F;P99 时延</li>
+<li>首 Token 时延</li>
+<li>单任务 Token 和费用</li>
+<li>超时、限流和基础设施失败率</li>
+</ul>
+<h3 id="5-业务与风险层"><a href="#5-业务与风险层" class="headerlink" title="5. 业务与风险层"></a>5. 业务与风险层</h3><ul>
+<li>高价值任务完成率</li>
+<li>人工接管率</li>
+<li>错误动作成本</li>
+<li>安全事件数</li>
+<li>用户纠正和投诉率</li>
+</ul>
+<p>门禁策略应该引用这些分层指标，而不是重新把它们压成一个不可解释的综合分。</p>
+<p>综合分可以用于趋势观察，不能代替硬门禁。</p>
+<h2 id="九、先定义不可妥协的硬门禁"><a href="#九、先定义不可妥协的硬门禁" class="headerlink" title="九、先定义不可妥协的硬门禁"></a>九、先定义不可妥协的硬门禁</h2><p>硬门禁应该少而明确。</p>
+<p>常见例子包括：</p>
+<ul>
+<li>禁止工具实际执行次数必须为零</li>
+<li>跨租户读取次数必须为零</li>
+<li>敏感凭据暴露次数必须为零</li>
+<li>核心结构化输出合法率必须达到明确底线</li>
+<li>高风险动作未经审批的执行次数必须为零</li>
+<li>关键业务任务完成率不得低于发布底线</li>
+<li>评测证据不完整时不能自动发布</li>
+</ul>
+<p>硬门禁不能依赖单个 LLM 裁判给出模糊分数。</p>
+<p>安全和权限性质应尽量从系统事实、工具审计、数据库访问和网络记录中判定。</p>
+<h2 id="十、绝对阈值和相对退化要同时使用"><a href="#十、绝对阈值和相对退化要同时使用" class="headerlink" title="十、绝对阈值和相对退化要同时使用"></a>十、绝对阈值和相对退化要同时使用</h2><p>只用绝对阈值有一个常见问题：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">门禁要求 &gt;= 80%</span><br><span class="line">基线 = 94%</span><br><span class="line">候选 = 83%</span><br></pre></td></tr></table></figure>
+
+<p>候选仍然“通过”，但已经产生明显回退。</p>
+<p>只用相对差异也有问题：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">基线 = 52%</span><br><span class="line">候选 = 54%</span><br></pre></td></tr></table></figure>
+
+<p>候选有提升，却可能仍未达到业务可用底线。</p>
+<p>因此一个分层指标通常需要两个条件：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">candidate &gt;= absolute_floor</span><br><span class="line">candidate - baseline &gt;= -regression_budget</span><br></pre></td></tr></table></figure>
+
+<p>例如：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">metrics:</span></span><br><span class="line">  <span class="attr">task_completion:</span></span><br><span class="line">    <span class="attr">absolute_floor:</span> <span class="number">0.90</span></span><br><span class="line">    <span class="attr">max_regression:</span> <span class="number">0.015</span></span><br><span class="line">  <span class="attr">citation_correctness:</span></span><br><span class="line">    <span class="attr">absolute_floor:</span> <span class="number">0.95</span></span><br><span class="line">    <span class="attr">max_regression:</span> <span class="number">0.005</span></span><br><span class="line">  <span class="attr">forbidden_action_rate:</span></span><br><span class="line">    <span class="attr">absolute_ceiling:</span> <span class="number">0.0</span></span><br></pre></td></tr></table></figure>
+
+<p>对风险不同的分层，可以设置不同预算。</p>
+<p>高风险任务不应该沿用普通问答的退化容忍度。</p>
+<h2 id="十一、尽量使用同一样本的配对比较"><a href="#十一、尽量使用同一样本的配对比较" class="headerlink" title="十一、尽量使用同一样本的配对比较"></a>十一、尽量使用同一样本的配对比较</h2><p>候选和基线如果在不同样本上运行，差异可能来自样本分布。</p>
+<p>更稳妥的方式是：</p>
+<ol>
+<li>对同一批样本分别运行基线和候选。</li>
+<li>保留每个样本的结果对。</li>
+<li>统计候选胜、平、负以及风险变化。</li>
+<li>对差异做配对 Bootstrap、置换检验或适合当前指标的区间估计。</li>
+</ol>
+<p>对每个样本 (i)，可以定义：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">d_i = score_candidate_i - score_baseline_i</span><br></pre></td></tr></table></figure>
+
+<p>门禁关注的是差异分布，而不是两个独立平均数。</p>
+<p>对于布尔任务，还可以把样本分成：</p>
+<table>
+<thead>
+<tr>
+<th>基线</th>
+<th>候选</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>失败</td>
+<td>成功</td>
+<td>修复</td>
+</tr>
+<tr>
+<td>成功</td>
+<td>成功</td>
+<td>稳定通过</td>
+</tr>
+<tr>
+<td>失败</td>
+<td>失败</td>
+<td>持续失败</td>
+</tr>
+<tr>
+<td>成功</td>
+<td>失败</td>
+<td>新增回退</td>
+</tr>
+</tbody></table>
+<p>“新增回退”通常比总通过率更适合直接进入缺陷和门禁分析。</p>
+<h2 id="十二、非确定性结果必须带不确定区间"><a href="#十二、非确定性结果必须带不确定区间" class="headerlink" title="十二、非确定性结果必须带不确定区间"></a>十二、非确定性结果必须带不确定区间</h2><p>如果一条样本运行一次就决定发布，模型随机性和服务波动可能直接变成门禁噪声。</p>
+<h3 id="1-重复运行"><a href="#1-重复运行" class="headerlink" title="1. 重复运行"></a>1. 重复运行</h3><p>对关键非确定性样本运行多次，记录：</p>
+<ul>
+<li>通过次数</li>
+<li>失败次数</li>
+<li>结果类别分布</li>
+<li>工具轨迹差异</li>
+<li>时延和成本波动</li>
+</ul>
+<p>重复次数应该由风险和历史方差决定，不是所有样本固定跑十次。</p>
+<h3 id="2-比例指标的区间"><a href="#2-比例指标的区间" class="headerlink" title="2. 比例指标的区间"></a>2. 比例指标的区间</h3><p>假设 <code>n</code> 次运行中有 <code>k</code> 次通过，点估计是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">p_hat = k / n</span><br></pre></td></tr></table></figure>
+
+<p>但门禁不应只看 <code>p_hat</code>。小样本下可以使用 Wilson 区间或 Bootstrap 区间表达不确定性。</p>
+<p>例如绝对底线是 90%，更保守的规则可以检查置信区间下界是否仍达到底线。</p>
+<p>独立性假设必须写进统计口径。同一个 case 的多次运行共享输入、环境和业务风险，不能把所有 run 当成相互独立的 Bernoulli 样本。更稳妥的做法是以 case 为聚类单位做 Bootstrap；比较候选与基线时，在同一 case 内保留配对关系，再重采样 case 组。</p>
+<h3 id="3-不确定不是通过"><a href="#3-不确定不是通过" class="headerlink" title="3. 不确定不是通过"></a>3. 不确定不是通过</h3><p>如果候选和基线的差异区间跨越退化预算，合理状态是 <code>REVIEW</code> 或扩大样本，而不是自动选择有利结论。</p>
+<h3 id="4-控制多重比较"><a href="#4-控制多重比较" class="headerlink" title="4. 控制多重比较"></a>4. 控制多重比较</h3><p>当平台同时检查几十个切片和指标时，总会有少数指标偶然波动。</p>
+<p>应提前定义关键指标、探索指标和告警规则，避免看到波动后临时挑选解释。必要时使用多重检验控制，但更重要的是把发布决策聚焦在预先声明的风险指标上。</p>
+<h2 id="十三、为门禁保留明确的三个决策区"><a href="#十三、为门禁保留明确的三个决策区" class="headerlink" title="十三、为门禁保留明确的三个决策区"></a>十三、为门禁保留明确的三个决策区</h2><p><img src="/images/ai-quality/ai-23-release-flow.svg" alt="AI发布门禁判定模型"></p>
+<h3 id="1-通过区"><a href="#1-通过区" class="headerlink" title="1. 通过区"></a>1. 通过区</h3><p>满足所有硬底线，关键分层未超过退化预算，证据完整，统计不确定可接受。</p>
+<p>通过后仍然进入灰度，而不是直接证明全量安全。</p>
+<h3 id="2-人工复核区"><a href="#2-人工复核区" class="headerlink" title="2. 人工复核区"></a>2. 人工复核区</h3><p>适用于：</p>
+<ul>
+<li>样本不足</li>
+<li>置信区间跨越预算</li>
+<li>两个裁判明显分歧</li>
+<li>低风险场景小幅退化但有明确业务收益</li>
+<li>评测数据不能代表新功能</li>
+</ul>
+<p>人工复核要补充结论和证据，不能只点一个“强制通过”。</p>
+<h3 id="3-阻断区"><a href="#3-阻断区" class="headerlink" title="3. 阻断区"></a>3. 阻断区</h3><p>适用于：</p>
+<ul>
+<li>硬安全性质失败</li>
+<li>关键任务明确退化</li>
+<li>评测集或证据链损坏</li>
+<li>候选版本与声明版本不一致</li>
+<li>已过期豁免仍被使用</li>
+</ul>
+<h2 id="十四、门禁策略应该配置化，但不能失去审查"><a href="#十四、门禁策略应该配置化，但不能失去审查" class="headerlink" title="十四、门禁策略应该配置化，但不能失去审查"></a>十四、门禁策略应该配置化，但不能失去审查</h2><p>下面是一份简化策略示例：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">apiVersion:</span> <span class="string">quality.ai/v1</span></span><br><span class="line"><span class="attr">kind:</span> <span class="string">EvaluationGate</span></span><br><span class="line"><span class="attr">metadata:</span></span><br><span class="line">  <span class="attr">name:</span> <span class="string">support-agent-release</span></span><br><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">riskLevel:</span> <span class="string">high</span></span><br><span class="line">  <span class="attr">baselineRef:</span> <span class="string">production</span></span><br><span class="line">  <span class="attr">suites:</span></span><br><span class="line">    <span class="attr">pullRequest:</span></span><br><span class="line">      <span class="bullet">-</span> <span class="string">schema</span></span><br><span class="line">      <span class="bullet">-</span> <span class="string">core_tasks</span></span><br><span class="line">      <span class="bullet">-</span> <span class="string">critical_safety</span></span><br><span class="line">    <span class="attr">release:</span></span><br><span class="line">      <span class="bullet">-</span> <span class="string">full_business</span></span><br><span class="line">      <span class="bullet">-</span> <span class="string">rag_retrieval</span></span><br><span class="line">      <span class="bullet">-</span> <span class="string">agent_trajectory</span></span><br><span class="line">      <span class="bullet">-</span> <span class="string">robustness</span></span><br><span class="line">      <span class="bullet">-</span> <span class="string">prompt_injection</span></span><br><span class="line">  <span class="attr">hardGates:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">metric:</span> <span class="string">security.forbidden_action_count</span></span><br><span class="line">      <span class="attr">operator:</span> <span class="string">equals</span></span><br><span class="line">      <span class="attr">value:</span> <span class="number">0</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">metric:</span> <span class="string">security.cross_tenant_read_count</span></span><br><span class="line">      <span class="attr">operator:</span> <span class="string">equals</span></span><br><span class="line">      <span class="attr">value:</span> <span class="number">0</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">metric:</span> <span class="string">core.task_completion_rate</span></span><br><span class="line">      <span class="attr">operator:</span> <span class="string">greater_or_equal</span></span><br><span class="line">      <span class="attr">value:</span> <span class="number">0.92</span></span><br><span class="line">  <span class="attr">regressionGates:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">metric:</span> <span class="string">core.task_completion_rate</span></span><br><span class="line">      <span class="attr">maxDrop:</span> <span class="number">0.01</span></span><br><span class="line">      <span class="attr">confidence:</span> <span class="number">0.95</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">metric:</span> <span class="string">rag.citation_correctness</span></span><br><span class="line">      <span class="attr">maxDrop:</span> <span class="number">0.005</span></span><br><span class="line">      <span class="attr">confidence:</span> <span class="number">0.95</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">metric:</span> <span class="string">cost.tokens_per_success</span></span><br><span class="line">      <span class="attr">maxIncrease:</span> <span class="number">0.10</span></span><br><span class="line">  <span class="attr">reviewRules:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">when:</span> <span class="string">statistical_uncertainty</span></span><br><span class="line">      <span class="attr">requireRole:</span> <span class="string">ai-quality-owner</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">when:</span> <span class="string">grader_disagreement</span></span><br><span class="line">      <span class="attr">requireRole:</span> <span class="string">domain-reviewer</span></span><br><span class="line">  <span class="attr">rollout:</span></span><br><span class="line">    <span class="attr">canaryPercent:</span> <span class="number">5</span></span><br><span class="line">    <span class="attr">minimumDuration:</span> <span class="string">2h</span></span><br><span class="line">    <span class="attr">rollbackOn:</span></span><br><span class="line">      <span class="bullet">-</span> <span class="string">online.unsafe_action_count</span> <span class="string">&gt;</span> <span class="number">0</span></span><br><span class="line">      <span class="bullet">-</span> <span class="string">online.task_failure_rate_delta</span> <span class="string">&gt;</span> <span class="number">0.03</span></span><br></pre></td></tr></table></figure>
+
+<p>策略文件本身要进入代码审查。</p>
+<p>否则开发者可以在同一个变更里降低阈值，让候选版本“自己修改考试及格线”。</p>
+<p>高风险门禁策略建议由独立所有者审批，并记录变更原因。</p>
+<h2 id="十五、在-CI-CD-中拆开快速评测和完整评测"><a href="#十五、在-CI-CD-中拆开快速评测和完整评测" class="headerlink" title="十五、在 CI&#x2F;CD 中拆开快速评测和完整评测"></a>十五、在 CI&#x2F;CD 中拆开快速评测和完整评测</h2><p>下面以通用 YAML 表达流水线，不绑定某一家 CI 产品。</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">stages:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">validate</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">eval_fast</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">eval_full</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">gate</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">canary</span></span><br><span class="line"></span><br><span class="line"><span class="attr">validate_contracts:</span></span><br><span class="line">  <span class="attr">stage:</span> <span class="string">validate</span></span><br><span class="line">  <span class="attr">script:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">ai-eval</span> <span class="string">validate</span> <span class="string">--config</span> <span class="string">eval/project.yaml</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">ai-eval</span> <span class="string">fingerprint</span> <span class="string">--output</span> <span class="string">artifacts/candidate.json</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">ai-eval</span> <span class="string">dataset</span> <span class="string">verify</span> <span class="string">--version</span> <span class="string">support-eval-31</span></span><br><span class="line">  <span class="attr">artifacts:</span></span><br><span class="line">    <span class="attr">paths:</span></span><br><span class="line">      <span class="bullet">-</span> <span class="string">artifacts/</span></span><br><span class="line"></span><br><span class="line"><span class="attr">fast_eval:</span></span><br><span class="line">  <span class="attr">stage:</span> <span class="string">eval_fast</span></span><br><span class="line">  <span class="attr">script:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">ai-eval</span> <span class="string">run</span> <span class="string">--suite</span> <span class="string">core</span> <span class="string">--suite</span> <span class="string">critical-safety</span> <span class="string">--repeat</span> <span class="number">2</span></span><br><span class="line">  <span class="attr">artifacts:</span></span><br><span class="line">    <span class="attr">paths:</span></span><br><span class="line">      <span class="bullet">-</span> <span class="string">artifacts/eval-fast/</span></span><br><span class="line"></span><br><span class="line"><span class="attr">full_eval:</span></span><br><span class="line">  <span class="attr">stage:</span> <span class="string">eval_full</span></span><br><span class="line">  <span class="attr">rules:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">if:</span> <span class="string">CHANGE_RISK</span> <span class="string">==</span> <span class="string">&quot;medium&quot;</span> <span class="string">||</span> <span class="string">CHANGE_RISK</span> <span class="string">==</span> <span class="string">&quot;high&quot;</span></span><br><span class="line">  <span class="attr">script:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">ai-eval</span> <span class="string">run</span> <span class="string">--suite</span> <span class="string">release</span> <span class="string">--baseline</span> <span class="string">production</span> <span class="string">--paired</span></span><br><span class="line">  <span class="attr">artifacts:</span></span><br><span class="line">    <span class="attr">paths:</span></span><br><span class="line">      <span class="bullet">-</span> <span class="string">artifacts/eval-full/</span></span><br><span class="line"></span><br><span class="line"><span class="attr">quality_gate:</span></span><br><span class="line">  <span class="attr">stage:</span> <span class="string">gate</span></span><br><span class="line">  <span class="attr">script:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">ai-eval</span> <span class="string">gate</span> <span class="string">--policy</span> <span class="string">eval/gates/support-agent.yaml</span></span><br><span class="line">  <span class="attr">artifacts:</span></span><br><span class="line">    <span class="attr">paths:</span></span><br><span class="line">      <span class="bullet">-</span> <span class="string">artifacts/gate-decision.json</span></span><br><span class="line">      <span class="bullet">-</span> <span class="string">artifacts/evidence-manifest.json</span></span><br><span class="line"></span><br><span class="line"><span class="attr">canary:</span></span><br><span class="line">  <span class="attr">stage:</span> <span class="string">canary</span></span><br><span class="line">  <span class="attr">needs:</span> [<span class="string">quality_gate</span>]</span><br><span class="line">  <span class="attr">script:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">deploy</span> <span class="string">canary</span> <span class="string">--release</span> <span class="string">&quot;$CANDIDATE_RELEASE&quot;</span> <span class="string">--percent</span> <span class="number">5</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">ai-eval</span> <span class="string">monitor</span> <span class="string">--policy</span> <span class="string">eval/online-guards.yaml</span> <span class="string">--duration</span> <span class="string">2h</span></span><br></pre></td></tr></table></figure>
+
+<p>关键点不是命令名字，而是：</p>
+<ul>
+<li>每个阶段输出机器可读产物</li>
+<li>完整评测根据变更风险触发</li>
+<li>门禁读取固定策略和基线</li>
+<li>灰度继续执行线上护栏</li>
+<li>所有产物进入同一个证据清单</li>
+</ul>
+<h2 id="十六、门禁输入必须是样本级报告，不只是聚合分数"><a href="#十六、门禁输入必须是样本级报告，不只是聚合分数" class="headerlink" title="十六、门禁输入必须是样本级报告，不只是聚合分数"></a>十六、门禁输入必须是样本级报告，不只是聚合分数</h2><p>一个最小报告可以这样组织：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;run_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;eval_20260331_0017&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;candidate_fingerprint&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sha256:...&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;baseline_fingerprint&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sha256:...&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;dataset_version&quot;</span><span class="punctuation">:</span> <span class="string">&quot;support-eval-31&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;grader_version&quot;</span><span class="punctuation">:</span> <span class="string">&quot;graders-12&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;summary&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;task_completion_rate&quot;</span><span class="punctuation">:</span> <span class="number">0.934</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;forbidden_action_count&quot;</span><span class="punctuation">:</span> <span class="number">0</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;tokens_per_success&quot;</span><span class="punctuation">:</span> <span class="number">1842</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;slices&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;name&quot;</span><span class="punctuation">:</span> <span class="string">&quot;high_risk_refund&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;candidate_rate&quot;</span><span class="punctuation">:</span> <span class="number">0.912</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;baseline_rate&quot;</span><span class="punctuation">:</span> <span class="number">0.928</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;delta&quot;</span><span class="punctuation">:</span> <span class="number">-0.016</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;confidence_interval&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="number">-0.031</span><span class="punctuation">,</span> <span class="number">-0.002</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;new_regressions&quot;</span><span class="punctuation">:</span> <span class="number">7</span></span><br><span class="line">    <span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;samples&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;case_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;refund-0142&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;baseline&quot;</span><span class="punctuation">:</span> <span class="string">&quot;pass&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;candidate&quot;</span><span class="punctuation">:</span> <span class="string">&quot;fail&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;failure_layer&quot;</span><span class="punctuation">:</span> <span class="string">&quot;tool_argument&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;trace_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;trace_7f...&quot;</span></span><br><span class="line">    <span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;infrastructure&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;failed_runs&quot;</span><span class="punctuation">:</span> <span class="number">0</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;missing_traces&quot;</span><span class="punctuation">:</span> <span class="number">0</span></span><br><span class="line">  <span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>样本级结果让平台能定位：</p>
+<ul>
+<li>哪些旧成功样本变成失败</li>
+<li>退化集中在哪个业务切片</li>
+<li>是回答质量下降，还是工具参数错误</li>
+<li>哪些结论需要人工复核</li>
+</ul>
+<h2 id="十七、门禁判定器要先检查证据，再检查分数"><a href="#十七、门禁判定器要先检查证据，再检查分数" class="headerlink" title="十七、门禁判定器要先检查证据，再检查分数"></a>十七、门禁判定器要先检查证据，再检查分数</h2><p>一个简化判定顺序如下：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> enum <span class="keyword">import</span> Enum</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Decision</span>(<span class="built_in">str</span>, Enum):</span><br><span class="line">    PASS = <span class="string">&quot;pass&quot;</span></span><br><span class="line">    REVIEW = <span class="string">&quot;review&quot;</span></span><br><span class="line">    BLOCK = <span class="string">&quot;block&quot;</span></span><br><span class="line">    INFRA_ERROR = <span class="string">&quot;infra_error&quot;</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">decide</span>(<span class="params">report, policy, expected_candidate_fingerprint</span>):</span><br><span class="line">    infra_reasons = []</span><br><span class="line">    <span class="keyword">if</span> report[<span class="string">&quot;infrastructure&quot;</span>][<span class="string">&quot;failed_runs&quot;</span>] &gt; <span class="number">0</span>:</span><br><span class="line">        infra_reasons.append(<span class="string">&quot;failed_run&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> report[<span class="string">&quot;infrastructure&quot;</span>][<span class="string">&quot;missing_traces&quot;</span>] &gt; <span class="number">0</span>:</span><br><span class="line">        infra_reasons.append(<span class="string">&quot;missing_trace&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> infra_reasons:</span><br><span class="line">        <span class="keyword">return</span> Decision.INFRA_ERROR, infra_reasons</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> report[<span class="string">&quot;candidate_fingerprint&quot;</span>] != expected_candidate_fingerprint:</span><br><span class="line">        <span class="keyword">return</span> Decision.BLOCK, [<span class="string">&quot;candidate_mismatch&quot;</span>]</span><br><span class="line"></span><br><span class="line">    hard_failures = evaluate_hard_gates(report, policy[<span class="string">&quot;hard_gates&quot;</span>])</span><br><span class="line">    <span class="keyword">if</span> hard_failures:</span><br><span class="line">        <span class="keyword">return</span> Decision.BLOCK, hard_failures</span><br><span class="line"></span><br><span class="line">    regressions = evaluate_regressions(report, policy[<span class="string">&quot;regression_gates&quot;</span>])</span><br><span class="line">    certain_regressions = [item <span class="keyword">for</span> item <span class="keyword">in</span> regressions <span class="keyword">if</span> item[<span class="string">&quot;certain&quot;</span>]]</span><br><span class="line">    uncertain_items = [item <span class="keyword">for</span> item <span class="keyword">in</span> regressions <span class="keyword">if</span> <span class="keyword">not</span> item[<span class="string">&quot;certain&quot;</span>]]</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> certain_regressions:</span><br><span class="line">        <span class="keyword">return</span> Decision.BLOCK, certain_regressions</span><br><span class="line">    <span class="keyword">if</span> uncertain_items:</span><br><span class="line">        <span class="keyword">return</span> Decision.REVIEW, uncertain_items</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> Decision.PASS, []</span><br></pre></td></tr></table></figure>
+
+<p>不要在 <code>INFRA_ERROR</code> 后自动把流水线标成质量通过。</p>
+<p>基础设施失败表示“没有形成结论”，不是“候选没有问题”。</p>
+<p><code>expected_candidate_fingerprint</code> 应由构建阶段生成的不可变制品清单传入，不能从门禁策略中临时猜测，也不能只相信评测报告自报的版本。</p>
+<h2 id="十八、评测器本身也要有门禁"><a href="#十八、评测器本身也要有门禁" class="headerlink" title="十八、评测器本身也要有门禁"></a>十八、评测器本身也要有门禁</h2><p>AI 门禁最大的自指问题，是用一个不稳定的 LLM 去判断另一个 LLM。</p>
+<h3 id="1-规则判定优先"><a href="#1-规则判定优先" class="headerlink" title="1. 规则判定优先"></a>1. 规则判定优先</h3><p>能够通过 Schema、数据库状态、工具记录、字符串规则或业务计算得到的事实，不要交给 LLM 裁判。</p>
+<h3 id="2-裁判版本必须固定"><a href="#2-裁判版本必须固定" class="headerlink" title="2. 裁判版本必须固定"></a>2. 裁判版本必须固定</h3><p>记录裁判模型、Prompt、Rubric、示例和参数版本。</p>
+<h3 id="3-用人工校准集验证裁判"><a href="#3-用人工校准集验证裁判" class="headerlink" title="3. 用人工校准集验证裁判"></a>3. 用人工校准集验证裁判</h3><p>至少观察：</p>
+<ul>
+<li>与人工标签的一致性</li>
+<li>不同类别的偏差</li>
+<li>顺序交换后结果变化</li>
+<li>对长度、风格和自家模型的偏好</li>
+<li>重复评分稳定性</li>
+</ul>
+<h3 id="4-裁判变化要重建基线"><a href="#4-裁判变化要重建基线" class="headerlink" title="4. 裁判变化要重建基线"></a>4. 裁判变化要重建基线</h3><p>新旧裁判的分数不能直接拼成一条趋势线。</p>
+<p>可以在同一校准集上双跑一段时间，建立映射和差异报告，再切换门禁基线。</p>
+<h3 id="5-分歧进入复核区"><a href="#5-分歧进入复核区" class="headerlink" title="5. 分歧进入复核区"></a>5. 分歧进入复核区</h3><p>多个裁判或规则与裁判分歧时，应输出分歧类型和样本，不应该简单多数投票后删除原始证据。</p>
+<h2 id="十九、正确处理-Flaky-Eval-和基础设施噪声"><a href="#十九、正确处理-Flaky-Eval-和基础设施噪声" class="headerlink" title="十九、正确处理 Flaky Eval 和基础设施噪声"></a>十九、正确处理 Flaky Eval 和基础设施噪声</h2><p>最危险的做法，是失败后不断重跑，直到某次通过。</p>
+<p>这会系统性地选择有利随机结果。</p>
+<h3 id="1-预先定义重试策略"><a href="#1-预先定义重试策略" class="headerlink" title="1. 预先定义重试策略"></a>1. 预先定义重试策略</h3><p>只对明确的可重试基础设施失败重试，例如连接中断、限流和临时服务不可用。</p>
+<p>语义评分低不能自动当成基础设施失败。</p>
+<h3 id="2-保留所有尝试"><a href="#2-保留所有尝试" class="headerlink" title="2. 保留所有尝试"></a>2. 保留所有尝试</h3><p>重试不能覆盖首错结果。报告要记录每次尝试、错误类型和最终收口方式。</p>
+<h3 id="3-对不稳定样本单独治理"><a href="#3-对不稳定样本单独治理" class="headerlink" title="3. 对不稳定样本单独治理"></a>3. 对不稳定样本单独治理</h3><p>标记历史方差、评测器分歧和环境依赖。</p>
+<p>不稳定样本不能被静默删除。应修复判定、增加重复次数、降低其作为硬门禁的权重，或转入专项人工评测。</p>
+<h3 id="4-设定噪声预算"><a href="#4-设定噪声预算" class="headerlink" title="4. 设定噪声预算"></a>4. 设定噪声预算</h3><p>平台可以记录每个套件的历史波动范围。当整体波动突然扩大时，优先检查模型服务、评测器和数据版本，而不是立即归因给业务代码。</p>
+<h2 id="二十、豁免必须是有期限的风险接受"><a href="#二十、豁免必须是有期限的风险接受" class="headerlink" title="二十、豁免必须是有期限的风险接受"></a>二十、豁免必须是有期限的风险接受</h2><p>某些发布确实可能需要带已知风险上线。</p>
+<p>但豁免不能是一条永久的 <code>allow_failure: true</code>。</p>
+<p>一个合格豁免至少包含：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">waiver:</span></span><br><span class="line">  <span class="attr">gate_id:</span> <span class="string">rag.citation_correctness</span></span><br><span class="line">  <span class="attr">release_id:</span> <span class="string">support-agent-2026-03-31.1</span></span><br><span class="line">  <span class="attr">reason:</span> <span class="string">新增小语种知识，人工抽检覆盖不足</span></span><br><span class="line">  <span class="attr">owner:</span> <span class="string">domain-quality-owner</span></span><br><span class="line">  <span class="attr">approver:</span> <span class="string">release-risk-owner</span></span><br><span class="line">  <span class="attr">scope:</span></span><br><span class="line">    <span class="attr">locale:</span> [<span class="string">th-TH</span>]</span><br><span class="line">    <span class="attr">traffic_percent:</span> <span class="number">2</span></span><br><span class="line">  <span class="attr">compensating_controls:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">force_citation_required</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">human_review_on_low_confidence</span></span><br><span class="line">  <span class="attr">expires_at:</span> <span class="number">2026-04-03T20:30:00+08:00</span></span><br><span class="line">  <span class="attr">rollback_metric:</span> <span class="string">online.unsupported_answer_rate</span> <span class="string">&gt;</span> <span class="number">0.01</span></span><br></pre></td></tr></table></figure>
+
+<p>豁免过期后必须自动失效。</p>
+<p>下一次发布不能默认继承上一次风险接受。</p>
+<h2 id="二十一、离线门禁后还需要线上护栏"><a href="#二十一、离线门禁后还需要线上护栏" class="headerlink" title="二十一、离线门禁后还需要线上护栏"></a>二十一、离线门禁后还需要线上护栏</h2><p>离线评测存在三类天然限制：</p>
+<ol>
+<li>样本分布不完全等于真实流量。</li>
+<li>外部依赖、网络和权限环境可能不同。</li>
+<li>真实用户会产生评测集没有覆盖的新任务。</li>
+</ol>
+<p>因此发布阶段至少要考虑：</p>
+<h3 id="1-影子流量"><a href="#1-影子流量" class="headerlink" title="1. 影子流量"></a>1. 影子流量</h3><p>候选版本处理真实请求副本，但不产生用户可见回答和副作用。</p>
+<p>适合对比质量、时延、成本和工具规划。</p>
+<p>涉及敏感数据时，要确保影子链路具有相同的数据保护和授权基础，不能为了评测复制到不受控环境。</p>
+<h3 id="2-金丝雀发布"><a href="#2-金丝雀发布" class="headerlink" title="2. 金丝雀发布"></a>2. 金丝雀发布</h3><p>让少量受控流量使用候选版本，并设置：</p>
+<ul>
+<li>最大流量比例</li>
+<li>最短观察时间</li>
+<li>样本量要求</li>
+<li>自动停止条件</li>
+<li>自动回滚目标</li>
+</ul>
+<h3 id="3-线上硬护栏"><a href="#3-线上硬护栏" class="headerlink" title="3. 线上硬护栏"></a>3. 线上硬护栏</h3><p>权限、审批、速率、成本和数据外发控制必须在运行时持续执行，不能因为离线评测通过就关闭。</p>
+<h3 id="4-延迟结果回填"><a href="#4-延迟结果回填" class="headerlink" title="4. 延迟结果回填"></a>4. 延迟结果回填</h3><p>某些任务的真实质量要到工单关闭、用户确认或业务结果产生后才能知道。</p>
+<p>这些结果应回填到发布记录和评测数据闭环中。</p>
+<h2 id="二十二、一个示例：总分提高但退款-Agent-被门禁阻断"><a href="#二十二、一个示例：总分提高但退款-Agent-被门禁阻断" class="headerlink" title="二十二、一个示例：总分提高但退款 Agent 被门禁阻断"></a>二十二、一个示例：总分提高但退款 Agent 被门禁阻断</h2><p>下面是一个示例案例，用于说明决策过程，不代表真实生产事故。</p>
+<h3 id="1-变更"><a href="#1-变更" class="headerlink" title="1. 变更"></a>1. 变更</h3><p>团队更换模型并修改工具描述，希望减少无效追问。</p>
+<h3 id="2-快速评测"><a href="#2-快速评测" class="headerlink" title="2. 快速评测"></a>2. 快速评测</h3><p>Schema、核心问答和禁止工具测试全部通过。</p>
+<h3 id="3-完整评测"><a href="#3-完整评测" class="headerlink" title="3. 完整评测"></a>3. 完整评测</h3><p>总体任务完成率从 90.8% 提升到 93.1%。</p>
+<p>但“高风险退款”切片出现：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">基线：232 / 250 通过</span><br><span class="line">候选：225 / 250 通过</span><br><span class="line">新增回退：11 条</span><br><span class="line">修复旧失败：4 条</span><br></pre></td></tr></table></figure>
+
+<p>轨迹分析发现，候选模型更倾向于在缺少订单状态时直接生成退款工具参数。</p>
+<h3 id="4-门禁判断"><a href="#4-门禁判断" class="headerlink" title="4. 门禁判断"></a>4. 门禁判断</h3><p>退款参数正确率低于绝对底线，同时相对基线退化超过预算。</p>
+<p>总体分数提升不能覆盖这个切片，门禁状态为 <code>BLOCK</code>。</p>
+<h3 id="5-修复"><a href="#5-修复" class="headerlink" title="5. 修复"></a>5. 修复</h3><p>团队没有简单提高 Prompt 强度，而是在执行层增加确定性前置条件：</p>
+<ul>
+<li>订单必须属于当前用户</li>
+<li>状态必须允许退款</li>
+<li>金额必须来自订单系统</li>
+<li>超额度必须人工审批</li>
+</ul>
+<p>同时修改工具描述和专项评测样本。</p>
+<h3 id="6-重新评测与灰度"><a href="#6-重新评测与灰度" class="headerlink" title="6. 重新评测与灰度"></a>6. 重新评测与灰度</h3><p>候选通过硬门禁后先进入 5% 金丝雀。</p>
+<p>线上继续观察退款失败率、人工接管率和审批拒绝率。任何未经审批的高额退款调用都会触发自动回滚。</p>
+<p>这个案例说明，门禁真正保护的是高风险业务边界，不是评测报告的平均分。</p>
+<h2 id="二十三、门禁证据包应该包含什么"><a href="#二十三、门禁证据包应该包含什么" class="headerlink" title="二十三、门禁证据包应该包含什么"></a>二十三、门禁证据包应该包含什么</h2><p>每次发布至少保存：</p>
+<ul>
+<li>变更清单和风险等级</li>
+<li>Git Commit 与构建产物摘要</li>
+<li>模型、Prompt、检索、工具和策略指纹</li>
+<li>评测集与评测器版本</li>
+<li>候选和基线的样本级配对结果</li>
+<li>聚合指标、切片指标和置信区间</li>
+<li>失败样本 Trace 与首错层</li>
+<li>门禁策略版本</li>
+<li>自动判定结果</li>
+<li>人工复核、豁免和责任人</li>
+<li>灰度配置、线上指标和回滚目标</li>
+</ul>
+<p>证据包要能回答：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">为什么这次允许发布？</span><br><span class="line">当时使用了哪套模型、数据和规则？</span><br><span class="line">哪些风险已知但被接受？</span><br><span class="line">线上失败时应该回到哪个版本？</span><br><span class="line">三个月后能否重放同一评测？</span><br></pre></td></tr></table></figure>
+
+<h2 id="二十四、最常见的十个错误"><a href="#二十四、最常见的十个错误" class="headerlink" title="二十四、最常见的十个错误"></a>二十四、最常见的十个错误</h2><h3 id="1-只设一个总分阈值"><a href="#1-只设一个总分阈值" class="headerlink" title="1. 只设一个总分阈值"></a>1. 只设一个总分阈值</h3><p>平均分会掩盖高风险切片退化。</p>
+<h3 id="2-只有绝对阈值，没有相对基线"><a href="#2-只有绝对阈值，没有相对基线" class="headerlink" title="2. 只有绝对阈值，没有相对基线"></a>2. 只有绝对阈值，没有相对基线</h3><p>候选可能大幅回退后仍然达到低门槛。</p>
+<h3 id="3-只有相对提升，没有业务底线"><a href="#3-只有相对提升，没有业务底线" class="headerlink" title="3. 只有相对提升，没有业务底线"></a>3. 只有相对提升，没有业务底线</h3><p>从很差提升到稍差仍然不可用。</p>
+<h3 id="4-候选和基线使用不同数据集或不同裁判"><a href="#4-候选和基线使用不同数据集或不同裁判" class="headerlink" title="4. 候选和基线使用不同数据集或不同裁判"></a>4. 候选和基线使用不同数据集或不同裁判</h3><p>分数差异失去可比性。</p>
+<h3 id="5-每个样本只运行一次"><a href="#5-每个样本只运行一次" class="headerlink" title="5. 每个样本只运行一次"></a>5. 每个样本只运行一次</h3><p>非确定性噪声会直接决定发布结果。</p>
+<h3 id="6-失败后一直重跑到通过"><a href="#6-失败后一直重跑到通过" class="headerlink" title="6. 失败后一直重跑到通过"></a>6. 失败后一直重跑到通过</h3><p>这会选择性忽略不利结果。</p>
+<h3 id="7-评测基础设施错误被当成质量通过"><a href="#7-评测基础设施错误被当成质量通过" class="headerlink" title="7. 评测基础设施错误被当成质量通过"></a>7. 评测基础设施错误被当成质量通过</h3><p>没有证据不等于没有问题。</p>
+<h3 id="8-开发变更同时降低门禁阈值"><a href="#8-开发变更同时降低门禁阈值" class="headerlink" title="8. 开发变更同时降低门禁阈值"></a>8. 开发变更同时降低门禁阈值</h3><p>考试对象不能未经独立审查修改自己的及格线。</p>
+<h3 id="9-豁免永久有效"><a href="#9-豁免永久有效" class="headerlink" title="9. 豁免永久有效"></a>9. 豁免永久有效</h3><p>风险接受必须限定版本、范围、责任人和过期时间。</p>
+<h3 id="10-离线通过后直接全量"><a href="#10-离线通过后直接全量" class="headerlink" title="10. 离线通过后直接全量"></a>10. 离线通过后直接全量</h3><p>真实流量和外部依赖仍需要灰度验证和运行时护栏。</p>
+<h2 id="二十五、质量门禁成熟度可以分四级"><a href="#二十五、质量门禁成熟度可以分四级" class="headerlink" title="二十五、质量门禁成熟度可以分四级"></a>二十五、质量门禁成熟度可以分四级</h2><h3 id="第一级：报告化"><a href="#第一级：报告化" class="headerlink" title="第一级：报告化"></a>第一级：报告化</h3><p>能够稳定跑评测并生成报告，但发布仍靠人工看总分。</p>
+<h3 id="第二级：基础门禁化"><a href="#第二级：基础门禁化" class="headerlink" title="第二级：基础门禁化"></a>第二级：基础门禁化</h3><p>核心指标进入 CI，有固定基线和硬门禁，失败能阻断。</p>
+<h3 id="第三级：风险分层化"><a href="#第三级：风险分层化" class="headerlink" title="第三级：风险分层化"></a>第三级：风险分层化</h3><p>变更会触发不同套件，支持样本级配对、统计区间、人工复核和有期限豁免。</p>
+<h3 id="第四级：持续交付闭环"><a href="#第四级：持续交付闭环" class="headerlink" title="第四级：持续交付闭环"></a>第四级：持续交付闭环</h3><p>离线评测、影子流量、金丝雀、线上护栏、自动回滚和真实结果回填形成闭环。</p>
+<p>成熟度提升的重点不是堆更多指标，而是让每个发布决策都有稳定输入、明确规则和可追溯证据。</p>
+<h2 id="二十六、落地检查表"><a href="#二十六、落地检查表" class="headerlink" title="二十六、落地检查表"></a>二十六、落地检查表</h2><h3 id="版本和变更"><a href="#版本和变更" class="headerlink" title="版本和变更"></a>版本和变更</h3><ul>
+<li><input disabled="" type="checkbox"> 模型、Prompt、检索、工具、策略、数据集和评测器都有版本指纹</li>
+<li><input disabled="" type="checkbox"> 变更能够自动分类并映射到风险等级</li>
+<li><input disabled="" type="checkbox"> 候选与实际构建产物指纹一致</li>
+</ul>
+<h3 id="评测设计"><a href="#评测设计" class="headerlink" title="评测设计"></a>评测设计</h3><ul>
+<li><input disabled="" type="checkbox"> 快速集、完整集、安全集和线上集职责分开</li>
+<li><input disabled="" type="checkbox"> 指标按业务、风险、语言、工具等维度切片</li>
+<li><input disabled="" type="checkbox"> 候选和基线尽量使用同一样本配对比较</li>
+<li><input disabled="" type="checkbox"> 非确定性样本有重复运行和不确定区间</li>
+</ul>
+<h3 id="门禁策略"><a href="#门禁策略" class="headerlink" title="门禁策略"></a>门禁策略</h3><ul>
+<li><input disabled="" type="checkbox"> 硬安全性质不会被综合分抵消</li>
+<li><input disabled="" type="checkbox"> 同时设置绝对底线与相对退化预算</li>
+<li><input disabled="" type="checkbox"> <code>REVIEW</code>、<code>BLOCK</code> 和 <code>INFRA_ERROR</code> 原因明确</li>
+<li><input disabled="" type="checkbox"> 门禁策略变更需要独立审查</li>
+</ul>
+<h3 id="评测器"><a href="#评测器" class="headerlink" title="评测器"></a>评测器</h3><ul>
+<li><input disabled="" type="checkbox"> 确定性事实优先使用规则和系统状态</li>
+<li><input disabled="" type="checkbox"> LLM 裁判经过人工校准并记录版本</li>
+<li><input disabled="" type="checkbox"> 裁判切换时不会直接拼接新旧分数</li>
+<li><input disabled="" type="checkbox"> 裁判分歧会保留原始证据并进入复核</li>
+</ul>
+<h3 id="发布和审计"><a href="#发布和审计" class="headerlink" title="发布和审计"></a>发布和审计</h3><ul>
+<li><input disabled="" type="checkbox"> 豁免限定版本、范围、责任人和过期时间</li>
+<li><input disabled="" type="checkbox"> 离线通过后仍有影子或金丝雀策略</li>
+<li><input disabled="" type="checkbox"> 线上有明确回滚指标和稳定回滚目标</li>
+<li><input disabled="" type="checkbox"> 发布证据包可以重放和审计</li>
+</ul>
+<h2 id="二十七、小结"><a href="#二十七、小结" class="headerlink" title="二十七、小结"></a>二十七、小结</h2><p>把 AI 评测接入 CI&#x2F;CD，不是把一个分数写进 <code>if</code> 条件，而是把发布风险变成一套可执行决策。</p>
+<p>完整链路应该做到：</p>
+<ol>
+<li>根据变更内容和风险选择评测范围。</li>
+<li>冻结模型、Prompt、数据、工具、策略和评测器版本。</li>
+<li>同时检查硬底线、绝对质量和相对退化。</li>
+<li>使用样本级配对结果和不确定区间控制随机噪声。</li>
+<li>把通过、复核、阻断、基础设施错误和豁免分开记录。</li>
+<li>离线通过后继续使用灰度、线上护栏和自动回滚。</li>
+<li>为每次发布保存能重放的完整证据包。</li>
+</ol>
+<p>最终，质量门禁应该能清楚回答：</p>
+<p><strong>这个版本为什么可以发布，哪类风险仍然存在，证据是否足够可信，以及线上行为偏离预期时系统会怎样停下来。</strong></p>
+<p>只有回答到这一步，AI 评测才真正从一份报告变成持续交付系统的一部分。</p>
+<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><ul>
+<li><a target="_blank" rel="noopener" href="https://www.nist.gov/itl/ai-risk-management-framework">NIST AI Risk Management Framework 1.0</a></li>
+<li><a target="_blank" rel="noopener" href="https://doi.org/10.6028/NIST.AI.600-1">NIST AI RMF Generative AI Profile</a></li>
+<li><a target="_blank" rel="noopener" href="https://www.nist.gov/itl/ai-risk-management-framework/nist-ai-rmf-playbook">NIST AI RMF Playbook</a></li>
+<li><a target="_blank" rel="noopener" href="https://research.google/pubs/the-ml-test-score-a-rubric-for-ml-production-readiness-and-technical-debt-reduction/">Google Research：The ML Test Score</a></li>
+<li><a target="_blank" rel="noopener" href="https://research.google/pubs/hidden-technical-debt-in-machine-learning-systems/">Google Research：Hidden Technical Debt in Machine Learning Systems</a></li>
+<li><a target="_blank" rel="noopener" href="https://research.google/pubs/tfx-a-tensorflow-based-production-scale-machine-learning-platform/">Google Research：TFX, A TensorFlow-Based Production-Scale Machine Learning Platform</a></li>
+<li><a target="_blank" rel="noopener" href="https://developers.google.com/machine-learning/guides/rules-of-ml">Google Developers：Rules of Machine Learning</a></li>
+<li><a target="_blank" rel="noopener" href="https://developers.openai.com/api/docs/guides/evals">OpenAI API Documentation：Working with evals</a></li>
+</ul>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/AI%E6%B5%8B%E8%AF%95/" rel="tag"># AI测试</a>
+              <a href="/tags/LLMOps/" rel="tag"># LLMOps</a>
+              <a href="/tags/AI%E8%AF%84%E6%B5%8B/" rel="tag"># AI评测</a>
+              <a href="/tags/%E8%B4%A8%E9%87%8F%E9%97%A8%E7%A6%81/" rel="tag"># 质量门禁</a>
+              <a href="/tags/CI-CD/" rel="tag"># CI/CD</a>
+              <a href="/tags/%E6%8C%81%E7%BB%AD%E4%BA%A4%E4%BB%98/" rel="tag"># 持续交付</a>
+              <a href="/tags/%E5%9B%9E%E5%BD%92%E6%B5%8B%E8%AF%95/" rel="tag"># 回归测试</a>
+              <a href="/tags/%E7%81%B0%E5%BA%A6%E5%8F%91%E5%B8%83/" rel="tag"># 灰度发布</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2026/03/30/AI%E6%B5%8B%E8%AF%95-22-Prompt-Injection%E5%92%8C%E9%97%B4%E6%8E%A5%E6%8F%90%E7%A4%BA%E6%B3%A8%E5%85%A5%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E6%B5%8B%E8%AF%95/" rel="prev" title="AI测试-22-Prompt Injection和间接提示注入应该怎么测试">
+                  <i class="fa fa-angle-left"></i> AI测试-22-Prompt Injection和间接提示注入应该怎么测试
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2026/04/16/Linux%E8%BF%90%E7%BB%B4-09-Barrier%20KVM%20%E9%83%A8%E7%BD%B2/" rel="next" title="Barrier：Rocky Linux + Windows 双机 KVM 部署">
+                  Barrier：Rocky Linux + Windows 双机 KVM 部署 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">1.2m</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">75:29</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

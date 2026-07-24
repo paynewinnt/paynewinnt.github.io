@@ -1,0 +1,1928 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="AI 应用开始做自动化评测后，团队通常很快就能得到一个分数。 真正困难的是回答：  这个分数代表哪一类用户和场景 样本是否覆盖低频但高风险的失败 金标准由谁、依据什么证据标出来 开发人员是否已经反复看过并针对它调优 训练集、Prompt 示例、知识库和评测集之间是否泄漏 数据变更后，上一轮结果还能不能复现 新版本到底是模型变好了，还是评测集变容易了  如果这些问题没有答案，评测集就只是一个装着 J">
+<meta property="og:type" content="article">
+<meta property="og:title" content="AI测试-15-高质量AI评测集怎么采集清洗标注和版本化">
+<meta property="og:url" content="https://paynewinnt.github.io/2026/03/18/AI%E6%B5%8B%E8%AF%95-15-%E9%AB%98%E8%B4%A8%E9%87%8FAI%E8%AF%84%E6%B5%8B%E9%9B%86%E6%80%8E%E4%B9%88%E9%87%87%E9%9B%86%E6%B8%85%E6%B4%97%E6%A0%87%E6%B3%A8%E5%92%8C%E7%89%88%E6%9C%AC%E5%8C%96/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="AI 应用开始做自动化评测后，团队通常很快就能得到一个分数。 真正困难的是回答：  这个分数代表哪一类用户和场景 样本是否覆盖低频但高风险的失败 金标准由谁、依据什么证据标出来 开发人员是否已经反复看过并针对它调优 训练集、Prompt 示例、知识库和评测集之间是否泄漏 数据变更后，上一轮结果还能不能复现 新版本到底是模型变好了，还是评测集变容易了  如果这些问题没有答案，评测集就只是一个装着 J">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://paynewinnt.github.io/images/ai-quality/ai-15-dataset-lifecycle.svg">
+<meta property="og:image" content="https://paynewinnt.github.io/images/ai-quality/ai-15-sampling-matrix.svg">
+<meta property="article:published_time" content="2026-03-18T12:30:00.000Z">
+<meta property="article:modified_time" content="2026-03-18T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="AI测试">
+<meta property="article:tag" content="评测集">
+<meta property="article:tag" content="数据治理">
+<meta property="article:tag" content="分层抽样">
+<meta property="article:tag" content="数据标注">
+<meta property="article:tag" content="数据去重">
+<meta property="article:tag" content="数据版本">
+<meta property="article:tag" content="质量门禁">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://paynewinnt.github.io/images/ai-quality/ai-15-dataset-lifecycle.svg">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2026/03/18/AI%E6%B5%8B%E8%AF%95-15-%E9%AB%98%E8%B4%A8%E9%87%8FAI%E8%AF%84%E6%B5%8B%E9%9B%86%E6%80%8E%E4%B9%88%E9%87%87%E9%9B%86%E6%B8%85%E6%B4%97%E6%A0%87%E6%B3%A8%E5%92%8C%E7%89%88%E6%9C%AC%E5%8C%96/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2026/03/18/AI%E6%B5%8B%E8%AF%95-15-%E9%AB%98%E8%B4%A8%E9%87%8FAI%E8%AF%84%E6%B5%8B%E9%9B%86%E6%80%8E%E4%B9%88%E9%87%87%E9%9B%86%E6%B8%85%E6%B4%97%E6%A0%87%E6%B3%A8%E5%92%8C%E7%89%88%E6%9C%AC%E5%8C%96/","path":"2026/03/18/AI测试-15-高质量AI评测集怎么采集清洗标注和版本化/","title":"AI测试-15-高质量AI评测集怎么采集清洗标注和版本化"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>AI测试-15-高质量AI评测集怎么采集清洗标注和版本化 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E9%97%AE%E9%A2%98%E8%BE%B9%E7%95%8C%EF%BC%9A%E5%85%88%E5%8C%BA%E5%88%86%E8%AF%84%E6%B5%8B%E6%95%B0%E6%8D%AE%E3%80%81%E8%AE%AD%E7%BB%83%E6%95%B0%E6%8D%AE%E5%92%8C%E8%A7%82%E6%B5%8B%E6%95%B0%E6%8D%AE"><span class="nav-number">1.</span> <span class="nav-text">一、问题边界：先区分评测数据、训练数据和观测数据</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-1-%E8%AE%AD%E7%BB%83%E6%95%B0%E6%8D%AE"><span class="nav-number">1.1.</span> <span class="nav-text">1.1 训练数据</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-2-%E5%BC%80%E5%8F%91%E6%95%B0%E6%8D%AE"><span class="nav-number">1.2.</span> <span class="nav-text">1.2 开发数据</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-3-%E8%AF%84%E6%B5%8B%E6%95%B0%E6%8D%AE"><span class="nav-number">1.3.</span> <span class="nav-text">1.3 评测数据</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-4-%E7%BA%BF%E4%B8%8A%E8%A7%82%E6%B5%8B%E6%95%B0%E6%8D%AE"><span class="nav-number">1.4.</span> <span class="nav-text">1.4 线上观测数据</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-5-%E6%9C%AC%E6%96%87%E7%9A%84%E6%A0%B8%E5%BF%83%E8%BE%B9%E7%95%8C"><span class="nav-number">1.5.</span> <span class="nav-text">1.5 本文的核心边界</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E8%AF%84%E6%B5%8B%E9%9B%86%E4%B8%8D%E6%98%AF%E2%80%9C%E9%A2%98%E5%BA%93%E2%80%9D%EF%BC%8C%E8%80%8C%E6%98%AF%E6%B5%8B%E9%87%8F%E4%BB%AA%E5%99%A8"><span class="nav-number">2.</span> <span class="nav-text">二、评测集不是“题库”，而是测量仪器</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-%E4%B8%80%E4%B8%AA%E8%AF%84%E6%B5%8B%E5%88%86%E6%95%B0%E5%8C%85%E5%90%AB%E4%B8%89%E7%B1%BB%E8%AF%AF%E5%B7%AE"><span class="nav-number">2.1.</span> <span class="nav-text">2.1 一个评测分数包含三类误差</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-%E2%80%9C%E4%B8%80%E4%B8%87%E6%9D%A1%E6%95%B0%E6%8D%AE%E2%80%9D%E4%B8%8D%E4%B8%80%E5%AE%9A%E6%AF%94%E2%80%9C%E4%B8%80%E5%8D%83%E6%9D%A1%E6%95%B0%E6%8D%AE%E2%80%9D%E6%9B%B4%E5%8F%AF%E4%BF%A1"><span class="nav-number">2.2.</span> <span class="nav-text">2.2 “一万条数据”不一定比“一千条数据”更可信</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E5%85%88%E5%AE%9A%E4%B9%89%E8%AF%84%E6%B5%8B%E7%9B%AE%E6%A0%87%EF%BC%8C%E5%86%8D%E8%AE%A8%E8%AE%BA%E9%87%87%E9%9B%86"><span class="nav-number">3.</span> <span class="nav-text">三、先定义评测目标，再讨论采集</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#3-1-%E7%94%A8%E5%86%B3%E7%AD%96%E9%97%AE%E9%A2%98%E7%BA%A6%E6%9D%9F%E8%AF%84%E6%B5%8B%E7%9B%AE%E6%A0%87"><span class="nav-number">3.1.</span> <span class="nav-text">3.1 用决策问题约束评测目标</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-2-%E5%AE%9A%E4%B9%89%E8%AF%84%E6%B5%8B%E5%AF%B9%E8%B1%A1"><span class="nav-number">3.2.</span> <span class="nav-text">3.2 定义评测对象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-3-%E5%AE%9A%E4%B9%89%E8%AF%84%E6%B5%8B%E5%8D%95%E5%85%83"><span class="nav-number">3.3.</span> <span class="nav-text">3.3 定义评测单元</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-4-%E5%AE%9A%E4%B9%89%E7%9B%AE%E6%A0%87%E6%80%BB%E4%BD%93"><span class="nav-number">3.4.</span> <span class="nav-text">3.4 定义目标总体</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-5-%E5%AE%9A%E4%B9%89%E8%B4%A8%E9%87%8F%E7%BB%B4%E5%BA%A6"><span class="nav-number">3.5.</span> <span class="nav-text">3.5 定义质量维度</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E5%AE%8C%E6%95%B4%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F%EF%BC%9A%E6%AF%8F%E6%AC%A1%E6%9B%B4%E6%96%B0%E9%83%BD%E8%A6%81%E9%87%8D%E6%96%B0%E7%BB%8F%E8%BF%87%E6%B2%BB%E7%90%86%E9%93%BE"><span class="nav-number">4.</span> <span class="nav-text">四、完整生命周期：每次更新都要重新经过治理链</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E6%A0%B7%E6%9C%AC%E7%BB%93%E6%9E%84%EF%BC%9A%E5%85%88%E8%AE%A9%E6%AF%8F%E6%9D%A1%E6%95%B0%E6%8D%AE%E5%8F%AF%E8%BF%BD%E6%BA%AF"><span class="nav-number">5.</span> <span class="nav-text">五、样本结构：先让每条数据可追溯</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#5-1-%E5%BB%BA%E8%AE%AE%E7%9A%84%E6%9C%80%E5%B0%8F%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84"><span class="nav-number">5.1.</span> <span class="nav-text">5.1 建议的最小数据结构</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-2-sample-id%E3%80%81record-hash-%E5%92%8C-content-dedup-hash-%E4%B8%8D%E8%83%BD%E4%BA%92%E7%9B%B8%E6%9B%BF%E4%BB%A3"><span class="nav-number">5.2.</span> <span class="nav-text">5.2 sample_id、record_hash 和 content_dedup_hash 不能互相替代</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-3-%E4%BF%9D%E5%AD%98%E5%8E%9F%E5%A7%8B%E6%95%B0%E6%8D%AE%E4%B8%8E%E8%A7%84%E8%8C%83%E5%8C%96%E6%95%B0%E6%8D%AE%E7%9A%84%E5%85%B3%E7%B3%BB"><span class="nav-number">5.3.</span> <span class="nav-text">5.3 保存原始数据与规范化数据的关系</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E6%A0%B7%E6%9C%AC%E6%9D%A5%E6%BA%90%EF%BC%9A%E5%A4%9A%E6%BA%90%E7%BB%84%E5%90%88%EF%BC%8C%E8%80%8C%E4%B8%8D%E6%98%AF%E8%BF%B7%E4%BF%A1%E7%94%9F%E4%BA%A7%E6%97%A5%E5%BF%97"><span class="nav-number">6.</span> <span class="nav-text">六、样本来源：多源组合，而不是迷信生产日志</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#6-1-%E7%94%9F%E4%BA%A7%E6%97%A5%E5%BF%97"><span class="nav-number">6.1.</span> <span class="nav-text">6.1 生产日志</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-2-%E9%A2%86%E5%9F%9F%E4%B8%93%E5%AE%B6%E8%AE%BE%E8%AE%A1"><span class="nav-number">6.2.</span> <span class="nav-text">6.2 领域专家设计</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-3-%E4%BA%8B%E6%95%85%E4%B8%8E%E7%BC%BA%E9%99%B7%E5%9B%9E%E6%94%BE"><span class="nav-number">6.3.</span> <span class="nav-text">6.3 事故与缺陷回放</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-4-%E5%90%88%E6%88%90%E6%A0%B7%E6%9C%AC"><span class="nav-number">6.4.</span> <span class="nav-text">6.4 合成样本</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-5-%E5%85%AC%E5%85%B1%E5%9F%BA%E5%87%86"><span class="nav-number">6.5.</span> <span class="nav-text">6.5 公共基准</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-6-%E7%BA%A2%E9%98%9F%E4%B8%8E%E5%AF%B9%E6%8A%97%E6%A0%B7%E6%9C%AC"><span class="nav-number">6.6.</span> <span class="nav-text">6.6 红队与对抗样本</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E5%88%86%E5%B1%82%E6%8A%BD%E6%A0%B7%EF%BC%9A%E5%90%8C%E6%97%B6%E7%BB%B4%E6%8A%A4%E4%BB%A3%E8%A1%A8%E6%80%A7%E5%92%8C%E9%A3%8E%E9%99%A9%E8%A6%86%E7%9B%96"><span class="nav-number">7.</span> <span class="nav-text">七、分层抽样：同时维护代表性和风险覆盖</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#7-1-%E5%85%88%E5%AE%9A%E4%B9%89%E5%88%86%E5%B1%82%E7%BB%B4%E5%BA%A6"><span class="nav-number">7.1.</span> <span class="nav-text">7.1 先定义分层维度</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-2-%E9%A3%8E%E9%99%A9%E7%AD%89%E7%BA%A7%E8%A6%81%E6%9C%89%E4%B8%9A%E5%8A%A1%E5%AE%9A%E4%B9%89"><span class="nav-number">7.2.</span> <span class="nav-text">7.2 风险等级要有业务定义</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-3-%E6%AF%94%E4%BE%8B%E5%88%86%E9%85%8D"><span class="nav-number">7.3.</span> <span class="nav-text">7.3 比例分配</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-4-Neyman-%E5%88%86%E9%85%8D"><span class="nav-number">7.4.</span> <span class="nav-text">7.4 Neyman 分配</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-5-%E6%9C%80%E4%BD%8E%E9%A3%8E%E9%99%A9%E9%85%8D%E9%A2%9D"><span class="nav-number">7.5.</span> <span class="nav-text">7.5 最低风险配额</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-6-%E8%BF%87%E9%87%87%E6%A0%B7%E5%90%8E%E6%80%8E%E6%A0%B7%E7%AE%97%E6%80%BB%E4%BD%93%E6%8C%87%E6%A0%87"><span class="nav-number">7.6.</span> <span class="nav-text">7.6 过采样后怎样算总体指标</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-7-%E6%A0%B7%E6%9C%AC%E9%87%8F%E5%85%AC%E5%BC%8F%E7%9A%84%E4%BD%BF%E7%94%A8%E8%BE%B9%E7%95%8C"><span class="nav-number">7.7.</span> <span class="nav-text">7.7 样本量公式的使用边界</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-8-%E5%8A%A0%E6%9D%83%E6%A0%B7%E6%9C%AC%E7%9A%84%E6%9C%89%E6%95%88%E6%A0%B7%E6%9C%AC%E9%87%8F"><span class="nav-number">7.8.</span> <span class="nav-text">7.8 加权样本的有效样本量</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-9-%E8%BE%B9%E7%95%8C%E6%A0%B7%E6%9C%AC%E6%80%8E%E4%B9%88%E8%AE%BE%E8%AE%A1"><span class="nav-number">7.9.</span> <span class="nav-text">7.9 边界样本怎么设计</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-10-%E5%AF%B9%E6%8A%97%E6%A0%B7%E6%9C%AC%E6%80%8E%E4%B9%88%E9%81%BF%E5%85%8D%E2%80%9C%E5%8F%AA%E4%BC%9A%E8%80%83%E5%9B%BA%E5%AE%9A%E7%AD%94%E6%A1%88%E2%80%9D"><span class="nav-number">7.10.</span> <span class="nav-text">7.10 对抗样本怎么避免“只会考固定答案”</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E6%B8%85%E6%B4%97%EF%BC%9A%E4%B8%8D%E6%98%AF%E6%8A%8A%E6%96%87%E6%9C%AC%E5%8F%98%E6%95%B4%E9%BD%90%EF%BC%8C%E8%80%8C%E6%98%AF%E4%BF%9D%E8%AF%81%E6%B5%8B%E9%87%8F%E8%AF%AD%E4%B9%89%E4%B8%8D%E8%A2%AB%E7%A0%B4%E5%9D%8F"><span class="nav-number">8.</span> <span class="nav-text">八、清洗：不是把文本变整齐，而是保证测量语义不被破坏</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#8-1-%E7%BB%93%E6%9E%84%E5%AE%8C%E6%95%B4%E6%80%A7%E6%A3%80%E6%9F%A5"><span class="nav-number">8.1.</span> <span class="nav-text">8.1 结构完整性检查</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-2-%E8%AF%AD%E4%B9%89%E5%AE%8C%E6%95%B4%E6%80%A7%E6%A3%80%E6%9F%A5"><span class="nav-number">8.2.</span> <span class="nav-text">8.2 语义完整性检查</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-3-%E9%9A%90%E7%A7%81%E5%92%8C%E6%95%8F%E6%84%9F%E4%BF%A1%E6%81%AF%E5%A4%84%E7%90%86"><span class="nav-number">8.3.</span> <span class="nav-text">8.3 隐私和敏感信息处理</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-4-%E7%B2%BE%E7%A1%AE%E9%87%8D%E5%A4%8D"><span class="nav-number">8.4.</span> <span class="nav-text">8.4 精确重复</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-5-%E8%BF%91%E4%BC%BC%E9%87%8D%E5%A4%8D"><span class="nav-number">8.5.</span> <span class="nav-text">8.5 近似重复</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-6-%E9%87%8D%E5%A4%8D%E7%B0%87%E6%AF%94%E5%8D%95%E6%9D%A1%E5%88%A0%E9%99%A4%E6%9B%B4%E9%87%8D%E8%A6%81"><span class="nav-number">8.6.</span> <span class="nav-text">8.6 重复簇比单条删除更重要</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E6%B1%A1%E6%9F%93%E4%B8%8E%E6%B3%84%E6%BC%8F%EF%BC%9A%E9%AB%98%E5%88%86%E6%9C%80%E9%9A%90%E8%94%BD%E7%9A%84%E6%9D%A5%E6%BA%90"><span class="nav-number">9.</span> <span class="nav-text">九、污染与泄漏：高分最隐蔽的来源</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#9-1-%E8%AE%AD%E7%BB%83%E6%B1%A1%E6%9F%93"><span class="nav-number">9.1.</span> <span class="nav-text">9.1 训练污染</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-2-%E5%BC%80%E5%8F%91%E9%9B%86%E6%B3%84%E6%BC%8F"><span class="nav-number">9.2.</span> <span class="nav-text">9.2 开发集泄漏</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-3-Few-shot-%E4%B8%8E-Prompt-%E6%B3%84%E6%BC%8F"><span class="nav-number">9.3.</span> <span class="nav-text">9.3 Few-shot 与 Prompt 泄漏</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-4-RAG-%E7%9F%A5%E8%AF%86%E5%BA%93%E6%B3%84%E6%BC%8F"><span class="nav-number">9.4.</span> <span class="nav-text">9.4 RAG 知识库泄漏</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-5-%E5%88%87%E5%88%86%E6%B3%84%E6%BC%8F"><span class="nav-number">9.5.</span> <span class="nav-text">9.5 切分泄漏</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-6-%E8%AF%84%E6%B5%8B%E7%BB%93%E6%9E%9C%E5%9B%9E%E6%B5%81%E6%B1%A1%E6%9F%93"><span class="nav-number">9.6.</span> <span class="nav-text">9.6 评测结果回流污染</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E6%95%B0%E6%8D%AE%E5%88%87%E5%88%86%EF%BC%9A%E6%8C%89%E7%8B%AC%E7%AB%8B%E6%80%A7%E5%8D%95%E4%BD%8D%E5%88%86%EF%BC%8C%E8%80%8C%E4%B8%8D%E6%98%AF%E6%8C%89%E8%A1%8C%E5%88%86"><span class="nav-number">10.</span> <span class="nav-text">十、数据切分：按独立性单位分，而不是按行分</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#10-1-%E4%B8%89%E7%B1%BB%E5%B8%B8%E7%94%A8%E5%88%87%E5%88%86"><span class="nav-number">10.1.</span> <span class="nav-text">10.1 三类常用切分</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-2-%E5%88%86%E7%BB%84%E5%88%87%E5%88%86"><span class="nav-number">10.2.</span> <span class="nav-text">10.2 分组切分</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-3-%E6%97%B6%E9%97%B4%E5%88%87%E5%88%86"><span class="nav-number">10.3.</span> <span class="nav-text">10.3 时间切分</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-4-%E5%AE%9E%E4%BD%93%E7%95%99%E5%87%BA"><span class="nav-number">10.4.</span> <span class="nav-text">10.4 实体留出</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-5-%E5%88%87%E5%88%86%E7%A8%B3%E5%AE%9A%E6%80%A7"><span class="nav-number">10.5.</span> <span class="nav-text">10.5 切分稳定性</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E6%A0%87%E6%B3%A8%E8%A7%84%E8%8C%83%EF%BC%9A%E6%8A%8A%E2%80%9C%E6%88%91%E8%A7%89%E5%BE%97%E5%AF%B9%E2%80%9D%E5%8F%98%E6%88%90%E5%8F%AF%E5%A4%8D%E6%A0%B8%E5%88%A4%E6%96%AD"><span class="nav-number">11.</span> <span class="nav-text">十一、标注规范：把“我觉得对”变成可复核判断</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#11-1-%E6%A0%87%E7%AD%BE%E5%BF%85%E9%A1%BB%E4%B8%8E%E5%86%B3%E7%AD%96%E5%AF%B9%E5%BA%94"><span class="nav-number">11.1.</span> <span class="nav-text">11.1 标签必须与决策对应</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-2-%E5%8E%9F%E5%AD%90%E4%BA%8B%E5%AE%9E%E6%AF%94%E6%95%B4%E6%AE%B5%E2%80%9C%E5%A5%BD%E6%88%96%E5%9D%8F%E2%80%9D%E6%9B%B4%E5%8F%AF%E8%AF%8A%E6%96%AD"><span class="nav-number">11.2.</span> <span class="nav-text">11.2 原子事实比整段“好或坏”更可诊断</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-3-%E4%B8%80%E4%B8%AA%E5%8F%AF%E6%93%8D%E4%BD%9C%E7%9A%84%E9%87%8F%E8%A1%A8%E7%A4%BA%E4%BE%8B"><span class="nav-number">11.3.</span> <span class="nav-text">11.3 一个可操作的量表示例</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-4-%E6%A0%87%E6%B3%A8%E6%8C%87%E5%8D%97%E5%BF%85%E9%A1%BB%E5%8C%85%E5%90%AB%E4%BB%80%E4%B9%88"><span class="nav-number">11.4.</span> <span class="nav-text">11.4 标注指南必须包含什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-5-%E6%A0%87%E6%B3%A8%E4%BA%BA%E5%91%98%E5%9F%B9%E8%AE%AD"><span class="nav-number">11.5.</span> <span class="nav-text">11.5 标注人员培训</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-6-%E7%9B%B2%E6%A0%87%E4%B8%8E%E5%8F%8C%E6%A0%87"><span class="nav-number">11.6.</span> <span class="nav-text">11.6 盲标与双标</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-7-%E4%BB%B2%E8%A3%81%E4%B8%8D%E7%AD%89%E4%BA%8E%E5%B0%91%E6%95%B0%E6%9C%8D%E4%BB%8E%E5%A4%9A%E6%95%B0"><span class="nav-number">11.7.</span> <span class="nav-text">11.7 仲裁不等于少数服从多数</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E6%A0%87%E6%B3%A8%E4%B8%80%E8%87%B4%E6%80%A7%EF%BC%9A%E7%99%BE%E5%88%86%E6%AF%94%E4%B8%80%E8%87%B4%E8%BF%98%E4%B8%8D%E5%A4%9F"><span class="nav-number">12.</span> <span class="nav-text">十二、标注一致性：百分比一致还不够</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#12-1-%E5%8E%9F%E5%A7%8B%E4%B8%80%E8%87%B4%E7%8E%87"><span class="nav-number">12.1.</span> <span class="nav-text">12.1 原始一致率</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-2-Cohen%E2%80%99s-Kappa"><span class="nav-number">12.2.</span> <span class="nav-text">12.2 Cohen’s Kappa</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-3-Krippendorff%E2%80%99s-Alpha"><span class="nav-number">12.3.</span> <span class="nav-text">12.3 Krippendorff’s Alpha</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-4-%E4%B8%80%E8%87%B4%E6%80%A7%E4%BD%8E%E6%97%B6%E5%85%88%E6%94%B9%E7%B3%BB%E7%BB%9F%EF%BC%8C%E4%B8%8D%E8%A6%81%E5%85%88%E5%88%A0%E6%A0%87%E6%B3%A8%E5%91%98"><span class="nav-number">12.4.</span> <span class="nav-text">12.4 一致性低时先改系统，不要先删标注员</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-5-%E4%B8%80%E8%87%B4%E6%80%A7%E4%B9%9F%E8%A6%81%E6%8C%89%E5%88%87%E7%89%87%E7%9C%8B"><span class="nav-number">12.5.</span> <span class="nav-text">12.5 一致性也要按切片看</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81%E5%8F%AF%E6%89%A7%E8%A1%8C%E6%95%B0%E6%8D%AE%E6%A0%A1%E9%AA%8C%EF%BC%9A%E5%9C%A8%E5%8F%91%E5%B8%83%E5%89%8D%E8%87%AA%E5%8A%A8%E9%98%BB%E6%96%AD%E4%BD%8E%E7%BA%A7%E9%97%AE%E9%A2%98"><span class="nav-number">13.</span> <span class="nav-text">十三、可执行数据校验：在发布前自动阻断低级问题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81%E7%89%88%E6%9C%AC%E5%8C%96%EF%BC%9A%E7%89%88%E6%9C%AC%E5%8F%B7%E5%BF%85%E9%A1%BB%E6%8C%87%E5%90%91%E4%B8%8D%E5%8F%AF%E5%8F%98%E5%86%85%E5%AE%B9"><span class="nav-number">14.</span> <span class="nav-text">十四、版本化：版本号必须指向不可变内容</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#14-1-%E4%B8%8D%E5%8F%AF%E5%8F%98%E5%8F%91%E5%B8%83%E5%8E%9F%E5%88%99"><span class="nav-number">14.1.</span> <span class="nav-text">14.1 不可变发布原则</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#14-2-%E7%89%88%E6%9C%AC%E5%8F%B7%E7%AD%96%E7%95%A5"><span class="nav-number">14.2.</span> <span class="nav-text">14.2 版本号策略</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#14-3-%E7%89%88%E6%9C%AC%E6%B8%85%E5%8D%95%E7%A4%BA%E4%BE%8B"><span class="nav-number">14.3.</span> <span class="nav-text">14.3 版本清单示例</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#14-4-%E5%86%85%E5%AE%B9%E5%AF%BB%E5%9D%80%E4%B8%8E%E8%A1%80%E7%BC%98"><span class="nav-number">14.4.</span> <span class="nav-text">14.4 内容寻址与血缘</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#14-5-%E6%95%B0%E6%8D%AE%E7%89%88%E6%9C%AC%E4%B8%8D%E7%AD%89%E4%BA%8E-Git-%E7%89%88%E6%9C%AC"><span class="nav-number">14.5.</span> <span class="nav-text">14.5 数据版本不等于 Git 版本</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%94%E3%80%81%E6%95%B0%E6%8D%AE%E5%8D%A1%EF%BC%9A%E5%91%8A%E8%AF%89%E4%BD%BF%E7%94%A8%E8%80%85%E8%BF%99%E4%B8%AA%E5%88%86%E6%95%B0%E8%83%BD%E8%AF%B4%E6%98%8E%E4%BB%80%E4%B9%88"><span class="nav-number">15.</span> <span class="nav-text">十五、数据卡：告诉使用者这个分数能说明什么</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#15-1-%E6%95%B0%E6%8D%AE%E5%8D%A1%E8%87%B3%E5%B0%91%E5%8C%85%E5%90%AB"><span class="nav-number">15.1.</span> <span class="nav-text">15.1 数据卡至少包含</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#15-2-%E6%95%B0%E6%8D%AE%E5%8D%A1%E4%B8%8D%E6%98%AF%E5%90%88%E8%A7%84%E8%A3%85%E9%A5%B0"><span class="nav-number">15.2.</span> <span class="nav-text">15.2 数据卡不是合规装饰</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AD%E3%80%81%E5%8F%91%E5%B8%83%E9%97%A8%E7%A6%81%EF%BC%9A%E8%AF%84%E6%B5%8B%E9%9B%86%E8%87%AA%E5%B7%B1%E4%B9%9F%E8%A6%81%E9%80%9A%E8%BF%87%E6%B5%8B%E8%AF%95"><span class="nav-number">16.</span> <span class="nav-text">十六、发布门禁：评测集自己也要通过测试</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#16-1-%E7%BB%93%E6%9E%84%E9%97%A8%E7%A6%81"><span class="nav-number">16.1.</span> <span class="nav-text">16.1 结构门禁</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#16-2-%E6%9D%A5%E6%BA%90%E4%B8%8E%E6%8E%88%E6%9D%83%E9%97%A8%E7%A6%81"><span class="nav-number">16.2.</span> <span class="nav-text">16.2 来源与授权门禁</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#16-3-%E8%A6%86%E7%9B%96%E9%97%A8%E7%A6%81"><span class="nav-number">16.3.</span> <span class="nav-text">16.3 覆盖门禁</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#16-4-%E5%8E%BB%E9%87%8D%E4%B8%8E%E6%B3%84%E6%BC%8F%E9%97%A8%E7%A6%81"><span class="nav-number">16.4.</span> <span class="nav-text">16.4 去重与泄漏门禁</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#16-5-%E6%A0%87%E6%B3%A8%E9%97%A8%E7%A6%81"><span class="nav-number">16.5.</span> <span class="nav-text">16.5 标注门禁</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#16-6-%E5%8F%AF%E5%A4%8D%E7%8E%B0%E9%97%A8%E7%A6%81"><span class="nav-number">16.6.</span> <span class="nav-text">16.6 可复现门禁</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#16-7-%E9%97%A8%E6%A7%9B%E5%BF%85%E9%A1%BB%E6%8C%89%E7%94%A8%E9%80%94%E8%AE%BE%E5%AE%9A"><span class="nav-number">16.7.</span> <span class="nav-text">16.7 门槛必须按用途设定</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%83%E3%80%81%E5%85%B3%E9%94%AE%E8%B4%A8%E9%87%8F%E6%8C%87%E6%A0%87"><span class="nav-number">17.</span> <span class="nav-text">十七、关键质量指标</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#17-1-%E5%AE%8C%E6%95%B4%E7%8E%87"><span class="nav-number">17.1.</span> <span class="nav-text">17.1 完整率</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#17-2-%E7%B2%BE%E7%A1%AE%E9%87%8D%E5%A4%8D%E7%8E%87"><span class="nav-number">17.2.</span> <span class="nav-text">17.2 精确重复率</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#17-3-%E8%BF%91%E9%87%8D%E5%A4%8D%E7%B0%87%E9%9B%86%E4%B8%AD%E5%BA%A6"><span class="nav-number">17.3.</span> <span class="nav-text">17.3 近重复簇集中度</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#17-4-%E8%A6%86%E7%9B%96%E7%8E%87"><span class="nav-number">17.4.</span> <span class="nav-text">17.4 覆盖率</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#17-5-%E6%A0%87%E7%AD%BE%E4%B8%8D%E7%A1%AE%E5%AE%9A%E7%8E%87"><span class="nav-number">17.5.</span> <span class="nav-text">17.5 标签不确定率</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#17-6-%E6%B1%A1%E6%9F%93%E5%80%99%E9%80%89%E7%8E%87"><span class="nav-number">17.6.</span> <span class="nav-text">17.6 污染候选率</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#17-7-%E5%B9%B4%E9%BE%84%E4%B8%8E%E8%BF%87%E6%9C%9F%E7%8E%87"><span class="nav-number">17.7.</span> <span class="nav-text">17.7 年龄与过期率</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AB%E3%80%81%E7%A4%BA%E4%BE%8B%E6%A1%88%E4%BE%8B%EF%BC%9A%E4%B8%80%E4%B8%AA%E9%AB%98%E5%88%86%E5%AE%A2%E6%9C%8D%E8%AF%84%E6%B5%8B%E9%9B%86%E4%B8%BA%E4%BB%80%E4%B9%88%E6%97%A0%E6%B3%95%E6%94%AF%E6%8C%81%E5%8F%91%E5%B8%83"><span class="nav-number">18.</span> <span class="nav-text">十八、示例案例：一个高分客服评测集为什么无法支持发布</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#18-1-%E8%83%8C%E6%99%AF"><span class="nav-number">18.1.</span> <span class="nav-text">18.1 背景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#18-2-%E5%88%9D%E6%AD%A5%E6%A3%80%E6%9F%A5%E5%8F%91%E7%8E%B0"><span class="nav-number">18.2.</span> <span class="nav-text">18.2 初步检查发现</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#18-3-%E4%B8%BA%E4%BB%80%E4%B9%88-94-%E4%B8%8D%E5%8F%AF%E4%BF%A1"><span class="nav-number">18.3.</span> <span class="nav-text">18.3 为什么 94% 不可信</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#18-4-%E4%BF%AE%E5%A4%8D%E6%96%B9%E6%A1%88"><span class="nav-number">18.4.</span> <span class="nav-text">18.4 修复方案</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#18-5-%E4%BF%AE%E5%A4%8D%E5%90%8E%E7%9A%84%E8%A7%A3%E9%87%8A"><span class="nav-number">18.5.</span> <span class="nav-text">18.5 修复后的解释</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B9%9D%E3%80%81%E6%B5%8B%E8%AF%95%E8%AE%BE%E8%AE%A1%EF%BC%9A%E8%AF%84%E6%B5%8B%E9%9B%86%E5%BA%94%E8%AF%A5%E6%80%8E%E6%A0%B7%E8%A2%AB%E6%8C%81%E7%BB%AD%E6%B5%8B%E8%AF%95"><span class="nav-number">19.</span> <span class="nav-text">十九、测试设计：评测集应该怎样被持续测试</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#19-1-Schema-%E6%B5%8B%E8%AF%95"><span class="nav-number">19.1.</span> <span class="nav-text">19.1 Schema 测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#19-2-%E5%B1%9E%E6%80%A7%E6%B5%8B%E8%AF%95"><span class="nav-number">19.2.</span> <span class="nav-text">19.2 属性测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#19-3-%E5%88%86%E5%B8%83%E6%B5%8B%E8%AF%95"><span class="nav-number">19.3.</span> <span class="nav-text">19.3 分布测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#19-4-%E6%B3%84%E6%BC%8F%E6%B5%8B%E8%AF%95"><span class="nav-number">19.4.</span> <span class="nav-text">19.4 泄漏测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#19-5-%E6%A0%87%E7%AD%BE%E6%B5%8B%E8%AF%95"><span class="nav-number">19.5.</span> <span class="nav-text">19.5 标签测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#19-6-%E5%8F%AF%E9%87%8D%E7%8E%B0%E6%80%A7%E6%B5%8B%E8%AF%95"><span class="nav-number">19.6.</span> <span class="nav-text">19.6 可重现性测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#19-7-%E9%80%80%E5%BD%B9%E6%B5%8B%E8%AF%95"><span class="nav-number">19.7.</span> <span class="nav-text">19.7 退役测试</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E3%80%81%E5%A6%82%E4%BD%95%E6%8A%8A%E8%AF%84%E6%B5%8B%E9%9B%86%E6%8E%A5%E5%85%A5-CI-CD"><span class="nav-number">20.</span> <span class="nav-text">二十、如何把评测集接入 CI&#x2F;CD</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#20-1-%E6%8B%89%E5%8F%96%E8%AF%B7%E6%B1%82%E9%98%B6%E6%AE%B5"><span class="nav-number">20.1.</span> <span class="nav-text">20.1 拉取请求阶段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#20-2-%E5%90%88%E5%B9%B6%E5%90%8E%E9%98%B6%E6%AE%B5"><span class="nav-number">20.2.</span> <span class="nav-text">20.2 合并后阶段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#20-3-%E5%8F%91%E5%B8%83%E5%80%99%E9%80%89%E9%98%B6%E6%AE%B5"><span class="nav-number">20.3.</span> <span class="nav-text">20.3 发布候选阶段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#20-4-%E7%BA%BF%E4%B8%8A%E9%98%B6%E6%AE%B5"><span class="nav-number">20.4.</span> <span class="nav-text">20.4 线上阶段</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%80%E3%80%81%E7%BB%93%E6%9E%9C%E6%AF%94%E8%BE%83%EF%BC%9A%E5%9B%BA%E5%AE%9A%E6%95%B0%E6%8D%AE%E7%89%88%E6%9C%AC%E8%BF%98%E4%B8%8D%E5%A4%9F"><span class="nav-number">21.</span> <span class="nav-text">二十一、结果比较：固定数据版本还不够</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#21-1-%E4%BC%98%E5%85%88%E5%81%9A%E9%85%8D%E5%AF%B9%E6%AF%94%E8%BE%83"><span class="nav-number">21.1.</span> <span class="nav-text">21.1 优先做配对比较</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#21-2-%E9%9D%9E%E7%A1%AE%E5%AE%9A%E6%80%A7%E7%B3%BB%E7%BB%9F%E9%9C%80%E8%A6%81%E9%87%8D%E5%A4%8D%E8%BF%90%E8%A1%8C"><span class="nav-number">21.2.</span> <span class="nav-text">21.2 非确定性系统需要重复运行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#21-3-%E6%95%B0%E6%8D%AE%E9%9B%86%E5%8D%87%E7%BA%A7%E6%97%B6%E5%81%9A%E6%A1%A5%E6%8E%A5%E8%AF%84%E6%B5%8B"><span class="nav-number">21.3.</span> <span class="nav-text">21.3 数据集升级时做桥接评测</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%8C%E3%80%81%E5%B8%B8%E8%A7%81%E8%AF%AF%E5%8C%BA"><span class="nav-number">22.</span> <span class="nav-text">二十二、常见误区</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#22-1-%E5%85%88%E8%BF%BD%E6%B1%82%E6%95%B0%E9%87%8F%EF%BC%8C%E5%86%8D%E8%A1%A5%E8%B4%A8%E9%87%8F"><span class="nav-number">22.1.</span> <span class="nav-text">22.1 先追求数量，再补质量</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#22-2-%E6%8A%8A%E7%BA%BF%E4%B8%8A%E9%9A%8F%E6%9C%BA%E6%8A%BD%E6%A0%B7%E5%BD%93%E5%AE%8C%E6%95%B4%E4%BB%A3%E8%A1%A8%E6%80%A7"><span class="nav-number">22.2.</span> <span class="nav-text">22.2 把线上随机抽样当完整代表性</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#22-3-%E6%8A%8A%E5%9B%B0%E9%9A%BE%E6%A0%B7%E6%9C%AC%E6%AF%94%E4%BE%8B%E5%BD%93%E8%87%AA%E7%84%B6%E5%8F%91%E7%94%9F%E7%8E%87"><span class="nav-number">22.3.</span> <span class="nav-text">22.3 把困难样本比例当自然发生率</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#22-4-%E5%8F%AA%E7%94%A8%E5%AD%97%E7%AC%A6%E4%B8%B2%E5%93%88%E5%B8%8C%E5%8E%BB%E9%87%8D"><span class="nav-number">22.4.</span> <span class="nav-text">22.4 只用字符串哈希去重</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#22-5-Embedding-%E7%9B%B8%E4%BC%BC%E5%B0%B1%E8%87%AA%E5%8A%A8%E5%88%A0%E9%99%A4"><span class="nav-number">22.5.</span> <span class="nav-text">22.5 Embedding 相似就自动删除</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#22-6-%E5%90%8C%E4%B8%80%E6%A8%A1%E5%9E%8B%E7%94%9F%E6%88%90%E9%97%AE%E9%A2%98%E3%80%81%E7%94%9F%E6%88%90%E7%AD%94%E6%A1%88%E5%B9%B6%E6%8B%85%E4%BB%BB%E8%A3%81%E5%88%A4"><span class="nav-number">22.6.</span> <span class="nav-text">22.6 同一模型生成问题、生成答案并担任裁判</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#22-7-%E4%B8%80%E8%87%B4%E7%8E%87%E9%AB%98%E5%B0%B1%E8%AE%A4%E4%B8%BA%E6%A0%87%E7%AD%BE%E5%8F%AF%E9%9D%A0"><span class="nav-number">22.7.</span> <span class="nav-text">22.7 一致率高就认为标签可靠</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#22-8-%E6%89%80%E6%9C%89%E4%B8%8D%E7%A1%AE%E5%AE%9A%E6%A0%B7%E6%9C%AC%E9%83%BD%E5%88%A0%E9%99%A4"><span class="nav-number">22.8.</span> <span class="nav-text">22.8 所有不确定样本都删除</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#22-9-%E5%8E%9F%E5%9C%B0%E4%BF%AE%E6%AD%A3%E8%AF%84%E6%B5%8B%E9%9B%86"><span class="nav-number">22.9.</span> <span class="nav-text">22.9 原地修正评测集</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#22-10-%E7%94%A8%E4%B8%80%E4%B8%AA%E6%80%BB%E5%88%86%E5%81%9A%E5%8F%91%E5%B8%83%E9%97%A8%E7%A6%81"><span class="nav-number">22.10.</span> <span class="nav-text">22.10 用一个总分做发布门禁</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#22-11-%E6%8A%8A%E5%AF%86%E5%B0%81%E9%9B%86%E6%97%A0%E9%99%90%E9%87%8D%E5%A4%8D%E4%BD%BF%E7%94%A8"><span class="nav-number">22.11.</span> <span class="nav-text">22.11 把密封集无限重复使用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#22-12-%E6%95%B0%E6%8D%AE%E5%8D%A1%E5%86%99%E5%AE%8C%E5%B0%B1%E4%B8%8D%E6%9B%B4%E6%96%B0"><span class="nav-number">22.12.</span> <span class="nav-text">22.12 数据卡写完就不更新</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%89%E3%80%81%E5%BB%BA%E8%AE%BE%E9%A1%BA%E5%BA%8F%EF%BC%9A%E4%BB%8E%E6%9C%80%E5%B0%8F%E5%8F%AF%E4%BF%A1%E9%9B%86%E5%BC%80%E5%A7%8B"><span class="nav-number">23.</span> <span class="nav-text">二十三、建设顺序：从最小可信集开始</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%B8%80%E9%98%B6%E6%AE%B5%EF%BC%9A%E5%AE%9A%E4%B9%89%E5%8F%AF%E6%B5%8B%E9%87%8F%E5%AF%B9%E8%B1%A1"><span class="nav-number">23.1.</span> <span class="nav-text">第一阶段：定义可测量对象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%BA%8C%E9%98%B6%E6%AE%B5%EF%BC%9A%E5%BB%BA%E7%AB%8B%E6%9C%80%E5%B0%8F%E6%95%B0%E6%8D%AE%E5%A5%91%E7%BA%A6"><span class="nav-number">23.2.</span> <span class="nav-text">第二阶段：建立最小数据契约</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%B8%89%E9%98%B6%E6%AE%B5%EF%BC%9A%E5%BB%BA%E8%AE%BE%E5%B0%8F%E5%9E%8B%E9%AB%98%E8%B4%A8%E9%87%8F%E9%9B%86"><span class="nav-number">23.3.</span> <span class="nav-text">第三阶段：建设小型高质量集</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E5%9B%9B%E9%98%B6%E6%AE%B5%EF%BC%9A%E8%87%AA%E5%8A%A8%E5%8C%96%E9%97%A8%E7%A6%81"><span class="nav-number">23.4.</span> <span class="nav-text">第四阶段：自动化门禁</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%BA%94%E9%98%B6%E6%AE%B5%EF%BC%9A%E7%89%88%E6%9C%AC%E5%92%8C%E6%95%B0%E6%8D%AE%E5%8D%A1"><span class="nav-number">23.5.</span> <span class="nav-text">第五阶段：版本和数据卡</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E5%85%AD%E9%98%B6%E6%AE%B5%EF%BC%9A%E7%BA%BF%E4%B8%8A%E5%8F%8D%E9%A6%88%E9%97%AD%E7%8E%AF"><span class="nav-number">23.6.</span> <span class="nav-text">第六阶段：线上反馈闭环</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%9B%9B%E3%80%81%E8%90%BD%E5%9C%B0%E6%A3%80%E6%9F%A5%E8%A1%A8"><span class="nav-number">24.</span> <span class="nav-text">二十四、落地检查表</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#24-1-%E7%9B%AE%E6%A0%87%E4%B8%8E%E8%8C%83%E5%9B%B4"><span class="nav-number">24.1.</span> <span class="nav-text">24.1 目标与范围</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#24-2-%E9%87%87%E9%9B%86"><span class="nav-number">24.2.</span> <span class="nav-text">24.2 采集</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#24-3-%E6%8A%BD%E6%A0%B7%E4%B8%8E%E8%A6%86%E7%9B%96"><span class="nav-number">24.3.</span> <span class="nav-text">24.3 抽样与覆盖</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#24-4-%E6%B8%85%E6%B4%97%E4%B8%8E%E5%8E%BB%E9%87%8D"><span class="nav-number">24.4.</span> <span class="nav-text">24.4 清洗与去重</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#24-5-%E6%B1%A1%E6%9F%93%E4%B8%8E%E5%88%87%E5%88%86"><span class="nav-number">24.5.</span> <span class="nav-text">24.5 污染与切分</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#24-6-%E6%A0%87%E6%B3%A8"><span class="nav-number">24.6.</span> <span class="nav-text">24.6 标注</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#24-7-%E7%89%88%E6%9C%AC%E4%B8%8E%E5%8F%91%E5%B8%83"><span class="nav-number">24.7.</span> <span class="nav-text">24.7 版本与发布</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#24-8-%E9%97%A8%E7%A6%81%E4%B8%8E%E8%BF%90%E8%A1%8C"><span class="nav-number">24.8.</span> <span class="nav-text">24.8 门禁与运行</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%94%E3%80%81%E6%80%BB%E7%BB%93"><span class="nav-number">25.</span> <span class="nav-text">二十五、总结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8F%82%E8%80%83%E8%B5%84%E6%96%99"><span class="nav-number">26.</span> <span class="nav-text">参考资料</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">312</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">27</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">569</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2026/03/18/AI%E6%B5%8B%E8%AF%95-15-%E9%AB%98%E8%B4%A8%E9%87%8FAI%E8%AF%84%E6%B5%8B%E9%9B%86%E6%80%8E%E4%B9%88%E9%87%87%E9%9B%86%E6%B8%85%E6%B4%97%E6%A0%87%E6%B3%A8%E5%92%8C%E7%89%88%E6%9C%AC%E5%8C%96/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="AI测试-15-高质量AI评测集怎么采集清洗标注和版本化 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          AI测试-15-高质量AI评测集怎么采集清洗标注和版本化
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2026-03-18 20:30:00" itemprop="dateCreated datePublished" datetime="2026-03-18T20:30:00+08:00">2026-03-18</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/AI%E6%B5%8B%E8%AF%95/" itemprop="url" rel="index"><span itemprop="name">AI测试</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>14k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>50 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>AI 应用开始做自动化评测后，团队通常很快就能得到一个分数。</p>
+<p>真正困难的是回答：</p>
+<ul>
+<li>这个分数代表哪一类用户和场景</li>
+<li>样本是否覆盖低频但高风险的失败</li>
+<li>金标准由谁、依据什么证据标出来</li>
+<li>开发人员是否已经反复看过并针对它调优</li>
+<li>训练集、Prompt 示例、知识库和评测集之间是否泄漏</li>
+<li>数据变更后，上一轮结果还能不能复现</li>
+<li>新版本到底是模型变好了，还是评测集变容易了</li>
+</ul>
+<p>如果这些问题没有答案，评测集就只是一个装着 JSON 的目录。</p>
+<p>它可能适合演示，却不适合承担发布门禁。</p>
+<p>高质量评测集应该被视为一件<strong>测量资产</strong>：</p>
+<ul>
+<li>有明确测量目标</li>
+<li>有目标总体和抽样设计</li>
+<li>有来源与授权</li>
+<li>有标签规范与一致性证据</li>
+<li>有污染和泄漏控制</li>
+<li>有不可变版本与数据卡</li>
+<li>有发布门禁和退役机制</li>
+</ul>
+<p>前文《AI测试-07-RAG+测试知识库怎么做数据清洗召回和结果校验》关注的是知识库怎样服务在线检索。</p>
+<p>本文不重复知识切块和召回优化。</p>
+<p>这里关注的是另一条链路：</p>
+<p><strong>怎样把生产数据、专家样本、事故样本和合成样本建设成可用于比较、回归和发布决策的 AI 评测集。</strong></p>
+<h2 id="一、问题边界：先区分评测数据、训练数据和观测数据"><a href="#一、问题边界：先区分评测数据、训练数据和观测数据" class="headerlink" title="一、问题边界：先区分评测数据、训练数据和观测数据"></a>一、问题边界：先区分评测数据、训练数据和观测数据</h2><p>AI 系统里经常同时存在多类数据。</p>
+<p>它们可以来源相同，但用途和治理要求不同。</p>
+<h3 id="1-1-训练数据"><a href="#1-1-训练数据" class="headerlink" title="1.1 训练数据"></a>1.1 训练数据</h3><p>训练数据直接参与模型参数更新，或用于微调、偏好优化和蒸馏。</p>
+<p>它的核心问题包括：</p>
+<ul>
+<li>许可与版权</li>
+<li>数据代表性</li>
+<li>隐私</li>
+<li>偏差</li>
+<li>污染</li>
+<li>训练过程可追溯性</li>
+</ul>
+<p>本文不会展开基础模型训练数据工程。</p>
+<h3 id="1-2-开发数据"><a href="#1-2-开发数据" class="headerlink" title="1.2 开发数据"></a>1.2 开发数据</h3><p>开发数据用于：</p>
+<ul>
+<li>编写和调整 Prompt</li>
+<li>选择 Few-shot 示例</li>
+<li>调规则和阈值</li>
+<li>选择模型</li>
+<li>调整 RAG 参数</li>
+<li>修复已知失败</li>
+</ul>
+<p>只要开发人员看过答案并据此优化系统，这批数据就不再是独立的盲测证据。</p>
+<h3 id="1-3-评测数据"><a href="#1-3-评测数据" class="headerlink" title="1.3 评测数据"></a>1.3 评测数据</h3><p>评测数据用于估计系统在某个目标总体上的质量，或验证特定风险是否受控。</p>
+<p>它可能包含：</p>
+<ul>
+<li>稳定回归集</li>
+<li>发布门禁集</li>
+<li>能力集</li>
+<li>安全集</li>
+<li>对抗集</li>
+<li>事故回放集</li>
+<li>密封审计集</li>
+</ul>
+<p>这些集合的用途不同，不能简单合并成一个总分。</p>
+<h3 id="1-4-线上观测数据"><a href="#1-4-线上观测数据" class="headerlink" title="1.4 线上观测数据"></a>1.4 线上观测数据</h3><p>线上观测数据反映真实运行分布，例如：</p>
+<ul>
+<li>用户请求</li>
+<li>检索结果</li>
+<li>模型输出</li>
+<li>工具动作</li>
+<li>用户反馈</li>
+<li>人工接管</li>
+<li>事故记录</li>
+</ul>
+<p>它是评测集的重要来源，但不能未经授权、脱敏、筛选和版本化就直接进入评测集。</p>
+<h3 id="1-5-本文的核心边界"><a href="#1-5-本文的核心边界" class="headerlink" title="1.5 本文的核心边界"></a>1.5 本文的核心边界</h3><p>本文讨论应用级评测集。</p>
+<p>它既可以测试单一模型，也可以测试完整 RAG、Agent 或工具执行链路。</p>
+<p>本文不提供某个通用模型榜单，也不声称一套数据能代表所有任务。</p>
+<p>评测集质量永远相对于：</p>
+<ul>
+<li>预期用途</li>
+<li>目标人群</li>
+<li>风险容忍度</li>
+<li>系统版本</li>
+<li>发布决策</li>
+</ul>
+<h2 id="二、评测集不是“题库”，而是测量仪器"><a href="#二、评测集不是“题库”，而是测量仪器" class="headerlink" title="二、评测集不是“题库”，而是测量仪器"></a>二、评测集不是“题库”，而是测量仪器</h2><p>把评测集当题库，团队会关心题目数量。</p>
+<p>把它当测量仪器，团队会继续关心：</p>
+<ul>
+<li>测量对象是什么</li>
+<li>测量误差有多大</li>
+<li>结果能泛化到哪里</li>
+<li>哪些变量被控制</li>
+<li>仪器是否经过校准</li>
+<li>仪器版本是否发生变化</li>
+</ul>
+<h3 id="2-1-一个评测分数包含三类误差"><a href="#2-1-一个评测分数包含三类误差" class="headerlink" title="2.1 一个评测分数包含三类误差"></a>2.1 一个评测分数包含三类误差</h3><p>可以把观察分数写成一个简化关系：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Score_&#123;observed&#125; = Quality_&#123;system&#125; + Error_&#123;sampling&#125; + Error_&#123;measurement&#125;</span><br></pre></td></tr></table></figure>
+
+<p>其中：</p>
+<ul>
+<li><code>Quality_system</code> 是希望估计的系统质量</li>
+<li><code>Error_sampling</code> 来自样本没有完整代表目标总体</li>
+<li><code>Error_measurement</code> 来自标签、量表、评测器和执行环境</li>
+</ul>
+<p>此外还存在非随机偏差，例如：</p>
+<ul>
+<li>只采集愿意反馈的用户</li>
+<li>只保留模型答得出的样本</li>
+<li>重复样本过多</li>
+<li>开发集泄漏到评测集</li>
+<li>评测器偏好某种表达风格</li>
+</ul>
+<p>扩大样本量只能减少部分随机误差。</p>
+<p>它不能自动修复系统性偏差。</p>
+<h3 id="2-2-“一万条数据”不一定比“一千条数据”更可信"><a href="#2-2-“一万条数据”不一定比“一千条数据”更可信" class="headerlink" title="2.2 “一万条数据”不一定比“一千条数据”更可信"></a>2.2 “一万条数据”不一定比“一千条数据”更可信</h3><p>如果一万条样本里有大量模板近重复，真实独立信息可能很少。</p>
+<p>如果它们都来自同一语言、同一租户和同一时间段，就无法代表其他场景。</p>
+<p>如果标签规则模糊，样本越多只会更稳定地测量一个错误定义。</p>
+<p>评测集规模必须和覆盖、独立性、标注质量一起看。</p>
+<h2 id="三、先定义评测目标，再讨论采集"><a href="#三、先定义评测目标，再讨论采集" class="headerlink" title="三、先定义评测目标，再讨论采集"></a>三、先定义评测目标，再讨论采集</h2><p>最常见的顺序错误是先把日志倒出来，再考虑能测什么。</p>
+<p>正确顺序应该从发布决策开始。</p>
+<h3 id="3-1-用决策问题约束评测目标"><a href="#3-1-用决策问题约束评测目标" class="headerlink" title="3.1 用决策问题约束评测目标"></a>3.1 用决策问题约束评测目标</h3><p>例如：</p>
+<ul>
+<li>新模型能否替换当前模型</li>
+<li>新 Prompt 是否降低了事实错误</li>
+<li>RAG 索引升级是否改善过期文档问题</li>
+<li>Agent 是否可以从只读工具扩展到写工具</li>
+<li>某个语言或租户是否达到开放条件</li>
+<li>一个严重事故修复是否可以关闭</li>
+</ul>
+<p>不同决策需要不同样本、指标和门槛。</p>
+<h3 id="3-2-定义评测对象"><a href="#3-2-定义评测对象" class="headerlink" title="3.2 定义评测对象"></a>3.2 定义评测对象</h3><p>至少区分四层：</p>
+<table>
+<thead>
+<tr>
+<th>评测对象</th>
+<th>输入边界</th>
+<th>输出边界</th>
+<th>典型用途</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>模型</td>
+<td>固定有效上下文</td>
+<td>原始模型输出</td>
+<td>比较模型能力与方差</td>
+</tr>
+<tr>
+<td>组件</td>
+<td>查询或工具请求</td>
+<td>检索、解析、策略结果</td>
+<td>定位单层回归</td>
+</tr>
+<tr>
+<td>系统</td>
+<td>用户请求</td>
+<td>最终回答与工具动作</td>
+<td>发布门禁和端到端回归</td>
+</tr>
+<tr>
+<td>业务</td>
+<td>真实任务</td>
+<td>用户结果与运营影响</td>
+<td>线上价值和风险评估</td>
+</tr>
+</tbody></table>
+<p>如果输入输出边界不固定，两个版本的分数差异很难解释。</p>
+<h3 id="3-3-定义评测单元"><a href="#3-3-定义评测单元" class="headerlink" title="3.3 定义评测单元"></a>3.3 定义评测单元</h3><p>一条样本不一定等于一轮对话。</p>
+<p>评测单元可能是：</p>
+<ul>
+<li>一个问题与答案</li>
+<li>一个事实声明</li>
+<li>一个检索查询</li>
+<li>一次工具选择</li>
+<li>一个工具参数集合</li>
+<li>一条多轮会话</li>
+<li>一个完整 Agent 任务</li>
+<li>一次事故回放</li>
+</ul>
+<p>单元越大，越接近真实业务，但定位越困难。</p>
+<p>因此常用组合是：</p>
+<ul>
+<li>原子级样本用于精确定位</li>
+<li>任务级样本用于验证系统行为</li>
+<li>业务级样本用于评估最终影响</li>
+</ul>
+<h3 id="3-4-定义目标总体"><a href="#3-4-定义目标总体" class="headerlink" title="3.4 定义目标总体"></a>3.4 定义目标总体</h3><p>目标总体是希望分数推广到的对象集合。</p>
+<p>它可以是：</p>
+<ul>
+<li>未来一个月的中文客服请求</li>
+<li>使用写工具的企业租户任务</li>
+<li>Android 稳定性日志分析请求</li>
+<li>所有需要引用内部制度的问答</li>
+<li>某版本开放后预期出现的多轮会话</li>
+</ul>
+<p>“所有用户问题”通常过于宽泛。</p>
+<p>目标总体越模糊，抽样代表性越无法验证。</p>
+<h3 id="3-5-定义质量维度"><a href="#3-5-定义质量维度" class="headerlink" title="3.5 定义质量维度"></a>3.5 定义质量维度</h3><p>不要只定义一个“正确率”。</p>
+<p>常见维度包括：</p>
+<ul>
+<li>任务完成度</li>
+<li>事实正确性</li>
+<li>引用忠实度</li>
+<li>召回覆盖</li>
+<li>工具选择正确性</li>
+<li>参数正确性</li>
+<li>安全与权限遵守</li>
+<li>拒答适当性</li>
+<li>稳定性与方差</li>
+<li>延迟与成本</li>
+<li>可恢复性</li>
+<li>用户可用性</li>
+</ul>
+<p>每个维度都要说明：</p>
+<ul>
+<li>标签类型</li>
+<li>评分规则</li>
+<li>证据来源</li>
+<li>聚合方式</li>
+<li>失败门槛</li>
+</ul>
+<h2 id="四、完整生命周期：每次更新都要重新经过治理链"><a href="#四、完整生命周期：每次更新都要重新经过治理链" class="headerlink" title="四、完整生命周期：每次更新都要重新经过治理链"></a>四、完整生命周期：每次更新都要重新经过治理链</h2><p><img src="/images/ai-quality/ai-15-dataset-lifecycle.svg" alt="AI 评测集治理生命周期"></p>
+<p>评测集建设不是一次性 ETL。</p>
+<p>推荐生命周期包括：</p>
+<ol>
+<li>评测目标</li>
+<li>样本采集</li>
+<li>清洗去重</li>
+<li>分层抽样</li>
+<li>标注仲裁</li>
+<li>版本与切分</li>
+<li>数据卡</li>
+<li>发布门禁</li>
+<li>运行反馈与受控演进</li>
+</ol>
+<p>“受控演进”意味着：</p>
+<ul>
+<li>已发布版本保持不可变</li>
+<li>新样本进入候选池</li>
+<li>候选池重新执行清洗、标注和门禁</li>
+<li>通过后发布新版本</li>
+<li>新旧版本分别计算结果</li>
+<li>变更影响有明确说明</li>
+</ul>
+<p>不能把线上新失败直接追加到原文件，然后继续沿用旧版本号。</p>
+<h2 id="五、样本结构：先让每条数据可追溯"><a href="#五、样本结构：先让每条数据可追溯" class="headerlink" title="五、样本结构：先让每条数据可追溯"></a>五、样本结构：先让每条数据可追溯</h2><p>评测样本不应只有 <code>question</code> 和 <code>answer</code>。</p>
+<h3 id="5-1-建议的最小数据结构"><a href="#5-1-建议的最小数据结构" class="headerlink" title="5.1 建议的最小数据结构"></a>5.1 建议的最小数据结构</h3><figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;sample_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;aqe_01JCF7P8B4Q2&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;schema_version&quot;</span><span class="punctuation">:</span> <span class="string">&quot;ai-eval-sample/1.2&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;task_type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;rag_policy_qa&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;input&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;query&quot;</span><span class="punctuation">:</span> <span class="string">&quot;测试环境的缺陷关闭需要哪些证据？&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;language&quot;</span><span class="punctuation">:</span> <span class="string">&quot;zh-CN&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;tenant_class&quot;</span><span class="punctuation">:</span> <span class="string">&quot;enterprise&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;environment&quot;</span><span class="punctuation">:</span> <span class="string">&quot;staging&quot;</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;expected&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;answer_type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;grounded_text&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;required_claims&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">      <span class="string">&quot;必须包含可复现步骤&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="string">&quot;必须包含修复版本验证结果&quot;</span></span><br><span class="line">    <span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;forbidden_claims&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">      <span class="string">&quot;仅凭开发口头确认即可关闭&quot;</span></span><br><span class="line">    <span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;evidence_refs&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">      <span class="string">&quot;policy://defect-lifecycle/2026-02#close-criteria&quot;</span></span><br><span class="line">    <span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;abstain_allowed&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">false</span></span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;strata&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;scenario&quot;</span><span class="punctuation">:</span> <span class="string">&quot;defect_management&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;risk&quot;</span><span class="punctuation">:</span> <span class="string">&quot;high&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;difficulty&quot;</span><span class="punctuation">:</span> <span class="string">&quot;medium&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;input_length&quot;</span><span class="punctuation">:</span> <span class="string">&quot;short&quot;</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;provenance&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;source_type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;expert_curated&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;source_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;req-1842&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;collected_at&quot;</span><span class="punctuation">:</span> <span class="string">&quot;2026-02-21T09:30:00+08:00&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;consent_basis&quot;</span><span class="punctuation">:</span> <span class="string">&quot;internal_quality_use&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;transform_chain&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">      <span class="string">&quot;pii-redaction/v3&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="string">&quot;normalization/v2&quot;</span></span><br><span class="line">    <span class="punctuation">]</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;annotation&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;guideline_version&quot;</span><span class="punctuation">:</span> <span class="string">&quot;rag-qa-rubric/2.1&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;annotator_ids&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;ann-17&quot;</span><span class="punctuation">,</span> <span class="string">&quot;ann-23&quot;</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;adjudicator_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sme-04&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;status&quot;</span><span class="punctuation">:</span> <span class="string">&quot;adjudicated&quot;</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;split&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sealed&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;group_keys&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;duplicate_cluster&quot;</span><span class="punctuation">:</span> <span class="string">&quot;dup-0098&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;conversation&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">null</span></span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;document_family&quot;</span><span class="punctuation">:</span> <span class="string">&quot;defect-lifecycle&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;entity&quot;</span><span class="punctuation">:</span> <span class="string">&quot;policy-defect-close&quot;</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;record_hash&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sha256:7af6...&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;content_dedup_hash&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sha256:93c1...&quot;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="5-2-sample-id、record-hash-和-content-dedup-hash-不能互相替代"><a href="#5-2-sample-id、record-hash-和-content-dedup-hash-不能互相替代" class="headerlink" title="5.2 sample_id、record_hash 和 content_dedup_hash 不能互相替代"></a>5.2 <code>sample_id</code>、<code>record_hash</code> 和 <code>content_dedup_hash</code> 不能互相替代</h3><p><code>sample_id</code> 是业务身份。</p>
+<p>它用于跟踪同一逻辑样本的生命周期。</p>
+<p><code>record_hash</code> 是整条版本化记录的指纹，应覆盖 split、来源、标注和分组等治理字段。</p>
+<p><code>content_dedup_hash</code> 只覆盖任务内容，例如输入、期望、约束和必要上下文，用于识别 ID、切分或来源不同但任务内容相同的精确重复。</p>
+<p>如果修改标签仍沿用原 <code>sample_id</code>，应生成新的两个哈希并记录变更。</p>
+<p>如果样本含义发生根本变化，更稳妥的方式是创建新样本并关联前身。</p>
+<h3 id="5-3-保存原始数据与规范化数据的关系"><a href="#5-3-保存原始数据与规范化数据的关系" class="headerlink" title="5.3 保存原始数据与规范化数据的关系"></a>5.3 保存原始数据与规范化数据的关系</h3><p>为了去重，团队常对文本做：</p>
+<ul>
+<li>空白归一化</li>
+<li>大小写归一化</li>
+<li>标点归一化</li>
+<li>模板字段替换</li>
+<li>HTML 清理</li>
+</ul>
+<p>这些变换可能改变语义。</p>
+<p>因此应同时保留：</p>
+<ul>
+<li>受控原始引用</li>
+<li>规范化版本</li>
+<li>变换链版本</li>
+<li>原始哈希</li>
+<li>规范化哈希</li>
+</ul>
+<p>不能只保存清洗后的文本而丢失来源。</p>
+<h2 id="六、样本来源：多源组合，而不是迷信生产日志"><a href="#六、样本来源：多源组合，而不是迷信生产日志" class="headerlink" title="六、样本来源：多源组合，而不是迷信生产日志"></a>六、样本来源：多源组合，而不是迷信生产日志</h2><h3 id="6-1-生产日志"><a href="#6-1-生产日志" class="headerlink" title="6.1 生产日志"></a>6.1 生产日志</h3><p>优点：</p>
+<ul>
+<li>接近真实分布</li>
+<li>能看到真实语言和任务复杂度</li>
+<li>能发现设计阶段没有想到的长尾</li>
+</ul>
+<p>风险：</p>
+<ul>
+<li>隐私和敏感数据</li>
+<li>用户授权与用途限制</li>
+<li>反馈选择偏差</li>
+<li>线上输出已经影响后续标注</li>
+<li>高频简单请求淹没稀有风险</li>
+<li>日志字段可能缺失</li>
+</ul>
+<p>生产样本进入评测集前至少要经过：</p>
+<ul>
+<li>用途和权限确认</li>
+<li>去标识化或脱敏</li>
+<li>质量筛选</li>
+<li>分层抽样</li>
+<li>独立标注</li>
+<li>来源与时间记录</li>
+</ul>
+<h3 id="6-2-领域专家设计"><a href="#6-2-领域专家设计" class="headerlink" title="6.2 领域专家设计"></a>6.2 领域专家设计</h3><p>优点：</p>
+<ul>
+<li>可以覆盖明确业务规则</li>
+<li>可以构造边界条件</li>
+<li>容易给出权威证据</li>
+</ul>
+<p>风险：</p>
+<ul>
+<li>专家表达不等于普通用户表达</li>
+<li>容易偏向规范路径</li>
+<li>样本难度可能与线上不一致</li>
+<li>专家间也可能有规则理解分歧</li>
+</ul>
+<p>专家样本不应全部作为“困难样本”。</p>
+<p>它们也需要经过代表性和一致性检查。</p>
+<h3 id="6-3-事故与缺陷回放"><a href="#6-3-事故与缺陷回放" class="headerlink" title="6.3 事故与缺陷回放"></a>6.3 事故与缺陷回放</h3><p>优点：</p>
+<ul>
+<li>直接覆盖已知失败机制</li>
+<li>适合稳定回归</li>
+<li>容易关联修复和证据</li>
+</ul>
+<p>风险：</p>
+<ul>
+<li>开发团队已经针对它调优</li>
+<li>样本数量小，不能估计总体发生率</li>
+<li>事故环境可能无法完整重建</li>
+</ul>
+<p>事故样本适合作为专门回归切片。</p>
+<p>不应混进总体随机样本后声称代表真实流量。</p>
+<h3 id="6-4-合成样本"><a href="#6-4-合成样本" class="headerlink" title="6.4 合成样本"></a>6.4 合成样本</h3><p>合成样本可以由规则、模板或模型生成。</p>
+<p>优点：</p>
+<ul>
+<li>快速扩展边界和组合条件</li>
+<li>便于生成对抗变体</li>
+<li>可以控制特定变量</li>
+</ul>
+<p>风险：</p>
+<ul>
+<li>继承生成模型偏差</li>
+<li>语言风格单一</li>
+<li>产生不真实任务</li>
+<li>重复度高</li>
+<li>答案可能由同一模型自我确认</li>
+</ul>
+<p>合成样本更适合覆盖性测试和压力测试。</p>
+<p>如果要用于总体质量估计，应证明它和目标总体的关系，并避免把合成比例直接当线上比例。</p>
+<h3 id="6-5-公共基准"><a href="#6-5-公共基准" class="headerlink" title="6.5 公共基准"></a>6.5 公共基准</h3><p>公共基准有利于复现和外部比较。</p>
+<p>但需要检查：</p>
+<ul>
+<li>许可证和使用条件</li>
+<li>任务是否匹配业务</li>
+<li>语言和时间有效性</li>
+<li>模型是否可能见过数据</li>
+<li>Prompt 模板是否改变任务</li>
+<li>分数是否能推广到应用系统</li>
+</ul>
+<p>公共基准分数不能替代私有业务评测。</p>
+<h3 id="6-6-红队与对抗样本"><a href="#6-6-红队与对抗样本" class="headerlink" title="6.6 红队与对抗样本"></a>6.6 红队与对抗样本</h3><p>这类样本专门测试：</p>
+<ul>
+<li>提示注入</li>
+<li>数据外泄</li>
+<li>工具越权</li>
+<li>规则绕过</li>
+<li>多轮诱导</li>
+<li>编码和混淆</li>
+</ul>
+<p>它们代表风险覆盖，不代表自然发生频率。</p>
+<p>应该单独报告通过率和严重度。</p>
+<h2 id="七、分层抽样：同时维护代表性和风险覆盖"><a href="#七、分层抽样：同时维护代表性和风险覆盖" class="headerlink" title="七、分层抽样：同时维护代表性和风险覆盖"></a>七、分层抽样：同时维护代表性和风险覆盖</h2><p><img src="/images/ai-quality/ai-15-sampling-matrix.svg" alt="AI 评测集分层抽样矩阵与切分防火墙"></p>
+<p>完全按线上频率随机抽样，会得到大量高频简单请求。</p>
+<p>完全按专家挑选困难样本，又无法估计正常流量质量。</p>
+<p>更稳的设计是“双轨抽样”：</p>
+<ul>
+<li>代表性轨：按目标总体分层随机抽样</li>
+<li>风险轨：对关键、稀有和对抗场景设置最低配额</li>
+</ul>
+<h3 id="7-1-先定义分层维度"><a href="#7-1-先定义分层维度" class="headerlink" title="7.1 先定义分层维度"></a>7.1 先定义分层维度</h3><p>常见维度包括：</p>
+<ul>
+<li>业务场景</li>
+<li>风险等级</li>
+<li>任务类型</li>
+<li>语言和地区</li>
+<li>用户或租户类型</li>
+<li>输入长度</li>
+<li>难度</li>
+<li>是否需要检索</li>
+<li>是否调用工具</li>
+<li>工具副作用等级</li>
+<li>对话轮数</li>
+<li>时间窗口</li>
+<li>终端或渠道</li>
+</ul>
+<p>维度不是越多越好。</p>
+<p>如果每个维度组合都成为一个层，样本会迅速稀疏。</p>
+<p>应优先选择会改变失败机制、损失或发布决策的维度。</p>
+<h3 id="7-2-风险等级要有业务定义"><a href="#7-2-风险等级要有业务定义" class="headerlink" title="7.2 风险等级要有业务定义"></a>7.2 风险等级要有业务定义</h3><p>一个可参考的内部定义是：</p>
+<ul>
+<li>关键：可能产生不可逆动作、敏感数据泄漏或重大合规影响</li>
+<li>高：可能造成重要业务错误，需要人工恢复</li>
+<li>中：影响任务完成，但可以低成本纠正</li>
+<li>低：措辞、格式或轻微体验问题</li>
+</ul>
+<p>这只是示例。</p>
+<p>实际等级必须由业务、技术、安全和合规共同定义。</p>
+<h3 id="7-3-比例分配"><a href="#7-3-比例分配" class="headerlink" title="7.3 比例分配"></a>7.3 比例分配</h3><p>如果目标是保持总体分布，层 <code>h</code> 的样本数可以按总体占比分配：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">n_h = n \frac&#123;N_h&#125;&#123;N&#125;</span><br></pre></td></tr></table></figure>
+
+<p>其中：</p>
+<ul>
+<li><code>n</code> 是总样本数</li>
+<li><code>N_h</code> 是层 <code>h</code> 的总体规模</li>
+<li><code>N</code> 是总体规模</li>
+</ul>
+<p>这种方法简单，但低频关键层可能样本不足。</p>
+<h3 id="7-4-Neyman-分配"><a href="#7-4-Neyman-分配" class="headerlink" title="7.4 Neyman 分配"></a>7.4 Neyman 分配</h3><p>如果不同层内方差差异明显，并且单条采样成本近似，可以考虑 Neyman 分配：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">n_h = n \frac&#123;N_h S_h&#125;&#123;\sum_j N_j S_j&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>S_h</code> 是层内目标指标的标准差估计。</p>
+<p>变化更大的层会获得更多样本。</p>
+<p>如果各层标注成本不同，还需要把成本纳入分配。</p>
+<p>这不是强制公式。</p>
+<p>它的价值在于提醒团队：样本应该投向信息量高的层，而不只是平均分配。</p>
+<h3 id="7-5-最低风险配额"><a href="#7-5-最低风险配额" class="headerlink" title="7.5 最低风险配额"></a>7.5 最低风险配额</h3><p>对低频高风险层，可以先定义最低配额 <code>f_h</code>。如果总预算 <code>n</code> 固定，应先预留全部最低配额，再分配剩余预算：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">F = \sum_h f_h, \quad F \le n</span><br><span class="line"></span><br><span class="line">n_h = f_h + (n - F) \frac&#123;w_h&#125;&#123;\sum_j w_j&#125;</span><br></pre></td></tr></table></figure>
+
+<p>其中 <code>w_h</code> 可以取总体占比，也可以取 Neyman 权重。整数化后要做尾差调整，确保 <code>sum(n_h) = n</code>。如果团队选择把风险样本作为预算外增量，也必须明确发布集总规模会从 <code>n</code> 增长为 <code>n + extra</code>，不能一边声明固定总预算，一边对每层直接取 <code>max</code>。</p>
+<p>例如，真实流量中写工具请求只有 1%，但其风险远高于普通问答。</p>
+<p>发布集可以保留至少 80 条不同失败机制的写工具样本。</p>
+<p>这些数字必须根据业务风险、样本复杂度和统计目标确定。</p>
+<p>不要把图中的示例配额当作通用标准。</p>
+<h3 id="7-6-过采样后怎样算总体指标"><a href="#7-6-过采样后怎样算总体指标" class="headerlink" title="7.6 过采样后怎样算总体指标"></a>7.6 过采样后怎样算总体指标</h3><p>高风险层被过采样后，直接平均会高估它在自然流量中的占比。</p>
+<p>可使用层权重：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">\hat&#123;p&#125; = \sum_h W_h \hat&#123;p&#125;_h, \quad W_h = \frac&#123;N_h&#125;&#123;N&#125;</span><br></pre></td></tr></table></figure>
+
+<p>其中 <code>\hat&#123;p&#125;_h</code> 是层内表现。</p>
+<p>同时应单独报告关键风险层结果。</p>
+<p>因为加权总分仍可能掩盖低频严重失败。</p>
+<h3 id="7-7-样本量公式的使用边界"><a href="#7-7-样本量公式的使用边界" class="headerlink" title="7.7 样本量公式的使用边界"></a>7.7 样本量公式的使用边界</h3><p>估计二项比例时，常见初始样本量近似为：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">n_0 = \frac&#123;z^2 p(1-p)&#125;&#123;e^2&#125;</span><br></pre></td></tr></table></figure>
+
+<p>其中：</p>
+<ul>
+<li><code>z</code> 对应置信水平</li>
+<li><code>p</code> 是预估通过率</li>
+<li><code>e</code> 是允许误差</li>
+</ul>
+<p>当总体有限时，可作有限总体修正：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">n = \frac&#123;n_0&#125;&#123;1 + \frac&#123;n_0 - 1&#125;&#123;N&#125;&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这些公式假设独立随机样本和明确二项结果。</p>
+<p>真实 AI 评测常存在：</p>
+<ul>
+<li>会话内相关</li>
+<li>模板重复</li>
+<li>多维标签</li>
+<li>加权抽样</li>
+<li>模型输出随机性</li>
+</ul>
+<p>此时应考虑聚类、设计效应、重复运行和 bootstrap，而不是机械套公式。</p>
+<h3 id="7-8-加权样本的有效样本量"><a href="#7-8-加权样本的有效样本量" class="headerlink" title="7.8 加权样本的有效样本量"></a>7.8 加权样本的有效样本量</h3><p>如果样本权重差异很大，可以观察：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">n_&#123;eff&#125; = \frac&#123;(\sum_i w_i)^2&#125;&#123;\sum_i w_i^2&#125;</span><br></pre></td></tr></table></figure>
+
+<p>即使物理样本很多，极端权重也会让有效样本量明显下降。</p>
+<h3 id="7-9-边界样本怎么设计"><a href="#7-9-边界样本怎么设计" class="headerlink" title="7.9 边界样本怎么设计"></a>7.9 边界样本怎么设计</h3><p>边界样本应围绕规则转折点：</p>
+<ul>
+<li>Token 限制前后</li>
+<li>置信阈值前后</li>
+<li>时间有效期前后</li>
+<li>权限允许与禁止的边界</li>
+<li>工具参数上下限</li>
+<li>单轮和多轮上下文切换</li>
+<li>只读与写操作切换</li>
+<li>有证据与证据不足切换</li>
+</ul>
+<p>理想边界对只改变一个关键变量。</p>
+<p>这样失败时才容易归因。</p>
+<h3 id="7-10-对抗样本怎么避免“只会考固定答案”"><a href="#7-10-对抗样本怎么避免“只会考固定答案”" class="headerlink" title="7.10 对抗样本怎么避免“只会考固定答案”"></a>7.10 对抗样本怎么避免“只会考固定答案”</h3><p>对抗样本应按攻击机制组织，而不是只保存固定字符串。</p>
+<p>例如“间接提示注入”可以生成：</p>
+<ul>
+<li>不同语言</li>
+<li>不同编码</li>
+<li>文档正文、表格、注释和工具返回中的位置变化</li>
+<li>指令显式或隐式变化</li>
+<li>单轮与多轮组合</li>
+</ul>
+<p>评测目标是机制鲁棒性，不是记住某句攻击文本。</p>
+<h2 id="八、清洗：不是把文本变整齐，而是保证测量语义不被破坏"><a href="#八、清洗：不是把文本变整齐，而是保证测量语义不被破坏" class="headerlink" title="八、清洗：不是把文本变整齐，而是保证测量语义不被破坏"></a>八、清洗：不是把文本变整齐，而是保证测量语义不被破坏</h2><h3 id="8-1-结构完整性检查"><a href="#8-1-结构完整性检查" class="headerlink" title="8.1 结构完整性检查"></a>8.1 结构完整性检查</h3><p>每条样本至少检查：</p>
+<ul>
+<li>必填字段</li>
+<li>字段类型</li>
+<li>枚举值</li>
+<li>ID 唯一性</li>
+<li>引用是否存在</li>
+<li>标签状态</li>
+<li>来源状态</li>
+<li>时间格式</li>
+<li>版本格式</li>
+<li>切分合法性</li>
+</ul>
+<p>结构正确是最低门槛。</p>
+<p>它不能证明样本语义正确。</p>
+<h3 id="8-2-语义完整性检查"><a href="#8-2-语义完整性检查" class="headerlink" title="8.2 语义完整性检查"></a>8.2 语义完整性检查</h3><p>需要人工或规则联合检查：</p>
+<ul>
+<li>问题是否自洽</li>
+<li>是否存在足够信息得出金标准</li>
+<li>引用证据是否支持标签</li>
+<li>任务是否仍在预期用途内</li>
+<li>文档和业务规则是否过期</li>
+<li>答案是否存在多个合理版本</li>
+<li>拒答是否是允许结果</li>
+<li>场景标签是否准确</li>
+</ul>
+<h3 id="8-3-隐私和敏感信息处理"><a href="#8-3-隐私和敏感信息处理" class="headerlink" title="8.3 隐私和敏感信息处理"></a>8.3 隐私和敏感信息处理</h3><p>清洗应遵循数据最小化。</p>
+<p>建议：</p>
+<ul>
+<li>只采集评测需要的字段</li>
+<li>在进入标注平台前脱敏</li>
+<li>将身份映射表与评测数据分离</li>
+<li>对敏感原文使用受控引用</li>
+<li>记录脱敏工具和规则版本</li>
+<li>定期验证重识别风险</li>
+<li>设置保留期限和删除机制</li>
+</ul>
+<p>简单正则无法覆盖所有敏感信息。</p>
+<p>高风险数据需要规则、模型检测和人工抽检组合。</p>
+<h3 id="8-4-精确重复"><a href="#8-4-精确重复" class="headerlink" title="8.4 精确重复"></a>8.4 精确重复</h3><p>精确重复可以基于规范化内容哈希检测。</p>
+<p>但至少要保留两种哈希：</p>
+<ul>
+<li>原始内容哈希</li>
+<li>规范化内容哈希</li>
+</ul>
+<p>规范化过程不能删除可能改变标签的内容，例如：</p>
+<ul>
+<li>否定词</li>
+<li>数值单位</li>
+<li>大小写敏感标识符</li>
+<li>代码缩进</li>
+<li>标点形成的逻辑边界</li>
+</ul>
+<h3 id="8-5-近似重复"><a href="#8-5-近似重复" class="headerlink" title="8.5 近似重复"></a>8.5 近似重复</h3><p>常见方法包括：</p>
+<ul>
+<li>字符或词 N-gram Jaccard 相似度</li>
+<li>MinHash 和局部敏感哈希</li>
+<li>编辑距离</li>
+<li>BM25 相似度</li>
+<li>Embedding 余弦相似度</li>
+<li>规则模板签名</li>
+</ul>
+<p>MinHash 适合近似估计集合的 Jaccard 相似度。</p>
+<p>Embedding 更容易发现语义近似，但也可能把标签相反的句子聚到一起。</p>
+<p>例如：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">允许自动关闭缺陷</span><br><span class="line">不允许自动关闭缺陷</span><br></pre></td></tr></table></figure>
+
+<p>两句语义向量可能接近，标签却相反。</p>
+<p>所以近重复检测应输出候选簇，而不是无条件自动删除。</p>
+<h3 id="8-6-重复簇比单条删除更重要"><a href="#8-6-重复簇比单条删除更重要" class="headerlink" title="8.6 重复簇比单条删除更重要"></a>8.6 重复簇比单条删除更重要</h3><p>去重的真正目的有两个：</p>
+<ol>
+<li>避免同一模板支配指标。</li>
+<li>防止同一语义族跨切分泄漏。</li>
+</ol>
+<p>因此应为每条样本生成 <code>duplicate_cluster</code>。</p>
+<p>同一簇可以保留有价值的变体，但必须：</p>
+<ul>
+<li>设置簇内上限</li>
+<li>在聚合时控制权重</li>
+<li>整簇进入同一个数据切分</li>
+</ul>
+<h2 id="九、污染与泄漏：高分最隐蔽的来源"><a href="#九、污染与泄漏：高分最隐蔽的来源" class="headerlink" title="九、污染与泄漏：高分最隐蔽的来源"></a>九、污染与泄漏：高分最隐蔽的来源</h2><h3 id="9-1-训练污染"><a href="#9-1-训练污染" class="headerlink" title="9.1 训练污染"></a>9.1 训练污染</h3><p>如果评测样本或近重复内容出现在模型训练数据中，分数可能反映记忆而非泛化。</p>
+<p>对闭源模型，团队通常无法完整检查预训练数据。</p>
+<p>可采取的务实措施包括：</p>
+<ul>
+<li>使用组织内部、发布时间晚于模型知识边界的私有任务</li>
+<li>对公共题目进行机制级变体，而不是只改措辞</li>
+<li>记录模型供应商对数据使用和保留的说明</li>
+<li>对异常逐字匹配做人工调查</li>
+<li>对公开基准结果明确标注污染不确定性</li>
+</ul>
+<p>不能因为无法完全证明无污染，就假装污染不存在。</p>
+<p>应在数据卡里记录已知和未知风险。</p>
+<h3 id="9-2-开发集泄漏"><a href="#9-2-开发集泄漏" class="headerlink" title="9.2 开发集泄漏"></a>9.2 开发集泄漏</h3><p>开发人员反复查看失败样本并修改 Prompt 后，这些样本已经参与优化。</p>
+<p>它们仍可保留在回归集，用于防止旧问题复发。</p>
+<p>但不应继续作为独立泛化证据。</p>
+<h3 id="9-3-Few-shot-与-Prompt-泄漏"><a href="#9-3-Few-shot-与-Prompt-泄漏" class="headerlink" title="9.3 Few-shot 与 Prompt 泄漏"></a>9.3 Few-shot 与 Prompt 泄漏</h3><p>如果评测题或近重复答案出现在 Few-shot 示例中，评测会被直接提示。</p>
+<p>检查范围应包括：</p>
+<ul>
+<li>系统提示词</li>
+<li>Few-shot 示例库</li>
+<li>动态 Prompt 模板</li>
+<li>Agent 技能说明</li>
+<li>工具描述示例</li>
+</ul>
+<h3 id="9-4-RAG-知识库泄漏"><a href="#9-4-RAG-知识库泄漏" class="headerlink" title="9.4 RAG 知识库泄漏"></a>9.4 RAG 知识库泄漏</h3><p>RAG 系统本来就应该从知识库获取事实。</p>
+<p>问题不在于“评测答案存在知识库”。</p>
+<p>问题在于：</p>
+<ul>
+<li>知识库是否包含评测专用答案或评分说明</li>
+<li>检索是否读到不可用于真实业务的标签字段</li>
+<li>评测问题是否被直接写成 FAQ 标题</li>
+<li>测试数据是否进入了线上索引</li>
+</ul>
+<p>需要区分“合法业务证据”和“评测标签泄漏”。</p>
+<h3 id="9-5-切分泄漏"><a href="#9-5-切分泄漏" class="headerlink" title="9.5 切分泄漏"></a>9.5 切分泄漏</h3><p>随机按行切分最容易导致：</p>
+<ul>
+<li>同一会话的不同轮次跨集合</li>
+<li>同一模板的改写跨集合</li>
+<li>同一文档生成的问题跨集合</li>
+<li>同一客户或设备跨集合</li>
+<li>同一事故的变体跨集合</li>
+</ul>
+<p>此时模型或系统可能利用共享上下文特征，得到虚高结果。</p>
+<h3 id="9-6-评测结果回流污染"><a href="#9-6-评测结果回流污染" class="headerlink" title="9.6 评测结果回流污染"></a>9.6 评测结果回流污染</h3><p>如果平台把失败样本自动加入 Prompt、记忆或知识库，下次评测就可能看到上次答案。</p>
+<p>线上学习和评测必须有隔离策略。</p>
+<p>密封集尤其不能自动进入任何调优链路。</p>
+<h2 id="十、数据切分：按独立性单位分，而不是按行分"><a href="#十、数据切分：按独立性单位分，而不是按行分" class="headerlink" title="十、数据切分：按独立性单位分，而不是按行分"></a>十、数据切分：按独立性单位分，而不是按行分</h2><h3 id="10-1-三类常用切分"><a href="#10-1-三类常用切分" class="headerlink" title="10.1 三类常用切分"></a>10.1 三类常用切分</h3><p>建议至少区分：</p>
+<ul>
+<li>开发集：允许查看标签，用于迭代</li>
+<li>回归或发布集：版本稳定，用于持续门禁</li>
+<li>密封或审计集：限制访问，用于独立验证</li>
+</ul>
+<p>还可以单独维护：</p>
+<ul>
+<li>事故回放集</li>
+<li>安全红队集</li>
+<li>线上影子集</li>
+<li>漂移监控集</li>
+</ul>
+<h3 id="10-2-分组切分"><a href="#10-2-分组切分" class="headerlink" title="10.2 分组切分"></a>10.2 分组切分</h3><p>选择真正的独立性单位作为组：</p>
+<ul>
+<li>重复簇</li>
+<li>会话</li>
+<li>文档族</li>
+<li>用户或租户</li>
+<li>业务实体</li>
+<li>事故族</li>
+<li>代码仓库</li>
+<li>设备型号</li>
+</ul>
+<p>同一组只进入一个切分。</p>
+<h3 id="10-3-时间切分"><a href="#10-3-时间切分" class="headerlink" title="10.3 时间切分"></a>10.3 时间切分</h3><p>如果目标是预测未来表现，可以使用时间切分：</p>
+<ul>
+<li>早期数据用于开发</li>
+<li>后期数据用于评测</li>
+</ul>
+<p>时间切分更接近真实发布，但也可能混入业务规则变化。</p>
+<p>因此需要同时记录：</p>
+<ul>
+<li>数据时间</li>
+<li>规则有效期</li>
+<li>知识库版本</li>
+<li>系统发布版本</li>
+</ul>
+<h3 id="10-4-实体留出"><a href="#10-4-实体留出" class="headerlink" title="10.4 实体留出"></a>10.4 实体留出</h3><p>如果系统需要泛化到新客户、新文档或新设备，可以按实体留出。</p>
+<p>例如：</p>
+<ul>
+<li>某些租户只进入评测集</li>
+<li>某些文档族只进入密封集</li>
+<li>某些设备型号不参与开发</li>
+</ul>
+<p>实体留出通常比随机行切分更严格。</p>
+<h3 id="10-5-切分稳定性"><a href="#10-5-切分稳定性" class="headerlink" title="10.5 切分稳定性"></a>10.5 切分稳定性</h3><p>同一个 <code>sample_id</code> 不应在不同版本间无理由来回移动。</p>
+<p>建议：</p>
+<ul>
+<li>使用稳定哈希分桶</li>
+<li>先按组聚合，再对组分桶</li>
+<li>在清单中记录分配算法和种子</li>
+<li>变更切分时提升数据版本并说明影响</li>
+</ul>
+<h2 id="十一、标注规范：把“我觉得对”变成可复核判断"><a href="#十一、标注规范：把“我觉得对”变成可复核判断" class="headerlink" title="十一、标注规范：把“我觉得对”变成可复核判断"></a>十一、标注规范：把“我觉得对”变成可复核判断</h2><h3 id="11-1-标签必须与决策对应"><a href="#11-1-标签必须与决策对应" class="headerlink" title="11.1 标签必须与决策对应"></a>11.1 标签必须与决策对应</h3><p>不要为了字段丰富而增加标签。</p>
+<p>每个标签都应回答：</p>
+<ul>
+<li>它支持什么发布决策</li>
+<li>谁能权威判断</li>
+<li>依据什么证据</li>
+<li>是名义、顺序、区间还是连续尺度</li>
+<li>不确定时怎样处理</li>
+</ul>
+<h3 id="11-2-原子事实比整段“好或坏”更可诊断"><a href="#11-2-原子事实比整段“好或坏”更可诊断" class="headerlink" title="11.2 原子事实比整段“好或坏”更可诊断"></a>11.2 原子事实比整段“好或坏”更可诊断</h3><p>对于 RAG 回答，可以拆成：</p>
+<ul>
+<li>问题是否可回答</li>
+<li>是否召回必要证据</li>
+<li>每个关键声明是否被证据支持</li>
+<li>是否包含互相矛盾的声明</li>
+<li>引用是否映射到正确版本</li>
+<li>是否遗漏必要条件</li>
+<li>最终结论是否符合业务规则</li>
+</ul>
+<p>整段打一个 1 到 5 分可以用于汇总。</p>
+<p>原子标签更适合定位和修复。</p>
+<h3 id="11-3-一个可操作的量表示例"><a href="#11-3-一个可操作的量表示例" class="headerlink" title="11.3 一个可操作的量表示例"></a>11.3 一个可操作的量表示例</h3><p>以“事实忠实度”为例：</p>
+<table>
+<thead>
+<tr>
+<th>分值</th>
+<th>定义</th>
+<th>判定证据</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>3</td>
+<td>所有关键声明均被给定证据支持</td>
+<td>声明到证据逐条映射</td>
+</tr>
+<tr>
+<td>2</td>
+<td>主要结论正确，但有非关键无依据细节</td>
+<td>标出无依据细节</td>
+</tr>
+<tr>
+<td>1</td>
+<td>部分关键声明无依据或与证据冲突</td>
+<td>标出关键冲突</td>
+</tr>
+<tr>
+<td>0</td>
+<td>核心结论无依据、相反或伪造来源</td>
+<td>标出核心错误</td>
+</tr>
+<tr>
+<td>U</td>
+<td>证据不足，无法可靠判断</td>
+<td>记录缺失证据</td>
+</tr>
+</tbody></table>
+<p><code>U</code> 不应自动算 0，也不应自动算通过。</p>
+<p>它应进入补证或仲裁流程。</p>
+<h3 id="11-4-标注指南必须包含什么"><a href="#11-4-标注指南必须包含什么" class="headerlink" title="11.4 标注指南必须包含什么"></a>11.4 标注指南必须包含什么</h3><ul>
+<li>任务定义</li>
+<li>适用范围</li>
+<li>标签定义</li>
+<li>正例</li>
+<li>反例</li>
+<li>边界例</li>
+<li>缺证据处理</li>
+<li>多答案处理</li>
+<li>拒答处理</li>
+<li>冲突证据处理</li>
+<li>不确定标签</li>
+<li>升级与仲裁路径</li>
+<li>版本和生效时间</li>
+</ul>
+<p>只有标签名称，没有边界例，不算完整规范。</p>
+<h3 id="11-5-标注人员培训"><a href="#11-5-标注人员培训" class="headerlink" title="11.5 标注人员培训"></a>11.5 标注人员培训</h3><p>推荐流程：</p>
+<ol>
+<li>阅读规范。</li>
+<li>独立完成训练集。</li>
+<li>与权威答案比对。</li>
+<li>讨论分歧。</li>
+<li>修订规范。</li>
+<li>通过资格集。</li>
+<li>进入正式盲标。</li>
+<li>定期插入质量控制样本。</li>
+</ol>
+<p>领域任务不能只依赖通用语言能力。</p>
+<p>标注人员还要理解业务规则和证据优先级。</p>
+<h3 id="11-6-盲标与双标"><a href="#11-6-盲标与双标" class="headerlink" title="11.6 盲标与双标"></a>11.6 盲标与双标</h3><p>高风险样本建议至少双人独立标注。</p>
+<p>盲标时尽量隐藏：</p>
+<ul>
+<li>被测模型名称</li>
+<li>新旧版本身份</li>
+<li>团队期望结果</li>
+<li>其他标注员答案</li>
+<li>自动裁判结果</li>
+</ul>
+<p>否则容易产生锚定和确认偏差。</p>
+<h3 id="11-7-仲裁不等于少数服从多数"><a href="#11-7-仲裁不等于少数服从多数" class="headerlink" title="11.7 仲裁不等于少数服从多数"></a>11.7 仲裁不等于少数服从多数</h3><p>分歧可能说明：</p>
+<ul>
+<li>某个标注员错误</li>
+<li>规范模糊</li>
+<li>证据不足</li>
+<li>样本本身多解</li>
+<li>业务规则冲突</li>
+</ul>
+<p>仲裁者应记录：</p>
+<ul>
+<li>最终标签</li>
+<li>采用的证据</li>
+<li>分歧原因</li>
+<li>是否需要修改规范</li>
+<li>是否需要回溯重标同类样本</li>
+</ul>
+<p>如果分歧暴露规范缺陷，只修当前一条数据是不够的。</p>
+<h2 id="十二、标注一致性：百分比一致还不够"><a href="#十二、标注一致性：百分比一致还不够" class="headerlink" title="十二、标注一致性：百分比一致还不够"></a>十二、标注一致性：百分比一致还不够</h2><h3 id="12-1-原始一致率"><a href="#12-1-原始一致率" class="headerlink" title="12.1 原始一致率"></a>12.1 原始一致率</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">P_o = \frac&#123;N_&#123;agreed&#125;&#125;&#123;N_&#123;double\ annotated&#125;&#125;</span><br></pre></td></tr></table></figure>
+
+<p>它直观，但没有扣除偶然一致。</p>
+<p>当某个标签占比极高时，一致率可能看起来很好。</p>
+<h3 id="12-2-Cohen’s-Kappa"><a href="#12-2-Cohen’s-Kappa" class="headerlink" title="12.2 Cohen’s Kappa"></a>12.2 Cohen’s Kappa</h3><p>对于两名标注者的名义标签，可使用：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">\kappa = \frac&#123;P_o - P_e&#125;&#123;1 - P_e&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>P_e</code> 是根据两名标注者边际分布计算的偶然一致概率。</p>
+<p>Kappa 会受标签流行率和边际分布影响。</p>
+<p>因此不能只看一个数值，也不要机械套用跨领域阈值。</p>
+<p>至少同时查看：</p>
+<ul>
+<li>混淆矩阵</li>
+<li>各标签样本数</li>
+<li>原始一致率</li>
+<li>分层 Kappa</li>
+<li>具体分歧样本</li>
+</ul>
+<h3 id="12-3-Krippendorff’s-Alpha"><a href="#12-3-Krippendorff’s-Alpha" class="headerlink" title="12.3 Krippendorff’s Alpha"></a>12.3 Krippendorff’s Alpha</h3><p>当标注者多于两人、存在缺失值，或标签是不同测量尺度时，可以考虑 Krippendorff’s Alpha：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">\alpha = 1 - \frac&#123;D_o&#125;&#123;D_e&#125;</span><br></pre></td></tr></table></figure>
+
+<p>其中：</p>
+<ul>
+<li><code>D_o</code> 是观察到的不一致</li>
+<li><code>D_e</code> 是随机条件下的期望不一致</li>
+</ul>
+<p>距离函数必须匹配标签尺度。</p>
+<p>名义标签、顺序标签和连续值不能使用同一距离定义后直接比较。</p>
+<h3 id="12-4-一致性低时先改系统，不要先删标注员"><a href="#12-4-一致性低时先改系统，不要先删标注员" class="headerlink" title="12.4 一致性低时先改系统，不要先删标注员"></a>12.4 一致性低时先改系统，不要先删标注员</h3><p>排查顺序可以是：</p>
+<ol>
+<li>样本是否有足够证据。</li>
+<li>标签边界是否清楚。</li>
+<li>正反例是否覆盖争议点。</li>
+<li>标注界面是否隐藏了必要上下文。</li>
+<li>标注员是否经过同样培训。</li>
+<li>某些层是否天然需要专家判断。</li>
+</ol>
+<p>一致性是标注系统的属性，不只是个人表现。</p>
+<h3 id="12-5-一致性也要按切片看"><a href="#12-5-一致性也要按切片看" class="headerlink" title="12.5 一致性也要按切片看"></a>12.5 一致性也要按切片看</h3><p>总体一致性可能掩盖：</p>
+<ul>
+<li>某语言一致性很低</li>
+<li>长文本证据判断分歧大</li>
+<li>高风险工具任务缺少专家</li>
+<li>某个新标签定义不清</li>
+</ul>
+<p>建议按标签、场景、风险、语言和标注员组合切片。</p>
+<h2 id="十三、可执行数据校验：在发布前自动阻断低级问题"><a href="#十三、可执行数据校验：在发布前自动阻断低级问题" class="headerlink" title="十三、可执行数据校验：在发布前自动阻断低级问题"></a>十三、可执行数据校验：在发布前自动阻断低级问题</h2><p>下面的 Python 示例只使用标准库。</p>
+<p>它会检查：</p>
+<ul>
+<li>必填字段</li>
+<li><code>sample_id</code> 唯一性</li>
+<li>记录哈希与去重内容哈希是否正确</li>
+<li>精确内容重复</li>
+<li>同一重复簇是否跨切分</li>
+<li>同一实体是否跨密封集和开发集</li>
+<li>标签状态是否完成</li>
+</ul>
+<p>输入采用 JSONL，每行一条样本。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br><span class="line">146</span><br><span class="line">147</span><br><span class="line">148</span><br><span class="line">149</span><br><span class="line">150</span><br><span class="line">151</span><br><span class="line">152</span><br><span class="line">153</span><br><span class="line">154</span><br><span class="line">155</span><br><span class="line">156</span><br><span class="line">157</span><br><span class="line">158</span><br><span class="line">159</span><br><span class="line">160</span><br><span class="line">161</span><br><span class="line">162</span><br><span class="line">163</span><br><span class="line">164</span><br><span class="line">165</span><br><span class="line">166</span><br><span class="line">167</span><br><span class="line">168</span><br><span class="line">169</span><br><span class="line">170</span><br><span class="line">171</span><br><span class="line">172</span><br><span class="line">173</span><br><span class="line">174</span><br><span class="line">175</span><br><span class="line">176</span><br><span class="line">177</span><br><span class="line">178</span><br><span class="line">179</span><br><span class="line">180</span><br><span class="line">181</span><br><span class="line">182</span><br><span class="line">183</span><br><span class="line">184</span><br><span class="line">185</span><br><span class="line">186</span><br><span class="line">187</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> __future__ <span class="keyword">import</span> annotations</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> argparse</span><br><span class="line"><span class="keyword">import</span> hashlib</span><br><span class="line"><span class="keyword">import</span> json</span><br><span class="line"><span class="keyword">import</span> sys</span><br><span class="line"><span class="keyword">from</span> collections <span class="keyword">import</span> defaultdict</span><br><span class="line"><span class="keyword">from</span> pathlib <span class="keyword">import</span> Path</span><br><span class="line"><span class="keyword">from</span> typing <span class="keyword">import</span> <span class="type">Any</span>, Iterable</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">REQUIRED_TOP_LEVEL = &#123;</span><br><span class="line">    <span class="string">&quot;sample_id&quot;</span>,</span><br><span class="line">    <span class="string">&quot;schema_version&quot;</span>,</span><br><span class="line">    <span class="string">&quot;task_type&quot;</span>,</span><br><span class="line">    <span class="string">&quot;input&quot;</span>,</span><br><span class="line">    <span class="string">&quot;expected&quot;</span>,</span><br><span class="line">    <span class="string">&quot;strata&quot;</span>,</span><br><span class="line">    <span class="string">&quot;provenance&quot;</span>,</span><br><span class="line">    <span class="string">&quot;annotation&quot;</span>,</span><br><span class="line">    <span class="string">&quot;group_keys&quot;</span>,</span><br><span class="line">    <span class="string">&quot;split&quot;</span>,</span><br><span class="line">    <span class="string">&quot;record_hash&quot;</span>,</span><br><span class="line">    <span class="string">&quot;content_dedup_hash&quot;</span>,</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">ALLOWED_SPLITS = &#123;<span class="string">&quot;dev&quot;</span>, <span class="string">&quot;regression&quot;</span>, <span class="string">&quot;sealed&quot;</span>&#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">canonical_bytes</span>(<span class="params">value: <span class="type">Any</span></span>) -&gt; <span class="built_in">bytes</span>:</span><br><span class="line">    text = json.dumps(</span><br><span class="line">        value,</span><br><span class="line">        ensure_ascii=<span class="literal">False</span>,</span><br><span class="line">        sort_keys=<span class="literal">True</span>,</span><br><span class="line">        separators=(<span class="string">&quot;,&quot;</span>, <span class="string">&quot;:&quot;</span>),</span><br><span class="line">    )</span><br><span class="line">    <span class="keyword">return</span> text.encode(<span class="string">&quot;utf-8&quot;</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">canonical_record_payload</span>(<span class="params">sample: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>]</span>) -&gt; <span class="built_in">bytes</span>:</span><br><span class="line">    payload = &#123;</span><br><span class="line">        key: value</span><br><span class="line">        <span class="keyword">for</span> key, value <span class="keyword">in</span> sample.items()</span><br><span class="line">        <span class="keyword">if</span> key <span class="keyword">not</span> <span class="keyword">in</span> &#123;<span class="string">&quot;record_hash&quot;</span>, <span class="string">&quot;release_metadata&quot;</span>&#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> canonical_bytes(payload)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">canonical_dedup_payload</span>(<span class="params">sample: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>]</span>) -&gt; <span class="built_in">bytes</span>:</span><br><span class="line">    content_fields = (</span><br><span class="line">        <span class="string">&quot;task_type&quot;</span>,</span><br><span class="line">        <span class="string">&quot;input&quot;</span>,</span><br><span class="line">        <span class="string">&quot;expected&quot;</span>,</span><br><span class="line">        <span class="string">&quot;constraints&quot;</span>,</span><br><span class="line">        <span class="string">&quot;context&quot;</span>,</span><br><span class="line">    )</span><br><span class="line">    payload = &#123;</span><br><span class="line">        key: sample[key]</span><br><span class="line">        <span class="keyword">for</span> key <span class="keyword">in</span> content_fields</span><br><span class="line">        <span class="keyword">if</span> key <span class="keyword">in</span> sample</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> canonical_bytes(payload)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">expected_record_hash</span>(<span class="params">sample: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>]</span>) -&gt; <span class="built_in">str</span>:</span><br><span class="line">    digest = hashlib.sha256(canonical_record_payload(sample)).hexdigest()</span><br><span class="line">    <span class="keyword">return</span> <span class="string">f&quot;sha256:<span class="subst">&#123;digest&#125;</span>&quot;</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">expected_content_dedup_hash</span>(<span class="params">sample: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>]</span>) -&gt; <span class="built_in">str</span>:</span><br><span class="line">    digest = hashlib.sha256(canonical_dedup_payload(sample)).hexdigest()</span><br><span class="line">    <span class="keyword">return</span> <span class="string">f&quot;sha256:<span class="subst">&#123;digest&#125;</span>&quot;</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">read_jsonl</span>(<span class="params">path: Path</span>) -&gt; Iterable[<span class="built_in">tuple</span>[<span class="built_in">int</span>, <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>]]]:</span><br><span class="line">    <span class="keyword">with</span> path.<span class="built_in">open</span>(<span class="string">&quot;r&quot;</span>, encoding=<span class="string">&quot;utf-8&quot;</span>) <span class="keyword">as</span> handle:</span><br><span class="line">        <span class="keyword">for</span> line_number, raw_line <span class="keyword">in</span> <span class="built_in">enumerate</span>(handle, start=<span class="number">1</span>):</span><br><span class="line">            <span class="keyword">if</span> <span class="keyword">not</span> raw_line.strip():</span><br><span class="line">                <span class="keyword">continue</span></span><br><span class="line">            <span class="keyword">try</span>:</span><br><span class="line">                value = json.loads(raw_line)</span><br><span class="line">            <span class="keyword">except</span> json.JSONDecodeError <span class="keyword">as</span> exc:</span><br><span class="line">                <span class="keyword">raise</span> ValueError(<span class="string">f&quot;line <span class="subst">&#123;line_number&#125;</span>: invalid JSON: <span class="subst">&#123;exc&#125;</span>&quot;</span>) <span class="keyword">from</span> exc</span><br><span class="line">            <span class="keyword">if</span> <span class="keyword">not</span> <span class="built_in">isinstance</span>(value, <span class="built_in">dict</span>):</span><br><span class="line">                <span class="keyword">raise</span> ValueError(<span class="string">f&quot;line <span class="subst">&#123;line_number&#125;</span>: sample must be an object&quot;</span>)</span><br><span class="line">            <span class="keyword">yield</span> line_number, value</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">validate</span>(<span class="params">path: Path</span>) -&gt; <span class="built_in">list</span>[<span class="built_in">str</span>]:</span><br><span class="line">    errors: <span class="built_in">list</span>[<span class="built_in">str</span>] = []</span><br><span class="line">    ids: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="built_in">int</span>] = &#123;&#125;</span><br><span class="line">    dedup_hashes: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="built_in">list</span>[<span class="built_in">str</span>]] = defaultdict(<span class="built_in">list</span>)</span><br><span class="line">    cluster_splits: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="built_in">set</span>[<span class="built_in">str</span>]] = defaultdict(<span class="built_in">set</span>)</span><br><span class="line">    entity_splits: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="built_in">set</span>[<span class="built_in">str</span>]] = defaultdict(<span class="built_in">set</span>)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> line_number, sample <span class="keyword">in</span> read_jsonl(path):</span><br><span class="line">        missing = <span class="built_in">sorted</span>(REQUIRED_TOP_LEVEL - sample.keys())</span><br><span class="line">        <span class="keyword">if</span> missing:</span><br><span class="line">            errors.append(<span class="string">f&quot;line <span class="subst">&#123;line_number&#125;</span>: missing fields <span class="subst">&#123;missing&#125;</span>&quot;</span>)</span><br><span class="line">            <span class="keyword">continue</span></span><br><span class="line"></span><br><span class="line">        sample_id = <span class="built_in">str</span>(sample[<span class="string">&quot;sample_id&quot;</span>])</span><br><span class="line">        <span class="keyword">if</span> sample_id <span class="keyword">in</span> ids:</span><br><span class="line">            errors.append(</span><br><span class="line">                <span class="string">f&quot;line <span class="subst">&#123;line_number&#125;</span>: duplicate sample_id <span class="subst">&#123;sample_id&#125;</span>; &quot;</span></span><br><span class="line">                <span class="string">f&quot;first seen at line <span class="subst">&#123;ids[sample_id]&#125;</span>&quot;</span></span><br><span class="line">            )</span><br><span class="line">        <span class="keyword">else</span>:</span><br><span class="line">            ids[sample_id] = line_number</span><br><span class="line"></span><br><span class="line">        split = <span class="built_in">str</span>(sample[<span class="string">&quot;split&quot;</span>])</span><br><span class="line">        <span class="keyword">if</span> split <span class="keyword">not</span> <span class="keyword">in</span> ALLOWED_SPLITS:</span><br><span class="line">            errors.append(<span class="string">f&quot;<span class="subst">&#123;sample_id&#125;</span>: invalid split <span class="subst">&#123;split&#125;</span>&quot;</span>)</span><br><span class="line"></span><br><span class="line">        actual_record_hash = <span class="built_in">str</span>(sample[<span class="string">&quot;record_hash&quot;</span>])</span><br><span class="line">        calculated_record_hash = expected_record_hash(sample)</span><br><span class="line">        <span class="keyword">if</span> actual_record_hash != calculated_record_hash:</span><br><span class="line">            errors.append(</span><br><span class="line">                <span class="string">f&quot;<span class="subst">&#123;sample_id&#125;</span>: record hash mismatch; &quot;</span></span><br><span class="line">                <span class="string">f&quot;expected <span class="subst">&#123;calculated_record_hash&#125;</span>&quot;</span></span><br><span class="line">            )</span><br><span class="line"></span><br><span class="line">        actual_dedup_hash = <span class="built_in">str</span>(sample[<span class="string">&quot;content_dedup_hash&quot;</span>])</span><br><span class="line">        calculated_dedup_hash = expected_content_dedup_hash(sample)</span><br><span class="line">        <span class="keyword">if</span> actual_dedup_hash != calculated_dedup_hash:</span><br><span class="line">            errors.append(</span><br><span class="line">                <span class="string">f&quot;<span class="subst">&#123;sample_id&#125;</span>: content dedup hash mismatch; &quot;</span></span><br><span class="line">                <span class="string">f&quot;expected <span class="subst">&#123;calculated_dedup_hash&#125;</span>&quot;</span></span><br><span class="line">            )</span><br><span class="line">        dedup_hashes[calculated_dedup_hash].append(sample_id)</span><br><span class="line"></span><br><span class="line">        annotation = sample.get(<span class="string">&quot;annotation&quot;</span>, &#123;&#125;)</span><br><span class="line">        <span class="keyword">if</span> annotation.get(<span class="string">&quot;status&quot;</span>) <span class="keyword">not</span> <span class="keyword">in</span> &#123;<span class="string">&quot;agreed&quot;</span>, <span class="string">&quot;adjudicated&quot;</span>&#125;:</span><br><span class="line">            errors.append(<span class="string">f&quot;<span class="subst">&#123;sample_id&#125;</span>: annotation is not release-ready&quot;</span>)</span><br><span class="line"></span><br><span class="line">        groups = sample.get(<span class="string">&quot;group_keys&quot;</span>, &#123;&#125;)</span><br><span class="line">        cluster = groups.get(<span class="string">&quot;duplicate_cluster&quot;</span>)</span><br><span class="line">        <span class="keyword">if</span> cluster:</span><br><span class="line">            cluster_splits[<span class="built_in">str</span>(cluster)].add(split)</span><br><span class="line">        entity = groups.get(<span class="string">&quot;entity&quot;</span>)</span><br><span class="line">        <span class="keyword">if</span> entity:</span><br><span class="line">            entity_splits[<span class="built_in">str</span>(entity)].add(split)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> digest, sample_ids <span class="keyword">in</span> dedup_hashes.items():</span><br><span class="line">        <span class="keyword">if</span> <span class="built_in">len</span>(sample_ids) &gt; <span class="number">1</span>:</span><br><span class="line">            errors.append(</span><br><span class="line">                <span class="string">f&quot;exact duplicate content <span class="subst">&#123;digest&#125;</span>: <span class="subst">&#123;<span class="built_in">sorted</span>(sample_ids)&#125;</span>&quot;</span></span><br><span class="line">            )</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> cluster, splits <span class="keyword">in</span> cluster_splits.items():</span><br><span class="line">        <span class="keyword">if</span> <span class="built_in">len</span>(splits) &gt; <span class="number">1</span>:</span><br><span class="line">            errors.append(</span><br><span class="line">                <span class="string">f&quot;duplicate cluster <span class="subst">&#123;cluster&#125;</span> leaks across splits <span class="subst">&#123;<span class="built_in">sorted</span>(splits)&#125;</span>&quot;</span></span><br><span class="line">            )</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> entity, splits <span class="keyword">in</span> entity_splits.items():</span><br><span class="line">        <span class="keyword">if</span> <span class="string">&quot;sealed&quot;</span> <span class="keyword">in</span> splits <span class="keyword">and</span> <span class="string">&quot;dev&quot;</span> <span class="keyword">in</span> splits:</span><br><span class="line">            errors.append(</span><br><span class="line">                <span class="string">f&quot;entity <span class="subst">&#123;entity&#125;</span> appears in both dev and sealed splits&quot;</span></span><br><span class="line">            )</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> errors</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">main</span>() -&gt; <span class="built_in">int</span>:</span><br><span class="line">    parser = argparse.ArgumentParser(description=<span class="string">&quot;Validate an AI eval JSONL release&quot;</span>)</span><br><span class="line">    parser.add_argument(<span class="string">&quot;dataset&quot;</span>, <span class="built_in">type</span>=Path)</span><br><span class="line">    args = parser.parse_args()</span><br><span class="line"></span><br><span class="line">    <span class="keyword">try</span>:</span><br><span class="line">        errors = validate(args.dataset)</span><br><span class="line">    <span class="keyword">except</span> (OSError, ValueError) <span class="keyword">as</span> exc:</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">f&quot;fatal: <span class="subst">&#123;exc&#125;</span>&quot;</span>, file=sys.stderr)</span><br><span class="line">        <span class="keyword">return</span> <span class="number">2</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> errors:</span><br><span class="line">        <span class="keyword">for</span> error <span class="keyword">in</span> errors:</span><br><span class="line">            <span class="built_in">print</span>(<span class="string">f&quot;ERROR <span class="subst">&#123;error&#125;</span>&quot;</span>)</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">f&quot;release blocked: <span class="subst">&#123;<span class="built_in">len</span>(errors)&#125;</span> error(s)&quot;</span>)</span><br><span class="line">        <span class="keyword">return</span> <span class="number">1</span></span><br><span class="line"></span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;release checks passed&quot;</span>)</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&quot;__main__&quot;</span>:</span><br><span class="line">    <span class="keyword">raise</span> SystemExit(main())</span><br></pre></td></tr></table></figure>
+
+<p>执行方式：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">python3 validate_eval_dataset.py dataset.jsonl</span><br></pre></td></tr></table></figure>
+
+<p>这个示例只覆盖结构和部分泄漏规则。</p>
+<p>近重复、隐私、授权、标签语义和证据有效性还需要额外流水线和人工检查。</p>
+<h2 id="十四、版本化：版本号必须指向不可变内容"><a href="#十四、版本化：版本号必须指向不可变内容" class="headerlink" title="十四、版本化：版本号必须指向不可变内容"></a>十四、版本化：版本号必须指向不可变内容</h2><h3 id="14-1-不可变发布原则"><a href="#14-1-不可变发布原则" class="headerlink" title="14.1 不可变发布原则"></a>14.1 不可变发布原则</h3><p>评测集一旦用于报告或发布决策，就不应原地修改。</p>
+<p>需要修正时：</p>
+<ol>
+<li>创建新版本。</li>
+<li>记录变更原因。</li>
+<li>保留旧版本清单。</li>
+<li>重新计算受影响指标。</li>
+<li>说明新旧分数是否可直接比较。</li>
+</ol>
+<h3 id="14-2-版本号策略"><a href="#14-2-版本号策略" class="headerlink" title="14.2 版本号策略"></a>14.2 版本号策略</h3><p>团队可以借鉴语义化版本，但这不是评测集领域的强制标准。</p>
+<p>一个可操作的内部约定是：</p>
+<ul>
+<li><code>MAJOR</code>：评测目标、标签语义、总体或切分策略发生不兼容变化</li>
+<li><code>MINOR</code>：新增样本、场景或标签，但保留主要定义</li>
+<li><code>PATCH</code>：修正元数据、明确错误标签或不改变语义的清理</li>
+</ul>
+<p>例如：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">rag-policy-qa@2.4.1</span><br></pre></td></tr></table></figure>
+
+<p>版本号本身不能证明内容。</p>
+<p>还必须配套内容清单和哈希。</p>
+<h3 id="14-3-版本清单示例"><a href="#14-3-版本清单示例" class="headerlink" title="14.3 版本清单示例"></a>14.3 版本清单示例</h3><figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">dataset:</span></span><br><span class="line">  <span class="attr">id:</span> <span class="string">rag-policy-qa</span></span><br><span class="line">  <span class="attr">version:</span> <span class="number">2.4</span><span class="number">.1</span></span><br><span class="line">  <span class="attr">status:</span> <span class="string">released</span></span><br><span class="line">  <span class="attr">released_at:</span> <span class="number">2026-03-18T20:30:00+08:00</span></span><br><span class="line">  <span class="attr">schema_version:</span> <span class="string">ai-eval-sample/1.2</span></span><br><span class="line"></span><br><span class="line"><span class="attr">purpose:</span></span><br><span class="line">  <span class="attr">decision:</span> <span class="string">production</span> <span class="string">release</span> <span class="string">gate</span> <span class="string">for</span> <span class="string">policy-grounded</span> <span class="string">QA</span></span><br><span class="line">  <span class="attr">target_population:</span> <span class="string">zh-CN</span> <span class="string">enterprise</span> <span class="string">policy</span> <span class="string">questions</span></span><br><span class="line">  <span class="attr">out_of_scope:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">open-domain</span> <span class="string">knowledge</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">personal</span> <span class="string">legal</span> <span class="string">advice</span></span><br><span class="line"></span><br><span class="line"><span class="attr">contents:</span></span><br><span class="line">  <span class="attr">total_samples:</span> <span class="number">1840</span></span><br><span class="line">  <span class="attr">splits:</span></span><br><span class="line">    <span class="attr">dev:</span> <span class="number">640</span></span><br><span class="line">    <span class="attr">regression:</span> <span class="number">1000</span></span><br><span class="line">    <span class="attr">sealed:</span> <span class="number">200</span></span><br><span class="line">  <span class="attr">manifest_sha256:</span> <span class="string">&quot;4f5238...&quot;</span></span><br><span class="line">  <span class="attr">files:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">path:</span> <span class="string">data/dev-000.jsonl</span></span><br><span class="line">      <span class="attr">sha256:</span> <span class="string">&quot;18c4d2...&quot;</span></span><br><span class="line">      <span class="attr">rows:</span> <span class="number">640</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">path:</span> <span class="string">data/regression-000.jsonl</span></span><br><span class="line">      <span class="attr">sha256:</span> <span class="string">&quot;8af921...&quot;</span></span><br><span class="line">      <span class="attr">rows:</span> <span class="number">1000</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">path:</span> <span class="string">data/sealed-000.enc</span></span><br><span class="line">      <span class="attr">sha256:</span> <span class="string">&quot;370e11...&quot;</span></span><br><span class="line">      <span class="attr">rows:</span> <span class="number">200</span></span><br><span class="line"></span><br><span class="line"><span class="attr">sampling:</span></span><br><span class="line">  <span class="attr">frame:</span> <span class="string">production-requests-2026-01-to-2026-02</span></span><br><span class="line">  <span class="attr">method:</span> <span class="string">stratified-random-plus-risk-floor</span></span><br><span class="line">  <span class="attr">seed:</span> <span class="number">20260318</span></span><br><span class="line">  <span class="attr">weight_column:</span> <span class="string">population_weight</span></span><br><span class="line"></span><br><span class="line"><span class="attr">annotation:</span></span><br><span class="line">  <span class="attr">guideline_version:</span> <span class="string">rag-qa-rubric/2.1</span></span><br><span class="line">  <span class="attr">double_annotation_rate:</span> <span class="number">1.0</span></span><br><span class="line">  <span class="attr">adjudication_required_for_disagreement:</span> <span class="literal">true</span></span><br><span class="line">  <span class="attr">agreement_report:</span> <span class="string">reports/agreement-2.4.1.json</span></span><br><span class="line"></span><br><span class="line"><span class="attr">leakage_controls:</span></span><br><span class="line">  <span class="attr">grouping_keys:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">duplicate_cluster</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">conversation</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">document_family</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">entity</span></span><br><span class="line">  <span class="attr">prompt_snapshot:</span> <span class="string">&quot;sha256:91f0...&quot;</span></span><br><span class="line">  <span class="attr">retrieval_corpus_snapshot:</span> <span class="string">&quot;sha256:270b...&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="attr">release:</span></span><br><span class="line">  <span class="attr">pipeline_run:</span> <span class="string">eval-data-release/8821</span></span><br><span class="line">  <span class="attr">approvals:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">role:</span> <span class="string">data_owner</span></span><br><span class="line">      <span class="attr">decision:</span> <span class="string">approved</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">role:</span> <span class="string">domain_owner</span></span><br><span class="line">      <span class="attr">decision:</span> <span class="string">approved</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">role:</span> <span class="string">privacy_reviewer</span></span><br><span class="line">      <span class="attr">decision:</span> <span class="string">approved</span></span><br></pre></td></tr></table></figure>
+
+<p>清单里的数量和哈希仅为结构示例，不代表任何真实数据集。</p>
+<h3 id="14-4-内容寻址与血缘"><a href="#14-4-内容寻址与血缘" class="headerlink" title="14.4 内容寻址与血缘"></a>14.4 内容寻址与血缘</h3><p>建议记录：</p>
+<ul>
+<li>原始来源快照</li>
+<li>每个转换步骤的代码版本</li>
+<li>参数和随机种子</li>
+<li>生成文件哈希</li>
+<li>标注指南版本</li>
+<li>人工仲裁记录</li>
+<li>最终清单哈希</li>
+</ul>
+<p>理想状态下，可以从最终样本反向追踪到：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">发布样本</span><br><span class="line">  -&gt; 标注与仲裁</span><br><span class="line">  -&gt; 清洗和去重版本</span><br><span class="line">  -&gt; 抽样批次</span><br><span class="line">  -&gt; 受控原始来源</span><br></pre></td></tr></table></figure>
+
+<h3 id="14-5-数据版本不等于-Git-版本"><a href="#14-5-数据版本不等于-Git-版本" class="headerlink" title="14.5 数据版本不等于 Git 版本"></a>14.5 数据版本不等于 Git 版本</h3><p>Git 适合保存：</p>
+<ul>
+<li>Schema</li>
+<li>小型清单</li>
+<li>标注规范</li>
+<li>转换代码</li>
+<li>数据卡</li>
+</ul>
+<p>大量数据、敏感数据和加密密封集通常不适合直接放进普通 Git 仓库。</p>
+<p>可以使用对象存储、数据版本工具或内部制品库。</p>
+<p>无论使用什么工具，都要保证：</p>
+<ul>
+<li>内容不可变</li>
+<li>权限可控</li>
+<li>版本可寻址</li>
+<li>哈希可验证</li>
+<li>运行可复现</li>
+</ul>
+<h2 id="十五、数据卡：告诉使用者这个分数能说明什么"><a href="#十五、数据卡：告诉使用者这个分数能说明什么" class="headerlink" title="十五、数据卡：告诉使用者这个分数能说明什么"></a>十五、数据卡：告诉使用者这个分数能说明什么</h2><p>Datasheets for Datasets、Data Statements 和 Data Cards 的共同思想是：</p>
+<p>数据需要结构化文档，不能只靠创建者口头解释。</p>
+<h3 id="15-1-数据卡至少包含"><a href="#15-1-数据卡至少包含" class="headerlink" title="15.1 数据卡至少包含"></a>15.1 数据卡至少包含</h3><h4 id="基本身份"><a href="#基本身份" class="headerlink" title="基本身份"></a>基本身份</h4><ul>
+<li>数据集名称与版本</li>
+<li>所有者和维护者</li>
+<li>发布时间</li>
+<li>状态：开发、发布、弃用或归档</li>
+</ul>
+<h4 id="预期用途"><a href="#预期用途" class="headerlink" title="预期用途"></a>预期用途</h4><ul>
+<li>支持哪些决策</li>
+<li>测试哪些系统边界</li>
+<li>不适用于哪些用途</li>
+<li>目标用户和利益相关者</li>
+</ul>
+<h4 id="数据组成"><a href="#数据组成" class="headerlink" title="数据组成"></a>数据组成</h4><ul>
+<li>总样本数</li>
+<li>来源比例</li>
+<li>场景和风险分布</li>
+<li>语言、地区和时间范围</li>
+<li>各切分数量</li>
+</ul>
+<h4 id="采集与处理"><a href="#采集与处理" class="headerlink" title="采集与处理"></a>采集与处理</h4><ul>
+<li>采样框</li>
+<li>抽样方法</li>
+<li>清洗与脱敏</li>
+<li>去重方法</li>
+<li>合成数据比例</li>
+<li>排除规则</li>
+</ul>
+<h4 id="标注"><a href="#标注" class="headerlink" title="标注"></a>标注</h4><ul>
+<li>标签定义</li>
+<li>标注人员资格</li>
+<li>双标比例</li>
+<li>仲裁流程</li>
+<li>一致性结果</li>
+</ul>
+<h4 id="风险与限制"><a href="#风险与限制" class="headerlink" title="风险与限制"></a>风险与限制</h4><ul>
+<li>已知覆盖缺口</li>
+<li>污染不确定性</li>
+<li>可能偏差</li>
+<li>不稳定标签</li>
+<li>有效期</li>
+<li>隐私和许可限制</li>
+</ul>
+<h4 id="版本变更"><a href="#版本变更" class="headerlink" title="版本变更"></a>版本变更</h4><ul>
+<li>新增、删除和修改数量</li>
+<li>标签规则变化</li>
+<li>切分变化</li>
+<li>对历史分数可比性的影响</li>
+</ul>
+<h3 id="15-2-数据卡不是合规装饰"><a href="#15-2-数据卡不是合规装饰" class="headerlink" title="15.2 数据卡不是合规装饰"></a>15.2 数据卡不是合规装饰</h3><p>它应直接服务三类人：</p>
+<ul>
+<li>开发者：知道能不能用它调优</li>
+<li>评测者：知道怎样运行和解释</li>
+<li>决策者：知道分数能否支持发布</li>
+</ul>
+<p>如果数据卡不能帮助这三类人做决定，就需要继续精简或补充。</p>
+<h2 id="十六、发布门禁：评测集自己也要通过测试"><a href="#十六、发布门禁：评测集自己也要通过测试" class="headerlink" title="十六、发布门禁：评测集自己也要通过测试"></a>十六、发布门禁：评测集自己也要通过测试</h2><h3 id="16-1-结构门禁"><a href="#16-1-结构门禁" class="headerlink" title="16.1 结构门禁"></a>16.1 结构门禁</h3><ul>
+<li>JSONL 或 Parquet 可解析</li>
+<li>Schema 校验通过</li>
+<li>必填字段完整</li>
+<li>ID 唯一</li>
+<li>引用可解析</li>
+<li>哈希一致</li>
+</ul>
+<h3 id="16-2-来源与授权门禁"><a href="#16-2-来源与授权门禁" class="headerlink" title="16.2 来源与授权门禁"></a>16.2 来源与授权门禁</h3><ul>
+<li>每条样本来源明确</li>
+<li>用途与授权匹配</li>
+<li>敏感字段按策略处理</li>
+<li>数据保留期限明确</li>
+<li>第三方数据许可可追溯</li>
+</ul>
+<h3 id="16-3-覆盖门禁"><a href="#16-3-覆盖门禁" class="headerlink" title="16.3 覆盖门禁"></a>16.3 覆盖门禁</h3><ul>
+<li>关键场景达到最低配额</li>
+<li>高风险层无空洞</li>
+<li>语言和租户分布符合目标</li>
+<li>边界与对抗机制覆盖</li>
+<li>样本时间范围仍有效</li>
+</ul>
+<h3 id="16-4-去重与泄漏门禁"><a href="#16-4-去重与泄漏门禁" class="headerlink" title="16.4 去重与泄漏门禁"></a>16.4 去重与泄漏门禁</h3><ul>
+<li>精确重复率在约定范围内</li>
+<li>近重复簇已审查</li>
+<li>同一组不跨切分</li>
+<li>评测数据未进入 Few-shot 示例</li>
+<li>密封集未进入调优和知识库</li>
+<li>公共基准污染风险有记录</li>
+</ul>
+<h3 id="16-5-标注门禁"><a href="#16-5-标注门禁" class="headerlink" title="16.5 标注门禁"></a>16.5 标注门禁</h3><ul>
+<li>所有发布样本完成标注</li>
+<li>分歧已仲裁或显式标记不确定</li>
+<li>一致性报告已生成</li>
+<li>高风险样本由合格专家复核</li>
+<li>标签有证据引用</li>
+<li>指南版本一致</li>
+</ul>
+<h3 id="16-6-可复现门禁"><a href="#16-6-可复现门禁" class="headerlink" title="16.6 可复现门禁"></a>16.6 可复现门禁</h3><ul>
+<li>抽样与切分算法有版本</li>
+<li>随机种子已记录</li>
+<li>转换链可重跑</li>
+<li>文件和清单哈希可验证</li>
+<li>评测执行环境有快照</li>
+<li>上一版本仍可获取</li>
+</ul>
+<h3 id="16-7-门槛必须按用途设定"><a href="#16-7-门槛必须按用途设定" class="headerlink" title="16.7 门槛必须按用途设定"></a>16.7 门槛必须按用途设定</h3><p>不能给所有数据集规定同一个 Kappa、重复率或样本量阈值。</p>
+<p>例如：</p>
+<ul>
+<li>安全密封集可能容忍刻意的机制变体，却不容忍标签歧义</li>
+<li>自然流量集可能保留真实高频模板，但聚合时要降权</li>
+<li>探索集可以包含待仲裁样本，发布集不可以</li>
+</ul>
+<p>门禁规则必须写进版本清单，并由风险承担者批准。</p>
+<h2 id="十七、关键质量指标"><a href="#十七、关键质量指标" class="headerlink" title="十七、关键质量指标"></a>十七、关键质量指标</h2><h3 id="17-1-完整率"><a href="#17-1-完整率" class="headerlink" title="17.1 完整率"></a>17.1 完整率</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Completeness = 1 - \frac&#123;N_&#123;missing\ required\ fields&#125;&#125;&#123;N_&#123;required\ field\ instances&#125;&#125;</span><br></pre></td></tr></table></figure>
+
+<p>也应分别报告关键字段完整率。</p>
+<p>总体完整率可能掩盖证据引用全部缺失。</p>
+<h3 id="17-2-精确重复率"><a href="#17-2-精确重复率" class="headerlink" title="17.2 精确重复率"></a>17.2 精确重复率</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">ExactDuplicateRate = \frac&#123;N_&#123;rows\ in\ duplicate\ groups&#125;&#125;&#123;N_&#123;all\ rows&#125;&#125;</span><br></pre></td></tr></table></figure>
+
+<p>定义时要说明分子是“重复组全部成员”还是“除首条外的冗余成员”。</p>
+<p>不同定义的结果不可直接比较。</p>
+<h3 id="17-3-近重复簇集中度"><a href="#17-3-近重复簇集中度" class="headerlink" title="17.3 近重复簇集中度"></a>17.3 近重复簇集中度</h3><p>可以观察最大簇占比：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">LargestClusterShare = \frac&#123;\max_c N_c&#125;&#123;N&#125;</span><br></pre></td></tr></table></figure>
+
+<p>还可以计算按簇降权后的指标，判断模板是否支配结果。</p>
+<h3 id="17-4-覆盖率"><a href="#17-4-覆盖率" class="headerlink" title="17.4 覆盖率"></a>17.4 覆盖率</h3><p>对要求覆盖的单元格集合 <code>H</code>：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Coverage = \frac&#123;|\&#123;h \in H : n_h \ge floor_h\&#125;|&#125;&#123;|H|&#125;</span><br></pre></td></tr></table></figure>
+
+<p>覆盖率必须配合每个空洞的明细。</p>
+<h3 id="17-5-标签不确定率"><a href="#17-5-标签不确定率" class="headerlink" title="17.5 标签不确定率"></a>17.5 标签不确定率</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">UncertainRate = \frac&#123;N_&#123;U\ or\ unresolved&#125;&#125;&#123;N_&#123;annotated&#125;&#125;</span><br></pre></td></tr></table></figure>
+
+<p>不确定率升高可能说明样本变难，也可能说明规范或证据变差。</p>
+<h3 id="17-6-污染候选率"><a href="#17-6-污染候选率" class="headerlink" title="17.6 污染候选率"></a>17.6 污染候选率</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">ContaminationCandidateRate = \frac&#123;N_&#123;samples\ flagged\ by\ leakage\ checks&#125;&#125;&#123;N&#125;</span><br></pre></td></tr></table></figure>
+
+<p>“候选”不等于已确认污染。</p>
+<p>必须经过来源、时间和语义复核。</p>
+<h3 id="17-7-年龄与过期率"><a href="#17-7-年龄与过期率" class="headerlink" title="17.7 年龄与过期率"></a>17.7 年龄与过期率</h3><p>知识和策略型评测集需要跟踪：</p>
+<ul>
+<li>文档有效期</li>
+<li>最后复核时间</li>
+<li>业务规则版本</li>
+<li>样本年龄分布</li>
+<li>已过期样本比例</li>
+</ul>
+<p>高一致性、无重复的数据也可能因为规则过期而失效。</p>
+<h2 id="十八、示例案例：一个高分客服评测集为什么无法支持发布"><a href="#十八、示例案例：一个高分客服评测集为什么无法支持发布" class="headerlink" title="十八、示例案例：一个高分客服评测集为什么无法支持发布"></a>十八、示例案例：一个高分客服评测集为什么无法支持发布</h2><blockquote>
+<p>以下为教学用示例案例，用于说明数据治理问题，不代表任何真实项目经历或真实业务数据。</p>
+</blockquote>
+<h3 id="18-1-背景"><a href="#18-1-背景" class="headerlink" title="18.1 背景"></a>18.1 背景</h3><p>团队为一个企业客服 RAG 系统建设了 5000 条评测样本。</p>
+<p>新版本总体通过率达到 94%，高于旧版本的 91%。</p>
+<p>团队准备据此全量发布。</p>
+<h3 id="18-2-初步检查发现"><a href="#18-2-初步检查发现" class="headerlink" title="18.2 初步检查发现"></a>18.2 初步检查发现</h3><ul>
+<li>约 60% 样本由 30 个 FAQ 模板改写生成</li>
+<li>同一 FAQ 的改写被随机分到开发集和发布集</li>
+<li>70% 样本是低风险事实问答</li>
+<li>权限、退费和账户冻结等高风险场景不足 2%</li>
+<li>标签由单人根据旧版答案改写</li>
+<li>标注人员知道哪个输出来自新版本</li>
+<li>知识库包含一个“评测标准答案”目录</li>
+<li>数据文件在三周内被原地修订过多次，但版本号未变</li>
+</ul>
+<h3 id="18-3-为什么-94-不可信"><a href="#18-3-为什么-94-不可信" class="headerlink" title="18.3 为什么 94% 不可信"></a>18.3 为什么 94% 不可信</h3><p>第一，模板近重复让物理样本量远大于独立语义单元数。</p>
+<p>第二，开发集和发布集共享重复簇，Prompt 调优可能直接学习了发布题型。</p>
+<p>第三，高风险场景样本太少，总分无法说明发布风险。</p>
+<p>第四，旧版答案参与新标签生成，可能把旧系统偏差固化成金标准。</p>
+<p>第五，非盲标会产生版本偏好。</p>
+<p>第六，RAG 可以检索评测专用答案，构成标签泄漏。</p>
+<p>第七，数据集不可变性缺失，91% 和 94% 可能不是在同一测量仪器上得到。</p>
+<h3 id="18-4-修复方案"><a href="#18-4-修复方案" class="headerlink" title="18.4 修复方案"></a>18.4 修复方案</h3><ol>
+<li>对 FAQ 改写做近重复聚类。</li>
+<li>按 FAQ 族而不是按行重新切分。</li>
+<li>保留一套按真实流量分布抽样的代表性集。</li>
+<li>为权限、退费和账户冻结建立风险最低配额。</li>
+<li>由两名标注员基于当前权威制度独立标注。</li>
+<li>对分歧做专家仲裁，并更新标签指南。</li>
+<li>从知识库移除评测专用答案，只保留合法业务文档。</li>
+<li>发布不可变数据版本和内容哈希。</li>
+<li>在同一版本上重新运行新旧系统。</li>
+<li>分别报告总体加权结果和高风险切片结果。</li>
+</ol>
+<h3 id="18-5-修复后的解释"><a href="#18-5-修复后的解释" class="headerlink" title="18.5 修复后的解释"></a>18.5 修复后的解释</h3><p>假设重新评测后出现：</p>
+<ul>
+<li>自然流量加权通过率仅小幅提升</li>
+<li>低风险 FAQ 提升明显</li>
+<li>权限类任务没有改善</li>
+<li>退费边界任务出现回归</li>
+</ul>
+<p>这比一个 94% 总分更有价值。</p>
+<p>它直接支持发布决策：</p>
+<ul>
+<li>可以逐步开放低风险 FAQ</li>
+<li>权限类维持人工复核</li>
+<li>退费场景阻断发布并继续修复</li>
+</ul>
+<h2 id="十九、测试设计：评测集应该怎样被持续测试"><a href="#十九、测试设计：评测集应该怎样被持续测试" class="headerlink" title="十九、测试设计：评测集应该怎样被持续测试"></a>十九、测试设计：评测集应该怎样被持续测试</h2><h3 id="19-1-Schema-测试"><a href="#19-1-Schema-测试" class="headerlink" title="19.1 Schema 测试"></a>19.1 Schema 测试</h3><ul>
+<li>每个字段类型正确</li>
+<li>枚举没有未知值</li>
+<li>引用对象存在</li>
+<li>标签和任务类型兼容</li>
+<li>版本字段格式正确</li>
+</ul>
+<h3 id="19-2-属性测试"><a href="#19-2-属性测试" class="headerlink" title="19.2 属性测试"></a>19.2 属性测试</h3><ul>
+<li>高风险工具样本必须有权限期望</li>
+<li>RAG 样本必须有证据或允许拒答</li>
+<li>多轮样本必须有稳定会话组</li>
+<li>副作用任务必须定义最终状态断言</li>
+<li>不确定标签必须有原因</li>
+</ul>
+<h3 id="19-3-分布测试"><a href="#19-3-分布测试" class="headerlink" title="19.3 分布测试"></a>19.3 分布测试</h3><ul>
+<li>各层样本数达到最低配额</li>
+<li>关键维度与采样目标差异在可解释范围</li>
+<li>单一来源或模板没有异常支配</li>
+<li>合成样本比例没有意外上升</li>
+<li>新版本分布变化有变更记录</li>
+</ul>
+<h3 id="19-4-泄漏测试"><a href="#19-4-泄漏测试" class="headerlink" title="19.4 泄漏测试"></a>19.4 泄漏测试</h3><ul>
+<li>精确哈希交集</li>
+<li>N-gram 或 MinHash 近重复交集</li>
+<li>Embedding 候选复核</li>
+<li>组键跨切分检查</li>
+<li>Prompt 和 Few-shot 语料扫描</li>
+<li>RAG 索引中的评测专用字段检查</li>
+</ul>
+<h3 id="19-5-标签测试"><a href="#19-5-标签测试" class="headerlink" title="19.5 标签测试"></a>19.5 标签测试</h3><ul>
+<li>金标准引用仍有效</li>
+<li>标签与证据无冲突</li>
+<li>分歧样本完成仲裁</li>
+<li>一致性按切片监控</li>
+<li>修改指南后回溯受影响样本</li>
+</ul>
+<h3 id="19-6-可重现性测试"><a href="#19-6-可重现性测试" class="headerlink" title="19.6 可重现性测试"></a>19.6 可重现性测试</h3><ul>
+<li>从来源快照重新构建</li>
+<li>重新构建后清单哈希一致</li>
+<li>固定种子切分一致</li>
+<li>评测运行引用明确数据版本</li>
+<li>历史报告能找到对应清单</li>
+</ul>
+<h3 id="19-7-退役测试"><a href="#19-7-退役测试" class="headerlink" title="19.7 退役测试"></a>19.7 退役测试</h3><p>样本需要退役条件，例如：</p>
+<ul>
+<li>业务规则已经失效</li>
+<li>来源许可到期</li>
+<li>隐私要求变化</li>
+<li>标签无法重新验证</li>
+<li>样本进入调优链路，不再适合密封评测</li>
+</ul>
+<p>退役不等于删除历史。</p>
+<p>应在符合保留策略的前提下记录原因和替代样本。</p>
+<h2 id="二十、如何把评测集接入-CI-CD"><a href="#二十、如何把评测集接入-CI-CD" class="headerlink" title="二十、如何把评测集接入 CI&#x2F;CD"></a>二十、如何把评测集接入 CI&#x2F;CD</h2><h3 id="20-1-拉取请求阶段"><a href="#20-1-拉取请求阶段" class="headerlink" title="20.1 拉取请求阶段"></a>20.1 拉取请求阶段</h3><p>运行小型快速集：</p>
+<ul>
+<li>Schema 和结构校验</li>
+<li>关键事故回归</li>
+<li>高风险工具契约</li>
+<li>变更影响相关切片</li>
+</ul>
+<p>目标是快速阻断明显回归。</p>
+<h3 id="20-2-合并后阶段"><a href="#20-2-合并后阶段" class="headerlink" title="20.2 合并后阶段"></a>20.2 合并后阶段</h3><p>运行稳定回归集：</p>
+<ul>
+<li>多模型或多次采样</li>
+<li>组件和端到端评测</li>
+<li>分层指标</li>
+<li>成本与延迟</li>
+<li>与基线的配对比较</li>
+</ul>
+<h3 id="20-3-发布候选阶段"><a href="#20-3-发布候选阶段" class="headerlink" title="20.3 发布候选阶段"></a>20.3 发布候选阶段</h3><p>运行发布集和受控密封集：</p>
+<ul>
+<li>使用冻结系统配置</li>
+<li>记录模型、Prompt、索引、工具和策略版本</li>
+<li>评测器版本固定</li>
+<li>输出逐样本证据</li>
+<li>高风险失败零容忍或按既定策略阻断</li>
+</ul>
+<h3 id="20-4-线上阶段"><a href="#20-4-线上阶段" class="headerlink" title="20.4 线上阶段"></a>20.4 线上阶段</h3><p>使用：</p>
+<ul>
+<li>影子流量</li>
+<li>人工抽检</li>
+<li>用户反馈</li>
+<li>低置信样本挖掘</li>
+<li>分布漂移监控</li>
+<li>事故回流候选池</li>
+</ul>
+<p>线上失败进入候选池后，必须重新走治理流程。</p>
+<p>不能自动写入密封集或覆盖既有标签。</p>
+<h2 id="二十一、结果比较：固定数据版本还不够"><a href="#二十一、结果比较：固定数据版本还不够" class="headerlink" title="二十一、结果比较：固定数据版本还不够"></a>二十一、结果比较：固定数据版本还不够</h2><p>比较两个系统版本时，还要固定或记录：</p>
+<ul>
+<li>模型版本</li>
+<li>采样参数</li>
+<li>Prompt 版本</li>
+<li>检索语料和索引版本</li>
+<li>工具 Schema 和沙箱状态</li>
+<li>策略版本</li>
+<li>评测器版本</li>
+<li>运行时间和服务区域</li>
+<li>随机种子</li>
+<li>重复运行次数</li>
+</ul>
+<h3 id="21-1-优先做配对比较"><a href="#21-1-优先做配对比较" class="headerlink" title="21.1 优先做配对比较"></a>21.1 优先做配对比较</h3><p>同一批样本分别运行旧版和新版，可以观察逐样本变化：</p>
+<ul>
+<li>旧错新对</li>
+<li>旧对新错</li>
+<li>两者都对</li>
+<li>两者都错</li>
+</ul>
+<p>这比只比较两个总体比例更容易定位回归。</p>
+<h3 id="21-2-非确定性系统需要重复运行"><a href="#21-2-非确定性系统需要重复运行" class="headerlink" title="21.2 非确定性系统需要重复运行"></a>21.2 非确定性系统需要重复运行</h3><p>如果模型输出有明显方差，单次运行不足以描述稳定性。</p>
+<p>可以记录：</p>
+<ul>
+<li>每条样本通过概率</li>
+<li>多次运行方差</li>
+<li>最差运行</li>
+<li>多数结果</li>
+<li>关键风险是否出现过一次失败</li>
+</ul>
+<p>高风险任务不能只看平均表现。</p>
+<h3 id="21-3-数据集升级时做桥接评测"><a href="#21-3-数据集升级时做桥接评测" class="headerlink" title="21.3 数据集升级时做桥接评测"></a>21.3 数据集升级时做桥接评测</h3><p>如果从数据集 <code>2.3</code> 升到 <code>2.4</code>，建议：</p>
+<ol>
+<li>在两个数据版本上同时运行同一个系统版本。</li>
+<li>分开报告保留样本和新增样本。</li>
+<li>解释标签或分布变化。</li>
+<li>不把不可比结果直接连成趋势线。</li>
+</ol>
+<p>这相当于给测量仪器换代做校准桥接。</p>
+<h2 id="二十二、常见误区"><a href="#二十二、常见误区" class="headerlink" title="二十二、常见误区"></a>二十二、常见误区</h2><h3 id="22-1-先追求数量，再补质量"><a href="#22-1-先追求数量，再补质量" class="headerlink" title="22.1 先追求数量，再补质量"></a>22.1 先追求数量，再补质量</h3><p>低质量样本会形成返工债务。</p>
+<p>尤其是来源、标签和组键缺失后，很难事后恢复。</p>
+<h3 id="22-2-把线上随机抽样当完整代表性"><a href="#22-2-把线上随机抽样当完整代表性" class="headerlink" title="22.2 把线上随机抽样当完整代表性"></a>22.2 把线上随机抽样当完整代表性</h3><p>随机样本只代表采样框。</p>
+<p>如果日志本身漏掉失败请求、未授权用户或人工接管，它仍然有系统偏差。</p>
+<h3 id="22-3-把困难样本比例当自然发生率"><a href="#22-3-把困难样本比例当自然发生率" class="headerlink" title="22.3 把困难样本比例当自然发生率"></a>22.3 把困难样本比例当自然发生率</h3><p>风险集可以过采样。</p>
+<p>但总分需要重加权，并单独报告风险切片。</p>
+<h3 id="22-4-只用字符串哈希去重"><a href="#22-4-只用字符串哈希去重" class="headerlink" title="22.4 只用字符串哈希去重"></a>22.4 只用字符串哈希去重</h3><p>精确哈希无法发现模板改写和近重复。</p>
+<p>还需要近重复候选、组级切分和人工复核。</p>
+<h3 id="22-5-Embedding-相似就自动删除"><a href="#22-5-Embedding-相似就自动删除" class="headerlink" title="22.5 Embedding 相似就自动删除"></a>22.5 Embedding 相似就自动删除</h3><p>语义接近不等于标签相同。</p>
+<p>否定、数值和权限边界尤其容易被误删。</p>
+<h3 id="22-6-同一模型生成问题、生成答案并担任裁判"><a href="#22-6-同一模型生成问题、生成答案并担任裁判" class="headerlink" title="22.6 同一模型生成问题、生成答案并担任裁判"></a>22.6 同一模型生成问题、生成答案并担任裁判</h3><p>这种闭环会放大同源偏差。</p>
+<p>至少需要规则、独立模型、权威证据或人工评审中的其他信号。</p>
+<h3 id="22-7-一致率高就认为标签可靠"><a href="#22-7-一致率高就认为标签可靠" class="headerlink" title="22.7 一致率高就认为标签可靠"></a>22.7 一致率高就认为标签可靠</h3><p>类别极不平衡时，标注员全部选多数类也会得到高一致率。</p>
+<p>应同时看 Kappa 或 Alpha、混淆矩阵和分层结果。</p>
+<h3 id="22-8-所有不确定样本都删除"><a href="#22-8-所有不确定样本都删除" class="headerlink" title="22.8 所有不确定样本都删除"></a>22.8 所有不确定样本都删除</h3><p>不确定可能正是业务边界模糊的信号。</p>
+<p>应该区分证据不足、规则冲突、多解和标注错误。</p>
+<h3 id="22-9-原地修正评测集"><a href="#22-9-原地修正评测集" class="headerlink" title="22.9 原地修正评测集"></a>22.9 原地修正评测集</h3><p>原地修正会破坏历史报告可复现性。</p>
+<p>任何用于决策的数据都应发布新版本。</p>
+<h3 id="22-10-用一个总分做发布门禁"><a href="#22-10-用一个总分做发布门禁" class="headerlink" title="22.10 用一个总分做发布门禁"></a>22.10 用一个总分做发布门禁</h3><p>总分可能掩盖关键风险回归。</p>
+<p>应设置：</p>
+<ul>
+<li>总体指标</li>
+<li>关键切片指标</li>
+<li>严重失败计数</li>
+<li>不确定结果比例</li>
+<li>延迟和成本约束</li>
+</ul>
+<h3 id="22-11-把密封集无限重复使用"><a href="#22-11-把密封集无限重复使用" class="headerlink" title="22.11 把密封集无限重复使用"></a>22.11 把密封集无限重复使用</h3><p>使用次数越多，团队越可能间接针对它优化。</p>
+<p>密封集需要访问审计、使用预算和定期轮换。</p>
+<h3 id="22-12-数据卡写完就不更新"><a href="#22-12-数据卡写完就不更新" class="headerlink" title="22.12 数据卡写完就不更新"></a>22.12 数据卡写完就不更新</h3><p>数据组成、授权、业务规则和污染风险都会变化。</p>
+<p>数据卡必须随版本发布。</p>
+<h2 id="二十三、建设顺序：从最小可信集开始"><a href="#二十三、建设顺序：从最小可信集开始" class="headerlink" title="二十三、建设顺序：从最小可信集开始"></a>二十三、建设顺序：从最小可信集开始</h2><p>如果团队刚开始建设，不必一次做成大型平台。</p>
+<h3 id="第一阶段：定义可测量对象"><a href="#第一阶段：定义可测量对象" class="headerlink" title="第一阶段：定义可测量对象"></a>第一阶段：定义可测量对象</h3><ul>
+<li>明确一个发布决策</li>
+<li>固定系统输入输出边界</li>
+<li>选择 3 到 5 个关键质量维度</li>
+<li>定义 10 到 20 个核心风险层</li>
+</ul>
+<h3 id="第二阶段：建立最小数据契约"><a href="#第二阶段：建立最小数据契约" class="headerlink" title="第二阶段：建立最小数据契约"></a>第二阶段：建立最小数据契约</h3><ul>
+<li><code>sample_id</code></li>
+<li>输入与期望</li>
+<li>来源</li>
+<li>分层标签</li>
+<li>标注状态</li>
+<li>组键</li>
+<li>切分</li>
+<li>内容哈希</li>
+</ul>
+<h3 id="第三阶段：建设小型高质量集"><a href="#第三阶段：建设小型高质量集" class="headerlink" title="第三阶段：建设小型高质量集"></a>第三阶段：建设小型高质量集</h3><ul>
+<li>代表性样本</li>
+<li>高风险最低配额</li>
+<li>事故回放</li>
+<li>双人标注</li>
+<li>专家仲裁</li>
+</ul>
+<p>先把 300 条做可信，通常比快速堆到 10000 条更有价值。</p>
+<p>具体数量仍应由统计目标和风险决定。</p>
+<h3 id="第四阶段：自动化门禁"><a href="#第四阶段：自动化门禁" class="headerlink" title="第四阶段：自动化门禁"></a>第四阶段：自动化门禁</h3><ul>
+<li>Schema</li>
+<li>哈希</li>
+<li>去重</li>
+<li>泄漏</li>
+<li>覆盖</li>
+<li>标注状态</li>
+<li>清单生成</li>
+</ul>
+<h3 id="第五阶段：版本和数据卡"><a href="#第五阶段：版本和数据卡" class="headerlink" title="第五阶段：版本和数据卡"></a>第五阶段：版本和数据卡</h3><ul>
+<li>不可变发布</li>
+<li>变更记录</li>
+<li>可重现构建</li>
+<li>历史版本访问</li>
+<li>用途和限制说明</li>
+</ul>
+<h3 id="第六阶段：线上反馈闭环"><a href="#第六阶段：线上反馈闭环" class="headerlink" title="第六阶段：线上反馈闭环"></a>第六阶段：线上反馈闭环</h3><ul>
+<li>低置信样本发现</li>
+<li>事故候选池</li>
+<li>漂移检测</li>
+<li>人工复核</li>
+<li>受控发布新版本</li>
+</ul>
+<h2 id="二十四、落地检查表"><a href="#二十四、落地检查表" class="headerlink" title="二十四、落地检查表"></a>二十四、落地检查表</h2><h3 id="24-1-目标与范围"><a href="#24-1-目标与范围" class="headerlink" title="24.1 目标与范围"></a>24.1 目标与范围</h3><ul>
+<li><input disabled="" type="checkbox"> 是否从明确发布或比较决策出发</li>
+<li><input disabled="" type="checkbox"> 是否定义评测对象和输入输出边界</li>
+<li><input disabled="" type="checkbox"> 是否定义评测单元</li>
+<li><input disabled="" type="checkbox"> 是否定义目标总体和采样框</li>
+<li><input disabled="" type="checkbox"> 是否写清预期用途与禁止用途</li>
+<li><input disabled="" type="checkbox"> 是否分别定义总体质量与高风险底线</li>
+</ul>
+<h3 id="24-2-采集"><a href="#24-2-采集" class="headerlink" title="24.2 采集"></a>24.2 采集</h3><ul>
+<li><input disabled="" type="checkbox"> 每条样本是否有来源、时间和授权依据</li>
+<li><input disabled="" type="checkbox"> 生产日志是否经过最小化和脱敏</li>
+<li><input disabled="" type="checkbox"> 专家样本是否覆盖普通用户表达</li>
+<li><input disabled="" type="checkbox"> 合成样本是否标记生成器和 Prompt 版本</li>
+<li><input disabled="" type="checkbox"> 事故样本是否与总体随机样本分开</li>
+<li><input disabled="" type="checkbox"> 公共数据的许可证和污染风险是否记录</li>
+</ul>
+<h3 id="24-3-抽样与覆盖"><a href="#24-3-抽样与覆盖" class="headerlink" title="24.3 抽样与覆盖"></a>24.3 抽样与覆盖</h3><ul>
+<li><input disabled="" type="checkbox"> 是否定义场景、风险和关键分层维度</li>
+<li><input disabled="" type="checkbox"> 是否保留自然分布代表性轨</li>
+<li><input disabled="" type="checkbox"> 是否为低频高风险层设置最低配额</li>
+<li><input disabled="" type="checkbox"> 过采样后是否使用正确权重</li>
+<li><input disabled="" type="checkbox"> 是否报告关键切片而不只报告总分</li>
+<li><input disabled="" type="checkbox"> 是否检查有效样本量和模板集中度</li>
+</ul>
+<h3 id="24-4-清洗与去重"><a href="#24-4-清洗与去重" class="headerlink" title="24.4 清洗与去重"></a>24.4 清洗与去重</h3><ul>
+<li><input disabled="" type="checkbox"> 是否同时保留原始和规范化内容哈希</li>
+<li><input disabled="" type="checkbox"> 规范化是否保留否定、数值和标识符语义</li>
+<li><input disabled="" type="checkbox"> 是否检测精确重复和近重复</li>
+<li><input disabled="" type="checkbox"> 近重复是否以候选簇方式人工复核</li>
+<li><input disabled="" type="checkbox"> 是否限制单一模板簇权重</li>
+<li><input disabled="" type="checkbox"> 是否记录清洗和脱敏工具版本</li>
+</ul>
+<h3 id="24-5-污染与切分"><a href="#24-5-污染与切分" class="headerlink" title="24.5 污染与切分"></a>24.5 污染与切分</h3><ul>
+<li><input disabled="" type="checkbox"> 是否扫描训练、开发、Prompt 和 Few-shot 泄漏</li>
+<li><input disabled="" type="checkbox"> 是否检查 RAG 索引中的评测标签泄漏</li>
+<li><input disabled="" type="checkbox"> 是否按重复簇、会话、文档族或实体切分</li>
+<li><input disabled="" type="checkbox"> 密封集是否与调优链路隔离</li>
+<li><input disabled="" type="checkbox"> 切分算法、组键和随机种子是否记录</li>
+<li><input disabled="" type="checkbox"> 是否记录无法验证的预训练污染风险</li>
+</ul>
+<h3 id="24-6-标注"><a href="#24-6-标注" class="headerlink" title="24.6 标注"></a>24.6 标注</h3><ul>
+<li><input disabled="" type="checkbox"> 标签是否直接支持评测决策</li>
+<li><input disabled="" type="checkbox"> 是否有正例、反例、边界例和不确定处理</li>
+<li><input disabled="" type="checkbox"> 高风险样本是否双标和专家复核</li>
+<li><input disabled="" type="checkbox"> 标注是否对模型版本和其他答案盲化</li>
+<li><input disabled="" type="checkbox"> 是否计算并解释一致性</li>
+<li><input disabled="" type="checkbox"> 是否按场景和标签检查分歧</li>
+<li><input disabled="" type="checkbox"> 仲裁是否记录证据和规范变更</li>
+</ul>
+<h3 id="24-7-版本与发布"><a href="#24-7-版本与发布" class="headerlink" title="24.7 版本与发布"></a>24.7 版本与发布</h3><ul>
+<li><input disabled="" type="checkbox"> 发布版本是否不可变</li>
+<li><input disabled="" type="checkbox"> 是否有文件级和清单级哈希</li>
+<li><input disabled="" type="checkbox"> 是否保存数据血缘和转换版本</li>
+<li><input disabled="" type="checkbox"> 是否有数据卡与变更记录</li>
+<li><input disabled="" type="checkbox"> 历史报告是否能找到确切数据版本</li>
+<li><input disabled="" type="checkbox"> 数据集升级是否做桥接评测</li>
+<li><input disabled="" type="checkbox"> 是否有数据退役和替代流程</li>
+</ul>
+<h3 id="24-8-门禁与运行"><a href="#24-8-门禁与运行" class="headerlink" title="24.8 门禁与运行"></a>24.8 门禁与运行</h3><ul>
+<li><input disabled="" type="checkbox"> 评测集自身是否通过结构和语义检查</li>
+<li><input disabled="" type="checkbox"> 发布门槛是否按用途设定</li>
+<li><input disabled="" type="checkbox"> 是否固定被测系统和评测器版本</li>
+<li><input disabled="" type="checkbox"> 非确定性任务是否重复运行</li>
+<li><input disabled="" type="checkbox"> 是否保留逐样本证据而不只保留总分</li>
+<li><input disabled="" type="checkbox"> 线上反馈是否先进入候选池</li>
+<li><input disabled="" type="checkbox"> 密封集是否有访问审计和使用预算</li>
+</ul>
+<h2 id="二十五、总结"><a href="#二十五、总结" class="headerlink" title="二十五、总结"></a>二十五、总结</h2><p>高质量 AI 评测集不是一批“看起来像真实问题”的样本。</p>
+<p>它是一套可审计的测量系统。</p>
+<p>建设时需要同时守住八件事：</p>
+<ol>
+<li>从发布决策反推评测目标、对象、单元和目标总体。</li>
+<li>组合生产、专家、事故、合成和对抗来源，并记录授权与血缘。</li>
+<li>用代表性抽样和风险最低配额同时覆盖高频流量与低频严重失败。</li>
+<li>通过精确去重、近重复聚类和组级切分控制模板支配与泄漏。</li>
+<li>用证据化量表、盲标、双标和仲裁建立可信标签。</li>
+<li>用一致率、Kappa 或 Alpha 发现规范与标注系统问题，而不是机械追求阈值。</li>
+<li>用不可变版本、内容哈希、清单和数据卡保证结果可复现、可解释。</li>
+<li>让评测集先通过来源、覆盖、标签、泄漏和可重现性门禁，再承担模型发布门禁。</li>
+</ol>
+<p>真正可靠的评测结论不只是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">新版本得分 94%，高于旧版本 91%。</span><br></pre></td></tr></table></figure>
+
+<p>而应该能够继续回答：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">这两个结果在哪个不可变数据版本上产生，代表什么目标总体，</span><br><span class="line">哪些关键风险切片改善或退化，标签和评测器有多可信，</span><br><span class="line">以及是否存在训练、Prompt、RAG 或切分泄漏。</span><br></pre></td></tr></table></figure>
+
+<p>只有做到这一步，评测集才从“题库”变成真正可以支撑工程决策的质量基础设施。</p>
+<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><ol>
+<li><a target="_blank" rel="noopener" href="https://arxiv.org/abs/1803.09010">Gebru et al., Datasheets for Datasets</a></li>
+<li><a target="_blank" rel="noopener" href="https://aclanthology.org/Q18-1041/">Bender and Friedman, Data Statements for Natural Language Processing</a></li>
+<li><a target="_blank" rel="noopener" href="https://research.google/pubs/data-cards-purposeful-and-transparent-dataset-documentation-for-responsible-ai/">Pushkarna et al., Data Cards: Purposeful and Transparent Dataset Documentation for Responsible AI</a></li>
+<li><a target="_blank" rel="noopener" href="https://arxiv.org/abs/1810.03993">Mitchell et al., Model Cards for Model Reporting</a></li>
+<li><a target="_blank" rel="noopener" href="https://aclanthology.org/2022.acl-long.577/">Lee et al., Deduplicating Training Data Makes Language Models Better</a></li>
+<li><a target="_blank" rel="noopener" href="https://ieeexplore.ieee.org/document/666900">Broder, On the Resemblance and Containment of Documents</a></li>
+<li><a target="_blank" rel="noopener" href="https://doi.org/10.1177/001316446002000104">Cohen, A Coefficient of Agreement for Nominal Scales</a></li>
+<li><a target="_blank" rel="noopener" href="https://repository.upenn.edu/asc_papers/43/">Krippendorff, Computing Krippendorff’s Alpha-Reliability</a></li>
+<li><a target="_blank" rel="noopener" href="https://github.com/EleutherAI/lm-evaluation-harness">EleutherAI Language Model Evaluation Harness</a></li>
+<li><a target="_blank" rel="noopener" href="https://github.com/EleutherAI/lm-evaluation-harness/blob/main/docs/task_guide.md">EleutherAI lm-evaluation-harness Task Guide</a></li>
+<li><a target="_blank" rel="noopener" href="https://doi.org/10.6028/NIST.AI.100-1">NIST AI Risk Management Framework 1.0</a></li>
+<li><a target="_blank" rel="noopener" href="https://doi.org/10.6028/NIST.AI.600-1">NIST AI 600-1: Generative Artificial Intelligence Profile</a></li>
+<li><a target="_blank" rel="noopener" href="https://airc.nist.gov/airmf-resources/playbook/">NIST AI RMF Playbook</a></li>
+<li><a target="_blank" rel="noopener" href="https://legalinstruments.oecd.org/en/instruments/OECD-LEGAL-0449">OECD, Recommendation of the Council on Artificial Intelligence</a></li>
+</ol>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/AI%E6%B5%8B%E8%AF%95/" rel="tag"># AI测试</a>
+              <a href="/tags/%E8%AF%84%E6%B5%8B%E9%9B%86/" rel="tag"># 评测集</a>
+              <a href="/tags/%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86/" rel="tag"># 数据治理</a>
+              <a href="/tags/%E5%88%86%E5%B1%82%E6%8A%BD%E6%A0%B7/" rel="tag"># 分层抽样</a>
+              <a href="/tags/%E6%95%B0%E6%8D%AE%E6%A0%87%E6%B3%A8/" rel="tag"># 数据标注</a>
+              <a href="/tags/%E6%95%B0%E6%8D%AE%E5%8E%BB%E9%87%8D/" rel="tag"># 数据去重</a>
+              <a href="/tags/%E6%95%B0%E6%8D%AE%E7%89%88%E6%9C%AC/" rel="tag"># 数据版本</a>
+              <a href="/tags/%E8%B4%A8%E9%87%8F%E9%97%A8%E7%A6%81/" rel="tag"># 质量门禁</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2026/03/16/AI%E6%B5%8B%E8%AF%95-14-AI%E5%BA%94%E7%94%A8%E7%9A%84%E5%A4%B1%E8%B4%A5%E6%A8%A1%E5%BC%8F%E5%BA%94%E8%AF%A5%E6%80%8E%E6%A0%B7%E5%88%86%E7%B1%BB%E5%92%8C%E5%BD%92%E5%9B%A0/" rel="prev" title="AI测试-14-AI应用的失败模式应该怎样分类和归因">
+                  <i class="fa fa-angle-left"></i> AI测试-14-AI应用的失败模式应该怎样分类和归因
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2026/03/20/AI%E6%B5%8B%E8%AF%95-16-AI%E6%B5%8B%E8%AF%95%E6%80%8E%E4%B9%88%E7%BB%84%E5%90%88%E7%A1%AE%E5%AE%9A%E6%80%A7%E6%96%AD%E8%A8%80%E5%92%8C%E8%AF%AD%E4%B9%89%E6%96%AD%E8%A8%80/" rel="next" title="AI测试-16-AI测试怎么组合确定性断言和语义断言">
+                  AI测试-16-AI测试怎么组合确定性断言和语义断言 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">1.2m</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">75:29</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

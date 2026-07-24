@@ -1,0 +1,1654 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="AI 应用出错时，团队最常听到的判断往往是：  “模型幻觉了” “RAG 没召回” “Agent 不稳定” “应该是网络抖动” “裁判模型打分不准”  这些描述可能碰到了现象，却通常不足以指导修复。 一次错误答案可能源于输入解析丢字段，也可能源于上下文截断、权限过滤、旧索引、模型路由、工具契约、工作流重试或评测器漏报。 更麻烦的是，同一个请求可能同时穿过这些环节。 上游的小偏差经过下游默认值、自动">
+<meta property="og:type" content="article">
+<meta property="og:title" content="AI测试-14-AI应用的失败模式应该怎样分类和归因">
+<meta property="og:url" content="https://paynewinnt.github.io/2026/03/16/AI%E6%B5%8B%E8%AF%95-14-AI%E5%BA%94%E7%94%A8%E7%9A%84%E5%A4%B1%E8%B4%A5%E6%A8%A1%E5%BC%8F%E5%BA%94%E8%AF%A5%E6%80%8E%E6%A0%B7%E5%88%86%E7%B1%BB%E5%92%8C%E5%BD%92%E5%9B%A0/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="AI 应用出错时，团队最常听到的判断往往是：  “模型幻觉了” “RAG 没召回” “Agent 不稳定” “应该是网络抖动” “裁判模型打分不准”  这些描述可能碰到了现象，却通常不足以指导修复。 一次错误答案可能源于输入解析丢字段，也可能源于上下文截断、权限过滤、旧索引、模型路由、工具契约、工作流重试或评测器漏报。 更麻烦的是，同一个请求可能同时穿过这些环节。 上游的小偏差经过下游默认值、自动">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://paynewinnt.github.io/images/ai-quality/ai-14-failure-layers.svg">
+<meta property="og:image" content="https://paynewinnt.github.io/images/ai-quality/ai-14-attribution-tree.svg">
+<meta property="article:published_time" content="2026-03-16T12:30:00.000Z">
+<meta property="article:modified_time" content="2026-03-16T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="AI测试">
+<meta property="article:tag" content="RAG">
+<meta property="article:tag" content="Agent">
+<meta property="article:tag" content="故障分类">
+<meta property="article:tag" content="根因分析">
+<meta property="article:tag" content="可观测性">
+<meta property="article:tag" content="故障注入">
+<meta property="article:tag" content="质量工程">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://paynewinnt.github.io/images/ai-quality/ai-14-failure-layers.svg">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2026/03/16/AI%E6%B5%8B%E8%AF%95-14-AI%E5%BA%94%E7%94%A8%E7%9A%84%E5%A4%B1%E8%B4%A5%E6%A8%A1%E5%BC%8F%E5%BA%94%E8%AF%A5%E6%80%8E%E6%A0%B7%E5%88%86%E7%B1%BB%E5%92%8C%E5%BD%92%E5%9B%A0/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2026/03/16/AI%E6%B5%8B%E8%AF%95-14-AI%E5%BA%94%E7%94%A8%E7%9A%84%E5%A4%B1%E8%B4%A5%E6%A8%A1%E5%BC%8F%E5%BA%94%E8%AF%A5%E6%80%8E%E6%A0%B7%E5%88%86%E7%B1%BB%E5%92%8C%E5%BD%92%E5%9B%A0/","path":"2026/03/16/AI测试-14-AI应用的失败模式应该怎样分类和归因/","title":"AI测试-14-AI应用的失败模式应该怎样分类和归因"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>AI测试-14-AI应用的失败模式应该怎样分类和归因 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E9%97%AE%E9%A2%98%E8%BE%B9%E7%95%8C%EF%BC%9A%E6%9C%AC%E6%96%87%E5%88%86%E6%9E%90%E7%9A%84%E4%B8%8D%E6%98%AF%E2%80%9C%E6%A8%A1%E5%9E%8B%E5%A5%BD%E4%B8%8D%E5%A5%BD%E2%80%9D%EF%BC%8C%E8%80%8C%E6%98%AF%E2%80%9C%E7%B3%BB%E7%BB%9F%E4%B8%BA%E4%BB%80%E4%B9%88%E5%A4%B1%E8%B4%A5%E2%80%9D"><span class="nav-number">1.</span> <span class="nav-text">一、问题边界：本文分析的不是“模型好不好”，而是“系统为什么失败”</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E5%85%88%E7%BB%9F%E4%B8%80%E6%9C%AF%E8%AF%AD%EF%BC%9A%E7%97%87%E7%8A%B6%E3%80%81%E6%95%85%E9%9A%9C%E6%A8%A1%E5%BC%8F%E5%92%8C%E6%A0%B9%E5%9B%A0%E4%B8%8D%E6%98%AF%E4%B8%80%E5%9B%9E%E4%BA%8B"><span class="nav-number">2.</span> <span class="nav-text">二、先统一术语：症状、故障模式和根因不是一回事</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-%E7%97%87%E7%8A%B6%EF%BC%9A%E5%A4%96%E9%83%A8%E8%A7%82%E5%AF%9F%E5%88%B0%E7%9A%84%E4%B8%8D%E7%AC%A6%E5%90%88%E9%A2%84%E6%9C%9F"><span class="nav-number">2.1.</span> <span class="nav-text">2.1 症状：外部观察到的不符合预期</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-%E4%BA%8B%E4%BB%B6%EF%BC%9A%E6%97%B6%E9%97%B4%E7%BA%BF%E4%B8%8A%E5%8F%AF%E8%A2%AB%E9%AA%8C%E8%AF%81%E7%9A%84%E7%8A%B6%E6%80%81%E5%8F%98%E5%8C%96"><span class="nav-number">2.2.</span> <span class="nav-text">2.2 事件：时间线上可被验证的状态变化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-3-%E6%95%85%E9%9A%9C%E6%A8%A1%E5%BC%8F%EF%BC%9A%E7%BB%84%E4%BB%B6%E4%BB%A5%E4%BB%80%E4%B9%88%E6%96%B9%E5%BC%8F%E5%81%8F%E7%A6%BB%E8%AE%BE%E8%AE%A1%E6%84%8F%E5%9B%BE"><span class="nav-number">2.3.</span> <span class="nav-text">2.3 故障模式：组件以什么方式偏离设计意图</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-4-%E8%A7%A6%E5%8F%91%E6%9D%A1%E4%BB%B6%EF%BC%9A%E8%AE%A9%E6%BD%9C%E5%9C%A8%E7%BC%BA%E9%99%B7%E8%BF%9B%E5%85%A5%E6%B4%BB%E8%B7%83%E8%B7%AF%E5%BE%84%E7%9A%84%E6%9D%A1%E4%BB%B6"><span class="nav-number">2.4.</span> <span class="nav-text">2.4 触发条件：让潜在缺陷进入活跃路径的条件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-5-%E9%A6%96%E9%94%99%EF%BC%9A%E7%AC%AC%E4%B8%80%E4%B8%AA%E8%BF%9D%E5%8F%8D%E5%B7%B2%E5%A3%B0%E6%98%8E%E4%B8%8D%E5%8F%98%E9%87%8F%E7%9A%84%E4%BA%8B%E4%BB%B6"><span class="nav-number">2.5.</span> <span class="nav-text">2.5 首错：第一个违反已声明不变量的事件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-6-%E8%BF%91%E5%9B%A0%EF%BC%9A%E7%B4%A7%E9%82%BB%E7%94%A8%E6%88%B7%E5%BD%B1%E5%93%8D%E7%9A%84%E7%9B%B4%E6%8E%A5%E6%9C%BA%E5%88%B6"><span class="nav-number">2.6.</span> <span class="nav-text">2.6 近因：紧邻用户影响的直接机制</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-7-%E6%A0%B9%E5%9B%A0%EF%BC%9A%E4%BF%AE%E5%A4%8D%E5%90%8E%E8%83%BD%E6%98%BE%E8%91%97%E9%98%BB%E6%96%AD%E5%90%8C%E7%B1%BB%E5%A4%B1%E8%B4%A5%E8%B7%AF%E5%BE%84%E7%9A%84%E7%B3%BB%E7%BB%9F%E6%9D%A1%E4%BB%B6"><span class="nav-number">2.7.</span> <span class="nav-text">2.7 根因：修复后能显著阻断同类失败路径的系统条件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-8-%E6%94%BE%E5%A4%A7%E5%9B%A0%E7%B4%A0%EF%BC%9A%E4%B8%8D%E5%88%B6%E9%80%A0%E9%A6%96%E9%94%99%EF%BC%8C%E5%8D%B4%E6%89%A9%E5%A4%A7%E5%BD%B1%E5%93%8D"><span class="nav-number">2.8.</span> <span class="nav-text">2.8 放大因素：不制造首错，却扩大影响</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-9-%E9%80%83%E9%80%B8%E6%8E%A7%E5%88%B6%EF%BC%9A%E6%9C%AC%E6%9D%A5%E5%BA%94%E8%AF%A5%E5%8F%91%E7%8E%B0%E6%88%96%E9%98%BB%E6%AD%A2%E9%94%99%E8%AF%AF%E7%9A%84%E6%8E%A7%E5%88%B6%E7%82%B9"><span class="nav-number">2.9.</span> <span class="nav-text">2.9 逃逸控制：本来应该发现或阻止错误的控制点</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81AI-%E5%BA%94%E7%94%A8%E4%B8%BA%E4%BB%80%E4%B9%88%E6%AF%94%E4%BC%A0%E7%BB%9F%E6%9C%8D%E5%8A%A1%E6%9B%B4%E9%9A%BE%E5%BD%92%E5%9B%A0"><span class="nav-number">3.</span> <span class="nav-text">三、AI 应用为什么比传统服务更难归因</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#3-1-%E8%BE%93%E5%87%BA%E4%B8%8D%E5%AE%8C%E5%85%A8%E7%94%B1%E4%BB%A3%E7%A0%81%E8%B7%AF%E5%BE%84%E5%86%B3%E5%AE%9A"><span class="nav-number">3.1.</span> <span class="nav-text">3.1 输出不完全由代码路径决定</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-2-%E8%87%AA%E7%84%B6%E8%AF%AD%E8%A8%80%E6%8A%8A%E9%94%99%E8%AF%AF%E4%BC%AA%E8%A3%85%E6%88%90%E5%90%88%E7%90%86%E7%BB%93%E6%9E%9C"><span class="nav-number">3.2.</span> <span class="nav-text">3.2 自然语言把错误伪装成合理结果</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-3-%E6%A3%80%E7%B4%A2%E7%BB%93%E6%9E%9C%E5%90%8C%E6%97%B6%E6%98%AF%E6%95%B0%E6%8D%AE%E3%80%81%E9%85%8D%E7%BD%AE%E5%92%8C%E8%BF%90%E8%A1%8C%E6%97%B6%E4%BE%9D%E8%B5%96"><span class="nav-number">3.3.</span> <span class="nav-text">3.3 检索结果同时是数据、配置和运行时依赖</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-4-Agent-%E4%BC%9A%E4%BA%A7%E7%94%9F%E7%9C%9F%E5%AE%9E%E5%89%AF%E4%BD%9C%E7%94%A8"><span class="nav-number">3.4.</span> <span class="nav-text">3.4 Agent 会产生真实副作用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-5-%E8%AF%84%E6%B5%8B%E5%99%A8%E8%87%AA%E5%B7%B1%E4%B9%9F%E5%8F%AF%E8%83%BD%E5%A4%B1%E8%B4%A5"><span class="nav-number">3.5.</span> <span class="nav-text">3.5 评测器自己也可能失败</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E4%B9%9D%E5%B1%82%E6%95%85%E9%9A%9C%E6%A8%A1%E5%9E%8B%EF%BC%9A%E5%85%88%E5%AE%9A%E4%BD%8D%E5%B1%82%EF%BC%8C%E5%86%8D%E5%AE%9A%E4%BD%8D%E6%9C%BA%E5%88%B6"><span class="nav-number">4.</span> <span class="nav-text">四、九层故障模型：先定位层，再定位机制</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E7%AC%AC%E4%B8%80%E5%B1%82%EF%BC%9A%E8%BE%93%E5%85%A5%E6%95%85%E9%9A%9C"><span class="nav-number">5.</span> <span class="nav-text">五、第一层：输入故障</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#5-1-%E5%85%B8%E5%9E%8B%E6%95%85%E9%9A%9C%E6%A8%A1%E5%BC%8F"><span class="nav-number">5.1.</span> <span class="nav-text">5.1 典型故障模式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-2-%E5%85%B3%E9%94%AE%E4%B8%8D%E5%8F%98%E9%87%8F"><span class="nav-number">5.2.</span> <span class="nav-text">5.2 关键不变量</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-3-%E5%BF%85%E9%A1%BB%E4%BF%9D%E7%95%99%E7%9A%84%E8%AF%81%E6%8D%AE"><span class="nav-number">5.3.</span> <span class="nav-text">5.3 必须保留的证据</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-4-%E6%B5%8B%E8%AF%95%E9%87%8D%E7%82%B9"><span class="nav-number">5.4.</span> <span class="nav-text">5.4 测试重点</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E7%AC%AC%E4%BA%8C%E5%B1%82%EF%BC%9A%E4%B8%8A%E4%B8%8B%E6%96%87%E6%95%85%E9%9A%9C"><span class="nav-number">6.</span> <span class="nav-text">六、第二层：上下文故障</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#6-1-%E5%85%B8%E5%9E%8B%E6%95%85%E9%9A%9C%E6%A8%A1%E5%BC%8F"><span class="nav-number">6.1.</span> <span class="nav-text">6.1 典型故障模式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-2-%E5%85%B3%E9%94%AE%E4%B8%8D%E5%8F%98%E9%87%8F"><span class="nav-number">6.2.</span> <span class="nav-text">6.2 关键不变量</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-3-%E4%B8%8A%E4%B8%8B%E6%96%87%E4%BC%98%E5%85%88%E7%BA%A7%E4%B8%8D%E8%83%BD%E5%8F%AA%E9%9D%A0%E6%8E%92%E5%88%97%E9%A1%BA%E5%BA%8F"><span class="nav-number">6.3.</span> <span class="nav-text">6.3 上下文优先级不能只靠排列顺序</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-4-%E6%B5%8B%E8%AF%95%E9%87%8D%E7%82%B9"><span class="nav-number">6.4.</span> <span class="nav-text">6.4 测试重点</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E7%AC%AC%E4%B8%89%E5%B1%82%EF%BC%9A%E6%A3%80%E7%B4%A2%E6%95%85%E9%9A%9C"><span class="nav-number">7.</span> <span class="nav-text">七、第三层：检索故障</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#7-1-%E5%85%B8%E5%9E%8B%E6%95%85%E9%9A%9C%E6%A8%A1%E5%BC%8F"><span class="nav-number">7.1.</span> <span class="nav-text">7.1 典型故障模式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-2-%E6%A3%80%E7%B4%A2%E5%B1%82%E8%87%B3%E5%B0%91%E8%A6%81%E8%AE%B0%E5%BD%95%E4%B8%A4%E7%BB%84%E7%BB%93%E6%9E%9C"><span class="nav-number">7.2.</span> <span class="nav-text">7.2 检索层至少要记录两组结果</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-3-%E5%85%B3%E9%94%AE%E4%B8%8D%E5%8F%98%E9%87%8F"><span class="nav-number">7.3.</span> <span class="nav-text">7.3 关键不变量</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-4-%E6%B5%8B%E8%AF%95%E9%87%8D%E7%82%B9"><span class="nav-number">7.4.</span> <span class="nav-text">7.4 测试重点</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E7%AC%AC%E5%9B%9B%E5%B1%82%EF%BC%9A%E6%A8%A1%E5%9E%8B%E6%95%85%E9%9A%9C"><span class="nav-number">8.</span> <span class="nav-text">八、第四层：模型故障</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#8-1-%E5%85%B8%E5%9E%8B%E6%95%85%E9%9A%9C%E6%A8%A1%E5%BC%8F"><span class="nav-number">8.1.</span> <span class="nav-text">8.1 典型故障模式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-2-%E6%A8%A1%E5%9E%8B%E9%94%99%E8%AF%AF%E4%B8%8D%E7%AD%89%E4%BA%8E%E2%80%9C%E7%AD%94%E6%A1%88%E4%B8%8E%E9%87%91%E6%A0%87%E5%87%86%E4%B8%8D%E4%B8%80%E8%87%B4%E2%80%9D"><span class="nav-number">8.2.</span> <span class="nav-text">8.2 模型错误不等于“答案与金标准不一致”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-3-%E6%B5%8B%E8%AF%95%E9%87%8D%E7%82%B9"><span class="nav-number">8.3.</span> <span class="nav-text">8.3 测试重点</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E7%AC%AC%E4%BA%94%E5%B1%82%EF%BC%9A%E5%B7%A5%E5%85%B7%E6%95%85%E9%9A%9C"><span class="nav-number">9.</span> <span class="nav-text">九、第五层：工具故障</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#9-1-%E5%85%B8%E5%9E%8B%E6%95%85%E9%9A%9C%E6%A8%A1%E5%BC%8F"><span class="nav-number">9.1.</span> <span class="nav-text">9.1 典型故障模式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-2-%E4%B8%89%E4%B8%AA%E7%8A%B6%E6%80%81%E5%BF%85%E9%A1%BB%E5%88%86%E5%BC%80"><span class="nav-number">9.2.</span> <span class="nav-text">9.2 三个状态必须分开</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-3-%E5%85%B3%E9%94%AE%E4%B8%8D%E5%8F%98%E9%87%8F"><span class="nav-number">9.3.</span> <span class="nav-text">9.3 关键不变量</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-4-%E6%B5%8B%E8%AF%95%E9%87%8D%E7%82%B9"><span class="nav-number">9.4.</span> <span class="nav-text">9.4 测试重点</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E7%AC%AC%E5%85%AD%E5%B1%82%EF%BC%9A%E6%89%A7%E8%A1%8C%E6%95%85%E9%9A%9C"><span class="nav-number">10.</span> <span class="nav-text">十、第六层：执行故障</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#10-1-%E5%85%B8%E5%9E%8B%E6%95%85%E9%9A%9C%E6%A8%A1%E5%BC%8F"><span class="nav-number">10.1.</span> <span class="nav-text">10.1 典型故障模式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-2-%E5%85%B3%E9%94%AE%E4%B8%8D%E5%8F%98%E9%87%8F"><span class="nav-number">10.2.</span> <span class="nav-text">10.2 关键不变量</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-3-%E6%B5%8B%E8%AF%95%E9%87%8D%E7%82%B9"><span class="nav-number">10.3.</span> <span class="nav-text">10.3 测试重点</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E7%AC%AC%E4%B8%83%E5%B1%82%EF%BC%9A%E7%AD%96%E7%95%A5%E6%95%85%E9%9A%9C"><span class="nav-number">11.</span> <span class="nav-text">十一、第七层：策略故障</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#11-1-%E5%85%B8%E5%9E%8B%E6%95%85%E9%9A%9C%E6%A8%A1%E5%BC%8F"><span class="nav-number">11.1.</span> <span class="nav-text">11.1 典型故障模式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-2-%E7%AD%96%E7%95%A5%E5%86%B3%E7%AD%96%E5%BF%85%E9%A1%BB%E5%8F%AF%E8%A7%A3%E9%87%8A%E5%88%B0%E8%A7%84%E5%88%99"><span class="nav-number">11.2.</span> <span class="nav-text">11.2 策略决策必须可解释到规则</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-3-%E6%B5%8B%E8%AF%95%E9%87%8D%E7%82%B9"><span class="nav-number">11.3.</span> <span class="nav-text">11.3 测试重点</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E7%AC%AC%E5%85%AB%E5%B1%82%EF%BC%9A%E5%9F%BA%E7%A1%80%E8%AE%BE%E6%96%BD%E6%95%85%E9%9A%9C"><span class="nav-number">12.</span> <span class="nav-text">十二、第八层：基础设施故障</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#12-1-%E5%85%B8%E5%9E%8B%E6%95%85%E9%9A%9C%E6%A8%A1%E5%BC%8F"><span class="nav-number">12.1.</span> <span class="nav-text">12.1 典型故障模式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-2-%E5%9F%BA%E7%A1%80%E8%AE%BE%E6%96%BD%E9%94%99%E8%AF%AF%E7%BB%8F%E5%B8%B8%E6%98%AF%E8%A7%A6%E5%8F%91%E6%9D%A1%E4%BB%B6%E6%88%96%E6%94%BE%E5%A4%A7%E5%9B%A0%E7%B4%A0"><span class="nav-number">12.2.</span> <span class="nav-text">12.2 基础设施错误经常是触发条件或放大因素</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-3-%E6%B5%8B%E8%AF%95%E9%87%8D%E7%82%B9"><span class="nav-number">12.3.</span> <span class="nav-text">12.3 测试重点</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81%E7%AC%AC%E4%B9%9D%E5%B1%82%EF%BC%9A%E8%AF%84%E6%B5%8B%E5%99%A8%E6%95%85%E9%9A%9C"><span class="nav-number">13.</span> <span class="nav-text">十三、第九层：评测器故障</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#13-1-%E5%85%B8%E5%9E%8B%E6%95%85%E9%9A%9C%E6%A8%A1%E5%BC%8F"><span class="nav-number">13.1.</span> <span class="nav-text">13.1 典型故障模式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#13-2-%E8%AF%84%E6%B5%8B%E5%99%A8%E5%BF%85%E9%A1%BB%E6%9C%89%E8%87%AA%E5%B7%B1%E7%9A%84%E7%9C%9F%E5%80%BC%E5%92%8C%E5%9B%9E%E5%BD%92%E9%9B%86"><span class="nav-number">13.2.</span> <span class="nav-text">13.2 评测器必须有自己的真值和回归集</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#13-3-%E6%B5%8B%E8%AF%95%E9%87%8D%E7%82%B9"><span class="nav-number">13.3.</span> <span class="nav-text">13.3 测试重点</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81%E4%B9%9D%E5%B1%82%E6%95%85%E9%9A%9C%E7%9A%84%E5%BF%AB%E9%80%9F%E5%AE%9A%E4%BD%8D%E8%A1%A8"><span class="nav-number">14.</span> <span class="nav-text">十四、九层故障的快速定位表</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%94%E3%80%81%E4%BA%8B%E4%BB%B6%E6%97%B6%E9%97%B4%E7%BA%BF%EF%BC%9A%E5%85%88%E6%81%A2%E5%A4%8D%E4%BA%8B%E5%AE%9E%EF%BC%8C%E5%86%8D%E8%AE%A8%E8%AE%BA%E5%8E%9F%E5%9B%A0"><span class="nav-number">15.</span> <span class="nav-text">十五、事件时间线：先恢复事实，再讨论原因</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#15-1-%E6%97%B6%E9%97%B4%E7%BA%BF%E5%BF%85%E9%A1%BB%E5%9B%9E%E7%AD%94%E7%9A%84%E4%B8%83%E4%B8%AA%E9%97%AE%E9%A2%98"><span class="nav-number">15.1.</span> <span class="nav-text">15.1 时间线必须回答的七个问题</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#15-2-%E6%8E%A8%E8%8D%90%E7%9A%84%E7%BB%9F%E4%B8%80%E4%BA%8B%E4%BB%B6%E7%BB%93%E6%9E%84"><span class="nav-number">15.2.</span> <span class="nav-text">15.2 推荐的统一事件结构</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#15-3-%E6%97%B6%E9%97%B4%E6%88%B3%E7%9A%84%E5%B7%A5%E7%A8%8B%E5%8F%96%E8%88%8D"><span class="nav-number">15.3.</span> <span class="nav-text">15.3 时间戳的工程取舍</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#15-4-%E4%BF%9D%E5%AD%98%E6%91%98%E8%A6%81%E8%BF%98%E6%98%AF%E5%8E%9F%E6%96%87"><span class="nav-number">15.4.</span> <span class="nav-text">15.4 保存摘要还是原文</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AD%E3%80%81%E6%80%8E%E6%A0%B7%E6%89%BE%E5%88%B0%E9%A6%96%E9%94%99%EF%BC%9A%E4%BB%8E%E4%B8%8D%E5%8F%98%E9%87%8F%E8%80%8C%E4%B8%8D%E6%98%AF%E9%94%99%E8%AF%AF%E7%BA%A7%E5%88%AB%E5%BC%80%E5%A7%8B"><span class="nav-number">16.</span> <span class="nav-text">十六、怎样找到首错：从不变量而不是错误级别开始</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#16-1-%E4%B8%BA%E6%AF%8F%E5%B1%82%E5%AE%9A%E4%B9%89%E5%8F%AF%E6%89%A7%E8%A1%8C%E4%B8%8D%E5%8F%98%E9%87%8F"><span class="nav-number">16.1.</span> <span class="nav-text">16.1 为每层定义可执行不变量</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#16-2-%E9%A6%96%E4%B8%AA-ERROR-%E4%B8%8D%E4%B8%80%E5%AE%9A%E6%98%AF%E9%A6%96%E9%94%99"><span class="nav-number">16.2.</span> <span class="nav-text">16.2 首个 ERROR 不一定是首错</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#16-3-%E4%B8%80%E4%B8%AA%E5%8F%AF%E6%89%A7%E8%A1%8C%E7%9A%84%E9%A6%96%E9%94%99%E6%89%AB%E6%8F%8F%E5%99%A8"><span class="nav-number">16.3.</span> <span class="nav-text">16.3 一个可执行的首错扫描器</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%83%E3%80%81%E5%BD%92%E5%9B%A0%E6%A0%91%EF%BC%9A%E4%BB%8E%E9%A6%96%E9%94%99%E5%88%B0%E6%A0%B9%E5%9B%A0%E8%BF%98%E5%B7%AE%E5%93%AA%E4%BA%9B%E8%AF%81%E6%8D%AE"><span class="nav-number">17.</span> <span class="nav-text">十七、归因树：从首错到根因还差哪些证据</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#17-1-%E4%BB%8E%E5%BD%B1%E5%93%8D%E5%90%91%E4%B8%8A%E5%9B%9E%E6%BA%AF"><span class="nav-number">17.1.</span> <span class="nav-text">17.1 从影响向上回溯</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#17-2-%E7%94%A8-AND-%E5%92%8C-OR-%E8%A1%A8%E8%BE%BE%E7%BB%84%E5%90%88%E6%9D%A1%E4%BB%B6"><span class="nav-number">17.2.</span> <span class="nav-text">17.2 用 AND 和 OR 表达组合条件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#17-3-%E7%BD%AE%E4%BF%A1%E5%BA%A6%E4%B8%8D%E6%98%AF%E6%8B%8D%E8%84%91%E8%A2%8B%E7%99%BE%E5%88%86%E6%AF%94"><span class="nav-number">17.3.</span> <span class="nav-text">17.3 置信度不是拍脑袋百分比</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AB%E3%80%81%E7%A4%BA%E4%BE%8B%E6%A1%88%E4%BE%8B%EF%BC%9A%E4%B8%80%E6%AC%A1%E9%87%8D%E5%A4%8D%E5%BB%BA%E5%8D%95%E5%A6%82%E4%BD%95%E8%A2%AB%E9%94%99%E8%AF%AF%E5%BD%92%E5%9B%A0%E6%88%90%E2%80%9C%E7%BD%91%E7%BB%9C%E6%8A%96%E5%8A%A8%E2%80%9D"><span class="nav-number">18.</span> <span class="nav-text">十八、示例案例：一次重复建单如何被错误归因成“网络抖动”</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#18-1-%E5%9C%BA%E6%99%AF"><span class="nav-number">18.1.</span> <span class="nav-text">18.1 场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#18-2-%E8%BF%98%E5%8E%9F%E4%BA%8B%E4%BB%B6%E6%97%B6%E9%97%B4%E7%BA%BF"><span class="nav-number">18.2.</span> <span class="nav-text">18.2 还原事件时间线</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#18-3-%E5%BD%92%E5%9B%A0%E7%BB%93%E6%9E%9C"><span class="nav-number">18.3.</span> <span class="nav-text">18.3 归因结果</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#18-4-%E6%80%8E%E6%A0%B7%E9%AA%8C%E8%AF%81%E8%80%8C%E4%B8%8D%E6%98%AF%E4%BA%89%E8%AE%BA"><span class="nav-number">18.4.</span> <span class="nav-text">18.4 怎样验证而不是争论</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B9%9D%E3%80%81%E6%B5%8B%E8%AF%95%E8%AE%BE%E8%AE%A1%EF%BC%9A%E6%80%8E%E6%A0%B7%E8%AE%A9%E4%B9%9D%E5%B1%82%E6%95%85%E9%9A%9C%E5%9C%A8%E4%B8%8A%E7%BA%BF%E5%89%8D%E6%9A%B4%E9%9C%B2"><span class="nav-number">19.</span> <span class="nav-text">十九、测试设计：怎样让九层故障在上线前暴露</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#19-1-%E8%BE%93%E5%85%A5%E5%B1%82%E6%B5%8B%E8%AF%95"><span class="nav-number">19.1.</span> <span class="nav-text">19.1 输入层测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#19-2-%E4%B8%8A%E4%B8%8B%E6%96%87%E5%B1%82%E6%B5%8B%E8%AF%95"><span class="nav-number">19.2.</span> <span class="nav-text">19.2 上下文层测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#19-3-%E6%A3%80%E7%B4%A2%E5%B1%82%E6%B5%8B%E8%AF%95"><span class="nav-number">19.3.</span> <span class="nav-text">19.3 检索层测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#19-4-%E6%A8%A1%E5%9E%8B%E5%B1%82%E6%B5%8B%E8%AF%95"><span class="nav-number">19.4.</span> <span class="nav-text">19.4 模型层测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#19-5-%E5%B7%A5%E5%85%B7%E5%B1%82%E6%B5%8B%E8%AF%95"><span class="nav-number">19.5.</span> <span class="nav-text">19.5 工具层测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#19-6-%E6%89%A7%E8%A1%8C%E5%B1%82%E6%B5%8B%E8%AF%95"><span class="nav-number">19.6.</span> <span class="nav-text">19.6 执行层测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#19-7-%E7%AD%96%E7%95%A5%E5%B1%82%E6%B5%8B%E8%AF%95"><span class="nav-number">19.7.</span> <span class="nav-text">19.7 策略层测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#19-8-%E5%9F%BA%E7%A1%80%E8%AE%BE%E6%96%BD%E5%B1%82%E6%B5%8B%E8%AF%95"><span class="nav-number">19.8.</span> <span class="nav-text">19.8 基础设施层测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#19-9-%E8%AF%84%E6%B5%8B%E5%99%A8%E5%B1%82%E6%B5%8B%E8%AF%95"><span class="nav-number">19.9.</span> <span class="nav-text">19.9 评测器层测试</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E3%80%81%E5%BB%BA%E7%AB%8B%E4%B8%80%E5%BC%A0%E6%95%85%E9%9A%9C%E6%B3%A8%E5%85%A5%E7%9F%A9%E9%98%B5"><span class="nav-number">20.</span> <span class="nav-text">二十、建立一张故障注入矩阵</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%80%E3%80%81%E6%8C%87%E6%A0%87%EF%BC%9A%E4%B8%8D%E8%A6%81%E5%8F%AA%E7%BB%9F%E8%AE%A1%E2%80%9C%E6%A8%A1%E5%9E%8B%E9%94%99%E8%AF%AF%E7%8E%87%E2%80%9D"><span class="nav-number">21.</span> <span class="nav-text">二十一、指标：不要只统计“模型错误率”</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#21-1-%E5%88%86%E5%B1%82%E5%A4%B1%E8%B4%A5%E7%8E%87"><span class="nav-number">21.1.</span> <span class="nav-text">21.1 分层失败率</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#21-2-%E9%80%83%E9%80%B8%E7%8E%87"><span class="nav-number">21.2.</span> <span class="nav-text">21.2 逃逸率</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#21-3-%E6%94%BE%E5%A4%A7%E7%B3%BB%E6%95%B0"><span class="nav-number">21.3.</span> <span class="nav-text">21.3 放大系数</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#21-4-%E5%B9%B3%E5%9D%87%E5%8F%91%E7%8E%B0%E6%97%B6%E9%97%B4%E5%92%8C%E5%B9%B3%E5%9D%87%E7%BC%93%E8%A7%A3%E6%97%B6%E9%97%B4"><span class="nav-number">21.4.</span> <span class="nav-text">21.4 平均发现时间和平均缓解时间</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#21-5-%E5%BD%92%E5%9B%A0%E8%A6%86%E7%9B%96%E7%8E%87"><span class="nav-number">21.5.</span> <span class="nav-text">21.5 归因覆盖率</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%8C%E3%80%81%E4%BB%8E%E6%97%A5%E5%BF%97%E8%B5%B0%E5%90%91-Trace%EF%BC%9A%E6%9C%80%E5%B0%8F%E5%8F%AF%E8%A7%82%E6%B5%8B%E6%80%A7%E8%A6%81%E6%B1%82"><span class="nav-number">22.</span> <span class="nav-text">二十二、从日志走向 Trace：最小可观测性要求</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%89%E3%80%81%E4%BA%8B%E6%95%85%E5%BD%92%E5%9B%A0%E6%A8%A1%E6%9D%BF"><span class="nav-number">23.</span> <span class="nav-text">二十三、事故归因模板</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%9B%9B%E3%80%81%E5%B8%B8%E8%A7%81%E8%AF%AF%E5%8C%BA"><span class="nav-number">24.</span> <span class="nav-text">二十四、常见误区</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#24-1-%E6%8A%8A%E2%80%9C%E6%A8%A1%E5%9E%8B%E5%B9%BB%E8%A7%89%E2%80%9D%E5%BD%93%E4%BD%9C%E4%B8%87%E8%83%BD%E5%88%86%E7%B1%BB"><span class="nav-number">24.1.</span> <span class="nav-text">24.1 把“模型幻觉”当作万能分类</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#24-2-%E6%8A%8A%E6%9C%80%E5%90%8E%E4%B8%80%E4%B8%AA%E6%8A%A5%E9%94%99%E7%BB%84%E4%BB%B6%E5%BD%93%E6%A0%B9%E5%9B%A0"><span class="nav-number">24.2.</span> <span class="nav-text">24.2 把最后一个报错组件当根因</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#24-3-%E7%94%A8%E6%97%B6%E9%97%B4%E7%9B%B8%E5%85%B3%E6%80%A7%E4%BB%A3%E6%9B%BF%E5%9B%A0%E6%9E%9C%E8%AF%81%E6%8D%AE"><span class="nav-number">24.3.</span> <span class="nav-text">24.3 用时间相关性代替因果证据</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#24-4-%E5%BC%BA%E6%B1%82%E6%AF%8F%E8%B5%B7%E4%BA%8B%E6%95%85%E5%8F%AA%E6%9C%89%E4%B8%80%E4%B8%AA%E6%A0%B9%E5%9B%A0"><span class="nav-number">24.4.</span> <span class="nav-text">24.4 强求每起事故只有一个根因</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#24-5-%E5%8F%AA%E4%BF%9D%E5%AD%98%E6%9C%80%E7%BB%88-Prompt"><span class="nav-number">24.5.</span> <span class="nav-text">24.5 只保存最终 Prompt</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#24-6-%E5%A4%8D%E7%8E%B0%E4%B8%80%E6%AC%A1%E5%B0%B1%E5%AE%A3%E5%B8%83%E6%A0%B9%E5%9B%A0%E6%88%90%E7%AB%8B"><span class="nav-number">24.6.</span> <span class="nav-text">24.6 复现一次就宣布根因成立</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#24-7-%E6%8A%8A%E8%AF%84%E6%B5%8B%E5%99%A8%E5%BD%93%E7%BB%9D%E5%AF%B9%E7%9C%9F%E5%80%BC"><span class="nav-number">24.7.</span> <span class="nav-text">24.7 把评测器当绝对真值</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#24-8-%E4%B8%BA%E4%BA%86%E5%8F%AF%E8%A7%82%E6%B5%8B%E6%80%A7%E6%B0%B8%E4%B9%85%E4%BF%9D%E5%AD%98%E5%85%A8%E9%83%A8%E6%95%8F%E6%84%9F%E5%86%85%E5%AE%B9"><span class="nav-number">24.8.</span> <span class="nav-text">24.8 为了可观测性永久保存全部敏感内容</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#24-9-%E8%A1%8C%E5%8A%A8%E9%A1%B9%E5%8F%AA%E5%86%99%E2%80%9C%E5%8A%A0%E5%BC%BA%E7%9B%91%E6%8E%A7%E2%80%9D"><span class="nav-number">24.9.</span> <span class="nav-text">24.9 行动项只写“加强监控”</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%94%E3%80%81%E8%90%BD%E5%9C%B0%E6%A3%80%E6%9F%A5%E8%A1%A8"><span class="nav-number">25.</span> <span class="nav-text">二十五、落地检查表</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#25-1-%E5%88%86%E7%B1%BB%E5%87%86%E5%A4%87"><span class="nav-number">25.1.</span> <span class="nav-text">25.1 分类准备</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#25-2-%E8%AF%81%E6%8D%AE%E9%87%87%E9%9B%86"><span class="nav-number">25.2.</span> <span class="nav-text">25.2 证据采集</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#25-3-%E8%B0%83%E6%9F%A5%E8%BF%87%E7%A8%8B"><span class="nav-number">25.3.</span> <span class="nav-text">25.3 调查过程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#25-4-%E6%B5%8B%E8%AF%95%E4%B8%8E%E9%A2%84%E9%98%B2"><span class="nav-number">25.4.</span> <span class="nav-text">25.4 测试与预防</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%85%AD%E3%80%81%E6%80%BB%E7%BB%93"><span class="nav-number">26.</span> <span class="nav-text">二十六、总结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8F%82%E8%80%83%E8%B5%84%E6%96%99"><span class="nav-number">27.</span> <span class="nav-text">参考资料</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">312</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">27</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">569</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2026/03/16/AI%E6%B5%8B%E8%AF%95-14-AI%E5%BA%94%E7%94%A8%E7%9A%84%E5%A4%B1%E8%B4%A5%E6%A8%A1%E5%BC%8F%E5%BA%94%E8%AF%A5%E6%80%8E%E6%A0%B7%E5%88%86%E7%B1%BB%E5%92%8C%E5%BD%92%E5%9B%A0/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="AI测试-14-AI应用的失败模式应该怎样分类和归因 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          AI测试-14-AI应用的失败模式应该怎样分类和归因
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2026-03-16 20:30:00" itemprop="dateCreated datePublished" datetime="2026-03-16T20:30:00+08:00">2026-03-16</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/AI%E6%B5%8B%E8%AF%95/" itemprop="url" rel="index"><span itemprop="name">AI测试</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>12k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>44 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>AI 应用出错时，团队最常听到的判断往往是：</p>
+<ul>
+<li>“模型幻觉了”</li>
+<li>“RAG 没召回”</li>
+<li>“Agent 不稳定”</li>
+<li>“应该是网络抖动”</li>
+<li>“裁判模型打分不准”</li>
+</ul>
+<p>这些描述可能碰到了现象，却通常不足以指导修复。</p>
+<p>一次错误答案可能源于输入解析丢字段，也可能源于上下文截断、权限过滤、旧索引、模型路由、工具契约、工作流重试或评测器漏报。</p>
+<p>更麻烦的是，同一个请求可能同时穿过这些环节。</p>
+<p>上游的小偏差经过下游默认值、自动重试和错误评测后，可能被放大成真正的用户影响。</p>
+<p>如果团队把最终看到的错误直接归到模型层，就会出现三种后果：</p>
+<ul>
+<li>修了 Prompt，却没有修掉产生错误上下文的数据管道</li>
+<li>换了模型，却保留了危险的工具默认值和重试策略</li>
+<li>离线分数提高了，线上同类事故仍然重复发生</li>
+</ul>
+<p>这篇文章不再重复前文对模型层、工具层、执行层和证据层的架构拆分。</p>
+<p>这里聚焦一个更具体的问题：</p>
+<p><strong>当 AI 应用已经产生错误结果或错误动作时，怎样用统一分类、事件时间线和可证伪的归因树，找到首错、根因与放大因素。</strong></p>
+<h2 id="一、问题边界：本文分析的不是“模型好不好”，而是“系统为什么失败”"><a href="#一、问题边界：本文分析的不是“模型好不好”，而是“系统为什么失败”" class="headerlink" title="一、问题边界：本文分析的不是“模型好不好”，而是“系统为什么失败”"></a>一、问题边界：本文分析的不是“模型好不好”，而是“系统为什么失败”</h2><p>先明确本文讨论的对象。</p>
+<p>这里的 AI 应用至少包含以下一种能力：</p>
+<ul>
+<li>大模型生成文本或结构化结果</li>
+<li>RAG 检索外部知识</li>
+<li>Function Calling 或 MCP 等工具调用机制</li>
+<li>多步骤 Agent 或工作流执行</li>
+<li>规则、模型或人工组成的评测器</li>
+</ul>
+<p>本文关注的是应用级失败，而不是基础模型训练阶段的全部风险。</p>
+<p>下面几类问题会涉及，但不会展开成独立安全或算法教程：</p>
+<ul>
+<li>模型本身的能力边界</li>
+<li>Prompt Injection 与工具越权</li>
+<li>训练数据偏差</li>
+<li>GPU 内核和分布式训练故障</li>
+<li>模型榜单之间的横向排名</li>
+</ul>
+<p>原因很简单：</p>
+<p>一次生产失败不能只靠“模型能力不足”解释。</p>
+<p>工程归因必须回答：</p>
+<ol>
+<li>用户究竟受到了什么影响。</li>
+<li>哪一个事件最先违反了系统不变量。</li>
+<li>什么条件触发了这条失败路径。</li>
+<li>哪些设计缺陷让错误得以产生或逃逸。</li>
+<li>哪些因素扩大了范围、时长或损害。</li>
+<li>什么证据能支持或推翻当前假设。</li>
+<li>修复后如何证明同类故障被阻断。</li>
+</ol>
+<p>本文也不假设每次事故只有一个根因。</p>
+<p>复杂系统里，“唯一根因”经常只是为了报告简洁而做的过度压缩。</p>
+<p>更实用的做法是保留一个因果集合：</p>
+<ul>
+<li>触发条件</li>
+<li>首错事件</li>
+<li>近因</li>
+<li>系统性根因</li>
+<li>放大因素</li>
+<li>逃逸控制</li>
+<li>缓解因素</li>
+</ul>
+<h2 id="二、先统一术语：症状、故障模式和根因不是一回事"><a href="#二、先统一术语：症状、故障模式和根因不是一回事" class="headerlink" title="二、先统一术语：症状、故障模式和根因不是一回事"></a>二、先统一术语：症状、故障模式和根因不是一回事</h2><p>如果术语不统一，同一场复盘里每个人说的“原因”可能完全不同。</p>
+<h3 id="2-1-症状：外部观察到的不符合预期"><a href="#2-1-症状：外部观察到的不符合预期" class="headerlink" title="2.1 症状：外部观察到的不符合预期"></a>2.1 症状：外部观察到的不符合预期</h3><p>症状是观察结果，例如：</p>
+<ul>
+<li>回答引用了不存在的制度条款</li>
+<li>Agent 创建了两条重复缺陷</li>
+<li>本应拒绝的请求被执行</li>
+<li>评测报告把错误回答判成通过</li>
+<li>P95 响应时间从 4 秒升到 20 秒</li>
+</ul>
+<p>症状只说明“哪里看起来不对”。</p>
+<p>它不自动说明错误从哪里开始。</p>
+<h3 id="2-2-事件：时间线上可被验证的状态变化"><a href="#2-2-事件：时间线上可被验证的状态变化" class="headerlink" title="2.2 事件：时间线上可被验证的状态变化"></a>2.2 事件：时间线上可被验证的状态变化</h3><p>事件应该有明确时间、主体、输入、输出和状态。</p>
+<p>例如：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">10:02:11.205  context_builder  丢弃 environment=staging 字段</span><br><span class="line">10:02:11.481  retriever        按默认 environment=prod 检索文档</span><br><span class="line">10:02:12.910  model            生成 create_issue 参数</span><br><span class="line">10:02:13.083  policy           未命中人工审批规则</span><br><span class="line">10:02:13.442  issue_tool       创建缺陷 ISSUE-1842</span><br><span class="line">10:02:18.550  workflow         超时后重试同一非幂等调用</span><br><span class="line">10:02:18.903  issue_tool       创建缺陷 ISSUE-1843</span><br><span class="line">10:02:20.112  evaluator        仅检查响应含“创建成功”，判定通过</span><br></pre></td></tr></table></figure>
+
+<p>事件不是一段自由文本日志。</p>
+<p>它应能按 <code>trace_id</code>、<code>span_id</code>、任务和版本关联起来。</p>
+<h3 id="2-3-故障模式：组件以什么方式偏离设计意图"><a href="#2-3-故障模式：组件以什么方式偏离设计意图" class="headerlink" title="2.3 故障模式：组件以什么方式偏离设计意图"></a>2.3 故障模式：组件以什么方式偏离设计意图</h3><p>故障模式描述“怎么坏”。</p>
+<p>例如：</p>
+<ul>
+<li>上下文截断删除了必填业务约束</li>
+<li>检索过滤使用了错误租户</li>
+<li>工具调用超时后发生重复副作用</li>
+<li>评测器只检查措辞，没有检查真实状态</li>
+</ul>
+<p>同一个组件可以有多种故障模式。</p>
+<p>同一种故障模式也可能由不同机制导致。</p>
+<h3 id="2-4-触发条件：让潜在缺陷进入活跃路径的条件"><a href="#2-4-触发条件：让潜在缺陷进入活跃路径的条件" class="headerlink" title="2.4 触发条件：让潜在缺陷进入活跃路径的条件"></a>2.4 触发条件：让潜在缺陷进入活跃路径的条件</h3><p>触发条件并不一定是缺陷本身。</p>
+<p>例如：</p>
+<ul>
+<li>会话长度首次超过上下文裁剪阈值</li>
+<li>请求落到某个租户或语言分支</li>
+<li>峰值流量触发队列等待</li>
+<li>知识库刚完成一次增量发布</li>
+<li>工具在副作用已发生后返回超时</li>
+</ul>
+<p>没有触发条件，缺陷可能长期潜伏。</p>
+<p>只删除触发条件，通常也不等于修复根因。</p>
+<h3 id="2-5-首错：第一个违反已声明不变量的事件"><a href="#2-5-首错：第一个违反已声明不变量的事件" class="headerlink" title="2.5 首错：第一个违反已声明不变量的事件"></a>2.5 首错：第一个违反已声明不变量的事件</h3><p>首错不是日志里最早出现的 <code>ERROR</code>。</p>
+<p>它是业务时间线上第一个可以证明违反不变量的事件。</p>
+<p>假设事件序列为：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">E = \&#123;e_1, e_2, \ldots, e_n\&#125;</span><br></pre></td></tr></table></figure>
+
+<p>系统为每个事件定义不变量集合 <code>I(e_i)</code>，其中每个不变量 <code>g</code> 都是返回布尔值的判定函数。</p>
+<p>首错索引可以写成：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">k = \min \&#123; i \mid \exists g \in I(e_i),\ g(e_i) = false \&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这个定义有两个关键前提：</p>
+<ul>
+<li>时间线必须足够完整</li>
+<li>不变量必须在事故前或分析时明确写出</li>
+</ul>
+<p>如果没有不变量，“首错”就容易退化成主观判断。</p>
+<h3 id="2-6-近因：紧邻用户影响的直接机制"><a href="#2-6-近因：紧邻用户影响的直接机制" class="headerlink" title="2.6 近因：紧邻用户影响的直接机制"></a>2.6 近因：紧邻用户影响的直接机制</h3><p>近因解释最后一步是怎样发生的。</p>
+<p>例如：</p>
+<ul>
+<li>第二次非幂等调用创建了重复缺陷</li>
+<li>错误路由把请求发到不支持该语言的模型</li>
+<li>评测解析器把空字段转成默认满分</li>
+</ul>
+<p>近因通常适合快速止血。</p>
+<p>但只修近因，不一定能阻止同类问题换一种形式复发。</p>
+<h3 id="2-7-根因：修复后能显著阻断同类失败路径的系统条件"><a href="#2-7-根因：修复后能显著阻断同类失败路径的系统条件" class="headerlink" title="2.7 根因：修复后能显著阻断同类失败路径的系统条件"></a>2.7 根因：修复后能显著阻断同类失败路径的系统条件</h3><p>根因应当可操作、可验证，而不是抽象口号。</p>
+<p>“模型不稳定”不是合格根因。</p>
+<p>“上下文构建器没有把环境字段定义为不可裁剪约束，且缺少裁剪后契约校验”更接近可修复根因。</p>
+<p>根因判断应尽量依赖干预证据：</p>
+<ul>
+<li>保持其他变量不变，只替换候选条件</li>
+<li>故障是否不再出现</li>
+<li>在其他同类样本上是否也成立</li>
+<li>修复是否阻断同一失败机制</li>
+</ul>
+<p>因果推断里常用 <code>do(C)</code> 表示主动干预变量 <code>C</code>。</p>
+<p>工程上不必真的计算完整因果图，但可以借用这个思想：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">\Delta_C = P(Y=fail \mid do(C=bad)) - P(Y=fail \mid do(C=good))</span><br></pre></td></tr></table></figure>
+
+<p>如果替换候选条件后失败概率没有明显变化，它就不应被轻易认定为根因。</p>
+<h3 id="2-8-放大因素：不制造首错，却扩大影响"><a href="#2-8-放大因素：不制造首错，却扩大影响" class="headerlink" title="2.8 放大因素：不制造首错，却扩大影响"></a>2.8 放大因素：不制造首错，却扩大影响</h3><p>常见放大因素包括：</p>
+<ul>
+<li>默认无限重试</li>
+<li>非幂等工具没有幂等键</li>
+<li>多租户共享错误缓存</li>
+<li>高风险动作不需要审批</li>
+<li>下游把模型输出当可信指令直接执行</li>
+<li>评测器漏报导致错误进入发布</li>
+</ul>
+<p>放大因素同样值得进入高优先级修复清单。</p>
+<h3 id="2-9-逃逸控制：本来应该发现或阻止错误的控制点"><a href="#2-9-逃逸控制：本来应该发现或阻止错误的控制点" class="headerlink" title="2.9 逃逸控制：本来应该发现或阻止错误的控制点"></a>2.9 逃逸控制：本来应该发现或阻止错误的控制点</h3><p>逃逸控制回答的是：</p>
+<p><strong>为什么错误没有在到达用户之前被拦住？</strong></p>
+<p>可能包括：</p>
+<ul>
+<li>Schema 校验没有检查业务约束</li>
+<li>检索质量门禁只看返回数量</li>
+<li>工具策略没有校验环境和租户</li>
+<li>端到端测试没有检查真实副作用</li>
+<li>裁判模型没有校准，且没有人工抽检</li>
+</ul>
+<h2 id="三、AI-应用为什么比传统服务更难归因"><a href="#三、AI-应用为什么比传统服务更难归因" class="headerlink" title="三、AI 应用为什么比传统服务更难归因"></a>三、AI 应用为什么比传统服务更难归因</h2><p>传统服务也有跨层故障，但 AI 应用增加了几种特殊不确定性。</p>
+<h3 id="3-1-输出不完全由代码路径决定"><a href="#3-1-输出不完全由代码路径决定" class="headerlink" title="3.1 输出不完全由代码路径决定"></a>3.1 输出不完全由代码路径决定</h3><p>同一输入还可能受到下面因素影响：</p>
+<ul>
+<li>模型版本</li>
+<li>系统提示词</li>
+<li>上下文顺序</li>
+<li>检索结果</li>
+<li>采样参数</li>
+<li>服务端实现</li>
+<li>工具返回内容</li>
+<li>历史记忆</li>
+</ul>
+<p>即使设置低温度或零温度，也不应把第三方推理服务视为天然逐字确定。</p>
+<p>因此，复现包必须记录“有效输入”，而不仅是用户原始问题。</p>
+<h3 id="3-2-自然语言把错误伪装成合理结果"><a href="#3-2-自然语言把错误伪装成合理结果" class="headerlink" title="3.2 自然语言把错误伪装成合理结果"></a>3.2 自然语言把错误伪装成合理结果</h3><p>传统接口字段缺失可能直接报错。</p>
+<p>模型却可能为缺失字段补出一个语义合理的默认值。</p>
+<p>这会让错误继续向下传播，而不是立即失败。</p>
+<h3 id="3-3-检索结果同时是数据、配置和运行时依赖"><a href="#3-3-检索结果同时是数据、配置和运行时依赖" class="headerlink" title="3.3 检索结果同时是数据、配置和运行时依赖"></a>3.3 检索结果同时是数据、配置和运行时依赖</h3><p>RAG 的最终上下文取决于：</p>
+<ul>
+<li>语料版本</li>
+<li>切块策略</li>
+<li>Embedding 版本</li>
+<li>索引构建时间</li>
+<li>查询改写</li>
+<li>元数据过滤</li>
+<li>重排器</li>
+<li>访问权限</li>
+</ul>
+<p>只保存最终回答，几乎无法重建现场。</p>
+<h3 id="3-4-Agent-会产生真实副作用"><a href="#3-4-Agent-会产生真实副作用" class="headerlink" title="3.4 Agent 会产生真实副作用"></a>3.4 Agent 会产生真实副作用</h3><p>当模型只能回答文本时，错误主要影响信息质量。</p>
+<p>当模型可以调用工单、发布、数据库和设备工具时，错误会改变外部状态。</p>
+<p>这时必须同时追踪：</p>
+<ul>
+<li>模型意图</li>
+<li>工具参数</li>
+<li>权限决策</li>
+<li>实际执行</li>
+<li>外部副作用</li>
+<li>补偿结果</li>
+</ul>
+<h3 id="3-5-评测器自己也可能失败"><a href="#3-5-评测器自己也可能失败" class="headerlink" title="3.5 评测器自己也可能失败"></a>3.5 评测器自己也可能失败</h3><p>评测结果不是天然真值。</p>
+<p>规则断言可能过窄。</p>
+<p>裁判模型可能受措辞、顺序、长度和提示词影响。</p>
+<p>人工标注也可能出现规范歧义和一致性问题。</p>
+<p>所以评测器必须作为第九层参与归因，而不能站在系统之外被默认正确。</p>
+<h2 id="四、九层故障模型：先定位层，再定位机制"><a href="#四、九层故障模型：先定位层，再定位机制" class="headerlink" title="四、九层故障模型：先定位层，再定位机制"></a>四、九层故障模型：先定位层，再定位机制</h2><p><img src="/images/ai-quality/ai-14-failure-layers.svg" alt="AI 应用九层故障模型"></p>
+<p>这张图把 AI 应用拆成六层主调用链和三个横切层。</p>
+<p>六层主链负责把请求转成结果或动作：</p>
+<ol>
+<li>输入层</li>
+<li>上下文层</li>
+<li>检索层</li>
+<li>模型层</li>
+<li>工具层</li>
+<li>执行层</li>
+</ol>
+<p>三个横切层影响每个决策点：</p>
+<ol start="7">
+<li>策略层</li>
+<li>基础设施层</li>
+<li>评测器层</li>
+</ol>
+<p>分类的目标不是把事故强行塞进一个格子。</p>
+<p>真正目标是让每个事件有明确责任边界、证据类型和验证方法。</p>
+<h2 id="五、第一层：输入故障"><a href="#五、第一层：输入故障" class="headerlink" title="五、第一层：输入故障"></a>五、第一层：输入故障</h2><p>输入层是用户请求、上游系统事件或批量任务进入 AI 应用的边界。</p>
+<h3 id="5-1-典型故障模式"><a href="#5-1-典型故障模式" class="headerlink" title="5.1 典型故障模式"></a>5.1 典型故障模式</h3><ul>
+<li>JSON、表单或消息格式不合法</li>
+<li>字段类型正确，但业务语义不合法</li>
+<li>编码、语言、时区或单位解析错误</li>
+<li>超长输入在入口被静默截断</li>
+<li>附件解析失败，却继续生成答案</li>
+<li>上游把空值替换成危险默认值</li>
+<li>线上输入分布偏离评测集</li>
+<li>恶意指令或间接提示注入进入系统</li>
+</ul>
+<h3 id="5-2-关键不变量"><a href="#5-2-关键不变量" class="headerlink" title="5.2 关键不变量"></a>5.2 关键不变量</h3><ul>
+<li>必填字段在进入上下文构建前必须存在</li>
+<li>租户、环境和用户身份不得由模型猜测</li>
+<li>文档解析失败时不得伪装成空文档</li>
+<li>原始输入和规范化输入必须可关联</li>
+<li>超出限制必须显式拒绝或分段，不得静默丢失关键内容</li>
+</ul>
+<h3 id="5-3-必须保留的证据"><a href="#5-3-必须保留的证据" class="headerlink" title="5.3 必须保留的证据"></a>5.3 必须保留的证据</h3><ul>
+<li>原始载荷的脱敏摘要</li>
+<li>规范化后的结构</li>
+<li>Schema 版本</li>
+<li>解析器版本</li>
+<li>字符数、Token 估算和附件状态</li>
+<li>身份、租户、环境等不可推断字段</li>
+</ul>
+<h3 id="5-4-测试重点"><a href="#5-4-测试重点" class="headerlink" title="5.4 测试重点"></a>5.4 测试重点</h3><ul>
+<li>等价类和边界值</li>
+<li>Unicode、混合语言和特殊分隔符</li>
+<li>超长输入和大附件</li>
+<li>空值、缺字段和类型漂移</li>
+<li>重放线上低频格式</li>
+<li>对抗输入与数据外泄检查</li>
+</ul>
+<p>输入错误最容易被误归到模型层，因为模型常常会“努力回答”。</p>
+<p>测试时应明确：模型的补全能力不能替代入口契约。</p>
+<h2 id="六、第二层：上下文故障"><a href="#六、第二层：上下文故障" class="headerlink" title="六、第二层：上下文故障"></a>六、第二层：上下文故障</h2><p>上下文不是单一 Prompt。</p>
+<p>它通常由系统指令、开发者指令、用户输入、对话历史、长期记忆、检索片段和工具结果共同组成。</p>
+<h3 id="6-1-典型故障模式"><a href="#6-1-典型故障模式" class="headerlink" title="6.1 典型故障模式"></a>6.1 典型故障模式</h3><ul>
+<li>必要约束被上下文窗口裁掉</li>
+<li>消息角色或顺序错误</li>
+<li>旧版系统提示词与新版工具契约不兼容</li>
+<li>不同租户记忆串线</li>
+<li>历史错误结论被反复写回长期记忆</li>
+<li>工具结果没有标记可信级别</li>
+<li>上下文拼接包含相互冲突的指令</li>
+<li>Token 预算按字符粗略估计，导致实际溢出</li>
+</ul>
+<h3 id="6-2-关键不变量"><a href="#6-2-关键不变量" class="headerlink" title="6.2 关键不变量"></a>6.2 关键不变量</h3><ul>
+<li>身份、租户、环境和权限约束不可裁剪</li>
+<li>每段上下文必须记录来源与版本</li>
+<li>外部文档内容不得拥有高于系统指令的权限</li>
+<li>长期记忆写入必须有来源、有效期和撤销机制</li>
+<li>裁剪前后必须通过必填约束校验</li>
+</ul>
+<h3 id="6-3-上下文优先级不能只靠排列顺序"><a href="#6-3-上下文优先级不能只靠排列顺序" class="headerlink" title="6.3 上下文优先级不能只靠排列顺序"></a>6.3 上下文优先级不能只靠排列顺序</h3><p>把关键字段放在最前面有帮助，但还不够。</p>
+<p>更稳的做法是把上下文拆为：</p>
+<ul>
+<li><code>pinned_constraints</code>：绝不能删除的约束</li>
+<li><code>task_context</code>：当前任务必须信息</li>
+<li><code>retrieved_evidence</code>：可替换的证据</li>
+<li><code>conversation_history</code>：可摘要的历史</li>
+<li><code>optional_context</code>：预算不足时优先移除</li>
+</ul>
+<p>裁剪算法应按分区降级，并在裁剪后重新验证。</p>
+<h3 id="6-4-测试重点"><a href="#6-4-测试重点" class="headerlink" title="6.4 测试重点"></a>6.4 测试重点</h3><ul>
+<li>从短会话逐级增加到窗口边界</li>
+<li>打乱非关键片段顺序做变形测试</li>
+<li>注入冲突指令检查优先级</li>
+<li>回放跨租户和跨会话场景</li>
+<li>比较摘要前后的关键事实保持率</li>
+<li>检查上下文构建器升级前后的差异</li>
+</ul>
+<h2 id="七、第三层：检索故障"><a href="#七、第三层：检索故障" class="headerlink" title="七、第三层：检索故障"></a>七、第三层：检索故障</h2><p>检索故障不能只用“没有召回正确文档”概括。</p>
+<p>RAG 链路至少包含查询构造、候选召回、元数据过滤、重排、去重、片段组装和引用映射。</p>
+<h3 id="7-1-典型故障模式"><a href="#7-1-典型故障模式" class="headerlink" title="7.1 典型故障模式"></a>7.1 典型故障模式</h3><ul>
+<li>查询改写丢失否定词或限定条件</li>
+<li>Embedding 与索引版本不匹配</li>
+<li>权限过滤放在召回后，导致越权片段进入上下文</li>
+<li>时间过滤错误，召回过期制度</li>
+<li>Top K 太小导致关键证据缺失</li>
+<li>Top K 太大导致噪声压过关键证据</li>
+<li>重排器偏好措辞相似而非事实相关</li>
+<li>切块把条件和结论分开</li>
+<li>增量索引没有完成却提前切流</li>
+<li>引用编号与实际片段错位</li>
+</ul>
+<h3 id="7-2-检索层至少要记录两组结果"><a href="#7-2-检索层至少要记录两组结果" class="headerlink" title="7.2 检索层至少要记录两组结果"></a>7.2 检索层至少要记录两组结果</h3><p>第一组是“召回候选”。</p>
+<p>第二组是“最终进入上下文的片段”。</p>
+<p>只记录第二组，会丢失过滤和重排过程中的证据。</p>
+<p>建议记录：</p>
+<ul>
+<li>原始查询</li>
+<li>改写查询</li>
+<li>过滤条件</li>
+<li>候选文档 ID 和分数</li>
+<li>重排后顺序</li>
+<li>被剔除原因</li>
+<li>文档版本与有效期</li>
+<li>最终引用映射</li>
+</ul>
+<h3 id="7-3-关键不变量"><a href="#7-3-关键不变量" class="headerlink" title="7.3 关键不变量"></a>7.3 关键不变量</h3><ul>
+<li>无权限文档不得进入模型上下文</li>
+<li>需要时效性的任务必须优先有效版本</li>
+<li>引用必须能反向定位到不可变文档版本</li>
+<li>检索为空时不得伪造来源</li>
+<li>索引发布必须和文档清单、Embedding 版本一致</li>
+</ul>
+<h3 id="7-4-测试重点"><a href="#7-4-测试重点" class="headerlink" title="7.4 测试重点"></a>7.4 测试重点</h3><ul>
+<li>有答案、无答案和答案冲突场景</li>
+<li>同义改写、否定表达和缩写</li>
+<li>多租户权限隔离</li>
+<li>旧版与新版文档共存</li>
+<li>索引增量发布和回滚</li>
+<li>单个关键片段缺失的故障注入</li>
+<li>召回与生成分阶段评测</li>
+</ul>
+<p>前文已经讨论过 RAG 数据清洗、召回和结果校验。</p>
+<p>这里的新增重点是：检索的每个中间决策都应进入事件时间线，才能参与事故归因。</p>
+<h2 id="八、第四层：模型故障"><a href="#八、第四层：模型故障" class="headerlink" title="八、第四层：模型故障"></a>八、第四层：模型故障</h2><p>只有在输入、上下文和检索证据已经被验证后，才适合把候选原因收敛到模型层。</p>
+<h3 id="8-1-典型故障模式"><a href="#8-1-典型故障模式" class="headerlink" title="8.1 典型故障模式"></a>8.1 典型故障模式</h3><ul>
+<li>在证据不足时生成确定性结论</li>
+<li>没有遵守结构化输出约束</li>
+<li>对明确任务产生不必要拒答</li>
+<li>安全边界不足，接受恶意指令</li>
+<li>数值、日期或逻辑推理错误</li>
+<li>多语言能力不符合场景要求</li>
+<li>路由器选择了不满足任务要求的模型</li>
+<li>模型版本升级造成行为回归</li>
+<li>采样策略导致输出方差过大</li>
+<li>长上下文下忽略关键证据</li>
+</ul>
+<h3 id="8-2-模型错误不等于“答案与金标准不一致”"><a href="#8-2-模型错误不等于“答案与金标准不一致”" class="headerlink" title="8.2 模型错误不等于“答案与金标准不一致”"></a>8.2 模型错误不等于“答案与金标准不一致”</h3><p>需要先区分：</p>
+<ul>
+<li>金标准是否唯一</li>
+<li>任务是否允许多种表达</li>
+<li>输入证据是否足够</li>
+<li>模型是否应拒答</li>
+<li>输出是否被后处理器破坏</li>
+</ul>
+<p>对于开放式任务，模型层不变量可以是：</p>
+<ul>
+<li>每个事实声明有可追溯证据</li>
+<li>不确定时使用明确的不确定表达</li>
+<li>输出满足 JSON Schema</li>
+<li>禁止提出超出授权范围的工具动作</li>
+</ul>
+<h3 id="8-3-测试重点"><a href="#8-3-测试重点" class="headerlink" title="8.3 测试重点"></a>8.3 测试重点</h3><ul>
+<li>固定有效输入做多次重复运行</li>
+<li>比较不同模型版本和路由结果</li>
+<li>记录完整生成参数</li>
+<li>设计无答案和证据冲突样本</li>
+<li>对关键事实做原子级断言</li>
+<li>将格式正确率与语义正确率分开</li>
+<li>做温度、上下文长度和语言维度切片</li>
+</ul>
+<p>模型层可以出现真正的能力失败。</p>
+<p>但“模型没答对”仍然只是故障模式，不是足够深的根因描述。</p>
+<h2 id="九、第五层：工具故障"><a href="#九、第五层：工具故障" class="headerlink" title="九、第五层：工具故障"></a>九、第五层：工具故障</h2><p>工具层负责把模型意图转换为受控调用。</p>
+<p>前文对 Function Calling 的输入、输出和容错已经做过展开。</p>
+<p>本节只从故障归因角度补充证据边界。</p>
+<h3 id="9-1-典型故障模式"><a href="#9-1-典型故障模式" class="headerlink" title="9.1 典型故障模式"></a>9.1 典型故障模式</h3><ul>
+<li>选错工具</li>
+<li>参数字段缺失或类型错误</li>
+<li>参数语法正确但业务对象错误</li>
+<li>Schema 与工具实现版本不一致</li>
+<li>工具返回成功，但副作用没有发生</li>
+<li>工具返回超时，但副作用已经发生</li>
+<li>错误码被适配器吞掉</li>
+<li>返回内容包含未标记的不可信文本</li>
+<li>权限范围大于任务所需</li>
+<li>工具描述误导模型选择</li>
+</ul>
+<h3 id="9-2-三个状态必须分开"><a href="#9-2-三个状态必须分开" class="headerlink" title="9.2 三个状态必须分开"></a>9.2 三个状态必须分开</h3><p>一次工具调用至少有三种状态：</p>
+<ol>
+<li><code>planned</code>：模型提出了调用意图。</li>
+<li><code>accepted</code>：策略和参数校验允许调用。</li>
+<li><code>committed</code>：外部系统确认副作用已经提交。</li>
+</ol>
+<p>只记录“模型调用了工具”，无法判断动作是否真正发生。</p>
+<p>只记录 HTTP 200，也无法证明业务状态正确。</p>
+<h3 id="9-3-关键不变量"><a href="#9-3-关键不变量" class="headerlink" title="9.3 关键不变量"></a>9.3 关键不变量</h3><ul>
+<li>工具参数必须通过结构与业务双重校验</li>
+<li>高风险字段不得从自然语言缺省推断</li>
+<li>副作用调用必须携带幂等键或等价防重机制</li>
+<li>超时状态必须区分“未执行”和“执行结果未知”</li>
+<li>工具返回的不可信文本不得升级为系统指令</li>
+</ul>
+<h3 id="9-4-测试重点"><a href="#9-4-测试重点" class="headerlink" title="9.4 测试重点"></a>9.4 测试重点</h3><ul>
+<li>契约测试和 Schema 兼容测试</li>
+<li>错误码、超时和部分成功</li>
+<li>副作用已发生但响应丢失</li>
+<li>幂等键重复提交</li>
+<li>权限不足和跨租户访问</li>
+<li>工具描述相似时的选择冲突</li>
+<li>返回值污染后续上下文</li>
+</ul>
+<h2 id="十、第六层：执行故障"><a href="#十、第六层：执行故障" class="headerlink" title="十、第六层：执行故障"></a>十、第六层：执行故障</h2><p>工具层描述单次能力调用。</p>
+<p>执行层描述多步骤任务如何推进、暂停、恢复和补偿。</p>
+<h3 id="10-1-典型故障模式"><a href="#10-1-典型故障模式" class="headerlink" title="10.1 典型故障模式"></a>10.1 典型故障模式</h3><ul>
+<li>工作流状态与真实外部状态不一致</li>
+<li>重试从错误检查点恢复</li>
+<li>并发任务覆盖同一资源</li>
+<li>失败后没有补偿已完成步骤</li>
+<li>人工审批结果没有绑定原始计划版本</li>
+<li>任务取消后后台动作仍在继续</li>
+<li>死信任务被重复消费</li>
+<li>超时预算在层间叠加失控</li>
+<li>局部成功被汇总成整体成功</li>
+</ul>
+<h3 id="10-2-关键不变量"><a href="#10-2-关键不变量" class="headerlink" title="10.2 关键不变量"></a>10.2 关键不变量</h3><ul>
+<li>每次状态转移必须满足前置条件</li>
+<li>外部副作用必须有可验证的提交凭证</li>
+<li>重试不得重复不可逆动作</li>
+<li>审批必须绑定工具、参数、版本和有效期</li>
+<li>取消信号必须传播到所有可取消步骤</li>
+<li>聚合状态必须保留部分成功与未知状态</li>
+</ul>
+<h3 id="10-3-测试重点"><a href="#10-3-测试重点" class="headerlink" title="10.3 测试重点"></a>10.3 测试重点</h3><ul>
+<li>每个步骤前后注入故障</li>
+<li>并发、乱序和重复消息</li>
+<li>进程重启后的检查点恢复</li>
+<li>审批前后计划被修改</li>
+<li>补偿动作自身失败</li>
+<li>长任务跨版本部署</li>
+<li>外部状态与内部状态对账</li>
+</ul>
+<h2 id="十一、第七层：策略故障"><a href="#十一、第七层：策略故障" class="headerlink" title="十一、第七层：策略故障"></a>十一、第七层：策略故障</h2><p>策略层包括权限、风险阈值、内容安全、人工审批、模型路由和降级规则。</p>
+<p>它可能同时影响输入、模型、工具和执行。</p>
+<h3 id="11-1-典型故障模式"><a href="#11-1-典型故障模式" class="headerlink" title="11.1 典型故障模式"></a>11.1 典型故障模式</h3><ul>
+<li>应拦截的高风险动作被放行</li>
+<li>正常任务被过度拦截</li>
+<li>多条规则冲突，执行顺序不明确</li>
+<li>规则使用危险默认值</li>
+<li>风险分数阈值未经场景校准</li>
+<li>策略版本切换没有审计</li>
+<li>模型拒答被错误覆盖</li>
+<li>人工审批被复用到不同参数</li>
+</ul>
+<h3 id="11-2-策略决策必须可解释到规则"><a href="#11-2-策略决策必须可解释到规则" class="headerlink" title="11.2 策略决策必须可解释到规则"></a>11.2 策略决策必须可解释到规则</h3><p>不要只记录：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span><span class="attr">&quot;allowed&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>至少应记录：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;allowed&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;policy_version&quot;</span><span class="punctuation">:</span> <span class="string">&quot;tool-policy-2026-03-4&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;matched_rules&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;ISSUE_CREATE_STAGING_AUTO&quot;</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;risk_level&quot;</span><span class="punctuation">:</span> <span class="string">&quot;low&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;required_approval&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">false</span></span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;subject&quot;</span><span class="punctuation">:</span> <span class="string">&quot;user-42&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;resource&quot;</span><span class="punctuation">:</span> <span class="string">&quot;staging/project-a&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;decision_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;pd_01J...&quot;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="11-3-测试重点"><a href="#11-3-测试重点" class="headerlink" title="11.3 测试重点"></a>11.3 测试重点</h3><ul>
+<li>规则边界值</li>
+<li>规则优先级和冲突</li>
+<li>默认拒绝是否生效</li>
+<li>策略热更新和回滚</li>
+<li>同一计划更换参数后重新审批</li>
+<li>高风险工具的最小权限</li>
+<li>策略服务不可用时的降级行为</li>
+</ul>
+<h2 id="十二、第八层：基础设施故障"><a href="#十二、第八层：基础设施故障" class="headerlink" title="十二、第八层：基础设施故障"></a>十二、第八层：基础设施故障</h2><p>基础设施层不只包括模型服务。</p>
+<p>它还包括网络、网关、缓存、队列、数据库、对象存储、向量库、密钥服务和第三方 API。</p>
+<h3 id="12-1-典型故障模式"><a href="#12-1-典型故障模式" class="headerlink" title="12.1 典型故障模式"></a>12.1 典型故障模式</h3><ul>
+<li>模型服务配额耗尽</li>
+<li>队列积压导致上下文过期</li>
+<li>缓存键缺少租户或版本维度</li>
+<li>网络重试形成请求风暴</li>
+<li>向量库读到旧副本</li>
+<li>时钟漂移破坏跨系统时间线</li>
+<li>资源耗尽触发降级模型</li>
+<li>依赖返回部分数据但状态码正常</li>
+<li>可观测性采样丢失关键失败链路</li>
+</ul>
+<h3 id="12-2-基础设施错误经常是触发条件或放大因素"><a href="#12-2-基础设施错误经常是触发条件或放大因素" class="headerlink" title="12.2 基础设施错误经常是触发条件或放大因素"></a>12.2 基础设施错误经常是触发条件或放大因素</h3><p>例如，一次网络超时本身不该创建重复工单。</p>
+<p>真正的问题可能是：</p>
+<ul>
+<li>工具调用没有幂等性</li>
+<li>超时被错误解释为“未执行”</li>
+<li>工作流立即重试</li>
+<li>外部系统没有查询提交状态的接口</li>
+</ul>
+<p>此时网络超时是触发条件。</p>
+<p>非幂等设计和错误恢复策略才是更值得修复的系统条件。</p>
+<h3 id="12-3-测试重点"><a href="#12-3-测试重点" class="headerlink" title="12.3 测试重点"></a>12.3 测试重点</h3><ul>
+<li>延迟、超时、限流和断连</li>
+<li>缓存陈旧与缓存穿透</li>
+<li>单依赖和多依赖联合故障</li>
+<li>队列重复、丢失和乱序</li>
+<li>模型路由与降级链</li>
+<li>资源配额和背压</li>
+<li>追踪采样对失败证据的覆盖率</li>
+</ul>
+<h2 id="十三、第九层：评测器故障"><a href="#十三、第九层：评测器故障" class="headerlink" title="十三、第九层：评测器故障"></a>十三、第九层：评测器故障</h2><p>评测器层负责判断“系统是否正确”。</p>
+<p>它可能由代码断言、规则、检索校验、裁判模型和人工评审共同组成。</p>
+<h3 id="13-1-典型故障模式"><a href="#13-1-典型故障模式" class="headerlink" title="13.1 典型故障模式"></a>13.1 典型故障模式</h3><ul>
+<li>只验证回答格式，不验证事实</li>
+<li>只验证模型文本，不验证真实副作用</li>
+<li>裁判量表没有定义边界</li>
+<li>裁判模型偏好更长或更自信的答案</li>
+<li>被测输出包含影响裁判的提示内容</li>
+<li>解析失败后使用默认通过</li>
+<li>评测集标签错误或已经过期</li>
+<li>聚合分数掩盖关键风险切片退化</li>
+<li>评测器版本升级却没有重新校准</li>
+</ul>
+<h3 id="13-2-评测器必须有自己的真值和回归集"><a href="#13-2-评测器必须有自己的真值和回归集" class="headerlink" title="13.2 评测器必须有自己的真值和回归集"></a>13.2 评测器必须有自己的真值和回归集</h3><p>评测器不是终点。</p>
+<p>至少需要：</p>
+<ul>
+<li>人工确认的校准集</li>
+<li>明确评分量表</li>
+<li>评测器版本</li>
+<li>多次评测的一致性数据</li>
+<li>与规则断言的冲突记录</li>
+<li>低置信度人工复核路径</li>
+</ul>
+<h3 id="13-3-测试重点"><a href="#13-3-测试重点" class="headerlink" title="13.3 测试重点"></a>13.3 测试重点</h3><ul>
+<li>正例、反例和近边界样本</li>
+<li>同义改写与答案顺序交换</li>
+<li>长短答案偏差</li>
+<li>提示注入式被测输出</li>
+<li>解析失败和空结果</li>
+<li>裁判版本对照</li>
+<li>分层指标与人工抽检</li>
+</ul>
+<h2 id="十四、九层故障的快速定位表"><a href="#十四、九层故障的快速定位表" class="headerlink" title="十四、九层故障的快速定位表"></a>十四、九层故障的快速定位表</h2><table>
+<thead>
+<tr>
+<th>层级</th>
+<th>首要问题</th>
+<th>关键证据</th>
+<th>最有效的对照实验</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>输入</td>
+<td>进入系统的请求是否已变形</td>
+<td>原始与规范化输入、Schema</td>
+<td>绕过规范化器重放</td>
+</tr>
+<tr>
+<td>上下文</td>
+<td>模型实际看到了什么</td>
+<td>完整消息、裁剪记录、Token 预算</td>
+<td>固定模型替换上下文</td>
+</tr>
+<tr>
+<td>检索</td>
+<td>证据为什么入选或丢失</td>
+<td>候选、过滤、重排、文档版本</td>
+<td>固定查询替换索引或过滤器</td>
+</tr>
+<tr>
+<td>模型</td>
+<td>有效输入正确时是否仍失败</td>
+<td>模型版本、参数、原始输出</td>
+<td>同输入跨模型或多次运行</td>
+</tr>
+<tr>
+<td>工具</td>
+<td>意图是否被正确、安全地执行</td>
+<td>参数、策略决策、提交凭证</td>
+<td>Mock 工具与真实工具对照</td>
+</tr>
+<tr>
+<td>执行</td>
+<td>状态机是否正确推进</td>
+<td>状态转移、检查点、副作用</td>
+<td>在指定步骤注入故障</td>
+</tr>
+<tr>
+<td>策略</td>
+<td>为什么放行、拦截或路由</td>
+<td>命中规则、版本、风险分</td>
+<td>固定请求替换策略版本</td>
+</tr>
+<tr>
+<td>基础设施</td>
+<td>依赖异常怎样影响业务语义</td>
+<td>时延、错误码、资源、缓存</td>
+<td>限流、断连、延迟注入</td>
+</tr>
+<tr>
+<td>评测器</td>
+<td>判断本身是否可信</td>
+<td>量表、评分明细、人工标签</td>
+<td>人工盲评与裁判对照</td>
+</tr>
+</tbody></table>
+<p>这张表不能替代时间线。</p>
+<p>它的作用是帮助测试和平台团队快速提出可验证假设。</p>
+<h2 id="十五、事件时间线：先恢复事实，再讨论原因"><a href="#十五、事件时间线：先恢复事实，再讨论原因" class="headerlink" title="十五、事件时间线：先恢复事实，再讨论原因"></a>十五、事件时间线：先恢复事实，再讨论原因</h2><p>一次 AI 事故最有价值的产物通常不是截图，而是一条可重放时间线。</p>
+<h3 id="15-1-时间线必须回答的七个问题"><a href="#15-1-时间线必须回答的七个问题" class="headerlink" title="15.1 时间线必须回答的七个问题"></a>15.1 时间线必须回答的七个问题</h3><p>对每个关键事件，至少回答：</p>
+<ol>
+<li>什么时候发生。</li>
+<li>哪个组件发起。</li>
+<li>接收了什么有效输入。</li>
+<li>使用了什么代码、模型、提示词、索引或策略版本。</li>
+<li>产生了什么输出或状态变化。</li>
+<li>是否产生外部副作用。</li>
+<li>与前后事件如何关联。</li>
+</ol>
+<h3 id="15-2-推荐的统一事件结构"><a href="#15-2-推荐的统一事件结构" class="headerlink" title="15.2 推荐的统一事件结构"></a>15.2 推荐的统一事件结构</h3><p>下面是一个可以直接落到 JSONL 的示例：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;event_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;evt_00042&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;trace_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;tr_01JAV8Q5R9D7K2&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;span_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sp_tool_04&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;parent_span_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sp_agent_01&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;occurred_at&quot;</span><span class="punctuation">:</span> <span class="string">&quot;2026-03-16T10:02:13.442+08:00&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;monotonic_ns&quot;</span><span class="punctuation">:</span> <span class="number">382910044221</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;layer&quot;</span><span class="punctuation">:</span> <span class="string">&quot;tool&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;component&quot;</span><span class="punctuation">:</span> <span class="string">&quot;issue-adapter&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;event_type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;tool.commit&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;status&quot;</span><span class="punctuation">:</span> <span class="string">&quot;succeeded&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;input_ref&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sha256:64e6...&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;output_ref&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sha256:381a...&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;config&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;tool_schema&quot;</span><span class="punctuation">:</span> <span class="string">&quot;issue.create/v3&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;policy_version&quot;</span><span class="punctuation">:</span> <span class="string">&quot;tool-policy-2026-03-4&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;workflow_version&quot;</span><span class="punctuation">:</span> <span class="string">&quot;triage-agent/1.8.2&quot;</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;business&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;tenant&quot;</span><span class="punctuation">:</span> <span class="string">&quot;tenant-a&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;environment&quot;</span><span class="punctuation">:</span> <span class="string">&quot;staging&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;idempotency_key&quot;</span><span class="punctuation">:</span> <span class="string">&quot;triage-run-882-step-4&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;commit_receipt&quot;</span><span class="punctuation">:</span> <span class="string">&quot;ISSUE-1842&quot;</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;redaction&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;profile&quot;</span><span class="punctuation">:</span> <span class="string">&quot;incident-evidence/v2&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;contains_raw_prompt&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">false</span></span></span><br><span class="line">  <span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="15-3-时间戳的工程取舍"><a href="#15-3-时间戳的工程取舍" class="headerlink" title="15.3 时间戳的工程取舍"></a>15.3 时间戳的工程取舍</h3><p>跨服务排序通常依赖墙上时钟，但墙上时钟可能漂移。</p>
+<p>单进程耗时最好同时记录单调时钟。</p>
+<p>因此建议：</p>
+<ul>
+<li><code>occurred_at</code> 用于跨系统对齐和人工阅读</li>
+<li><code>monotonic_ns</code> 用于单进程内可靠计算间隔</li>
+<li>通过 trace 父子关系修正“时间相近但顺序不明”的事件</li>
+<li>记录 NTP 状态或已知时钟偏差</li>
+</ul>
+<p>不要用日志采集时间代替业务发生时间。</p>
+<p>日志进入采集器的先后顺序不一定等于事件发生顺序。</p>
+<h3 id="15-4-保存摘要还是原文"><a href="#15-4-保存摘要还是原文" class="headerlink" title="15.4 保存摘要还是原文"></a>15.4 保存摘要还是原文</h3><p>事故复现需要内容，隐私治理又要求最小化留存。</p>
+<p>可采用分层证据：</p>
+<ul>
+<li>常规链路保存脱敏摘要、长度、哈希和对象引用</li>
+<li>受控证据库存储加密原文</li>
+<li>访问原文需要审计和最小权限</li>
+<li>到期自动删除原文，保留不可逆统计信息</li>
+<li>敏感字段在进入外部模型前完成脱敏</li>
+</ul>
+<p>“为了排障把所有 Prompt 永久记日志”不是合理方案。</p>
+<h2 id="十六、怎样找到首错：从不变量而不是错误级别开始"><a href="#十六、怎样找到首错：从不变量而不是错误级别开始" class="headerlink" title="十六、怎样找到首错：从不变量而不是错误级别开始"></a>十六、怎样找到首错：从不变量而不是错误级别开始</h2><h3 id="16-1-为每层定义可执行不变量"><a href="#16-1-为每层定义可执行不变量" class="headerlink" title="16.1 为每层定义可执行不变量"></a>16.1 为每层定义可执行不变量</h3><p>可以先从高价值不变量开始：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">invariants:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">id:</span> <span class="string">context.environment.required</span></span><br><span class="line">    <span class="attr">layer:</span> <span class="string">context</span></span><br><span class="line">    <span class="attr">when:</span> <span class="string">&quot;task.has_side_effect == true&quot;</span></span><br><span class="line">    <span class="attr">assert:</span> <span class="string">&quot;context.environment in [&#x27;staging&#x27;, &#x27;prod&#x27;]&quot;</span></span><br><span class="line">    <span class="attr">severity:</span> <span class="string">critical</span></span><br><span class="line"></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">id:</span> <span class="string">tool.idempotency.required</span></span><br><span class="line">    <span class="attr">layer:</span> <span class="string">tool</span></span><br><span class="line">    <span class="attr">when:</span> <span class="string">&quot;tool.side_effect == true&quot;</span></span><br><span class="line">    <span class="attr">assert:</span> <span class="string">&quot;tool.idempotency_key != null&quot;</span></span><br><span class="line">    <span class="attr">severity:</span> <span class="string">critical</span></span><br><span class="line"></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">id:</span> <span class="string">evaluator.commit_receipt.required</span></span><br><span class="line">    <span class="attr">layer:</span> <span class="string">evaluator</span></span><br><span class="line">    <span class="attr">when:</span> <span class="string">&quot;expected.action == &#x27;create_issue&#x27;&quot;</span></span><br><span class="line">    <span class="attr">assert:</span> <span class="string">&quot;evidence.commit_receipt != null&quot;</span></span><br><span class="line">    <span class="attr">severity:</span> <span class="string">high</span></span><br></pre></td></tr></table></figure>
+
+<p>这里的表达式只是示例 DSL。</p>
+<p>生产实现可以使用 JSON Schema、策略引擎或普通代码。</p>
+<p>关键不是工具，而是让“不应该发生什么”变得可执行。</p>
+<h3 id="16-2-首个-ERROR-不一定是首错"><a href="#16-2-首个-ERROR-不一定是首错" class="headerlink" title="16.2 首个 ERROR 不一定是首错"></a>16.2 首个 ERROR 不一定是首错</h3><p>考虑下面的链路：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">上下文层：环境字段被静默裁掉，无 ERROR</span><br><span class="line">模型层：补出默认环境，无 ERROR</span><br><span class="line">工具层：第一次调用成功，无 ERROR</span><br><span class="line">执行层：等待响应超时，记录 ERROR</span><br><span class="line">工具层：重试导致重复创建，第二次仍返回成功</span><br></pre></td></tr></table></figure>
+
+<p>第一个日志错误是执行层超时。</p>
+<p>第一个业务错误却是上下文层丢失必填字段。</p>
+<p>如果不验证不变量，归因会停在超时和网络层。</p>
+<h3 id="16-3-一个可执行的首错扫描器"><a href="#16-3-一个可执行的首错扫描器" class="headerlink" title="16.3 一个可执行的首错扫描器"></a>16.3 一个可执行的首错扫描器</h3><p>下面的 Python 示例只使用标准库。</p>
+<p>它不是完整规则引擎，但展示了三个必要动作：</p>
+<ul>
+<li>按业务序列排序事件</li>
+<li>对每层运行不变量</li>
+<li>输出第一个可证明的违反点</li>
+</ul>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> __future__ <span class="keyword">import</span> annotations</span><br><span class="line"></span><br><span class="line"><span class="keyword">from</span> dataclasses <span class="keyword">import</span> dataclass</span><br><span class="line"><span class="keyword">from</span> typing <span class="keyword">import</span> <span class="type">Any</span>, <span class="type">Callable</span>, <span class="type">Optional</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Event</span>:</span><br><span class="line">    seq: <span class="built_in">int</span></span><br><span class="line">    layer: <span class="built_in">str</span></span><br><span class="line">    event_type: <span class="built_in">str</span></span><br><span class="line">    data: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>]</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Violation</span>:</span><br><span class="line">    invariant_id: <span class="built_in">str</span></span><br><span class="line">    reason: <span class="built_in">str</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line">Invariant = <span class="type">Callable</span>[[Event], <span class="type">Optional</span>[Violation]]</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">require_environment</span>(<span class="params">event: Event</span>) -&gt; Violation | <span class="literal">None</span>:</span><br><span class="line">    <span class="keyword">if</span> event.event_type != <span class="string">&quot;context.built&quot;</span>:</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">None</span></span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> event.data.get(<span class="string">&quot;has_side_effect&quot;</span>):</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">None</span></span><br><span class="line">    <span class="keyword">if</span> event.data.get(<span class="string">&quot;environment&quot;</span>) <span class="keyword">not</span> <span class="keyword">in</span> &#123;<span class="string">&quot;staging&quot;</span>, <span class="string">&quot;prod&quot;</span>&#125;:</span><br><span class="line">        <span class="keyword">return</span> Violation(</span><br><span class="line">            <span class="string">&quot;context.environment.required&quot;</span>,</span><br><span class="line">            <span class="string">&quot;side-effect task lost its explicit environment&quot;</span>,</span><br><span class="line">        )</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">None</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">require_idempotency</span>(<span class="params">event: Event</span>) -&gt; Violation | <span class="literal">None</span>:</span><br><span class="line">    <span class="keyword">if</span> event.event_type != <span class="string">&quot;tool.accepted&quot;</span>:</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">None</span></span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> event.data.get(<span class="string">&quot;side_effect&quot;</span>):</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">None</span></span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> event.data.get(<span class="string">&quot;idempotency_key&quot;</span>):</span><br><span class="line">        <span class="keyword">return</span> Violation(</span><br><span class="line">            <span class="string">&quot;tool.idempotency.required&quot;</span>,</span><br><span class="line">            <span class="string">&quot;side-effect tool call has no idempotency key&quot;</span>,</span><br><span class="line">        )</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">None</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line">INVARIANTS: <span class="built_in">tuple</span>[Invariant, ...] = (</span><br><span class="line">    require_environment,</span><br><span class="line">    require_idempotency,</span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">find_first_violation</span>(<span class="params">events: <span class="built_in">list</span>[Event]</span>) -&gt; <span class="built_in">tuple</span>[Event, Violation] | <span class="literal">None</span>:</span><br><span class="line">    <span class="keyword">for</span> event <span class="keyword">in</span> <span class="built_in">sorted</span>(events, key=<span class="keyword">lambda</span> item: item.seq):</span><br><span class="line">        <span class="keyword">for</span> check <span class="keyword">in</span> INVARIANTS:</span><br><span class="line">            violation = check(event)</span><br><span class="line">            <span class="keyword">if</span> violation <span class="keyword">is</span> <span class="keyword">not</span> <span class="literal">None</span>:</span><br><span class="line">                <span class="keyword">return</span> event, violation</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">None</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&quot;__main__&quot;</span>:</span><br><span class="line">    trace = [</span><br><span class="line">        Event(<span class="number">10</span>, <span class="string">&quot;input&quot;</span>, <span class="string">&quot;input.validated&quot;</span>, &#123;<span class="string">&quot;environment&quot;</span>: <span class="string">&quot;staging&quot;</span>&#125;),</span><br><span class="line">        Event(</span><br><span class="line">            <span class="number">20</span>,</span><br><span class="line">            <span class="string">&quot;context&quot;</span>,</span><br><span class="line">            <span class="string">&quot;context.built&quot;</span>,</span><br><span class="line">            &#123;<span class="string">&quot;has_side_effect&quot;</span>: <span class="literal">True</span>, <span class="string">&quot;environment&quot;</span>: <span class="literal">None</span>&#125;,</span><br><span class="line">        ),</span><br><span class="line">        Event(</span><br><span class="line">            <span class="number">30</span>,</span><br><span class="line">            <span class="string">&quot;tool&quot;</span>,</span><br><span class="line">            <span class="string">&quot;tool.accepted&quot;</span>,</span><br><span class="line">            &#123;<span class="string">&quot;side_effect&quot;</span>: <span class="literal">True</span>, <span class="string">&quot;idempotency_key&quot;</span>: <span class="literal">None</span>&#125;,</span><br><span class="line">        ),</span><br><span class="line">    ]</span><br><span class="line"></span><br><span class="line">    result = find_first_violation(trace)</span><br><span class="line">    <span class="keyword">if</span> result <span class="keyword">is</span> <span class="literal">None</span>:</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">&quot;no proven violation&quot;</span>)</span><br><span class="line">    <span class="keyword">else</span>:</span><br><span class="line">        event, violation = result</span><br><span class="line">        <span class="built_in">print</span>(</span><br><span class="line">            <span class="string">f&quot;first violation at seq=<span class="subst">&#123;event.seq&#125;</span>, &quot;</span></span><br><span class="line">            <span class="string">f&quot;layer=<span class="subst">&#123;event.layer&#125;</span>, invariant=<span class="subst">&#123;violation.invariant_id&#125;</span>: &quot;</span></span><br><span class="line">            <span class="string">f&quot;<span class="subst">&#123;violation.reason&#125;</span>&quot;</span></span><br><span class="line">        )</span><br></pre></td></tr></table></figure>
+
+<p>预期输出为：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">first violation at seq=20, layer=context, invariant=context.environment.required: side-effect task lost its explicit environment</span><br></pre></td></tr></table></figure>
+
+<p>这个结果并没有自动证明上下文裁剪器就是最终根因。</p>
+<p>它只是把调查起点从“哪里报错”推进到“哪里最先违约”。</p>
+<h2 id="十七、归因树：从首错到根因还差哪些证据"><a href="#十七、归因树：从首错到根因还差哪些证据" class="headerlink" title="十七、归因树：从首错到根因还差哪些证据"></a>十七、归因树：从首错到根因还差哪些证据</h2><p><img src="/images/ai-quality/ai-14-attribution-tree.svg" alt="AI 故障归因树与证据闭环"></p>
+<p>归因树不应该是一棵写满猜测的脑图。</p>
+<p>每个节点至少要有：</p>
+<ul>
+<li>假设</li>
+<li>支持证据</li>
+<li>反对证据</li>
+<li>验证动作</li>
+<li>负责人</li>
+<li>当前置信度</li>
+</ul>
+<h3 id="17-1-从影响向上回溯"><a href="#17-1-从影响向上回溯" class="headerlink" title="17.1 从影响向上回溯"></a>17.1 从影响向上回溯</h3><p>推荐顺序是：</p>
+<ol>
+<li>定义用户影响。</li>
+<li>恢复错误传播链。</li>
+<li>找到首错事件。</li>
+<li>列出触发条件。</li>
+<li>提出根因候选。</li>
+<li>识别放大因素和逃逸控制。</li>
+<li>用干预和回放收口。</li>
+</ol>
+<p>不要一上来就问“是谁的服务有问题”。</p>
+<p>先问“哪一个不变量最先失效”。</p>
+<h3 id="17-2-用-AND-和-OR-表达组合条件"><a href="#17-2-用-AND-和-OR-表达组合条件" class="headerlink" title="17.2 用 AND 和 OR 表达组合条件"></a>17.2 用 AND 和 OR 表达组合条件</h3><p>有些失败由任一条件触发，可以使用 OR：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">错误检索</span><br><span class="line">  OR 查询改写丢限定词</span><br><span class="line">  OR 权限过滤错误</span><br><span class="line">  OR 索引版本陈旧</span><br></pre></td></tr></table></figure>
+
+<p>有些影响需要多个条件同时成立，可以使用 AND：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">重复创建缺陷</span><br><span class="line">  AND 第一次调用已提交但响应超时</span><br><span class="line">  AND 工作流自动重试</span><br><span class="line">  AND 工具没有幂等去重</span><br></pre></td></tr></table></figure>
+
+<p>AND 节点尤其重要。</p>
+<p>它提醒团队：修掉其中任何一个必要条件，都可能显著降低事故概率。</p>
+<h3 id="17-3-置信度不是拍脑袋百分比"><a href="#17-3-置信度不是拍脑袋百分比" class="headerlink" title="17.3 置信度不是拍脑袋百分比"></a>17.3 置信度不是拍脑袋百分比</h3><p>可以使用离散等级：</p>
+<ul>
+<li><code>confirmed</code>：干预、回放和跨样本验证均支持</li>
+<li><code>probable</code>：有强时间与对照证据，但无法完整干预</li>
+<li><code>possible</code>：与现象一致，证据不足</li>
+<li><code>rejected</code>：实验或事实已推翻</li>
+</ul>
+<p>如果确实需要排序，可定义一个内部启发式分数：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">S = 0.35R + 0.30I + 0.20T + 0.15G</span><br></pre></td></tr></table></figure>
+
+<p>其中：</p>
+<ul>
+<li><code>R</code>：复现证据</li>
+<li><code>I</code>：干预证据</li>
+<li><code>T</code>：时间与传播一致性</li>
+<li><code>G</code>：跨样本泛化证据</li>
+</ul>
+<p>每项取 <code>0</code> 到 <code>1</code>。</p>
+<p>这不是通用统计置信度，也不能伪装成概率。</p>
+<p>它只是帮助团队按统一规则排序待验证假设。</p>
+<h2 id="十八、示例案例：一次重复建单如何被错误归因成“网络抖动”"><a href="#十八、示例案例：一次重复建单如何被错误归因成“网络抖动”" class="headerlink" title="十八、示例案例：一次重复建单如何被错误归因成“网络抖动”"></a>十八、示例案例：一次重复建单如何被错误归因成“网络抖动”</h2><blockquote>
+<p>以下为教学用示例案例，用于展示归因方法，不代表任何真实项目经历或生产事故。</p>
+</blockquote>
+<h3 id="18-1-场景"><a href="#18-1-场景" class="headerlink" title="18.1 场景"></a>18.1 场景</h3><p>一个测试 Agent 接收失败用例信息，查询知识库，判断是否已有同类缺陷，并在测试环境创建新缺陷。</p>
+<p>某次运行创建了两条内容相同的缺陷。</p>
+<p>表面现象是：</p>
+<ul>
+<li>第一次工具调用在 5 秒后超时</li>
+<li>工作流重试</li>
+<li>第二次调用成功</li>
+<li>最终报告显示“缺陷创建成功”</li>
+</ul>
+<p>团队最初把问题归为“网络抖动导致重试”。</p>
+<h3 id="18-2-还原事件时间线"><a href="#18-2-还原事件时间线" class="headerlink" title="18.2 还原事件时间线"></a>18.2 还原事件时间线</h3><table>
+<thead>
+<tr>
+<th>序号</th>
+<th>层级</th>
+<th>事件</th>
+<th>是否违反不变量</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>10</td>
+<td>输入</td>
+<td>请求明确 <code>environment=staging</code></td>
+<td>否</td>
+</tr>
+<tr>
+<td>20</td>
+<td>上下文</td>
+<td>长会话裁剪掉环境字段</td>
+<td>是，首错</td>
+</tr>
+<tr>
+<td>30</td>
+<td>检索</td>
+<td>使用默认环境查询历史缺陷</td>
+<td>是，传播</td>
+</tr>
+<tr>
+<td>40</td>
+<td>模型</td>
+<td>生成建单计划，未发现环境缺失</td>
+<td>是，逃逸</td>
+</tr>
+<tr>
+<td>50</td>
+<td>策略</td>
+<td>默认低风险，允许自动建单</td>
+<td>是，放大</td>
+</tr>
+<tr>
+<td>60</td>
+<td>工具</td>
+<td>未携带幂等键，首次提交成功</td>
+<td>是，控制缺失</td>
+</tr>
+<tr>
+<td>70</td>
+<td>基础设施</td>
+<td>响应链路超时</td>
+<td>触发重试</td>
+</tr>
+<tr>
+<td>80</td>
+<td>执行</td>
+<td>把“结果未知”解释为“未执行”</td>
+<td>是，近因</td>
+</tr>
+<tr>
+<td>90</td>
+<td>工具</td>
+<td>第二次提交创建重复缺陷</td>
+<td>用户影响</td>
+</tr>
+<tr>
+<td>100</td>
+<td>评测器</td>
+<td>只检查成功文本，未查真实建单数</td>
+<td>逃逸控制</td>
+</tr>
+</tbody></table>
+<h3 id="18-3-归因结果"><a href="#18-3-归因结果" class="headerlink" title="18.3 归因结果"></a>18.3 归因结果</h3><p><strong>症状：</strong> 同一任务创建两条重复缺陷。</p>
+<p><strong>触发条件：</strong> 长会话触发裁剪；首次提交后的响应超时。</p>
+<p><strong>首错：</strong> 上下文构建器删除了不可裁剪的环境字段。</p>
+<p><strong>近因：</strong> 执行器把结果未知当作未执行，并重试非幂等动作。</p>
+<p><strong>系统性根因候选：</strong></p>
+<ul>
+<li>上下文分区没有声明强制保留字段</li>
+<li>工具契约没有要求幂等键</li>
+<li>执行状态模型缺少 <code>commit_unknown</code></li>
+</ul>
+<p><strong>放大因素：</strong></p>
+<ul>
+<li>策略层允许危险默认环境</li>
+<li>自动重试没有副作用感知</li>
+</ul>
+<p><strong>逃逸控制：</strong></p>
+<ul>
+<li>评测器没有核对外部系统提交凭证和建单数量</li>
+<li>端到端回归未覆盖“已提交但响应丢失”</li>
+</ul>
+<h3 id="18-4-怎样验证而不是争论"><a href="#18-4-怎样验证而不是争论" class="headerlink" title="18.4 怎样验证而不是争论"></a>18.4 怎样验证而不是争论</h3><p>实验一：固定原始请求和模型，关闭上下文裁剪。</p>
+<p>结果：环境字段保留，但超时场景仍可能重复建单。</p>
+<p>结论：上下文问题是首错之一，却不能单独解释重复提交。</p>
+<p>实验二：保持超时和重试，增加稳定幂等键。</p>
+<p>结果：第二次调用返回第一次提交凭证，不再创建新单。</p>
+<p>结论：幂等缺失是重复副作用的必要条件之一。</p>
+<p>实验三：引入 <code>commit_unknown</code> 状态并先查询提交结果。</p>
+<p>结果：超时后通过幂等键查到首次提交，工作流结束。</p>
+<p>结论：状态模型修复可以阻断失败传播。</p>
+<p>实验四：评测器改为检查外部建单数量。</p>
+<p>结果：旧版本系统的重复提交被稳定识别。</p>
+<p>结论：评测逃逸控制得到修复，但它不是产生重复建单的根因。</p>
+<p>这个示例说明：</p>
+<p><strong>网络超时是真实事件，却只是触发条件；把它写成唯一根因，会错过三个可控的系统设计缺陷。</strong></p>
+<h2 id="十九、测试设计：怎样让九层故障在上线前暴露"><a href="#十九、测试设计：怎样让九层故障在上线前暴露" class="headerlink" title="十九、测试设计：怎样让九层故障在上线前暴露"></a>十九、测试设计：怎样让九层故障在上线前暴露</h2><p>故障分类的最终价值，不是写出更漂亮的复盘，而是反向生成测试。</p>
+<h3 id="19-1-输入层测试"><a href="#19-1-输入层测试" class="headerlink" title="19.1 输入层测试"></a>19.1 输入层测试</h3><ul>
+<li>Schema 变异测试</li>
+<li>字段缺失和危险默认值测试</li>
+<li>超长文本与附件解析测试</li>
+<li>多语言、时区和单位测试</li>
+<li>线上分布漂移样本回放</li>
+</ul>
+<h3 id="19-2-上下文层测试"><a href="#19-2-上下文层测试" class="headerlink" title="19.2 上下文层测试"></a>19.2 上下文层测试</h3><ul>
+<li>Token 窗口边界测试</li>
+<li>必填约束不可裁剪测试</li>
+<li>消息顺序变形测试</li>
+<li>记忆污染和租户隔离测试</li>
+<li>Prompt 与工具 Schema 兼容测试</li>
+</ul>
+<h3 id="19-3-检索层测试"><a href="#19-3-检索层测试" class="headerlink" title="19.3 检索层测试"></a>19.3 检索层测试</h3><ul>
+<li>Recall@K 和关键证据命中测试</li>
+<li>权限过滤前置测试</li>
+<li>新旧文档冲突测试</li>
+<li>索引增量切换测试</li>
+<li>引用到原文版本的可追溯测试</li>
+</ul>
+<h3 id="19-4-模型层测试"><a href="#19-4-模型层测试" class="headerlink" title="19.4 模型层测试"></a>19.4 模型层测试</h3><ul>
+<li>重复运行与方差测试</li>
+<li>无答案时拒答测试</li>
+<li>结构化输出契约测试</li>
+<li>模型和提示词版本回归</li>
+<li>原子事实与引用一致性测试</li>
+</ul>
+<h3 id="19-5-工具层测试"><a href="#19-5-工具层测试" class="headerlink" title="19.5 工具层测试"></a>19.5 工具层测试</h3><ul>
+<li>参数结构和业务规则双重校验</li>
+<li>已提交但响应丢失</li>
+<li>幂等键冲突和重放</li>
+<li>权限最小化与越权尝试</li>
+<li>不可信工具输出注入</li>
+</ul>
+<h3 id="19-6-执行层测试"><a href="#19-6-执行层测试" class="headerlink" title="19.6 执行层测试"></a>19.6 执行层测试</h3><ul>
+<li>每一步前后故障注入</li>
+<li>状态机非法转移</li>
+<li>检查点恢复与版本升级</li>
+<li>取消传播</li>
+<li>补偿失败和部分成功</li>
+</ul>
+<h3 id="19-7-策略层测试"><a href="#19-7-策略层测试" class="headerlink" title="19.7 策略层测试"></a>19.7 策略层测试</h3><ul>
+<li>阈值边界</li>
+<li>规则冲突</li>
+<li>策略服务不可用</li>
+<li>审批绑定和过期</li>
+<li>默认拒绝与只读降级</li>
+</ul>
+<h3 id="19-8-基础设施层测试"><a href="#19-8-基础设施层测试" class="headerlink" title="19.8 基础设施层测试"></a>19.8 基础设施层测试</h3><ul>
+<li>延迟、断连、限流和配额</li>
+<li>缓存陈旧和键碰撞</li>
+<li>队列重复与乱序</li>
+<li>依赖部分返回</li>
+<li>可观测性丢包和采样</li>
+</ul>
+<h3 id="19-9-评测器层测试"><a href="#19-9-评测器层测试" class="headerlink" title="19.9 评测器层测试"></a>19.9 评测器层测试</h3><ul>
+<li>人工校准集</li>
+<li>量表边界样本</li>
+<li>顺序、长度和措辞偏差</li>
+<li>解析失败默认行为</li>
+<li>多裁判和人工复核一致性</li>
+</ul>
+<h2 id="二十、建立一张故障注入矩阵"><a href="#二十、建立一张故障注入矩阵" class="headerlink" title="二十、建立一张故障注入矩阵"></a>二十、建立一张故障注入矩阵</h2><p>仅按组件写测试，容易漏掉传播路径。</p>
+<p>更合适的是把注入点、期望控制和外部影响放在一张矩阵里。</p>
+<table>
+<thead>
+<tr>
+<th>注入点</th>
+<th>注入故障</th>
+<th>期望系统行为</th>
+<th>禁止行为</th>
+<th>证据</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>上下文</td>
+<td>删除环境字段</td>
+<td>契约校验失败并停止</td>
+<td>模型猜环境</td>
+<td>校验事件</td>
+</tr>
+<tr>
+<td>检索</td>
+<td>返回旧制度</td>
+<td>新鲜度规则剔除</td>
+<td>引用过期内容</td>
+<td>文档版本</td>
+</tr>
+<tr>
+<td>模型</td>
+<td>输出非法 JSON</td>
+<td>修复一次或明确失败</td>
+<td>直接传给工具</td>
+<td>原始输出</td>
+</tr>
+<tr>
+<td>工具</td>
+<td>已提交后超时</td>
+<td>查询提交状态</td>
+<td>盲目重试</td>
+<td>幂等键与回执</td>
+</tr>
+<tr>
+<td>执行</td>
+<td>进程重启</td>
+<td>从安全检查点恢复</td>
+<td>重放不可逆动作</td>
+<td>状态日志</td>
+</tr>
+<tr>
+<td>策略</td>
+<td>决策服务不可用</td>
+<td>默认拒绝高风险动作</td>
+<td>默认放行</td>
+<td>降级原因</td>
+</tr>
+<tr>
+<td>基础设施</td>
+<td>队列重复投递</td>
+<td>消费幂等</td>
+<td>重复副作用</td>
+<td>消息 ID</td>
+</tr>
+<tr>
+<td>评测器</td>
+<td>裁判解析失败</td>
+<td>标记未知并复核</td>
+<td>默认通过</td>
+<td>解析错误</td>
+</tr>
+</tbody></table>
+<p>矩阵中的“禁止行为”非常重要。</p>
+<p>它把安全与稳定性要求转成了可执行负面断言。</p>
+<h2 id="二十一、指标：不要只统计“模型错误率”"><a href="#二十一、指标：不要只统计“模型错误率”" class="headerlink" title="二十一、指标：不要只统计“模型错误率”"></a>二十一、指标：不要只统计“模型错误率”</h2><h3 id="21-1-分层失败率"><a href="#21-1-分层失败率" class="headerlink" title="21.1 分层失败率"></a>21.1 分层失败率</h3><p>对第 <code>l</code> 层，可以定义：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">FailureRate_l = \frac&#123;N_&#123;traces\ with\ first\ violation\ at\ l&#125;&#125;&#123;N_&#123;eligible\ traces&#125;&#125;</span><br></pre></td></tr></table></figure>
+
+<p>分母必须是会经过该层或满足该场景条件的 trace。</p>
+<p>否则不同层的比例不可比较。</p>
+<h3 id="21-2-逃逸率"><a href="#21-2-逃逸率" class="headerlink" title="21.2 逃逸率"></a>21.2 逃逸率</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">EscapeRate = \frac&#123;N_&#123;user\ visible\ failures&#125;&#125;&#123;N_&#123;all\ detected\ failures&#125;&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这里的分子和分母必须来自同一个观察窗口，且分母定义为该窗口内全部经确认故障：发布前捕获的故障加发布后逃逸到用户侧的故障。这样分子才是分母的子集；不能把“内部监控已经检测到的故障数”单独当作分母。</p>
+<p>实际落地时还应按严重级别和场景切片。</p>
+<p>低风险格式错误与高风险越权动作不能简单相加。</p>
+<h3 id="21-3-放大系数"><a href="#21-3-放大系数" class="headerlink" title="21.3 放大系数"></a>21.3 放大系数</h3><p>对重复副作用类事故，可用：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Amplification = \frac&#123;N_&#123;affected\ objects&#125;&#125;&#123;N_&#123;initial\ bad\ decisions&#125;&#125;</span><br></pre></td></tr></table></figure>
+
+<p>它可以衡量重试、广播、缓存和批处理怎样扩大一次错误。</p>
+<h3 id="21-4-平均发现时间和平均缓解时间"><a href="#21-4-平均发现时间和平均缓解时间" class="headerlink" title="21.4 平均发现时间和平均缓解时间"></a>21.4 平均发现时间和平均缓解时间</h3><ul>
+<li><code>MTTD</code>：首错发生到系统或人工发现</li>
+<li><code>MTTM</code>：发现到用户影响被控制</li>
+<li><code>MTTR</code>：发现到服务和数据恢复</li>
+</ul>
+<p>AI 应用还应增加：</p>
+<ul>
+<li>首错到错误动作提交的时间</li>
+<li>错误动作到评测器判定的时间</li>
+<li>评测器低置信度到人工复核的时间</li>
+</ul>
+<h3 id="21-5-归因覆盖率"><a href="#21-5-归因覆盖率" class="headerlink" title="21.5 归因覆盖率"></a>21.5 归因覆盖率</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">AttributionCoverage = \frac&#123;N_&#123;incidents\ with\ verified\ first\ error&#125;&#125;&#123;N_&#123;incidents\ requiring\ analysis&#125;&#125;</span><br></pre></td></tr></table></figure>
+
+<p>还可以分别统计：</p>
+<ul>
+<li>有完整有效输入的事故比例</li>
+<li>有检索候选清单的事故比例</li>
+<li>有工具提交凭证的事故比例</li>
+<li>有评测器版本的事故比例</li>
+</ul>
+<p>这些指标反映的不是模型质量，而是系统是否具备可诊断性。</p>
+<h2 id="二十二、从日志走向-Trace：最小可观测性要求"><a href="#二十二、从日志走向-Trace：最小可观测性要求" class="headerlink" title="二十二、从日志走向 Trace：最小可观测性要求"></a>二十二、从日志走向 Trace：最小可观测性要求</h2><p>分散日志很难表达跨层因果关系。</p>
+<p>建议把一次用户请求或批量任务定义为根 Trace，并为以下动作建立 Span：</p>
+<ul>
+<li>输入解析</li>
+<li>上下文构建</li>
+<li>每次检索与重排</li>
+<li>每次模型调用</li>
+<li>每次策略决策</li>
+<li>每次工具调用</li>
+<li>每次状态转移</li>
+<li>每次评测</li>
+</ul>
+<p>每个 Span 至少记录：</p>
+<ul>
+<li>组件和操作名</li>
+<li>开始、结束和状态</li>
+<li>父子关系</li>
+<li>模型、Prompt、索引、工具、策略版本</li>
+<li>输入输出摘要或受控引用</li>
+<li>Token、候选数、重试次数等关键指标</li>
+<li>错误类型，而不只是错误字符串</li>
+</ul>
+<p>OpenTelemetry 已经提供通用 Trace 模型，并持续演进生成式 AI 语义约定。</p>
+<p>生产系统可以参考其命名，但应给自定义字段做版本管理，避免直接依赖仍可能变化的约定。</p>
+<h2 id="二十三、事故归因模板"><a href="#二十三、事故归因模板" class="headerlink" title="二十三、事故归因模板"></a>二十三、事故归因模板</h2><p>下面的 YAML 可以作为复盘文档或平台事件对象的起点：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">incident:</span></span><br><span class="line">  <span class="attr">id:</span> <span class="string">ai-inc-2026-0031</span></span><br><span class="line">  <span class="attr">title:</span> <span class="string">duplicate</span> <span class="string">issue</span> <span class="string">created</span> <span class="string">by</span> <span class="string">triage</span> <span class="string">agent</span></span><br><span class="line">  <span class="attr">severity:</span> <span class="string">S2</span></span><br><span class="line">  <span class="attr">started_at:</span> <span class="number">2026-03-16T10:02:11+08:00</span></span><br><span class="line">  <span class="attr">detected_at:</span> <span class="number">2026-03-16T10:12:40+08:00</span></span><br><span class="line">  <span class="attr">mitigated_at:</span> <span class="number">2026-03-16T10:28:09+08:00</span></span><br><span class="line"></span><br><span class="line"><span class="attr">impact:</span></span><br><span class="line">  <span class="attr">user_visible:</span> <span class="literal">true</span></span><br><span class="line">  <span class="attr">affected_traces:</span> <span class="number">7</span></span><br><span class="line">  <span class="attr">affected_objects:</span> <span class="number">12</span></span><br><span class="line">  <span class="attr">irreversible_actions:</span> <span class="number">0</span></span><br><span class="line"></span><br><span class="line"><span class="attr">classification:</span></span><br><span class="line">  <span class="attr">symptom:</span> <span class="string">duplicate_external_side_effect</span></span><br><span class="line">  <span class="attr">first_error:</span></span><br><span class="line">    <span class="attr">layer:</span> <span class="string">context</span></span><br><span class="line">    <span class="attr">event_id:</span> <span class="string">evt_00020</span></span><br><span class="line">    <span class="attr">invariant:</span> <span class="string">context.environment.required</span></span><br><span class="line">  <span class="attr">trigger_conditions:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">conversation_exceeded_trim_threshold</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">tool_response_timed_out_after_commit</span></span><br><span class="line">  <span class="attr">proximate_causes:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">commit_unknown_was_treated_as_not_executed</span></span><br><span class="line">  <span class="attr">root_cause_hypotheses:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">id:</span> <span class="string">H1</span></span><br><span class="line">      <span class="attr">statement:</span> <span class="string">pinned</span> <span class="string">context</span> <span class="string">fields</span> <span class="string">were</span> <span class="string">not</span> <span class="string">enforced</span></span><br><span class="line">      <span class="attr">status:</span> <span class="string">confirmed</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">id:</span> <span class="string">H2</span></span><br><span class="line">      <span class="attr">statement:</span> <span class="string">side-effect</span> <span class="string">tool</span> <span class="string">contract</span> <span class="string">lacked</span> <span class="string">idempotency</span></span><br><span class="line">      <span class="attr">status:</span> <span class="string">confirmed</span></span><br><span class="line">  <span class="attr">amplifiers:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">automatic_retry_without_side_effect_awareness</span></span><br><span class="line">  <span class="attr">escaped_controls:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">evaluator_did_not_verify_external_object_count</span></span><br><span class="line"></span><br><span class="line"><span class="attr">evidence:</span></span><br><span class="line">  <span class="attr">trace_ids:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">tr_01JAV8Q5R9D7K2</span></span><br><span class="line">  <span class="attr">replay_bundle:</span> <span class="string">sha256:2d91...</span></span><br><span class="line">  <span class="attr">policy_version:</span> <span class="string">tool-policy-2026-03-4</span></span><br><span class="line">  <span class="attr">workflow_version:</span> <span class="string">triage-agent/1.8.2</span></span><br><span class="line"></span><br><span class="line"><span class="attr">actions:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">owner:</span> <span class="string">context-platform</span></span><br><span class="line">    <span class="attr">change:</span> <span class="string">enforce</span> <span class="string">pinned</span> <span class="string">constraints</span> <span class="string">after</span> <span class="string">trimming</span></span><br><span class="line">    <span class="attr">verification:</span> <span class="string">context-boundary-regression</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">owner:</span> <span class="string">tool-platform</span></span><br><span class="line">    <span class="attr">change:</span> <span class="string">require</span> <span class="string">idempotency</span> <span class="string">key</span> <span class="string">for</span> <span class="string">side</span> <span class="string">effects</span></span><br><span class="line">    <span class="attr">verification:</span> <span class="string">commit-timeout-chaos-test</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">owner:</span> <span class="string">quality-platform</span></span><br><span class="line">    <span class="attr">change:</span> <span class="string">verify</span> <span class="string">commit</span> <span class="string">receipts</span> <span class="string">and</span> <span class="string">external</span> <span class="string">object</span> <span class="string">count</span></span><br><span class="line">    <span class="attr">verification:</span> <span class="string">evaluator-calibration-suite</span></span><br></pre></td></tr></table></figure>
+
+<p>模板字段不应为了“填满”而填。</p>
+<p>无法确认的根因必须保留为候选，并写清缺失证据。</p>
+<h2 id="二十四、常见误区"><a href="#二十四、常见误区" class="headerlink" title="二十四、常见误区"></a>二十四、常见误区</h2><h3 id="24-1-把“模型幻觉”当作万能分类"><a href="#24-1-把“模型幻觉”当作万能分类" class="headerlink" title="24.1 把“模型幻觉”当作万能分类"></a>24.1 把“模型幻觉”当作万能分类</h3><p>模型生成了错误事实，不代表错误始于模型。</p>
+<p>先检查有效上下文、检索证据和后处理链路。</p>
+<h3 id="24-2-把最后一个报错组件当根因"><a href="#24-2-把最后一个报错组件当根因" class="headerlink" title="24.2 把最后一个报错组件当根因"></a>24.2 把最后一个报错组件当根因</h3><p>下游组件往往只是第一个显式拒绝错误数据的地方。</p>
+<p>严格校验器报错，反而可能说明它正确阻断了上游缺陷。</p>
+<h3 id="24-3-用时间相关性代替因果证据"><a href="#24-3-用时间相关性代替因果证据" class="headerlink" title="24.3 用时间相关性代替因果证据"></a>24.3 用时间相关性代替因果证据</h3><p>模型升级后事故增加值得怀疑，但还需要控制流量、样本、Prompt、索引和策略变化。</p>
+<p>同时发生不等于由它造成。</p>
+<h3 id="24-4-强求每起事故只有一个根因"><a href="#24-4-强求每起事故只有一个根因" class="headerlink" title="24.4 强求每起事故只有一个根因"></a>24.4 强求每起事故只有一个根因</h3><p>Agent 副作用事故经常需要多个必要条件共同成立。</p>
+<p>保留 AND 因果结构比选一个“主责模块”更有工程价值。</p>
+<h3 id="24-5-只保存最终-Prompt"><a href="#24-5-只保存最终-Prompt" class="headerlink" title="24.5 只保存最终 Prompt"></a>24.5 只保存最终 Prompt</h3><p>最终 Prompt 可能已经丢失查询改写、检索候选、过滤原因和记忆写入过程。</p>
+<p>它不能替代完整链路证据。</p>
+<h3 id="24-6-复现一次就宣布根因成立"><a href="#24-6-复现一次就宣布根因成立" class="headerlink" title="24.6 复现一次就宣布根因成立"></a>24.6 复现一次就宣布根因成立</h3><p>复现只能说明候选机制与失败相容。</p>
+<p>还应做单变量替换、修复后回放和跨样本验证。</p>
+<h3 id="24-7-把评测器当绝对真值"><a href="#24-7-把评测器当绝对真值" class="headerlink" title="24.7 把评测器当绝对真值"></a>24.7 把评测器当绝对真值</h3><p>评测器必须有校准集、版本和人工复核。</p>
+<p>否则“线上失败率下降”可能只是漏报率上升。</p>
+<h3 id="24-8-为了可观测性永久保存全部敏感内容"><a href="#24-8-为了可观测性永久保存全部敏感内容" class="headerlink" title="24.8 为了可观测性永久保存全部敏感内容"></a>24.8 为了可观测性永久保存全部敏感内容</h3><p>可诊断性不能凌驾于隐私、合规和最小化原则。</p>
+<p>应使用分级留存、脱敏、加密引用和访问审计。</p>
+<h3 id="24-9-行动项只写“加强监控”"><a href="#24-9-行动项只写“加强监控”" class="headerlink" title="24.9 行动项只写“加强监控”"></a>24.9 行动项只写“加强监控”</h3><p>行动项必须对应具体失败机制，并有可执行验证。</p>
+<p>例如：</p>
+<ul>
+<li>错误写法：加强工具调用监控</li>
+<li>可验证写法：所有副作用工具强制幂等键，并在提交后超时测试中证明不会重复创建</li>
+</ul>
+<h2 id="二十五、落地检查表"><a href="#二十五、落地检查表" class="headerlink" title="二十五、落地检查表"></a>二十五、落地检查表</h2><h3 id="25-1-分类准备"><a href="#25-1-分类准备" class="headerlink" title="25.1 分类准备"></a>25.1 分类准备</h3><ul>
+<li><input disabled="" type="checkbox"> 是否明确九层组件边界和负责人</li>
+<li><input disabled="" type="checkbox"> 是否为高风险链路定义核心不变量</li>
+<li><input disabled="" type="checkbox"> 是否区分症状、首错、近因、根因和放大因素</li>
+<li><input disabled="" type="checkbox"> 是否允许一个事故保留多个根因候选</li>
+<li><input disabled="" type="checkbox"> 是否定义统一错误类型，而不是只记录自由文本</li>
+</ul>
+<h3 id="25-2-证据采集"><a href="#25-2-证据采集" class="headerlink" title="25.2 证据采集"></a>25.2 证据采集</h3><ul>
+<li><input disabled="" type="checkbox"> 是否能从一个 Trace 看到完整有效输入</li>
+<li><input disabled="" type="checkbox"> 是否记录上下文裁剪和摘要过程</li>
+<li><input disabled="" type="checkbox"> 是否记录检索候选、过滤、重排和文档版本</li>
+<li><input disabled="" type="checkbox"> 是否记录模型、Prompt 和生成参数版本</li>
+<li><input disabled="" type="checkbox"> 是否区分工具计划、允许和提交状态</li>
+<li><input disabled="" type="checkbox"> 是否记录工作流状态转移与外部副作用</li>
+<li><input disabled="" type="checkbox"> 是否记录策略命中规则和决策版本</li>
+<li><input disabled="" type="checkbox"> 是否记录评测器、量表和评分明细</li>
+<li><input disabled="" type="checkbox"> 是否对敏感证据实施脱敏、加密和审计</li>
+</ul>
+<h3 id="25-3-调查过程"><a href="#25-3-调查过程" class="headerlink" title="25.3 调查过程"></a>25.3 调查过程</h3><ul>
+<li><input disabled="" type="checkbox"> 是否先定义用户影响，再讨论组件责任</li>
+<li><input disabled="" type="checkbox"> 是否按业务序列恢复事件时间线</li>
+<li><input disabled="" type="checkbox"> 是否找到第一个可证明的不变量违反点</li>
+<li><input disabled="" type="checkbox"> 是否列出支持与反对证据</li>
+<li><input disabled="" type="checkbox"> 是否通过单变量替换验证关键候选</li>
+<li><input disabled="" type="checkbox"> 是否区分触发条件和可修复根因</li>
+<li><input disabled="" type="checkbox"> 是否识别错误为什么没有被控制点拦截</li>
+<li><input disabled="" type="checkbox"> 是否评估修复后的残余风险</li>
+</ul>
+<h3 id="25-4-测试与预防"><a href="#25-4-测试与预防" class="headerlink" title="25.4 测试与预防"></a>25.4 测试与预防</h3><ul>
+<li><input disabled="" type="checkbox"> 是否把事故路径沉淀为回归样本</li>
+<li><input disabled="" type="checkbox"> 是否覆盖已提交但响应丢失等不确定状态</li>
+<li><input disabled="" type="checkbox"> 是否为副作用工具验证幂等和补偿</li>
+<li><input disabled="" type="checkbox"> 是否对策略边界、冲突和降级做测试</li>
+<li><input disabled="" type="checkbox"> 是否对评测器做独立校准</li>
+<li><input disabled="" type="checkbox"> 是否在模型、Prompt、索引、策略升级时回放</li>
+<li><input disabled="" type="checkbox"> 是否对高风险链路定期故障注入</li>
+<li><input disabled="" type="checkbox"> 是否验证行动项真的阻断原失败机制</li>
+</ul>
+<h2 id="二十六、总结"><a href="#二十六、总结" class="headerlink" title="二十六、总结"></a>二十六、总结</h2><p>AI 应用故障归因最重要的转变，是从“哪个模型答错了”转向“哪一个系统不变量最先失效”。</p>
+<p>一套可落地的方法至少包括：</p>
+<ol>
+<li>用输入、上下文、检索、模型、工具、执行、策略、基础设施和评测器九层分类建立共同语言。</li>
+<li>用统一 Trace 和事件结构恢复有效输入、版本、状态转移与外部副作用。</li>
+<li>用不变量定位首错，而不是把第一个 <code>ERROR</code> 当作根因。</li>
+<li>把触发条件、近因、系统性根因、放大因素和逃逸控制分开记录。</li>
+<li>用复现、对照、单变量干预、修复后回放和跨样本验证提升归因置信度。</li>
+<li>把每次事故路径转成分层回归和故障注入用例。</li>
+</ol>
+<p>最终目标不是给事故贴一个更精确的标签。</p>
+<p>最终目标是让团队能够证明：</p>
+<p><strong>错误从哪里开始、怎样传播、为什么没有被拦住，以及修复后为什么不会以同样机制再次发生。</strong></p>
+<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><ol>
+<li><a target="_blank" rel="noopener" href="https://doi.org/10.6028/NIST.AI.600-1">NIST AI 600-1: Artificial Intelligence Risk Management Framework - Generative Artificial Intelligence Profile</a></li>
+<li><a target="_blank" rel="noopener" href="https://airc.nist.gov/airmf-resources/airmf/5-sec-core/">NIST AI Risk Management Framework Core</a></li>
+<li><a target="_blank" rel="noopener" href="https://airc.nist.gov/airmf-resources/playbook/">NIST AI RMF Playbook</a></li>
+<li><a target="_blank" rel="noopener" href="https://sre.google/sre-book/postmortem-culture/">Google SRE Book: Postmortem Culture - Learning from Failure</a></li>
+<li><a target="_blank" rel="noopener" href="https://sre.google/workbook/postmortem-culture/">Google SRE Workbook: Postmortem Practices</a></li>
+<li><a target="_blank" rel="noopener" href="https://sre.google/sre-book/effective-troubleshooting/">Google SRE Book: Effective Troubleshooting</a></li>
+<li><a target="_blank" rel="noopener" href="https://opentelemetry.io/docs/specs/otel/trace/">OpenTelemetry Trace Specification</a></li>
+<li><a target="_blank" rel="noopener" href="https://opentelemetry.io/docs/specs/semconv/">OpenTelemetry Semantic Conventions</a></li>
+<li><a target="_blank" rel="noopener" href="https://www.w3.org/TR/trace-context/">W3C Trace Context Recommendation</a></li>
+<li><a target="_blank" rel="noopener" href="https://owasp.org/www-project-top-10-for-large-language-model-applications/">OWASP GenAI Security Project: Top 10 for LLM Applications</a></li>
+<li><a target="_blank" rel="noopener" href="https://arxiv.org/abs/2005.11401">Lewis et al., Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks</a></li>
+<li><a target="_blank" rel="noopener" href="https://arxiv.org/abs/2210.03629">Yao et al., ReAct: Synergizing Reasoning and Acting in Language Models</a></li>
+</ol>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/AI%E6%B5%8B%E8%AF%95/" rel="tag"># AI测试</a>
+              <a href="/tags/RAG/" rel="tag"># RAG</a>
+              <a href="/tags/Agent/" rel="tag"># Agent</a>
+              <a href="/tags/%E6%95%85%E9%9A%9C%E5%88%86%E7%B1%BB/" rel="tag"># 故障分类</a>
+              <a href="/tags/%E6%A0%B9%E5%9B%A0%E5%88%86%E6%9E%90/" rel="tag"># 根因分析</a>
+              <a href="/tags/%E5%8F%AF%E8%A7%82%E6%B5%8B%E6%80%A7/" rel="tag"># 可观测性</a>
+              <a href="/tags/%E6%95%85%E9%9A%9C%E6%B3%A8%E5%85%A5/" rel="tag"># 故障注入</a>
+              <a href="/tags/%E8%B4%A8%E9%87%8F%E5%B7%A5%E7%A8%8B/" rel="tag"># 质量工程</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2026/03/14/AI%E6%B5%8B%E8%AF%95-13-Prompt-RAG-%E5%BE%AE%E8%B0%83-%E5%B7%A5%E5%85%B7%E8%B0%83%E7%94%A8%E5%92%8CAgent%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E9%80%89/" rel="prev" title="AI测试-13-Prompt-RAG-微调-工具调用和Agent应该怎么选">
+                  <i class="fa fa-angle-left"></i> AI测试-13-Prompt-RAG-微调-工具调用和Agent应该怎么选
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2026/03/18/AI%E6%B5%8B%E8%AF%95-15-%E9%AB%98%E8%B4%A8%E9%87%8FAI%E8%AF%84%E6%B5%8B%E9%9B%86%E6%80%8E%E4%B9%88%E9%87%87%E9%9B%86%E6%B8%85%E6%B4%97%E6%A0%87%E6%B3%A8%E5%92%8C%E7%89%88%E6%9C%AC%E5%8C%96/" rel="next" title="AI测试-15-高质量AI评测集怎么采集清洗标注和版本化">
+                  AI测试-15-高质量AI评测集怎么采集清洗标注和版本化 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">1.2m</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">75:29</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

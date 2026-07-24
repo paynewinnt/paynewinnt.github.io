@@ -1,0 +1,1666 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="同一段需求，只改了一个空格，模型为什么突然不再输出合法 JSON？ 同一份证据，放在上下文开头能回答，放到中间却经常漏掉，应该归因于什么？ 向量检索召回了“语义很像”的文档，为什么金额、版本号和否定条件恰好是错的？ 接口声称支持很长的上下文，为什么最后几段日志仍然像是没有被看见？ 这些现象经常被笼统地归为“模型不稳定”。 这个归因太粗。 它既不能指导修复，也不能形成可回归的测试。 测试开发工程师真">
+<meta property="og:type" content="article">
+<meta property="og:title" content="AI测试-12-Token-Embedding-Attention和上下文窗口如何影响测试结果">
+<meta property="og:url" content="https://paynewinnt.github.io/2026/03/12/AI%E6%B5%8B%E8%AF%95-12-Token-Embedding-Attention%E5%92%8C%E4%B8%8A%E4%B8%8B%E6%96%87%E7%AA%97%E5%8F%A3%E5%A6%82%E4%BD%95%E5%BD%B1%E5%93%8D%E6%B5%8B%E8%AF%95%E7%BB%93%E6%9E%9C/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="同一段需求，只改了一个空格，模型为什么突然不再输出合法 JSON？ 同一份证据，放在上下文开头能回答，放到中间却经常漏掉，应该归因于什么？ 向量检索召回了“语义很像”的文档，为什么金额、版本号和否定条件恰好是错的？ 接口声称支持很长的上下文，为什么最后几段日志仍然像是没有被看见？ 这些现象经常被笼统地归为“模型不稳定”。 这个归因太粗。 它既不能指导修复，也不能形成可回归的测试。 测试开发工程师真">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://paynewinnt.github.io/images/ai-quality/ai-12-context-mechanics.svg">
+<meta property="og:image" content="https://paynewinnt.github.io/images/ai-quality/ai-12-failure-diagnosis.svg">
+<meta property="article:published_time" content="2026-03-12T12:30:00.000Z">
+<meta property="article:modified_time" content="2026-03-12T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="AI测试">
+<meta property="article:tag" content="大语言模型">
+<meta property="article:tag" content="Token">
+<meta property="article:tag" content="Embedding">
+<meta property="article:tag" content="Self-Attention">
+<meta property="article:tag" content="上下文窗口">
+<meta property="article:tag" content="模型评测">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://paynewinnt.github.io/images/ai-quality/ai-12-context-mechanics.svg">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2026/03/12/AI%E6%B5%8B%E8%AF%95-12-Token-Embedding-Attention%E5%92%8C%E4%B8%8A%E4%B8%8B%E6%96%87%E7%AA%97%E5%8F%A3%E5%A6%82%E4%BD%95%E5%BD%B1%E5%93%8D%E6%B5%8B%E8%AF%95%E7%BB%93%E6%9E%9C/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2026/03/12/AI%E6%B5%8B%E8%AF%95-12-Token-Embedding-Attention%E5%92%8C%E4%B8%8A%E4%B8%8B%E6%96%87%E7%AA%97%E5%8F%A3%E5%A6%82%E4%BD%95%E5%BD%B1%E5%93%8D%E6%B5%8B%E8%AF%95%E7%BB%93%E6%9E%9C/","path":"2026/03/12/AI测试-12-Token-Embedding-Attention和上下文窗口如何影响测试结果/","title":"AI测试-12-Token-Embedding-Attention和上下文窗口如何影响测试结果"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>AI测试-12-Token-Embedding-Attention和上下文窗口如何影响测试结果 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E5%85%88%E9%99%90%E5%AE%9A%E9%97%AE%E9%A2%98%E8%BE%B9%E7%95%8C%EF%BC%9A%E7%AA%97%E5%8F%A3%E9%95%BF%E5%BA%A6%E4%B8%8D%E6%98%AF%E4%B8%8A%E4%B8%8B%E6%96%87%E8%B4%A8%E9%87%8F"><span class="nav-number">1.</span> <span class="nav-text">一、先限定问题边界：窗口长度不是上下文质量</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%9C%80%E5%A4%A7%E5%8F%AF%E6%8E%A5%E5%8F%97%E9%95%BF%E5%BA%A6"><span class="nav-number">1.1.</span> <span class="nav-text">1. 最大可接受长度</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%AE%9E%E9%99%85%E8%BF%9B%E5%85%A5%E6%A8%A1%E5%9E%8B%E7%9A%84%E9%95%BF%E5%BA%A6"><span class="nav-number">1.2.</span> <span class="nav-text">2. 实际进入模型的长度</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%A8%A1%E5%9E%8B%E6%9C%89%E6%95%88%E5%88%A9%E7%94%A8%E7%9A%84%E9%95%BF%E5%BA%A6"><span class="nav-number">1.3.</span> <span class="nav-text">3. 模型有效利用的长度</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%B8%9A%E5%8A%A1%E4%B8%8A%E5%8F%AF%E4%BF%A1%E7%9A%84%E4%B8%8A%E4%B8%8B%E6%96%87"><span class="nav-number">1.4.</span> <span class="nav-text">4. 业务上可信的上下文</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E5%BB%BA%E7%AB%8B%E4%B8%80%E5%BC%A0%E5%B7%A5%E7%A8%8B%E8%A7%86%E8%A7%92%E7%9A%84%E6%9C%BA%E5%88%B6%E5%9B%BE"><span class="nav-number">2.</span> <span class="nav-text">二、建立一张工程视角的机制图</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81Token%EF%BC%9A%E6%A8%A1%E5%9E%8B%E5%A4%84%E7%90%86%E7%9A%84%E8%BE%B9%E7%95%8C%E4%B8%8D%E6%98%AF%E4%BA%BA%E7%B1%BB%E7%9C%8B%E5%88%B0%E7%9A%84%E8%AF%8D"><span class="nav-number">3.</span> <span class="nav-text">三、Token：模型处理的边界不是人类看到的词</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Token-%E6%98%AF%E8%AF%8D%E8%A1%A8%E4%B8%AD%E7%9A%84%E7%A6%BB%E6%95%A3%E5%8D%95%E5%85%83"><span class="nav-number">3.1.</span> <span class="nav-text">1. Token 是词表中的离散单元</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%B8%BA%E4%BB%80%E4%B9%88%E8%A6%81%E4%BD%BF%E7%94%A8%E5%AD%90%E8%AF%8D%E6%88%96%E5%AD%97%E8%8A%82%E7%BA%A7%E5%8D%95%E5%85%83"><span class="nav-number">3.2.</span> <span class="nav-text">2. 为什么要使用子词或字节级单元</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E2%80%9C%E8%AF%AD%E4%B9%89%E7%AD%89%E4%BB%B7%E2%80%9D%E4%B8%8D%E4%BB%A3%E8%A1%A8-Token-%E5%BA%8F%E5%88%97%E7%AD%89%E4%BB%B7"><span class="nav-number">3.3.</span> <span class="nav-text">3. “语义等价”不代表 Token 序列等价</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%B8%AD%E6%96%87%E3%80%81%E4%BB%A3%E7%A0%81%E5%92%8C%E7%BB%93%E6%9E%84%E5%8C%96%E6%95%B0%E6%8D%AE%E7%9A%84%E9%A3%8E%E9%99%A9%E6%9B%B4%E5%AE%B9%E6%98%93%E8%A2%AB%E4%BD%8E%E4%BC%B0"><span class="nav-number">3.4.</span> <span class="nav-text">4. 中文、代码和结构化数据的风险更容易被低估</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-Token-%E8%BE%B9%E7%95%8C%E5%A6%82%E4%BD%95%E5%BD%B1%E5%93%8D%E6%B5%8B%E8%AF%95%E7%BB%93%E6%9E%9C"><span class="nav-number">3.5.</span> <span class="nav-text">5. Token 边界如何影响测试结果</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81Token-%E9%A2%84%E7%AE%97%E5%BF%85%E9%A1%BB%E5%9C%A8%E8%AF%B7%E6%B1%82%E5%89%8D%E8%AE%A1%E7%AE%97%EF%BC%8C%E5%9C%A8%E8%AF%B7%E6%B1%82%E5%90%8E%E6%A0%B8%E5%AF%B9"><span class="nav-number">4.</span> <span class="nav-text">四、Token 预算必须在请求前计算，在请求后核对</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%B7%E6%B1%82%E5%89%8D"><span class="nav-number">4.1.</span> <span class="nav-text">请求前</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%B7%E6%B1%82%E5%90%8E"><span class="nav-number">4.2.</span> <span class="nav-text">请求后</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81Token-%E8%BE%B9%E7%95%8C%E6%B5%8B%E8%AF%95%E6%80%8E%E4%B9%88%E8%AE%BE%E8%AE%A1"><span class="nav-number">5.</span> <span class="nav-text">五、Token 边界测试怎么设计</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%A9%BA%E7%99%BD%E5%8F%98%E6%8D%A2"><span class="nav-number">5.1.</span> <span class="nav-text">空白变换</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A0%87%E7%82%B9%E5%8F%98%E6%8D%A2"><span class="nav-number">5.2.</span> <span class="nav-text">标点变换</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Unicode-%E5%8F%98%E6%8D%A2"><span class="nav-number">5.3.</span> <span class="nav-text">Unicode 变换</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%9A%E5%8A%A1%E5%AD%97%E6%AE%B5%E5%8F%98%E6%8D%A2"><span class="nav-number">5.4.</span> <span class="nav-text">业务字段变换</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%A7%82%E6%B5%8B%E6%8C%87%E6%A0%87"><span class="nav-number">5.5.</span> <span class="nav-text">观测指标</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81Embedding%EF%BC%9A%E7%9B%B8%E4%BC%BC%E6%80%A7%E6%98%AF%E8%BF%9E%E7%BB%AD%E5%87%A0%E4%BD%95%E5%85%B3%E7%B3%BB%EF%BC%8C%E4%B8%8D%E6%98%AF%E7%9C%9F%E5%80%BC%E5%88%A4%E6%96%AD"><span class="nav-number">6.</span> <span class="nav-text">六、Embedding：相似性是连续几何关系，不是真值判断</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Token-Embedding-%E6%98%AF%E4%B8%80%E4%B8%AA%E5%8F%AF%E5%AD%A6%E4%B9%A0%E6%9F%A5%E8%A1%A8"><span class="nav-number">6.1.</span> <span class="nav-text">1. Token Embedding 是一个可学习查表</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%A3%80%E7%B4%A2-Embedding-%E5%8F%88%E6%98%AF%E5%8F%A6%E4%B8%80%E5%B1%82%E4%BA%A7%E5%93%81%E8%83%BD%E5%8A%9B"><span class="nav-number">6.2.</span> <span class="nav-text">2. 检索 Embedding 又是另一层产品能力</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%BD%99%E5%BC%A6%E7%9B%B8%E4%BC%BC%E5%BA%A6%E5%8F%AA%E5%9B%9E%E7%AD%94%E6%96%B9%E5%90%91%E6%8E%A5%E8%BF%91%E7%A8%8B%E5%BA%A6"><span class="nav-number">6.3.</span> <span class="nav-text">3. 余弦相似度只回答方向接近程度</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E7%9B%B8%E4%BC%BC%E4%BD%86%E9%94%99%E8%AF%AF%E7%9A%84%E9%AB%98%E9%A3%8E%E9%99%A9%E6%A8%A1%E5%BC%8F"><span class="nav-number">6.4.</span> <span class="nav-text">4. 相似但错误的高风险模式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-Embedding-%E6%B5%8B%E8%AF%95%E9%9B%86%E5%BF%85%E9%A1%BB%E5%8C%85%E5%90%AB-Hard-Negative"><span class="nav-number">6.5.</span> <span class="nav-text">5. Embedding 测试集必须包含 Hard Negative</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81Self-Attention%EF%BC%9A%E4%BF%A1%E6%81%AF%E4%BA%A4%E4%BA%92%E7%9A%84%E6%A0%B8%E5%BF%83%EF%BC%8C%E4%BD%86%E4%B8%8D%E6%98%AF%E4%B8%80%E4%B8%AA%E4%B8%87%E8%83%BD%E8%81%9A%E7%84%A6%E5%99%A8"><span class="nav-number">7.</span> <span class="nav-text">七、Self-Attention：信息交互的核心，但不是一个万能聚焦器</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%BB%8E%E8%BE%93%E5%85%A5%E8%A1%A8%E7%A4%BA%E5%BE%97%E5%88%B0-Q%E3%80%81K%E3%80%81V"><span class="nav-number">7.1.</span> <span class="nav-text">1. 从输入表示得到 Q、K、V</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Self-Attention-%E4%B8%8D%E6%98%AF%E4%B8%80%E6%AC%A1%E8%AE%A1%E7%AE%97"><span class="nav-number">7.2.</span> <span class="nav-text">2. Self-Attention 不是一次计算</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%B3%A8%E6%84%8F%E5%8A%9B%E6%9D%83%E9%87%8D%E9%AB%98%E4%B8%8D%E7%AD%89%E4%BA%8E%E5%9B%A0%E6%9E%9C%E9%87%8D%E8%A6%81%E6%80%A7"><span class="nav-number">7.3.</span> <span class="nav-text">3. 注意力权重高不等于因果重要性</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%BA%8F%E5%88%97%E9%95%BF%E5%BA%A6%E5%A2%9E%E5%8A%A0%E5%B8%A6%E6%9D%A5%E7%9A%84%E8%AE%A1%E7%AE%97%E5%8E%8B%E5%8A%9B"><span class="nav-number">7.4.</span> <span class="nav-text">4. 序列长度增加带来的计算压力</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E4%BD%8D%E7%BD%AE%EF%BC%9A%E6%B2%A1%E6%9C%89%E4%BD%8D%E7%BD%AE%E4%BF%A1%E6%81%AF%EF%BC%8C%E9%A1%BA%E5%BA%8F%E5%B0%B1%E4%BC%9A%E4%B8%A2%E5%A4%B1"><span class="nav-number">8.</span> <span class="nav-text">八、位置：没有位置信息，顺序就会丢失</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E9%A1%BA%E5%BA%8F%E4%B8%BA%E4%BB%80%E4%B9%88%E5%BF%85%E9%A1%BB%E6%98%BE%E5%BC%8F%E8%BF%9B%E5%85%A5%E6%A8%A1%E5%9E%8B"><span class="nav-number">8.1.</span> <span class="nav-text">1. 顺序为什么必须显式进入模型</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-RoPE-%E7%9A%84%E6%B5%8B%E8%AF%95%E6%84%8F%E4%B9%89"><span class="nav-number">8.2.</span> <span class="nav-text">2. RoPE 的测试意义</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%BD%8D%E7%BD%AE%E6%B5%8B%E8%AF%95%E4%B8%8D%E8%83%BD%E5%8F%AA%E6%B5%8B%E5%BC%80%E5%A4%B4%E5%92%8C%E7%BB%93%E5%B0%BE"><span class="nav-number">8.3.</span> <span class="nav-text">3. 位置测试不能只测开头和结尾</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E2%80%9C%E4%B8%AD%E9%97%B4%E4%BF%A1%E6%81%AF%E5%BC%B1%E5%8C%96%E2%80%9D%E6%98%AF%E7%BB%8F%E9%AA%8C%E7%8E%B0%E8%B1%A1%EF%BC%8C%E4%B8%8D%E6%98%AF%E8%87%AA%E7%84%B6%E5%AE%9A%E5%BE%8B"><span class="nav-number">8.4.</span> <span class="nav-text">4. “中间信息弱化”是经验现象，不是自然定律</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E4%B8%8A%E4%B8%8B%E6%96%87%E7%AA%97%E5%8F%A3%EF%BC%9A%E5%AE%B9%E9%87%8F%E3%80%81%E5%8D%8F%E8%AE%AE%E5%92%8C%E8%BE%93%E5%87%BA%E5%85%B1%E5%90%8C%E7%AB%9E%E4%BA%89%E9%A2%84%E7%AE%97"><span class="nav-number">9.</span> <span class="nav-text">九、上下文窗口：容量、协议和输出共同竞争预算</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%B8%8A%E4%B8%8B%E6%96%87%E4%B8%AD%E4%B8%8D%E5%8F%AA%E6%9C%89%E7%94%A8%E6%88%B7%E8%BE%93%E5%85%A5"><span class="nav-number">9.1.</span> <span class="nav-text">1. 上下文中不只有用户输入</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%BE%93%E5%87%BA%E9%A2%84%E7%AE%97%E4%B8%8D%E8%B6%B3%E4%B9%9F%E6%98%AF%E4%B8%8A%E4%B8%8B%E6%96%87%E6%95%85%E9%9A%9C"><span class="nav-number">9.2.</span> <span class="nav-text">2. 输出预算不足也是上下文故障</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-KV-Cache-%E4%B8%8D%E7%AD%89%E4%BA%8E%E6%97%A0%E9%99%90%E8%AE%B0%E5%BF%86"><span class="nav-number">9.3.</span> <span class="nav-text">3. KV Cache 不等于无限记忆</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E6%88%AA%E6%96%AD%EF%BC%9A%E5%85%88%E7%A1%AE%E8%AE%A4%E4%BF%A1%E6%81%AF%E6%98%AF%E5%90%A6%E7%9C%9F%E7%9A%84%E8%BF%9B%E5%85%A5%E6%A8%A1%E5%9E%8B"><span class="nav-number">10.</span> <span class="nav-text">十、截断：先确认信息是否真的进入模型</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%88%AA%E6%96%AD%E5%8F%AF%E8%83%BD%E5%8F%91%E7%94%9F%E5%9C%A8%E4%BA%94%E4%B8%AA%E4%BD%8D%E7%BD%AE"><span class="nav-number">10.1.</span> <span class="nav-text">1. 截断可能发生在五个位置</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E9%9D%99%E9%BB%98%E6%88%AA%E6%96%AD%E4%B8%BA%E4%BB%80%E4%B9%88%E5%8D%B1%E9%99%A9"><span class="nav-number">10.2.</span> <span class="nav-text">2. 静默截断为什么危险</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%94%A8%E8%BE%B9%E7%95%8C%E5%93%A8%E5%85%B5%E6%A3%80%E6%B5%8B%E6%88%AA%E6%96%AD"><span class="nav-number">10.3.</span> <span class="nav-text">3. 用边界哨兵检测截断</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%B8%8D%E8%A6%81%E9%BB%98%E8%AE%A4%E2%80%9C%E4%BF%9D%E7%95%99%E6%9C%80%E5%90%8E-N-%E4%B8%AA-Token%E2%80%9D%E6%98%AF%E5%90%88%E7%90%86%E7%AD%96%E7%95%A5"><span class="nav-number">10.4.</span> <span class="nav-text">4. 不要默认“保留最后 N 个 Token”是合理策略</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E4%B8%8A%E4%B8%8B%E6%96%87%E6%B1%A1%E6%9F%93%EF%BC%9A%E4%BF%A1%E6%81%AF%E6%9B%B4%E5%A4%9A%E4%B9%9F%E5%8F%AF%E8%83%BD%E8%AE%A9%E7%BB%93%E6%9E%9C%E6%9B%B4%E5%B7%AE"><span class="nav-number">11.</span> <span class="nav-text">十一、上下文污染：信息更多也可能让结果更差</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%B1%A1%E6%9F%93%E4%B8%8D%E6%98%AF%E5%8D%95%E7%BA%AF%E2%80%9C%E5%86%85%E5%AE%B9%E5%A4%AA%E9%95%BF%E2%80%9D"><span class="nav-number">11.1.</span> <span class="nav-text">1. 污染不是单纯“内容太长”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E9%95%BF%E5%BA%A6%E6%95%88%E5%BA%94%E5%92%8C%E6%B1%A1%E6%9F%93%E6%95%88%E5%BA%94%E5%BF%85%E9%A1%BB%E5%88%86%E5%BC%80"><span class="nav-number">11.2.</span> <span class="nav-text">2. 长度效应和污染效应必须分开</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%B1%A1%E6%9F%93%E9%99%8D%E7%BA%A7%E6%8C%87%E6%A0%87"><span class="nav-number">11.3.</span> <span class="nav-text">3. 污染降级指标</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%AF%B9%E6%8A%97%E6%B1%A1%E6%9F%93%E4%B8%8D%E7%AD%89%E4%BA%8E%E5%86%8D%E5%86%99%E4%B8%80%E5%8F%A5%E2%80%9C%E5%BF%BD%E7%95%A5%E9%94%99%E8%AF%AF%E8%B5%84%E6%96%99%E2%80%9D"><span class="nav-number">11.4.</span> <span class="nav-text">4. 对抗污染不等于再写一句“忽略错误资料”</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E6%8A%8A%E6%9C%BA%E5%88%B6%E9%97%AE%E9%A2%98%E8%BD%AC%E6%88%90%E5%8F%AF%E5%BA%A6%E9%87%8F%E6%8C%87%E6%A0%87"><span class="nav-number">12.</span> <span class="nav-text">十二、把机制问题转成可度量指标</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%B2%BE%E7%A1%AE%E6%88%90%E5%8A%9F%E7%8E%87"><span class="nav-number">12.1.</span> <span class="nav-text">1. 精确成功率</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%8C%87%E4%BB%A4%E4%BF%9D%E6%8C%81%E7%8E%87"><span class="nav-number">12.2.</span> <span class="nav-text">2. 指令保持率</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%B2%BE%E7%A1%AE%E5%A4%8D%E5%88%B6%E7%8E%87"><span class="nav-number">12.3.</span> <span class="nav-text">3. 精确复制率</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%BD%8D%E7%BD%AE%E6%95%8F%E6%84%9F%E5%BA%A6"><span class="nav-number">12.4.</span> <span class="nav-text">4. 位置敏感度</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-Token-%E6%95%88%E7%8E%87"><span class="nav-number">12.5.</span> <span class="nav-text">5. Token 效率</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E6%88%AA%E6%96%AD%E6%8B%92%E7%BB%9D%E6%AD%A3%E7%A1%AE%E7%8E%87"><span class="nav-number">12.6.</span> <span class="nav-text">6. 截断拒绝正确率</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-%E5%86%B2%E7%AA%81%E6%98%BE%E5%BC%8F%E5%8C%96%E7%8E%87"><span class="nav-number">12.7.</span> <span class="nav-text">7. 冲突显式化率</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81%E5%AF%B9%E7%85%A7%E5%AE%9E%E9%AA%8C%EF%BC%9A%E4%B8%80%E6%AC%A1%E5%8F%AA%E6%94%B9%E5%8F%98%E4%B8%80%E4%B8%AA%E5%8F%98%E9%87%8F"><span class="nav-number">13.</span> <span class="nav-text">十三、对照实验：一次只改变一个变量</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%9B%BA%E5%AE%9A%E9%A1%B9"><span class="nav-number">13.1.</span> <span class="nav-text">1. 固定项</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%8F%98%E9%87%8F%E9%A1%B9"><span class="nav-number">13.2.</span> <span class="nav-text">2. 变量项</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E9%87%8D%E5%A4%8D%E6%AC%A1%E6%95%B0"><span class="nav-number">13.3.</span> <span class="nav-text">3. 重复次数</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%9F%BA%E7%BA%BF%E7%BB%84"><span class="nav-number">13.4.</span> <span class="nav-text">4. 基线组</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E4%BD%8D%E7%BD%AE%E7%BB%84"><span class="nav-number">13.5.</span> <span class="nav-text">5. 位置组</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E6%88%AA%E6%96%AD%E7%BB%84"><span class="nav-number">13.6.</span> <span class="nav-text">6. 截断组</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-%E6%B1%A1%E6%9F%93%E7%BB%84"><span class="nav-number">13.7.</span> <span class="nav-text">7. 污染组</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81%E5%8F%AF%E6%89%A7%E8%A1%8C%E5%AE%9E%E9%AA%8C%EF%BC%9A%E7%94%A8%E9%BB%91%E7%9B%92-API-%E6%89%AB%E6%8F%8F%E4%BD%8D%E7%BD%AE%E4%B8%8E%E6%B1%A1%E6%9F%93"><span class="nav-number">14.</span> <span class="nav-text">十四、可执行实验：用黑盒 API 扫描位置与污染</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%A6%82%E4%BD%95%E8%A7%A3%E8%AF%BB%E7%BB%93%E6%9E%9C"><span class="nav-number">14.1.</span> <span class="nav-text">如何解读结果</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%94%E3%80%81%E8%AF%8A%E6%96%AD%E7%9F%A9%E9%98%B5%EF%BC%9A%E4%BB%8E%E7%97%87%E7%8A%B6%E5%88%B0%E5%8F%AF%E8%AF%81%E4%BC%AA%E5%81%87%E8%AE%BE"><span class="nav-number">15.</span> <span class="nav-text">十五、诊断矩阵：从症状到可证伪假设</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%81%87%E8%AE%BE-H1%EF%BC%9AToken-%E8%BE%B9%E7%95%8C%E6%95%8F%E6%84%9F"><span class="nav-number">15.1.</span> <span class="nav-text">假设 H1：Token 边界敏感</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%81%87%E8%AE%BE-H2%EF%BC%9A%E5%8F%91%E7%94%9F%E6%88%AA%E6%96%AD"><span class="nav-number">15.2.</span> <span class="nav-text">假设 H2：发生截断</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%81%87%E8%AE%BE-H3%EF%BC%9A%E4%BD%8D%E7%BD%AE%E5%88%A9%E7%94%A8%E4%B8%8D%E8%B6%B3"><span class="nav-number">15.3.</span> <span class="nav-text">假设 H3：位置利用不足</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%81%87%E8%AE%BE-H4%EF%BC%9A%E4%B8%8A%E4%B8%8B%E6%96%87%E6%B1%A1%E6%9F%93"><span class="nav-number">15.4.</span> <span class="nav-text">假设 H4：上下文污染</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AD%E3%80%81%E7%A4%BA%E4%BE%8B%E6%A1%88%E4%BE%8B%EF%BC%9A%E5%AE%A1%E6%89%B9%E7%A0%81%E5%9C%A8%E4%B8%8A%E4%B8%8B%E6%96%87%E4%B8%AD%E9%97%B4%E2%80%9C%E6%B6%88%E5%A4%B1%E2%80%9D"><span class="nav-number">16.</span> <span class="nav-text">十六、示例案例：审批码在上下文中间“消失”</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%9C%BA%E6%99%AF"><span class="nav-number">16.1.</span> <span class="nav-text">1. 场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%9C%80%E5%88%9D%E7%9A%84%E9%94%99%E8%AF%AF%E5%BD%92%E5%9B%A0"><span class="nav-number">16.2.</span> <span class="nav-text">2. 最初的错误归因</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%AC%AC%E4%B8%80%E8%BD%AE%EF%BC%9A%E7%A1%AE%E8%AE%A4%E6%98%AF%E5%90%A6%E6%88%AA%E6%96%AD"><span class="nav-number">16.3.</span> <span class="nav-text">3. 第一轮：确认是否截断</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E7%AC%AC%E4%BA%8C%E8%BD%AE%EF%BC%9A%E5%81%9A%E4%BD%8D%E7%BD%AE%E6%89%AB%E6%8F%8F"><span class="nav-number">16.4.</span> <span class="nav-text">4. 第二轮：做位置扫描</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E7%AC%AC%E4%B8%89%E8%BD%AE%EF%BC%9A%E7%AD%89%E9%95%BF%E6%B1%A1%E6%9F%93%E5%AF%B9%E7%85%A7"><span class="nav-number">16.5.</span> <span class="nav-text">5. 第三轮：等长污染对照</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E6%A0%B9%E5%9B%A0%E6%8B%86%E5%88%86"><span class="nav-number">16.6.</span> <span class="nav-text">6. 根因拆分</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-%E4%BF%AE%E5%A4%8D"><span class="nav-number">16.7.</span> <span class="nav-text">7. 修复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%83%E3%80%81%E6%8C%89%E6%95%85%E9%9A%9C%E5%B1%82%E9%80%89%E6%8B%A9%E4%BF%AE%E5%A4%8D%EF%BC%8C%E4%B8%8D%E8%A6%81%E7%BB%9F%E4%B8%80%E2%80%9C%E8%B0%83-Prompt%E2%80%9D"><span class="nav-number">17.</span> <span class="nav-text">十七、按故障层选择修复，不要统一“调 Prompt”</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Token-%E8%BE%B9%E7%95%8C%E9%97%AE%E9%A2%98"><span class="nav-number">17.1.</span> <span class="nav-text">1. Token 边界问题</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Embedding-%E7%9B%B8%E4%BC%BC%E6%80%A7%E9%97%AE%E9%A2%98"><span class="nav-number">17.2.</span> <span class="nav-text">2. Embedding 相似性问题</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%BD%8D%E7%BD%AE%E5%88%A9%E7%94%A8%E9%97%AE%E9%A2%98"><span class="nav-number">17.3.</span> <span class="nav-text">3. 位置利用问题</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%88%AA%E6%96%AD%E9%97%AE%E9%A2%98"><span class="nav-number">17.4.</span> <span class="nav-text">4. 截断问题</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E4%B8%8A%E4%B8%8B%E6%96%87%E6%B1%A1%E6%9F%93%E9%97%AE%E9%A2%98"><span class="nav-number">17.5.</span> <span class="nav-text">5. 上下文污染问题</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AB%E3%80%81%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0%E5%BA%94%E6%80%8E%E6%A0%B7%E8%AE%B0%E5%BD%95%E4%B8%8A%E4%B8%8B%E6%96%87%E8%AF%81%E6%8D%AE"><span class="nav-number">18.</span> <span class="nav-text">十八、测试平台应怎样记录上下文证据</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8F%AF%E5%A4%8D%E7%8E%B0"><span class="nav-number">18.1.</span> <span class="nav-text">可复现</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8F%AF%E5%BD%92%E5%9B%A0"><span class="nav-number">18.2.</span> <span class="nav-text">可归因</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8F%AF%E5%AE%A1%E8%AE%A1"><span class="nav-number">18.3.</span> <span class="nav-text">可审计</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8F%AF%E5%9B%9E%E5%BD%92"><span class="nav-number">18.4.</span> <span class="nav-text">可回归</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B9%9D%E3%80%81%E5%AE%8C%E6%95%B4%E6%B5%8B%E8%AF%95%E7%9F%A9%E9%98%B5"><span class="nav-number">19.</span> <span class="nav-text">十九、完整测试矩阵</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#A-Token-%E4%B8%8E%E8%A7%84%E8%8C%83%E5%8C%96"><span class="nav-number">19.1.</span> <span class="nav-text">A. Token 与规范化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#B-Embedding-%E4%B8%8E%E5%8F%AC%E5%9B%9E"><span class="nav-number">19.2.</span> <span class="nav-text">B. Embedding 与召回</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#C-%E4%BD%8D%E7%BD%AE"><span class="nav-number">19.3.</span> <span class="nav-text">C. 位置</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#D-%E9%95%BF%E5%BA%A6%E4%B8%8E%E6%88%AA%E6%96%AD"><span class="nav-number">19.4.</span> <span class="nav-text">D. 长度与截断</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#E-%E6%B1%A1%E6%9F%93"><span class="nav-number">19.5.</span> <span class="nav-text">E. 污染</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#F-%E7%B3%BB%E7%BB%9F%E6%80%A7%E8%83%BD"><span class="nav-number">19.6.</span> <span class="nav-text">F. 系统性能</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E3%80%81%E5%B8%B8%E8%A7%81%E8%AF%AF%E5%8C%BA"><span class="nav-number">20.</span> <span class="nav-text">二十、常见误区</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%AF%E5%8C%BA-1%EF%BC%9A%E5%AD%97%E7%AC%A6%E6%95%B0%E5%8F%AF%E4%BB%A5%E7%A8%B3%E5%AE%9A%E6%8D%A2%E7%AE%97-Token-%E6%95%B0"><span class="nav-number">20.1.</span> <span class="nav-text">误区 1：字符数可以稳定换算 Token 数</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%AF%E5%8C%BA-2%EF%BC%9AEmbedding-%E7%9B%B8%E4%BC%BC%E5%BA%A6%E9%AB%98%E5%B0%B1%E8%AF%B4%E6%98%8E%E7%AD%94%E6%A1%88%E6%AD%A3%E7%A1%AE"><span class="nav-number">20.2.</span> <span class="nav-text">误区 2：Embedding 相似度高就说明答案正确</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%AF%E5%8C%BA-3%EF%BC%9A%E6%B3%A8%E6%84%8F%E5%8A%9B%E6%9D%83%E9%87%8D%E5%B0%B1%E6%98%AF%E6%A8%A1%E5%9E%8B%E8%A7%A3%E9%87%8A"><span class="nav-number">20.3.</span> <span class="nav-text">误区 3：注意力权重就是模型解释</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%AF%E5%8C%BA-4%EF%BC%9A%E4%BF%A1%E6%81%AF%E5%9C%A8%E7%AA%97%E5%8F%A3%E9%87%8C%EF%BC%8C%E6%A8%A1%E5%9E%8B%E5%B0%B1%E4%B8%80%E5%AE%9A%E8%83%BD%E4%BD%BF%E7%94%A8"><span class="nav-number">20.4.</span> <span class="nav-text">误区 4：信息在窗口里，模型就一定能使用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%AF%E5%8C%BA-5%EF%BC%9A%E4%B8%AD%E9%97%B4%E5%A4%B1%E8%B4%A5%E4%B8%80%E5%AE%9A%E6%98%AF-Lost-in-the-Middle"><span class="nav-number">20.5.</span> <span class="nav-text">误区 5：中间失败一定是 Lost in the Middle</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%AF%E5%8C%BA-6%EF%BC%9A%E6%89%A9%E5%A4%A7%E7%AA%97%E5%8F%A3%E6%80%BB%E4%BC%9A%E6%94%B9%E5%96%84%E6%95%88%E6%9E%9C"><span class="nav-number">20.6.</span> <span class="nav-text">误区 6：扩大窗口总会改善效果</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%AF%E5%8C%BA-7%EF%BC%9A%E6%B8%A9%E5%BA%A6%E8%AE%BE%E4%B8%BA-0-%E5%B0%B1%E5%AE%8C%E5%85%A8%E7%A1%AE%E5%AE%9A"><span class="nav-number">20.7.</span> <span class="nav-text">误区 7：温度设为 0 就完全确定</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%AF%E5%8C%BA-8%EF%BC%9A%E6%88%AA%E6%96%AD%E5%8F%AA%E5%8F%91%E7%94%9F%E5%9C%A8%E6%A8%A1%E5%9E%8B%E6%9C%8D%E5%8A%A1"><span class="nav-number">20.8.</span> <span class="nav-text">误区 8：截断只发生在模型服务</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%AF%E5%8C%BA-9%EF%BC%9A%E9%87%8D%E5%A4%8D%E5%85%B3%E9%94%AE%E6%8C%87%E4%BB%A4%E5%8F%AF%E4%BB%A5%E8%A7%A3%E5%86%B3%E4%BD%8D%E7%BD%AE%E9%97%AE%E9%A2%98"><span class="nav-number">20.9.</span> <span class="nav-text">误区 9：重复关键指令可以解决位置问题</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%AF%E5%8C%BA-10%EF%BC%9A%E6%A8%A1%E5%9E%8B%E6%8D%A2%E4%BB%A3%E5%90%8E%E6%97%A7%E7%BB%93%E8%AE%BA%E4%BB%8D%E7%84%B6%E6%88%90%E7%AB%8B"><span class="nav-number">20.10.</span> <span class="nav-text">误区 10：模型换代后旧结论仍然成立</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%80%E3%80%81%E4%B8%8A%E7%BA%BF%E5%89%8D%E6%A3%80%E6%9F%A5%E8%A1%A8"><span class="nav-number">21.</span> <span class="nav-text">二十一、上线前检查表</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%BE%93%E5%85%A5%E4%B8%8E-Tokenizer"><span class="nav-number">21.1.</span> <span class="nav-text">输入与 Tokenizer</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%8A%E4%B8%8B%E6%96%87%E6%8B%BC%E8%A3%85"><span class="nav-number">21.2.</span> <span class="nav-text">上下文拼装</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BD%8D%E7%BD%AE%E4%B8%8E%E9%95%BF%E5%BA%A6"><span class="nav-number">21.3.</span> <span class="nav-text">位置与长度</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Embedding-%E4%B8%8E%E5%8F%AC%E5%9B%9E"><span class="nav-number">21.4.</span> <span class="nav-text">Embedding 与召回</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%B1%A1%E6%9F%93%E4%B8%8E%E5%AE%89%E5%85%A8"><span class="nav-number">21.5.</span> <span class="nav-text">污染与安全</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%A7%82%E6%B5%8B%E4%B8%8E%E5%9B%9E%E5%BD%92"><span class="nav-number">21.6.</span> <span class="nav-text">观测与回归</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%8C%E3%80%81%E6%80%BB%E7%BB%93"><span class="nav-number">22.</span> <span class="nav-text">二十二、总结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8F%82%E8%80%83%E8%B5%84%E6%96%99"><span class="nav-number">23.</span> <span class="nav-text">参考资料</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">312</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">27</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">569</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2026/03/12/AI%E6%B5%8B%E8%AF%95-12-Token-Embedding-Attention%E5%92%8C%E4%B8%8A%E4%B8%8B%E6%96%87%E7%AA%97%E5%8F%A3%E5%A6%82%E4%BD%95%E5%BD%B1%E5%93%8D%E6%B5%8B%E8%AF%95%E7%BB%93%E6%9E%9C/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="AI测试-12-Token-Embedding-Attention和上下文窗口如何影响测试结果 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          AI测试-12-Token-Embedding-Attention和上下文窗口如何影响测试结果
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2026-03-12 20:30:00" itemprop="dateCreated datePublished" datetime="2026-03-12T20:30:00+08:00">2026-03-12</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/AI%E6%B5%8B%E8%AF%95/" itemprop="url" rel="index"><span itemprop="name">AI测试</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>12k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>45 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>同一段需求，只改了一个空格，模型为什么突然不再输出合法 JSON？</p>
+<p>同一份证据，放在上下文开头能回答，放到中间却经常漏掉，应该归因于什么？</p>
+<p>向量检索召回了“语义很像”的文档，为什么金额、版本号和否定条件恰好是错的？</p>
+<p>接口声称支持很长的上下文，为什么最后几段日志仍然像是没有被看见？</p>
+<p>这些现象经常被笼统地归为“模型不稳定”。</p>
+<p>这个归因太粗。</p>
+<p>它既不能指导修复，也不能形成可回归的测试。</p>
+<p>测试开发工程师真正需要建立的是一条可验证的机制链：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">原始文本</span><br><span class="line">  -&gt; Tokenizer 切分和编号</span><br><span class="line">  -&gt; Token Embedding 与位置信息</span><br><span class="line">  -&gt; 多层 Self-Attention 和前馈网络</span><br><span class="line">  -&gt; 下一个 Token 的概率分布</span><br><span class="line">  -&gt; 自回归生成</span><br></pre></td></tr></table></figure>
+
+<p>链路中的每一层都可能把“人看起来等价”的输入变成不同的模型输入，也可能让“已经放进窗口”的信息没有被稳定利用。</p>
+<p>这篇文章不讨论如何训练一个基础模型，也不重复 RAG 数据清洗、Agent 状态管理或工具权限治理。</p>
+<p>相关工程边界已经分别在 AI测试-07、AI测试-05 和 AI测试-09 中展开。</p>
+<p>本文只回答一个更基础的问题：</p>
+<p><strong>Token、Embedding、Self-Attention、位置机制和上下文窗口，分别怎样影响测试结果，以及怎样用对照实验把故障归因到可操作的层级。</strong></p>
+<h2 id="一、先限定问题边界：窗口长度不是上下文质量"><a href="#一、先限定问题边界：窗口长度不是上下文质量" class="headerlink" title="一、先限定问题边界：窗口长度不是上下文质量"></a>一、先限定问题边界：窗口长度不是上下文质量</h2><p>讨论上下文能力时，至少要分开四个概念。</p>
+<h3 id="1-最大可接受长度"><a href="#1-最大可接受长度" class="headerlink" title="1. 最大可接受长度"></a>1. 最大可接受长度</h3><p>这是接口或模型允许提交的最大上下文规模。</p>
+<p>它通常以 Token 数量表达，而不是字符数、字数或文件大小。</p>
+<p>不同服务对“输入与输出是否共享同一总预算”的定义可能不同。</p>
+<p>工具定义、系统消息、图片、缓存前缀以及协议包装是否计入，也必须以目标服务的文档和实测为准。</p>
+<p>因此，平台不能只保存一个营销页面上的窗口数字。</p>
+<p>它应保存模型快照对应的实际限制和请求用量。</p>
+<h3 id="2-实际进入模型的长度"><a href="#2-实际进入模型的长度" class="headerlink" title="2. 实际进入模型的长度"></a>2. 实际进入模型的长度</h3><p>调用方 SDK、应用代码、API 网关、RAG 拼装器和模型服务都有可能裁剪输入。</p>
+<p>一次请求被接口接受，不代表每个原始片段都被完整送达。</p>
+<p>如果平台只保存“召回过哪些文档”，却没有保存“最终纳入了哪些片段”，截断就会被误判成模型遗漏。</p>
+<h3 id="3-模型有效利用的长度"><a href="#3-模型有效利用的长度" class="headerlink" title="3. 模型有效利用的长度"></a>3. 模型有效利用的长度</h3><p>信息在窗口内，并不意味着模型对每个位置、每类任务都能同样稳定地利用它。</p>
+<p>长上下文研究观察到过明显的位置效应。</p>
+<p>但位置效应不是所有模型、所有任务都必然呈现同一种曲线。</p>
+<p>正确做法是针对自己的模型快照和任务，做位置扫描，而不是把论文结论直接当成本地结论。</p>
+<h3 id="4-业务上可信的上下文"><a href="#4-业务上可信的上下文" class="headerlink" title="4. 业务上可信的上下文"></a>4. 业务上可信的上下文</h3><p>上下文越长，可能包含的过期资料、重复片段、互相矛盾的规则和非可信指令也越多。</p>
+<p>模型“看到了”错误资料并据此作答，与模型“没有看到”正确资料，是两种完全不同的故障。</p>
+<p>前者属于上下文治理和冲突处理。</p>
+<p>后者可能属于截断、位置利用或任务表达。</p>
+<p>把四个概念混在一起，会导致三个典型错误：</p>
+<ul>
+<li>用扩大窗口修复上下文污染；</li>
+<li>用重复提示修复静默截断；</li>
+<li>用更高向量相似度阈值修复数字和否定关系错误。</li>
+</ul>
+<h2 id="二、建立一张工程视角的机制图"><a href="#二、建立一张工程视角的机制图" class="headerlink" title="二、建立一张工程视角的机制图"></a>二、建立一张工程视角的机制图</h2><p><img src="/images/ai-quality/ai-12-context-mechanics.svg" alt="从输入文本到模型输出的上下文机制"></p>
+<p>这张图需要读出五个工程事实。</p>
+<p>第一，模型接收的不是“文档”，而是经过拼装、规范化和分词后的 Token 序列。</p>
+<p>第二，Token ID 会先被映射到向量，顺序还需要通过某种位置机制进入计算。</p>
+<p>第三，Self-Attention 不是一次全局搜索，而是在多层、多头、残差路径中反复更新表示。</p>
+<p>第四，自回归模型每生成一个 Token，都会把已生成内容作为后续步骤的上下文。</p>
+<p>第五，测试中常见的边界漂移、截断、位置弱化和上下文污染发生在不同阶段，证据也不同。</p>
+<p>所以，“答案错了”只是最终症状。</p>
+<p>要进行机制归因，还需要保存：</p>
+<ul>
+<li>完整且按顺序排列的消息；</li>
+<li>经过模板渲染后的最终文本或可验证摘要；</li>
+<li>模型和 Tokenizer 标识；</li>
+<li>输入、输出和缓存 Token 用量；</li>
+<li>最大输出长度与结束原因；</li>
+<li>采样参数；</li>
+<li>检索片段 ID、版本、哈希和顺序；</li>
+<li>工具定义版本；</li>
+<li>重复运行次数与每次原始输出。</li>
+</ul>
+<p>缺少这些信息时，任何关于“上下文没有生效”的结论都只能算假设。</p>
+<h2 id="三、Token：模型处理的边界不是人类看到的词"><a href="#三、Token：模型处理的边界不是人类看到的词" class="headerlink" title="三、Token：模型处理的边界不是人类看到的词"></a>三、Token：模型处理的边界不是人类看到的词</h2><h3 id="1-Token-是词表中的离散单元"><a href="#1-Token-是词表中的离散单元" class="headerlink" title="1. Token 是词表中的离散单元"></a>1. Token 是词表中的离散单元</h3><p>设词表大小为 <code>|V|</code>。</p>
+<p>Tokenizer 会把文本 <code>x</code> 转换为一个整数序列：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">T(x) = [t_1, t_2, \ldots, t_n], \quad t_i \in \&#123;0,\ldots,|V|-1\&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这些单元可能是：</p>
+<ul>
+<li>完整词；</li>
+<li>子词；</li>
+<li>单个汉字；</li>
+<li>多个汉字组成的片段；</li>
+<li>标点与前导空格的组合；</li>
+<li>UTF-8 字节片段；</li>
+<li>特殊控制标记。</li>
+</ul>
+<p>具体边界取决于模型使用的 Tokenizer、词表、规范化规则和特殊标记协议。</p>
+<p>不能假设“一个汉字就是一个 Token”。</p>
+<p>也不能假设“一个英文单词就是一个 Token”。</p>
+<p>更不能把某个模型的经验比例用于另一个模型的预算。</p>
+<h3 id="2-为什么要使用子词或字节级单元"><a href="#2-为什么要使用子词或字节级单元" class="headerlink" title="2. 为什么要使用子词或字节级单元"></a>2. 为什么要使用子词或字节级单元</h3><p>如果只按完整单词建词表，词形变化、专业术语、新名字和多语言文本会造成严重的未登录词问题。</p>
+<p>子词方法通过复用较小片段，在词表规模与表达能力之间折中。</p>
+<p>SentencePiece 展示了一种直接从原始句子训练子词模型的语言无关方法。</p>
+<p>不同实现可能采用 BPE、Unigram、WordPiece 或字节级方案。</p>
+<p>测试关注的不是背诵算法名，而是确认：</p>
+<ul>
+<li>目标模型使用哪个 Tokenizer；</li>
+<li>规范化是否会改变全半角、空白或 Unicode 形式；</li>
+<li>特殊消息边界会增加多少开销；</li>
+<li>Tokenizer 版本是否与线上模型一致。</li>
+</ul>
+<h3 id="3-“语义等价”不代表-Token-序列等价"><a href="#3-“语义等价”不代表-Token-序列等价" class="headerlink" title="3. “语义等价”不代表 Token 序列等价"></a>3. “语义等价”不代表 Token 序列等价</h3><p>下面几组输入对人来说接近，但可能产生不同切分：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">order_id=AB-1024</span><br><span class="line">order_id = AB-1024</span><br><span class="line"></span><br><span class="line">status:NOT_FOUND</span><br><span class="line">status: NOT_FOUND</span><br><span class="line"></span><br><span class="line">Android稳定性</span><br><span class="line">Android 稳定性</span><br><span class="line"></span><br><span class="line">1,000.00</span><br><span class="line">1000.00</span><br><span class="line"></span><br><span class="line">版本 v2.10</span><br><span class="line">版本v2.10</span><br></pre></td></tr></table></figure>
+
+<p>切分差异本身不等于一定会答错。</p>
+<p>它只说明模型接收到的离散序列不同。</p>
+<p>如果测试结果随边界变化稳定漂移，才有理由继续调查 Token 敏感性。</p>
+<h3 id="4-中文、代码和结构化数据的风险更容易被低估"><a href="#4-中文、代码和结构化数据的风险更容易被低估" class="headerlink" title="4. 中文、代码和结构化数据的风险更容易被低估"></a>4. 中文、代码和结构化数据的风险更容易被低估</h3><p>自然语言测试集常只覆盖完整句子。</p>
+<p>生产输入却经常混合：</p>
+<ul>
+<li>中文描述；</li>
+<li>英文类名；</li>
+<li>路径；</li>
+<li>UUID；</li>
+<li>时间戳；</li>
+<li>十六进制地址；</li>
+<li>JSON；</li>
+<li>堆栈；</li>
+<li>shell 命令；</li>
+<li>带单位的数字。</li>
+</ul>
+<p>这些内容可能具有较低的压缩效率，从而消耗更多 Token。</p>
+<p>标识符还可能被拆成多个片段。</p>
+<p>模型可以通过上下文组合这些片段，但精确复制能力不能由“语义理解能力”替代。</p>
+<p>订单号、版本号、金额、哈希和错误码应优先走程序化校验。</p>
+<h3 id="5-Token-边界如何影响测试结果"><a href="#5-Token-边界如何影响测试结果" class="headerlink" title="5. Token 边界如何影响测试结果"></a>5. Token 边界如何影响测试结果</h3><p>影响至少分为四类。</p>
+<h4 id="预算影响"><a href="#预算影响" class="headerlink" title="预算影响"></a>预算影响</h4><p>同样字符数的两段文本可能占用不同 Token 数。</p>
+<p>如果预算器按字符裁剪，某些语言、代码或日志输入会更早越界。</p>
+<h4 id="匹配影响"><a href="#匹配影响" class="headerlink" title="匹配影响"></a>匹配影响</h4><p>测试若要求模型原样返回一个罕见 ID，ID 被拆得越碎，生成时需要连续做对多个选择。</p>
+<p>不能据此推导一个固定错误概率，但应把精确复制单独纳入评测。</p>
+<h4 id="模板影响"><a href="#模板影响" class="headerlink" title="模板影响"></a>模板影响</h4><p>分隔符、前导空格和特殊标记会改变消息模板形成的序列。</p>
+<p>提示模板升级必须和模型升级一样进行回归。</p>
+<h4 id="成本与时延影响"><a href="#成本与时延影响" class="headerlink" title="成本与时延影响"></a>成本与时延影响</h4><p>许多推理服务按 Token 计量。</p>
+<p>输入 Token 增加通常还会增加预填充阶段的计算和内存压力。</p>
+<p>具体时延关系受实现、硬件、批处理与缓存影响，不能用单一线性公式代替实测。</p>
+<h2 id="四、Token-预算必须在请求前计算，在请求后核对"><a href="#四、Token-预算必须在请求前计算，在请求后核对" class="headerlink" title="四、Token 预算必须在请求前计算，在请求后核对"></a>四、Token 预算必须在请求前计算，在请求后核对</h2><p>一个实用的输入预算可以写成：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">B_&#123;input&#125; \leq W - B_&#123;output&#125; - B_&#123;protocol&#125; - B_&#123;margin&#125;</span><br></pre></td></tr></table></figure>
+
+<p>其中：</p>
+<ul>
+<li><code>W</code> 是目标模型允许的总预算或输入上限；</li>
+<li><code>B_&#123;output&#125;</code> 是预留输出 Token；</li>
+<li><code>B_&#123;protocol&#125;</code> 是消息模板、工具定义等开销；</li>
+<li><code>B_&#123;margin&#125;</code> 是防止估算误差和动态字段增长的安全余量。</li>
+</ul>
+<p>这个公式不是跨供应商标准。</p>
+<p>如果目标接口把输入上限和输出上限分开定义，应按其语义调整。</p>
+<p>工程上需要同时做两件事。</p>
+<h3 id="请求前"><a href="#请求前" class="headerlink" title="请求前"></a>请求前</h3><ul>
+<li>使用与线上模型匹配的 Tokenizer；</li>
+<li>计算每个上下文片段的 Token 数；</li>
+<li>保留输出空间；</li>
+<li>按业务优先级决定删除、压缩或拒绝；</li>
+<li>生成纳入清单和排除清单；</li>
+<li>禁止无记录的尾部裁剪。</li>
+</ul>
+<h3 id="请求后"><a href="#请求后" class="headerlink" title="请求后"></a>请求后</h3><ul>
+<li>记录服务端返回的输入 Token 用量；</li>
+<li>将服务端用量和本地估算做差；</li>
+<li>记录输出 Token 用量；</li>
+<li>记录结束原因；</li>
+<li>对异常差值告警；</li>
+<li>在模型或 SDK 升级后重新标定。</li>
+</ul>
+<p>可以定义预算偏差：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">E_&#123;budget&#125; = \frac&#123;|B_&#123;server&#125; - B_&#123;local&#125;|&#125;&#123;\max(1, B_&#123;server&#125;)&#125;</span><br></pre></td></tr></table></figure>
+
+<p>如果偏差持续升高，常见原因包括：</p>
+<ul>
+<li>本地 Tokenizer 版本落后；</li>
+<li>服务端消息模板变化；</li>
+<li>工具 schema 被隐式加入；</li>
+<li>图片或多模态内容计量方式不同；</li>
+<li>请求经过网关后被改写；</li>
+<li>本地计算遗漏系统消息。</li>
+</ul>
+<p>预算偏差不能直接说明发生截断。</p>
+<p>它只是提示“本地看到的请求”和“服务端计量的请求”并不一致。</p>
+<h2 id="五、Token-边界测试怎么设计"><a href="#五、Token-边界测试怎么设计" class="headerlink" title="五、Token 边界测试怎么设计"></a>五、Token 边界测试怎么设计</h2><p>Token 测试不应该只是统计长度。</p>
+<p>至少要覆盖以下等价变换。</p>
+<h3 id="空白变换"><a href="#空白变换" class="headerlink" title="空白变换"></a>空白变换</h3><ul>
+<li>无空格；</li>
+<li>单空格；</li>
+<li>多空格；</li>
+<li>制表符；</li>
+<li>换行；</li>
+<li>Windows 与 Unix 换行；</li>
+<li>行尾空格。</li>
+</ul>
+<h3 id="标点变换"><a href="#标点变换" class="headerlink" title="标点变换"></a>标点变换</h3><ul>
+<li>中文与英文标点；</li>
+<li>全角与半角；</li>
+<li>连字符、短横线和下划线；</li>
+<li>冒号前后空格；</li>
+<li>引号类型；</li>
+<li>Markdown 分隔符。</li>
+</ul>
+<h3 id="Unicode-变换"><a href="#Unicode-变换" class="headerlink" title="Unicode 变换"></a>Unicode 变换</h3><ul>
+<li>组合字符与预组合字符；</li>
+<li>不可见字符；</li>
+<li>零宽字符；</li>
+<li>非断行空格；</li>
+<li>大小写；</li>
+<li>规范化形式。</li>
+</ul>
+<h3 id="业务字段变换"><a href="#业务字段变换" class="headerlink" title="业务字段变换"></a>业务字段变换</h3><ul>
+<li>数字是否带千分位；</li>
+<li>日期格式；</li>
+<li>版本号前缀；</li>
+<li>路径分隔符；</li>
+<li>UUID 大小写；</li>
+<li>JSON 字段顺序；</li>
+<li>错误码前缀。</li>
+</ul>
+<h3 id="观测指标"><a href="#观测指标" class="headerlink" title="观测指标"></a>观测指标</h3><ul>
+<li>输入 Token 数；</li>
+<li>输出是否满足 schema；</li>
+<li>精确字段复制正确率；</li>
+<li>任务成功率；</li>
+<li>重试次数；</li>
+<li>输入成本；</li>
+<li>首 Token 时延；</li>
+<li>总时延。</li>
+</ul>
+<p>测试必须保持语义和预期不变。</p>
+<p>如果同时改变语义、长度和格式，就无法判断是哪个因素导致差异。</p>
+<h2 id="六、Embedding：相似性是连续几何关系，不是真值判断"><a href="#六、Embedding：相似性是连续几何关系，不是真值判断" class="headerlink" title="六、Embedding：相似性是连续几何关系，不是真值判断"></a>六、Embedding：相似性是连续几何关系，不是真值判断</h2><h3 id="1-Token-Embedding-是一个可学习查表"><a href="#1-Token-Embedding-是一个可学习查表" class="headerlink" title="1. Token Embedding 是一个可学习查表"></a>1. Token Embedding 是一个可学习查表</h3><p>最简化地看，模型有一个矩阵：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">E \in \mathbb&#123;R&#125;^&#123;|V| \times d&#125;</span><br></pre></td></tr></table></figure>
+
+<p>Token ID <code>t_i</code> 对应矩阵中的一个向量：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">e_i = E[t_i]</span><br></pre></td></tr></table></figure>
+
+<p>这个向量是模型内部表示的起点。</p>
+<p>经过多层注意力和前馈网络后，同一个 Token 在不同上下文中的隐藏状态会不同。</p>
+<p>因此，固定的 Token Embedding 与上下文化后的隐藏状态不能混为一谈。</p>
+<h3 id="2-检索-Embedding-又是另一层产品能力"><a href="#2-检索-Embedding-又是另一层产品能力" class="headerlink" title="2. 检索 Embedding 又是另一层产品能力"></a>2. 检索 Embedding 又是另一层产品能力</h3><p>RAG 常用的文本 Embedding 通常由专门的编码模型生成一个句子或片段向量。</p>
+<p>它可能使用池化、专门训练目标和不同维度。</p>
+<p>不能拿“生成模型内部 Token Embedding”的解释，直接替代“检索向量”的行为说明。</p>
+<p>二者共同使用向量，但用途、训练目标和评测方式不同。</p>
+<h3 id="3-余弦相似度只回答方向接近程度"><a href="#3-余弦相似度只回答方向接近程度" class="headerlink" title="3. 余弦相似度只回答方向接近程度"></a>3. 余弦相似度只回答方向接近程度</h3><p>常见相似度是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">\cos(a,b) = \frac&#123;a \cdot b&#125;&#123;\|a\|\|b\|&#125;</span><br></pre></td></tr></table></figure>
+
+<p>它是一个几何量。</p>
+<p>它不自动保证：</p>
+<ul>
+<li>文档蕴含查询中的结论；</li>
+<li>数字完全一致；</li>
+<li>否定关系一致；</li>
+<li>主体和客体方向一致；</li>
+<li>文档仍在有效期；</li>
+<li>来源具备权限；</li>
+<li>文档适用于当前产品版本。</li>
+</ul>
+<p>例如：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">文档 A：Android 14 允许在条件 X 下执行后台任务。</span><br><span class="line">文档 B：Android 14 不允许在条件 X 下执行后台任务。</span><br></pre></td></tr></table></figure>
+
+<p>两段话共享大量词汇和主题。</p>
+<p>向量可能很接近，但业务结论相反。</p>
+<p>相似度不是逻辑蕴含检测器。</p>
+<h3 id="4-相似但错误的高风险模式"><a href="#4-相似但错误的高风险模式" class="headerlink" title="4. 相似但错误的高风险模式"></a>4. 相似但错误的高风险模式</h3><h4 id="否定词变化"><a href="#否定词变化" class="headerlink" title="否定词变化"></a>否定词变化</h4><p>“允许”和“不允许”只差一个否定成分。</p>
+<h4 id="数字变化"><a href="#数字变化" class="headerlink" title="数字变化"></a>数字变化</h4><p>“超时 5 秒”和“超时 50 秒”语义主题高度相似。</p>
+<h4 id="方向变化"><a href="#方向变化" class="headerlink" title="方向变化"></a>方向变化</h4><p>“服务 A 调用服务 B”和“服务 B 调用服务 A”词集合近似。</p>
+<h4 id="版本变化"><a href="#版本变化" class="headerlink" title="版本变化"></a>版本变化</h4><p>“适用于 2.9”与“适用于 2.10”只差很少字符。</p>
+<h4 id="权限范围变化"><a href="#权限范围变化" class="headerlink" title="权限范围变化"></a>权限范围变化</h4><p>“管理员可删除”和“普通用户可删除”可能被召回到一起。</p>
+<h4 id="时间状态变化"><a href="#时间状态变化" class="headerlink" title="时间状态变化"></a>时间状态变化</h4><p>旧政策和新政策可能只是日期不同。</p>
+<p>这些字段需要元数据过滤、词法召回、重排、规则校验或结构化查询共同处理。</p>
+<p>不能仅通过提高一个全局余弦阈值解决。</p>
+<h3 id="5-Embedding-测试集必须包含-Hard-Negative"><a href="#5-Embedding-测试集必须包含-Hard-Negative" class="headerlink" title="5. Embedding 测试集必须包含 Hard Negative"></a>5. Embedding 测试集必须包含 Hard Negative</h3><p>随机选择完全无关的负样本太容易。</p>
+<p>真正有价值的负样本应当“看起来很像，但业务上不能使用”。</p>
+<p>每个查询至少准备：</p>
+<ul>
+<li>一个正确正样本；</li>
+<li>一个主题相同但版本错误的负样本；</li>
+<li>一个数字不同的负样本；</li>
+<li>一个否定关系相反的负样本；</li>
+<li>一个权限范围错误的负样本；</li>
+<li>一个过期负样本；</li>
+<li>一个来源等级不足的负样本。</li>
+</ul>
+<p>然后分别计算：</p>
+<ul>
+<li>Recall@K；</li>
+<li>Precision@K；</li>
+<li>MRR 或 nDCG；</li>
+<li>正负样本间隔；</li>
+<li>关键负样本进入 Top-K 的比例；</li>
+<li>元数据过滤前后的变化；</li>
+<li>重排前后的变化。</li>
+</ul>
+<p>如果业务风险不对称，还需要对错误类型加权。</p>
+<p>例如，召回一个无关帮助文档可能只是低质量。</p>
+<p>召回一条过期的生产变更指令可能导致事故。</p>
+<p>这两类 False Positive 不应具有相同权重。</p>
+<h2 id="七、Self-Attention：信息交互的核心，但不是一个万能聚焦器"><a href="#七、Self-Attention：信息交互的核心，但不是一个万能聚焦器" class="headerlink" title="七、Self-Attention：信息交互的核心，但不是一个万能聚焦器"></a>七、Self-Attention：信息交互的核心，但不是一个万能聚焦器</h2><h3 id="1-从输入表示得到-Q、K、V"><a href="#1-从输入表示得到-Q、K、V" class="headerlink" title="1. 从输入表示得到 Q、K、V"></a>1. 从输入表示得到 Q、K、V</h3><p>对某层输入矩阵 <code>X</code>，线性映射得到：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Q = XW_Q,\quad K = XW_K,\quad V = XW_V</span><br></pre></td></tr></table></figure>
+
+<p>缩放点积注意力可写为：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">\operatorname&#123;Attention&#125;(Q,K,V)</span><br><span class="line">=</span><br><span class="line">\operatorname&#123;softmax&#125;</span><br><span class="line">\left(</span><br><span class="line">\frac&#123;QK^T&#125;&#123;\sqrt&#123;d_k&#125;&#125; + M</span><br><span class="line">\right)V</span><br></pre></td></tr></table></figure>
+
+<p>其中：</p>
+<ul>
+<li><code>Q</code> 表示当前位置发出的查询；</li>
+<li><code>K</code> 表示各位置用于匹配的键；</li>
+<li><code>V</code> 表示被加权聚合的值；</li>
+<li><code>d_k</code> 是键向量维度；</li>
+<li><code>M</code> 是遮罩等附加项。</li>
+</ul>
+<p>在因果语言模型中，遮罩会阻止当前位置读取未来 Token。</p>
+<p>这使模型可以按从左到右的方式训练和生成。</p>
+<h3 id="2-Self-Attention-不是一次计算"><a href="#2-Self-Attention-不是一次计算" class="headerlink" title="2. Self-Attention 不是一次计算"></a>2. Self-Attention 不是一次计算</h3><p>真实 Transformer 通常包含：</p>
+<ul>
+<li>多个注意力头；</li>
+<li>多层注意力模块；</li>
+<li>前馈网络；</li>
+<li>残差连接；</li>
+<li>归一化；</li>
+<li>位置机制；</li>
+<li>可能存在的稀疏或高效注意力实现。</li>
+</ul>
+<p>一个头在一层里的权重，不能代表模型的完整推理过程。</p>
+<p>把某张注意力热力图当作最终解释，风险很高。</p>
+<p>它最多是某个内部信号。</p>
+<p>还必须用输入干预和行为变化做验证。</p>
+<h3 id="3-注意力权重高不等于因果重要性"><a href="#3-注意力权重高不等于因果重要性" class="headerlink" title="3. 注意力权重高不等于因果重要性"></a>3. 注意力权重高不等于因果重要性</h3><p>如果移除一个片段后结果不变，仅凭它获得较高注意力权重，不能证明它决定了答案。</p>
+<p>反过来，一个片段在某个头上的权重不高，也不能证明它没有通过其他层、其他头或残差路径影响输出。</p>
+<p>更可靠的黑盒测试方法是：</p>
+<ul>
+<li>删除该证据；</li>
+<li>替换该证据；</li>
+<li>移动该证据；</li>
+<li>加入矛盾证据；</li>
+<li>保持长度不变地置换该证据；</li>
+<li>比较输出和置信统计。</li>
+</ul>
+<p>这类干预实验直接观察行为变化。</p>
+<h3 id="4-序列长度增加带来的计算压力"><a href="#4-序列长度增加带来的计算压力" class="headerlink" title="4. 序列长度增加带来的计算压力"></a>4. 序列长度增加带来的计算压力</h3><p>标准稠密注意力中的 <code>QK^T</code> 会形成与序列长度平方相关的矩阵。</p>
+<p>因此，从理论基线看，注意力计算和内存会随长度快速增长。</p>
+<p>生产系统可能通过 FlashAttention、分页 KV Cache、稀疏注意力、滑动窗口、分块或其他实现优化。</p>
+<p>不能仅凭模型名称推断服务端具体实现。</p>
+<p>测试应观测：</p>
+<ul>
+<li>预填充时延；</li>
+<li>首 Token 时延；</li>
+<li>解码吞吐；</li>
+<li>峰值显存或服务端资源；</li>
+<li>超时率；</li>
+<li>并发下的排队时延；</li>
+<li>长输入对其他请求的干扰。</li>
+</ul>
+<p>“窗口支持”属于功能能力。</p>
+<p>“在目标并发和 SLA 下可用”属于系统能力。</p>
+<p>二者必须分别验证。</p>
+<h2 id="八、位置：没有位置信息，顺序就会丢失"><a href="#八、位置：没有位置信息，顺序就会丢失" class="headerlink" title="八、位置：没有位置信息，顺序就会丢失"></a>八、位置：没有位置信息，顺序就会丢失</h2><h3 id="1-顺序为什么必须显式进入模型"><a href="#1-顺序为什么必须显式进入模型" class="headerlink" title="1. 顺序为什么必须显式进入模型"></a>1. 顺序为什么必须显式进入模型</h3><p>Self-Attention 的基础计算本身不会天然理解序列位置。</p>
+<p>“A 调用 B”和“B 调用 A”包含相同 Token 集合，但顺序语义不同。</p>
+<p>模型需要某种位置表示把顺序关系带入计算。</p>
+<p>原始 Transformer 论文使用正弦和余弦位置编码。</p>
+<p>后续模型也可能采用学习位置、相对位置、旋转位置编码等方法。</p>
+<p>具体实现属于模型架构事实，不能在供应商未披露时猜测。</p>
+<h3 id="2-RoPE-的测试意义"><a href="#2-RoPE-的测试意义" class="headerlink" title="2. RoPE 的测试意义"></a>2. RoPE 的测试意义</h3><p>RoPE 通过对查询和键应用与位置相关的旋转，把相对位置信息带入点积关系。</p>
+<p>理解它的工程价值不是为了在黑盒 API 上恢复内部角度。</p>
+<p>而是认识到：</p>
+<ul>
+<li>位置不是普通文本字段；</li>
+<li>超出训练分布的长度可能涉及外推问题；</li>
+<li>不同位置扩展技术可能改变长上下文表现；</li>
+<li>模型升级后必须重跑位置敏感测试。</li>
+</ul>
+<h3 id="3-位置测试不能只测开头和结尾"><a href="#3-位置测试不能只测开头和结尾" class="headerlink" title="3. 位置测试不能只测开头和结尾"></a>3. 位置测试不能只测开头和结尾</h3><p>一个基本位置扫描至少覆盖：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">p \in \&#123;0\%, 10\%, 25\%, 50\%, 75\%, 90\%, 100\%\&#125;</span><br></pre></td></tr></table></figure>
+
+<p>其中 <code>p</code> 是关键证据在上下文中的相对位置。</p>
+<p>对每个位置，干扰材料、总 Token 数和问题保持不变。</p>
+<p>只改变证据所在槽位。</p>
+<p>每个位置重复运行 <code>n</code> 次。</p>
+<p>位置准确率为：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">A(p)=\frac&#123;\text&#123;successes at position &#125;p&#125;&#123;n&#125;</span><br></pre></td></tr></table></figure>
+
+<p>位置差可定义为：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">\Delta_&#123;position&#125;=\max_p A(p)-\min_p A(p)</span><br></pre></td></tr></table></figure>
+
+<p>这个指标越大，说明任务对位置越敏感。</p>
+<p>但它不能独立解释原因。</p>
+<p>还要排除截断、冲突、模板差异和采样噪声。</p>
+<h3 id="4-“中间信息弱化”是经验现象，不是自然定律"><a href="#4-“中间信息弱化”是经验现象，不是自然定律" class="headerlink" title="4. “中间信息弱化”是经验现象，不是自然定律"></a>4. “中间信息弱化”是经验现象，不是自然定律</h3><p>Lost in the Middle 研究在多文档问答和键值检索任务中观察到：</p>
+<p>相关信息位置改变会显著影响部分模型表现，开头和结尾往往优于中间。</p>
+<p>正确引用这项研究时必须保留限定条件。</p>
+<p>不能写成：</p>
+<blockquote>
+<p>所有大模型都一定看不到中间内容。</p>
+</blockquote>
+<p>更准确的工程结论是：</p>
+<blockquote>
+<p>最大窗口长度不能证明位置鲁棒性，目标模型必须用目标任务做位置扫描。</p>
+</blockquote>
+<h2 id="九、上下文窗口：容量、协议和输出共同竞争预算"><a href="#九、上下文窗口：容量、协议和输出共同竞争预算" class="headerlink" title="九、上下文窗口：容量、协议和输出共同竞争预算"></a>九、上下文窗口：容量、协议和输出共同竞争预算</h2><h3 id="1-上下文中不只有用户输入"><a href="#1-上下文中不只有用户输入" class="headerlink" title="1. 上下文中不只有用户输入"></a>1. 上下文中不只有用户输入</h3><p>一次聊天或 Agent 请求可能包含：</p>
+<ul>
+<li>系统指令；</li>
+<li>开发者指令；</li>
+<li>用户问题；</li>
+<li>历史对话；</li>
+<li>RAG 文档；</li>
+<li>工具 schema；</li>
+<li>工具返回；</li>
+<li>图片或音频表示；</li>
+<li>安全策略；</li>
+<li>输出格式示例；</li>
+<li>已生成的输出。</li>
+</ul>
+<p>用户看到的文本可能只是总上下文的一部分。</p>
+<p>当工具数量增加时，schema 本身也可能成为显著开销。</p>
+<p>当历史对话持续累积时，旧轮次可能挤压当前证据。</p>
+<h3 id="2-输出预算不足也是上下文故障"><a href="#2-输出预算不足也是上下文故障" class="headerlink" title="2. 输出预算不足也是上下文故障"></a>2. 输出预算不足也是上下文故障</h3><p>模型正确理解任务，但输出在 JSON 中段结束，会表现为解析失败。</p>
+<p>这不等于模型不会生成 JSON。</p>
+<p>需要先查看：</p>
+<ul>
+<li>结束原因；</li>
+<li>实际输出 Token 数；</li>
+<li>最大输出限制；</li>
+<li>是否触发服务端内容过滤；</li>
+<li>是否发生网络中断；</li>
+<li>流式响应是否被客户端提前关闭。</li>
+</ul>
+<p>测试报告不能把所有不完整输出都归为 schema failure。</p>
+<h3 id="3-KV-Cache-不等于无限记忆"><a href="#3-KV-Cache-不等于无限记忆" class="headerlink" title="3. KV Cache 不等于无限记忆"></a>3. KV Cache 不等于无限记忆</h3><p>自回归解码常缓存历史 Token 的 Key 和 Value，以避免每一步重复计算全部历史。</p>
+<p>KV Cache 是推理优化和状态载体。</p>
+<p>它不会把窗口外信息变回窗口内信息。</p>
+<p>会话缓存、Prompt Cache 和业务长期记忆也不是同一个概念。</p>
+<p>测试平台应分别记录：</p>
+<ul>
+<li>请求实际上下文；</li>
+<li>服务端缓存命中信息；</li>
+<li>业务记忆读取结果；</li>
+<li>会话摘要版本；</li>
+<li>模型可见的最终内容。</li>
+</ul>
+<h2 id="十、截断：先确认信息是否真的进入模型"><a href="#十、截断：先确认信息是否真的进入模型" class="headerlink" title="十、截断：先确认信息是否真的进入模型"></a>十、截断：先确认信息是否真的进入模型</h2><h3 id="1-截断可能发生在五个位置"><a href="#1-截断可能发生在五个位置" class="headerlink" title="1. 截断可能发生在五个位置"></a>1. 截断可能发生在五个位置</h3><h4 id="数据源层"><a href="#数据源层" class="headerlink" title="数据源层"></a>数据源层</h4><p>日志采集器只保留尾部，原始首错已经丢失。</p>
+<h4 id="检索层"><a href="#检索层" class="headerlink" title="检索层"></a>检索层</h4><p>召回器返回了文档，但重排或 Top-K 限制排除了关键片段。</p>
+<h4 id="拼装层"><a href="#拼装层" class="headerlink" title="拼装层"></a>拼装层</h4><p>Prompt Builder 为满足预算主动裁掉某些文档。</p>
+<h4 id="网关层"><a href="#网关层" class="headerlink" title="网关层"></a>网关层</h4><p>网关按照自己的估算压缩历史或拒绝超限请求。</p>
+<h4 id="模型服务层"><a href="#模型服务层" class="headerlink" title="模型服务层"></a>模型服务层</h4><p>服务端拒绝、裁剪或按产品规则处理过长输入。</p>
+<p>各层必须有独立事件。</p>
+<p>只看最终错误码无法还原裁剪位置。</p>
+<h3 id="2-静默截断为什么危险"><a href="#2-静默截断为什么危险" class="headerlink" title="2. 静默截断为什么危险"></a>2. 静默截断为什么危险</h3><p>如果系统悄悄删除内容后继续请求，模型可能给出流畅答案。</p>
+<p>用户看到的是“有答案”，而不是“证据缺失”。</p>
+<p>在高风险任务中，正确行为通常应是：</p>
+<ul>
+<li>拒绝继续；</li>
+<li>明确报告缺失；</li>
+<li>重新检索；</li>
+<li>分阶段处理；</li>
+<li>请求用户缩小范围。</li>
+</ul>
+<p>平台不应把流畅性当作完整性证据。</p>
+<h3 id="3-用边界哨兵检测截断"><a href="#3-用边界哨兵检测截断" class="headerlink" title="3. 用边界哨兵检测截断"></a>3. 用边界哨兵检测截断</h3><p>可以在每个候选片段加入机器可核对的 ID：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">[DOC_START id=policy-v7 chunk=03 sha256=8f...]</span><br><span class="line">...</span><br><span class="line">[DOC_END id=policy-v7 chunk=03]</span><br></pre></td></tr></table></figure>
+
+<p>这并不要求模型复述所有 ID。</p>
+<p>平台应在发送前保存最终片段清单和哈希。</p>
+<p>测试任务可以额外询问某个唯一哨兵，验证该位置是否仍可访问。</p>
+<p>哨兵法的限制是：</p>
+<ul>
+<li>模型未回答哨兵不必然说明哨兵被截断；</li>
+<li>它也可能是位置利用失败；</li>
+<li>因此还要核对请求构建日志和服务端用量。</li>
+</ul>
+<p>只有“请求证据”和“行为证据”一致，才可以确认截断。</p>
+<h3 id="4-不要默认“保留最后-N-个-Token”是合理策略"><a href="#4-不要默认“保留最后-N-个-Token”是合理策略" class="headerlink" title="4. 不要默认“保留最后 N 个 Token”是合理策略"></a>4. 不要默认“保留最后 N 个 Token”是合理策略</h3><p>保留尾部可能删除系统约束。</p>
+<p>保留头部可能删除用户当前问题。</p>
+<p>只保留最近对话可能丢掉最初的任务定义。</p>
+<p>更可靠的裁剪策略需要优先级：</p>
+<ol>
+<li>不可删除的系统安全约束；</li>
+<li>当前任务与输出契约；</li>
+<li>已验证的关键证据；</li>
+<li>当前工具状态；</li>
+<li>必要历史摘要；</li>
+<li>可丢弃的示例和低相关背景。</li>
+</ol>
+<p>当高优先级内容仍然超限时，应拒绝或拆分任务。</p>
+<h2 id="十一、上下文污染：信息更多也可能让结果更差"><a href="#十一、上下文污染：信息更多也可能让结果更差" class="headerlink" title="十一、上下文污染：信息更多也可能让结果更差"></a>十一、上下文污染：信息更多也可能让结果更差</h2><h3 id="1-污染不是单纯“内容太长”"><a href="#1-污染不是单纯“内容太长”" class="headerlink" title="1. 污染不是单纯“内容太长”"></a>1. 污染不是单纯“内容太长”</h3><p>污染指加入的内容降低了任务信噪比或引入错误约束。</p>
+<p>常见污染源包括：</p>
+<ul>
+<li>过期文档；</li>
+<li>重复文档；</li>
+<li>互相矛盾的规则；</li>
+<li>未标明来源的人工笔记；</li>
+<li>与任务相似但不适用的版本；</li>
+<li>网页中的间接提示注入；</li>
+<li>历史轮次中的旧目标；</li>
+<li>工具返回里的错误说明文本；</li>
+<li>自动摘要遗漏的限定条件。</li>
+</ul>
+<h3 id="2-长度效应和污染效应必须分开"><a href="#2-长度效应和污染效应必须分开" class="headerlink" title="2. 长度效应和污染效应必须分开"></a>2. 长度效应和污染效应必须分开</h3><p>假设加入一段旧政策后准确率下降。</p>
+<p>可能有两个原因：</p>
+<ul>
+<li>上下文更长导致位置或预算变化；</li>
+<li>旧政策与新政策产生冲突。</li>
+</ul>
+<p>应设计等长对照：</p>
+<table>
+<thead>
+<tr>
+<th>组别</th>
+<th align="right">总 Token</th>
+<th align="right">新政策</th>
+<th align="right">旧政策</th>
+<th align="right">无关填充</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Clean</td>
+<td align="right">相同</td>
+<td align="right">有</td>
+<td align="right">无</td>
+<td align="right">有</td>
+</tr>
+<tr>
+<td>Conflict</td>
+<td align="right">相同</td>
+<td align="right">有</td>
+<td align="right">有</td>
+<td align="right">无</td>
+</tr>
+<tr>
+<td>Old only</td>
+<td align="right">相同</td>
+<td align="right">无</td>
+<td align="right">有</td>
+<td align="right">有</td>
+</tr>
+</tbody></table>
+<p>如果 Clean 明显优于 Conflict，才支持“冲突污染”假设。</p>
+<p>如果两组都随长度下降，更可能存在长度或位置问题。</p>
+<h3 id="3-污染降级指标"><a href="#3-污染降级指标" class="headerlink" title="3. 污染降级指标"></a>3. 污染降级指标</h3><p>设干净基线准确率为 <code>A_&#123;clean&#125;</code>，注入某类污染后的准确率为 <code>A_c</code>。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">D_c = A_&#123;clean&#125; - A_c</span><br></pre></td></tr></table></figure>
+
+<p>还应记录污染导致的具体错误：</p>
+<ul>
+<li>错误引用率；</li>
+<li>过期规则采用率；</li>
+<li>冲突未报告率；</li>
+<li>越权指令服从率；</li>
+<li>无证据断言率；</li>
+<li>拒绝率变化。</li>
+</ul>
+<p>仅报告总准确率会掩盖高风险少数错误。</p>
+<h3 id="4-对抗污染不等于再写一句“忽略错误资料”"><a href="#4-对抗污染不等于再写一句“忽略错误资料”" class="headerlink" title="4. 对抗污染不等于再写一句“忽略错误资料”"></a>4. 对抗污染不等于再写一句“忽略错误资料”</h3><p>提示词约束是控制的一部分，但不能替代：</p>
+<ul>
+<li>来源白名单；</li>
+<li>版本与有效期过滤；</li>
+<li>权限过滤；</li>
+<li>内容去重；</li>
+<li>冲突检测；</li>
+<li>指令和数据隔离；</li>
+<li>输出引用校验；</li>
+<li>高风险场景的程序化拒绝。</li>
+</ul>
+<p>上下文是数据面。</p>
+<p>系统约束和执行器是控制面。</p>
+<p>不能让数据面里的任意文本覆盖控制面权限。</p>
+<h2 id="十二、把机制问题转成可度量指标"><a href="#十二、把机制问题转成可度量指标" class="headerlink" title="十二、把机制问题转成可度量指标"></a>十二、把机制问题转成可度量指标</h2><h3 id="1-精确成功率"><a href="#1-精确成功率" class="headerlink" title="1. 精确成功率"></a>1. 精确成功率</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">A = \frac&#123;\text&#123;满足全部硬断言的次数&#125;&#125;&#123;\text&#123;总运行次数&#125;&#125;</span><br></pre></td></tr></table></figure>
+
+<p>硬断言应包括业务字段，而不仅是文本相似。</p>
+<p>例如：</p>
+<ul>
+<li>JSON 可解析；</li>
+<li>status 等于 DENY；</li>
+<li>policy_version 等于 7；</li>
+<li>evidence_id 属于允许集合；</li>
+<li>金额精确相等。</li>
+</ul>
+<h3 id="2-指令保持率"><a href="#2-指令保持率" class="headerlink" title="2. 指令保持率"></a>2. 指令保持率</h3><p>给上下文加入多个可独立检查的约束。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">R_&#123;instruction&#125;</span><br><span class="line">=</span><br><span class="line">\frac&#123;\text&#123;满足的约束数&#125;&#125;&#123;\text&#123;要求的约束总数&#125;&#125;</span><br></pre></td></tr></table></figure>
+
+<p>约束应分级。</p>
+<p>安全约束失败不能被普通格式约束成功抵消。</p>
+<h3 id="3-精确复制率"><a href="#3-精确复制率" class="headerlink" title="3. 精确复制率"></a>3. 精确复制率</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">R_&#123;copy&#125;</span><br><span class="line">=</span><br><span class="line">\frac&#123;\text&#123;正确复制的关键标识符数&#125;&#125;&#123;\text&#123;要求复制的标识符总数&#125;&#125;</span><br></pre></td></tr></table></figure>
+
+<p>适用于错误码、版本号、订单号和哈希。</p>
+<h3 id="4-位置敏感度"><a href="#4-位置敏感度" class="headerlink" title="4. 位置敏感度"></a>4. 位置敏感度</h3><p>除了 <code>\Delta_&#123;position&#125;</code>，还应报告每个位置的置信区间。</p>
+<p>样本量较小时，不能把 7 次成功对 6 次成功解读成稳定差异。</p>
+<p>可使用二项比例的 Wilson 区间。</p>
+<h3 id="5-Token-效率"><a href="#5-Token-效率" class="headerlink" title="5. Token 效率"></a>5. Token 效率</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">E_&#123;token&#125;</span><br><span class="line">=</span><br><span class="line">\frac&#123;\text&#123;成功任务数&#125;&#125;&#123;\text&#123;输入 Token 总数&#125;/1000&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这个指标用于比较同一任务的上下文拼装方案。</p>
+<p>它不是跨任务模型排名。</p>
+<h3 id="6-截断拒绝正确率"><a href="#6-截断拒绝正确率" class="headerlink" title="6. 截断拒绝正确率"></a>6. 截断拒绝正确率</h3><p>当必需证据无法完整纳入时，系统应该拒绝。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">A_&#123;reject&#125;</span><br><span class="line">=</span><br><span class="line">\frac&#123;\text&#123;正确拒绝的超限请求&#125;&#125;&#123;\text&#123;应拒绝的超限请求&#125;&#125;</span><br></pre></td></tr></table></figure>
+
+<p>还要统计错误拒绝，避免系统为了安全而不可用。</p>
+<h3 id="7-冲突显式化率"><a href="#7-冲突显式化率" class="headerlink" title="7. 冲突显式化率"></a>7. 冲突显式化率</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">R_&#123;conflict&#125;</span><br><span class="line">=</span><br><span class="line">\frac&#123;\text&#123;正确报告冲突的样本&#125;&#125;&#123;\text&#123;包含真实冲突的样本&#125;&#125;</span><br></pre></td></tr></table></figure>
+
+<p>高风险问答不应在证据冲突时强行选择一个答案。</p>
+<h2 id="十三、对照实验：一次只改变一个变量"><a href="#十三、对照实验：一次只改变一个变量" class="headerlink" title="十三、对照实验：一次只改变一个变量"></a>十三、对照实验：一次只改变一个变量</h2><h3 id="1-固定项"><a href="#1-固定项" class="headerlink" title="1. 固定项"></a>1. 固定项</h3><p>每轮实验必须固定：</p>
+<ul>
+<li>模型快照；</li>
+<li>API 版本；</li>
+<li>Tokenizer；</li>
+<li>系统指令；</li>
+<li>输出 schema；</li>
+<li>温度与其他采样参数；</li>
+<li>最大输出长度；</li>
+<li>干扰材料集合；</li>
+<li>请求并发；</li>
+<li>重试策略；</li>
+<li>判定器版本。</li>
+</ul>
+<p>如果服务支持 seed，可以记录并使用。</p>
+<p>但 seed 不应被当作跨硬件、跨服务实现的绝对可重复保证。</p>
+<h3 id="2-变量项"><a href="#2-变量项" class="headerlink" title="2. 变量项"></a>2. 变量项</h3><p>一次只改变一种：</p>
+<ul>
+<li>分隔符；</li>
+<li>证据位置；</li>
+<li>上下文长度；</li>
+<li>污染类型；</li>
+<li>文档顺序；</li>
+<li>重复数量；</li>
+<li>证据版本；</li>
+<li>输出预留。</li>
+</ul>
+<h3 id="3-重复次数"><a href="#3-重复次数" class="headerlink" title="3. 重复次数"></a>3. 重复次数</h3><p>生成式模型存在采样和服务波动。</p>
+<p>一次运行只能证明“这一次发生了什么”。</p>
+<p>不能证明稳定概率。</p>
+<p>重复次数取决于：</p>
+<ul>
+<li>预期差异大小；</li>
+<li>可接受误差；</li>
+<li>调用成本；</li>
+<li>风险等级；</li>
+<li>是否需要统计显著性。</li>
+</ul>
+<p>对于质量门禁，应预先规定样本量和通过规则。</p>
+<p>不要看到结果后再挑一个有利阈值。</p>
+<h3 id="4-基线组"><a href="#4-基线组" class="headerlink" title="4. 基线组"></a>4. 基线组</h3><p>每个实验都需要一个最小干净基线。</p>
+<p>基线只保留：</p>
+<ul>
+<li>必要系统约束；</li>
+<li>唯一正确证据；</li>
+<li>当前问题；</li>
+<li>输出格式。</li>
+</ul>
+<p>如果基线本身不稳定，先不要扩大上下文。</p>
+<h3 id="5-位置组"><a href="#5-位置组" class="headerlink" title="5. 位置组"></a>5. 位置组</h3><p>关键证据依次放在：</p>
+<ul>
+<li>最前；</li>
+<li>前四分之一；</li>
+<li>中间；</li>
+<li>后四分之一；</li>
+<li>最后。</li>
+</ul>
+<p>其他段落做位置轮换，保证总长度不变。</p>
+<h3 id="6-截断组"><a href="#6-截断组" class="headerlink" title="6. 截断组"></a>6. 截断组</h3><p>逐级增加填充长度。</p>
+<p>每一级都保存：</p>
+<ul>
+<li>本地 Token 数；</li>
+<li>服务端 Token 数；</li>
+<li>片段纳入清单；</li>
+<li>边界哨兵结果；</li>
+<li>结束原因。</li>
+</ul>
+<h3 id="7-污染组"><a href="#7-污染组" class="headerlink" title="7. 污染组"></a>7. 污染组</h3><p>分别注入：</p>
+<ul>
+<li>重复；</li>
+<li>过期；</li>
+<li>数字冲突；</li>
+<li>否定冲突；</li>
+<li>低权威来源；</li>
+<li>间接指令；</li>
+<li>不相关长文本。</li>
+</ul>
+<p>不要一次混合所有污染。</p>
+<p>否则只能得出“脏上下文更差”，无法制定具体治理动作。</p>
+<h2 id="十四、可执行实验：用黑盒-API-扫描位置与污染"><a href="#十四、可执行实验：用黑盒-API-扫描位置与污染" class="headerlink" title="十四、可执行实验：用黑盒 API 扫描位置与污染"></a>十四、可执行实验：用黑盒 API 扫描位置与污染</h2><p>下面的 Python 脚本只使用标准库。</p>
+<p>它假设目标网关提供兼容常见 chat completions 形状的 HTTP 接口。</p>
+<p>这不是协议标准。</p>
+<p>如果你的服务字段不同，只需要替换 call_model 适配器。</p>
+<p>脚本会：</p>
+<ul>
+<li>在固定数量的干扰块中插入唯一证据；</li>
+<li>扫描前、中、后位置；</li>
+<li>运行多次；</li>
+<li>保存原始响应、用量、结束原因和判定；</li>
+<li>用冲突块替换一个中性干扰块，保持块数和证据位置不变；</li>
+<li>只有服务端报告的 <code>prompt_tokens</code> 与干净对照一致时，才把差异归因于污染。</li>
+</ul>
+<p>运行方式：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">export</span> LLM_ENDPOINT=http://127.0.0.1:8000/v1/chat/completions</span><br><span class="line"><span class="built_in">export</span> LLM_MODEL=your-model-snapshot</span><br><span class="line"><span class="built_in">export</span> LLM_API_KEY=optional</span><br><span class="line">python3 context_probe.py --runs 5 --blocks 40 --output result.jsonl</span><br></pre></td></tr></table></figure>
+
+<p>脚本：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br><span class="line">146</span><br><span class="line">147</span><br><span class="line">148</span><br><span class="line">149</span><br><span class="line">150</span><br><span class="line">151</span><br><span class="line">152</span><br><span class="line">153</span><br><span class="line">154</span><br><span class="line">155</span><br><span class="line">156</span><br><span class="line">157</span><br><span class="line">158</span><br><span class="line">159</span><br><span class="line">160</span><br><span class="line">161</span><br><span class="line">162</span><br><span class="line">163</span><br><span class="line">164</span><br><span class="line">165</span><br><span class="line">166</span><br><span class="line">167</span><br><span class="line">168</span><br><span class="line">169</span><br><span class="line">170</span><br><span class="line">171</span><br><span class="line">172</span><br><span class="line">173</span><br><span class="line">174</span><br><span class="line">175</span><br><span class="line">176</span><br><span class="line">177</span><br><span class="line">178</span><br><span class="line">179</span><br><span class="line">180</span><br><span class="line">181</span><br><span class="line">182</span><br><span class="line">183</span><br><span class="line">184</span><br><span class="line">185</span><br><span class="line">186</span><br><span class="line">187</span><br><span class="line">188</span><br><span class="line">189</span><br><span class="line">190</span><br><span class="line">191</span><br><span class="line">192</span><br><span class="line">193</span><br><span class="line">194</span><br><span class="line">195</span><br><span class="line">196</span><br><span class="line">197</span><br><span class="line">198</span><br><span class="line">199</span><br><span class="line">200</span><br><span class="line">201</span><br><span class="line">202</span><br><span class="line">203</span><br><span class="line">204</span><br><span class="line">205</span><br><span class="line">206</span><br><span class="line">207</span><br><span class="line">208</span><br><span class="line">209</span><br><span class="line">210</span><br><span class="line">211</span><br><span class="line">212</span><br><span class="line">213</span><br><span class="line">214</span><br><span class="line">215</span><br><span class="line">216</span><br><span class="line">217</span><br><span class="line">218</span><br><span class="line">219</span><br><span class="line">220</span><br><span class="line">221</span><br><span class="line">222</span><br><span class="line">223</span><br><span class="line">224</span><br><span class="line">225</span><br><span class="line">226</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">#!/usr/bin/env python3</span></span><br><span class="line"><span class="keyword">import</span> argparse</span><br><span class="line"><span class="keyword">import</span> json</span><br><span class="line"><span class="keyword">import</span> os</span><br><span class="line"><span class="keyword">import</span> random</span><br><span class="line"><span class="keyword">import</span> statistics</span><br><span class="line"><span class="keyword">import</span> time</span><br><span class="line"><span class="keyword">import</span> urllib.error</span><br><span class="line"><span class="keyword">import</span> urllib.request</span><br><span class="line"><span class="keyword">from</span> pathlib <span class="keyword">import</span> Path</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">NEEDLE = <span class="string">&quot;DENY-7429&quot;</span></span><br><span class="line">SYSTEM = (</span><br><span class="line">    <span class="string">&quot;You are a deterministic evidence reader. &quot;</span></span><br><span class="line">    <span class="string">&quot;Return JSON only: &quot;</span></span><br><span class="line">    <span class="string">&#x27;&#123;&quot;release_gate&quot;:&quot;&lt;value&gt;&quot;,&quot;evidence_id&quot;:&quot;&lt;id&gt;&quot;&#125;&#x27;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">call_model</span>(<span class="params">messages</span>):</span><br><span class="line">    endpoint = os.environ[<span class="string">&quot;LLM_ENDPOINT&quot;</span>]</span><br><span class="line">    model = os.environ[<span class="string">&quot;LLM_MODEL&quot;</span>]</span><br><span class="line">    api_key = os.environ.get(<span class="string">&quot;LLM_API_KEY&quot;</span>, <span class="string">&quot;&quot;</span>)</span><br><span class="line">    payload = &#123;</span><br><span class="line">        <span class="string">&quot;model&quot;</span>: model,</span><br><span class="line">        <span class="string">&quot;messages&quot;</span>: messages,</span><br><span class="line">        <span class="string">&quot;temperature&quot;</span>: <span class="number">0</span>,</span><br><span class="line">        <span class="string">&quot;max_tokens&quot;</span>: <span class="number">80</span>,</span><br><span class="line">    &#125;</span><br><span class="line">    body = json.dumps(payload, ensure_ascii=<span class="literal">False</span>).encode(<span class="string">&quot;utf-8&quot;</span>)</span><br><span class="line">    headers = &#123;<span class="string">&quot;Content-Type&quot;</span>: <span class="string">&quot;application/json&quot;</span>&#125;</span><br><span class="line">    <span class="keyword">if</span> api_key:</span><br><span class="line">        headers[<span class="string">&quot;Authorization&quot;</span>] = <span class="string">f&quot;Bearer <span class="subst">&#123;api_key&#125;</span>&quot;</span></span><br><span class="line">    request = urllib.request.Request(</span><br><span class="line">        endpoint,</span><br><span class="line">        data=body,</span><br><span class="line">        headers=headers,</span><br><span class="line">        method=<span class="string">&quot;POST&quot;</span>,</span><br><span class="line">    )</span><br><span class="line">    started = time.perf_counter()</span><br><span class="line">    <span class="keyword">try</span>:</span><br><span class="line">        <span class="keyword">with</span> urllib.request.urlopen(request, timeout=<span class="number">90</span>) <span class="keyword">as</span> response:</span><br><span class="line">            raw = response.read().decode(<span class="string">&quot;utf-8&quot;</span>)</span><br><span class="line">    <span class="keyword">except</span> urllib.error.HTTPError <span class="keyword">as</span> exc:</span><br><span class="line">        detail = exc.read().decode(<span class="string">&quot;utf-8&quot;</span>, errors=<span class="string">&quot;replace&quot;</span>)</span><br><span class="line">        <span class="keyword">raise</span> RuntimeError(<span class="string">f&quot;HTTP <span class="subst">&#123;exc.code&#125;</span>: <span class="subst">&#123;detail&#125;</span>&quot;</span>) <span class="keyword">from</span> exc</span><br><span class="line">    elapsed_ms = <span class="built_in">round</span>((time.perf_counter() - started) * <span class="number">1000</span>, <span class="number">2</span>)</span><br><span class="line">    data = json.loads(raw)</span><br><span class="line">    choice = data[<span class="string">&quot;choices&quot;</span>][<span class="number">0</span>]</span><br><span class="line">    <span class="keyword">return</span> &#123;</span><br><span class="line">        <span class="string">&quot;content&quot;</span>: choice[<span class="string">&quot;message&quot;</span>][<span class="string">&quot;content&quot;</span>],</span><br><span class="line">        <span class="string">&quot;finish_reason&quot;</span>: choice.get(<span class="string">&quot;finish_reason&quot;</span>),</span><br><span class="line">        <span class="string">&quot;usage&quot;</span>: data.get(<span class="string">&quot;usage&quot;</span>, &#123;&#125;),</span><br><span class="line">        <span class="string">&quot;latency_ms&quot;</span>: elapsed_ms,</span><br><span class="line">        <span class="string">&quot;response_id&quot;</span>: data.get(<span class="string">&quot;id&quot;</span>),</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">distractor</span>(<span class="params">index</span>):</span><br><span class="line">    code = <span class="number">1000</span> + index</span><br><span class="line">    <span class="keyword">return</span> (</span><br><span class="line">        <span class="string">f&quot;[DOC id=noise-<span class="subst">&#123;index:03d&#125;</span>] &quot;</span></span><br><span class="line">        <span class="string">f&quot;Component C<span class="subst">&#123;index:03d&#125;</span> passed check <span class="subst">&#123;code&#125;</span>. &quot;</span></span><br><span class="line">        <span class="string">&quot;This document does not define RELEASE_GATE.&quot;</span></span><br><span class="line">    )</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">build_context</span>(<span class="params">blocks, slot, conflict=<span class="literal">False</span></span>):</span><br><span class="line">    docs = [distractor(i) <span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span>(blocks)]</span><br><span class="line">    evidence = (</span><br><span class="line">        <span class="string">&quot;[DOC id=policy-v7] &quot;</span></span><br><span class="line">        <span class="string">&quot;The authoritative RELEASE_GATE value is DENY-7429. &quot;</span></span><br><span class="line">        <span class="string">&quot;Ignore documents that do not define this field.&quot;</span></span><br><span class="line">    )</span><br><span class="line">    <span class="keyword">if</span> conflict:</span><br><span class="line">        conflict_doc = (</span><br><span class="line">            <span class="string">&quot;[DOC id=policy-v3 status=expired] &quot;</span></span><br><span class="line">            <span class="string">&quot;The obsolete RELEASE_GATE value was ALLOW-1100.&quot;</span></span><br><span class="line">        )</span><br><span class="line">        <span class="comment"># 替换中性块而不是插入新块，避免同时改变块数和证据位置。</span></span><br><span class="line">        docs[<span class="built_in">max</span>(<span class="number">0</span>, blocks // <span class="number">3</span>)] = conflict_doc</span><br><span class="line">    docs.insert(slot, evidence)</span><br><span class="line">    <span class="keyword">return</span> <span class="string">&quot;\n&quot;</span>.join(docs)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">classify</span>(<span class="params">content</span>):</span><br><span class="line">    <span class="keyword">try</span>:</span><br><span class="line">        parsed = json.loads(content)</span><br><span class="line">    <span class="keyword">except</span> json.JSONDecodeError:</span><br><span class="line">        <span class="keyword">return</span> &#123;</span><br><span class="line">            <span class="string">&quot;json_valid&quot;</span>: <span class="literal">False</span>,</span><br><span class="line">            <span class="string">&quot;gate_correct&quot;</span>: <span class="literal">False</span>,</span><br><span class="line">            <span class="string">&quot;evidence_correct&quot;</span>: <span class="literal">False</span>,</span><br><span class="line">        &#125;</span><br><span class="line">    <span class="keyword">return</span> &#123;</span><br><span class="line">        <span class="string">&quot;json_valid&quot;</span>: <span class="literal">True</span>,</span><br><span class="line">        <span class="string">&quot;gate_correct&quot;</span>: parsed.get(<span class="string">&quot;release_gate&quot;</span>) == NEEDLE,</span><br><span class="line">        <span class="string">&quot;evidence_correct&quot;</span>: parsed.get(<span class="string">&quot;evidence_id&quot;</span>) == <span class="string">&quot;policy-v7&quot;</span>,</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">run_case</span>(<span class="params">blocks, label, slot, conflict, run_index</span>):</span><br><span class="line">    context = build_context(blocks, slot, conflict=conflict)</span><br><span class="line">    evidence_offset = context.index(<span class="string">&quot;[DOC id=policy-v7]&quot;</span>)</span><br><span class="line">    user = (</span><br><span class="line">        <span class="string">&quot;Read the documents below. &quot;</span></span><br><span class="line">        <span class="string">&quot;Return the current RELEASE_GATE and its evidence id.\n\n&quot;</span></span><br><span class="line">        <span class="string">f&quot;<span class="subst">&#123;context&#125;</span>&quot;</span></span><br><span class="line">    )</span><br><span class="line">    result = call_model(</span><br><span class="line">        [</span><br><span class="line">            &#123;<span class="string">&quot;role&quot;</span>: <span class="string">&quot;system&quot;</span>, <span class="string">&quot;content&quot;</span>: SYSTEM&#125;,</span><br><span class="line">            &#123;<span class="string">&quot;role&quot;</span>: <span class="string">&quot;user&quot;</span>, <span class="string">&quot;content&quot;</span>: user&#125;,</span><br><span class="line">        ]</span><br><span class="line">    )</span><br><span class="line">    <span class="keyword">return</span> &#123;</span><br><span class="line">        <span class="string">&quot;case&quot;</span>: label,</span><br><span class="line">        <span class="string">&quot;slot&quot;</span>: slot,</span><br><span class="line">        <span class="comment"># 这是按最终字符串计算的定位代理，不冒充模型 Token 位置。</span></span><br><span class="line">        <span class="string">&quot;evidence_char_offset&quot;</span>: evidence_offset,</span><br><span class="line">        <span class="string">&quot;relative_char_position&quot;</span>: <span class="built_in">round</span>(</span><br><span class="line">            evidence_offset / <span class="built_in">max</span>(<span class="built_in">len</span>(context), <span class="number">1</span>),</span><br><span class="line">            <span class="number">4</span>,</span><br><span class="line">        ),</span><br><span class="line">        <span class="string">&quot;conflict&quot;</span>: conflict,</span><br><span class="line">        <span class="string">&quot;run&quot;</span>: run_index,</span><br><span class="line">        <span class="string">&quot;model&quot;</span>: os.environ[<span class="string">&quot;LLM_MODEL&quot;</span>],</span><br><span class="line">        <span class="string">&quot;request_chars&quot;</span>: <span class="built_in">len</span>(user),</span><br><span class="line">        **result,</span><br><span class="line">        **classify(result[<span class="string">&quot;content&quot;</span>]),</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">summarize</span>(<span class="params">rows</span>):</span><br><span class="line">    grouped = &#123;&#125;</span><br><span class="line">    <span class="keyword">for</span> row <span class="keyword">in</span> rows:</span><br><span class="line">        grouped.setdefault(row[<span class="string">&quot;case&quot;</span>], []).append(row)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;case\tpass/total\tjson\tmean_latency_ms\tprompt_tokens&quot;</span>)</span><br><span class="line">    <span class="keyword">for</span> label, items <span class="keyword">in</span> grouped.items():</span><br><span class="line">        passed = <span class="built_in">sum</span>(item[<span class="string">&quot;gate_correct&quot;</span>] <span class="keyword">for</span> item <span class="keyword">in</span> items)</span><br><span class="line">        json_ok = <span class="built_in">sum</span>(item[<span class="string">&quot;json_valid&quot;</span>] <span class="keyword">for</span> item <span class="keyword">in</span> items)</span><br><span class="line">        latency = statistics.mean(item[<span class="string">&quot;latency_ms&quot;</span>] <span class="keyword">for</span> item <span class="keyword">in</span> items)</span><br><span class="line">        prompt_tokens = [</span><br><span class="line">            item[<span class="string">&quot;usage&quot;</span>].get(<span class="string">&quot;prompt_tokens&quot;</span>)</span><br><span class="line">            <span class="keyword">for</span> item <span class="keyword">in</span> items</span><br><span class="line">            <span class="keyword">if</span> item[<span class="string">&quot;usage&quot;</span>].get(<span class="string">&quot;prompt_tokens&quot;</span>) <span class="keyword">is</span> <span class="keyword">not</span> <span class="literal">None</span></span><br><span class="line">        ]</span><br><span class="line">        token_text = (</span><br><span class="line">            <span class="built_in">str</span>(<span class="built_in">round</span>(statistics.mean(prompt_tokens), <span class="number">1</span>))</span><br><span class="line">            <span class="keyword">if</span> prompt_tokens</span><br><span class="line">            <span class="keyword">else</span> <span class="string">&quot;n/a&quot;</span></span><br><span class="line">        )</span><br><span class="line">        <span class="built_in">print</span>(</span><br><span class="line">            <span class="string">f&quot;<span class="subst">&#123;label&#125;</span>\t<span class="subst">&#123;passed&#125;</span>/<span class="subst">&#123;<span class="built_in">len</span>(items)&#125;</span>\t&quot;</span></span><br><span class="line">            <span class="string">f&quot;<span class="subst">&#123;json_ok&#125;</span>/<span class="subst">&#123;<span class="built_in">len</span>(items)&#125;</span>\t<span class="subst">&#123;latency:<span class="number">.1</span>f&#125;</span>\t<span class="subst">&#123;token_text&#125;</span>&quot;</span></span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line">    clean_by_run = &#123;</span><br><span class="line">        item[<span class="string">&quot;run&quot;</span>]: item[<span class="string">&quot;usage&quot;</span>].get(<span class="string">&quot;prompt_tokens&quot;</span>)</span><br><span class="line">        <span class="keyword">for</span> item <span class="keyword">in</span> grouped.get(<span class="string">&quot;position-middle&quot;</span>, [])</span><br><span class="line">    &#125;</span><br><span class="line">    conflict_by_run = &#123;</span><br><span class="line">        item[<span class="string">&quot;run&quot;</span>]: item[<span class="string">&quot;usage&quot;</span>].get(<span class="string">&quot;prompt_tokens&quot;</span>)</span><br><span class="line">        <span class="keyword">for</span> item <span class="keyword">in</span> grouped.get(<span class="string">&quot;middle-with-conflict&quot;</span>, [])</span><br><span class="line">    &#125;</span><br><span class="line">    paired_runs = <span class="built_in">sorted</span>(clean_by_run.keys() &amp; conflict_by_run.keys())</span><br><span class="line">    matched_runs = [</span><br><span class="line">        run</span><br><span class="line">        <span class="keyword">for</span> run <span class="keyword">in</span> paired_runs</span><br><span class="line">        <span class="keyword">if</span> clean_by_run[run] <span class="keyword">is</span> <span class="keyword">not</span> <span class="literal">None</span></span><br><span class="line">        <span class="keyword">and</span> clean_by_run[run] == conflict_by_run[run]</span><br><span class="line">    ]</span><br><span class="line">    <span class="built_in">print</span>(</span><br><span class="line">        <span class="string">&quot;pollution_token_budget_match\t&quot;</span></span><br><span class="line">        <span class="string">f&quot;<span class="subst">&#123;<span class="built_in">len</span>(matched_runs)&#125;</span>/<span class="subst">&#123;<span class="built_in">len</span>(paired_runs)&#125;</span>&quot;</span></span><br><span class="line">    )</span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(matched_runs) != <span class="built_in">len</span>(paired_runs):</span><br><span class="line">        <span class="built_in">print</span>(</span><br><span class="line">            <span class="string">&quot;WARNING: exclude unmatched runs from pollution attribution; &quot;</span></span><br><span class="line">            <span class="string">&quot;rebuild fixtures with the target tokenizer&quot;</span></span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">main</span>():</span><br><span class="line">    parser = argparse.ArgumentParser()</span><br><span class="line">    parser.add_argument(<span class="string">&quot;--runs&quot;</span>, <span class="built_in">type</span>=<span class="built_in">int</span>, default=<span class="number">5</span>)</span><br><span class="line">    parser.add_argument(<span class="string">&quot;--blocks&quot;</span>, <span class="built_in">type</span>=<span class="built_in">int</span>, default=<span class="number">40</span>)</span><br><span class="line">    parser.add_argument(<span class="string">&quot;--output&quot;</span>, default=<span class="string">&quot;result.jsonl&quot;</span>)</span><br><span class="line">    parser.add_argument(<span class="string">&quot;--shuffle-order&quot;</span>, action=<span class="string">&quot;store_true&quot;</span>)</span><br><span class="line">    args = parser.parse_args()</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> args.blocks &lt; <span class="number">8</span>:</span><br><span class="line">        parser.error(<span class="string">&quot;--blocks must be at least 8&quot;</span>)</span><br><span class="line"></span><br><span class="line">    cases = [</span><br><span class="line">        (<span class="string">&quot;position-start&quot;</span>, <span class="number">0</span>, <span class="literal">False</span>),</span><br><span class="line">        (<span class="string">&quot;position-quarter&quot;</span>, args.blocks // <span class="number">4</span>, <span class="literal">False</span>),</span><br><span class="line">        (<span class="string">&quot;position-middle&quot;</span>, args.blocks // <span class="number">2</span>, <span class="literal">False</span>),</span><br><span class="line">        (<span class="string">&quot;position-three-quarter&quot;</span>, args.blocks * <span class="number">3</span> // <span class="number">4</span>, <span class="literal">False</span>),</span><br><span class="line">        (<span class="string">&quot;position-end&quot;</span>, args.blocks, <span class="literal">False</span>),</span><br><span class="line">        (<span class="string">&quot;middle-with-conflict&quot;</span>, args.blocks // <span class="number">2</span>, <span class="literal">True</span>),</span><br><span class="line">    ]</span><br><span class="line">    rows = []</span><br><span class="line">    output = Path(args.output)</span><br><span class="line">    <span class="keyword">with</span> output.<span class="built_in">open</span>(<span class="string">&quot;w&quot;</span>, encoding=<span class="string">&quot;utf-8&quot;</span>) <span class="keyword">as</span> stream:</span><br><span class="line">        <span class="keyword">for</span> run_index <span class="keyword">in</span> <span class="built_in">range</span>(args.runs):</span><br><span class="line">            ordered = <span class="built_in">list</span>(cases)</span><br><span class="line">            <span class="keyword">if</span> args.shuffle_order:</span><br><span class="line">                random.shuffle(ordered)</span><br><span class="line">            <span class="keyword">for</span> label, slot, conflict <span class="keyword">in</span> ordered:</span><br><span class="line">                row = run_case(</span><br><span class="line">                    args.blocks,</span><br><span class="line">                    label,</span><br><span class="line">                    slot,</span><br><span class="line">                    conflict,</span><br><span class="line">                    run_index,</span><br><span class="line">                )</span><br><span class="line">                rows.append(row)</span><br><span class="line">                stream.write(json.dumps(row, ensure_ascii=<span class="literal">False</span>) + <span class="string">&quot;\n&quot;</span>)</span><br><span class="line">                stream.flush()</span><br><span class="line">    summarize(rows)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&quot;__main__&quot;</span>:</span><br><span class="line">    main()</span><br></pre></td></tr></table></figure>
+
+<p>这个脚本故意不做自动重试。</p>
+<p>脚本使用服务端返回的 <code>usage.prompt_tokens</code> 校验长度控制。比较 <code>position-middle</code> 与 <code>middle-with-conflict</code> 时，如果两组的 <code>prompt_tokens</code> 不一致，就应把该对样本标为无效，继续按目标模型的真实 Tokenizer 调整中性块，不能用字符数相近代替等 Token。若需要报告证据的 Token 相对位置，也必须用同一模型版本的 Tokenizer 对最终消息模板和上下文前缀重新计数；<code>relative_char_position</code> 只用于发现明显的构造错误。</p>
+<p>因为重试会掩盖首错。</p>
+<p>如果平台需要重试，应分别保存：</p>
+<ul>
+<li>首次结果；</li>
+<li>重试触发原因；</li>
+<li>重试参数是否变化；</li>
+<li>每次结果；</li>
+<li>最终对用户展示的结果。</li>
+</ul>
+<h3 id="如何解读结果"><a href="#如何解读结果" class="headerlink" title="如何解读结果"></a>如何解读结果</h3><p>如果所有位置都失败：</p>
+<ul>
+<li>先检查任务和 schema；</li>
+<li>检查模型是否能完成干净基线；</li>
+<li>检查 NEEDLE 是否实际进入请求；</li>
+<li>不要先下“中间信息弱化”结论。</li>
+</ul>
+<p>如果只有中间显著下降：</p>
+<ul>
+<li>增加重复次数；</li>
+<li>交换干扰文档顺序；</li>
+<li>核对总 Token 数；</li>
+<li>排除中间位置恰好发生裁剪；</li>
+<li>再判断位置敏感。</li>
+</ul>
+<p>如果加入冲突后下降：</p>
+<ul>
+<li>比较等长 Clean 组；</li>
+<li>检查输出引用；</li>
+<li>判断模型是否采用过期来源；</li>
+<li>检查系统是否应该报告冲突而不是选择答案。</li>
+</ul>
+<p>如果输出经常不是 JSON：</p>
+<ul>
+<li>检查输出预算和结束原因；</li>
+<li>单独评测 schema 遵循；</li>
+<li>不要把格式失败算作证据检索失败。</li>
+</ul>
+<h2 id="十五、诊断矩阵：从症状到可证伪假设"><a href="#十五、诊断矩阵：从症状到可证伪假设" class="headerlink" title="十五、诊断矩阵：从症状到可证伪假设"></a>十五、诊断矩阵：从症状到可证伪假设</h2><p><img src="/images/ai-quality/ai-12-failure-diagnosis.svg" alt="上下文失败诊断矩阵"></p>
+<p>诊断矩阵的核心不是“看到症状就套答案”。</p>
+<p>而是为每个假设规定最小证据。</p>
+<h3 id="假设-H1：Token-边界敏感"><a href="#假设-H1：Token-边界敏感" class="headerlink" title="假设 H1：Token 边界敏感"></a>假设 H1：Token 边界敏感</h3><p>支持证据：</p>
+<ul>
+<li>语义不变；</li>
+<li>只有边界写法变化；</li>
+<li>Token 切分或数量变化；</li>
+<li>结果差异可以重复；</li>
+<li>模型、采样和长度均固定。</li>
+</ul>
+<p>反证：</p>
+<ul>
+<li>不同写法最终 Token 序列相同；</li>
+<li>差异只出现一次；</li>
+<li>同时改变了字段含义；</li>
+<li>输出被截断。</li>
+</ul>
+<h3 id="假设-H2：发生截断"><a href="#假设-H2：发生截断" class="headerlink" title="假设 H2：发生截断"></a>假设 H2：发生截断</h3><p>支持证据：</p>
+<ul>
+<li>最终请求构建日志显示片段被排除；</li>
+<li>服务端返回超限或结束原因；</li>
+<li>边界哨兵在固定长度阈值后消失；</li>
+<li>输入用量与期望不一致；</li>
+<li>缩短输入后同一证据恢复。</li>
+</ul>
+<p>反证：</p>
+<ul>
+<li>最终序列确认包含完整证据；</li>
+<li>证据移动到其他位置即可恢复；</li>
+<li>输入长度远低于实测边界；</li>
+<li>同位置短文本也失败。</li>
+</ul>
+<h3 id="假设-H3：位置利用不足"><a href="#假设-H3：位置利用不足" class="headerlink" title="假设 H3：位置利用不足"></a>假设 H3：位置利用不足</h3><p>支持证据：</p>
+<ul>
+<li>同一证据只改变位置；</li>
+<li>总长度不变；</li>
+<li>干扰项不变；</li>
+<li>位置准确率曲线可重复；</li>
+<li>请求未发生裁剪。</li>
+</ul>
+<p>反证：</p>
+<ul>
+<li>不同位置伴随不同文档；</li>
+<li>中间位置刚好存在冲突；</li>
+<li>样本量不足；</li>
+<li>模型快照发生变化。</li>
+</ul>
+<h3 id="假设-H4：上下文污染"><a href="#假设-H4：上下文污染" class="headerlink" title="假设 H4：上下文污染"></a>假设 H4：上下文污染</h3><p>支持证据：</p>
+<ul>
+<li>等长条件下，注入特定污染后下降；</li>
+<li>移除污染后恢复；</li>
+<li>错误答案能追踪到污染来源；</li>
+<li>冲突检测未触发或来源优先级错误。</li>
+</ul>
+<p>反证：</p>
+<ul>
+<li>仅长度增加就同样下降；</li>
+<li>污染内容未进入最终请求；</li>
+<li>基线本身不稳定；</li>
+<li>判定器把合理拒绝误判为失败。</li>
+</ul>
+<h2 id="十六、示例案例：审批码在上下文中间“消失”"><a href="#十六、示例案例：审批码在上下文中间“消失”" class="headerlink" title="十六、示例案例：审批码在上下文中间“消失”"></a>十六、示例案例：审批码在上下文中间“消失”</h2><p>下面是一个用于说明诊断方法的<strong>示例案例</strong>。</p>
+<p>它不是对任何真实项目经历的陈述。</p>
+<h3 id="1-场景"><a href="#1-场景" class="headerlink" title="1. 场景"></a>1. 场景</h3><p>一个发布审批助手读取 30 份变更材料。</p>
+<p>系统要求返回：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;decision&quot;</span><span class="punctuation">:</span> <span class="string">&quot;ALLOW | DENY | UNKNOWN&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;gate_code&quot;</span><span class="punctuation">:</span> <span class="string">&quot;string&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;evidence_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;string&quot;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>权威文档 policy-v7 明确写着：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">本次发布必须拒绝，gate_code 为 DENY-7429。</span><br></pre></td></tr></table></figure>
+
+<p>模型偶尔返回 ALLOW，并引用另一份旧文档 policy-v3。</p>
+<h3 id="2-最初的错误归因"><a href="#2-最初的错误归因" class="headerlink" title="2. 最初的错误归因"></a>2. 最初的错误归因</h3><p>团队最初认为：</p>
+<blockquote>
+<p>模型窗口太小，没有看到 policy-v7。</p>
+</blockquote>
+<p>于是把文档拼得更长，并在 Prompt 里重复三次“请认真阅读全部文档”。</p>
+<p>错误率反而上升。</p>
+<h3 id="3-第一轮：确认是否截断"><a href="#3-第一轮：确认是否截断" class="headerlink" title="3. 第一轮：确认是否截断"></a>3. 第一轮：确认是否截断</h3><p>测试保存最终片段清单。</p>
+<p>policy-v7 的开始、结束哨兵都在请求中。</p>
+<p>服务端输入用量也低于实测上限。</p>
+<p>输出结束原因正常。</p>
+<p>这组证据不支持截断假设。</p>
+<h3 id="4-第二轮：做位置扫描"><a href="#4-第二轮：做位置扫描" class="headerlink" title="4. 第二轮：做位置扫描"></a>4. 第二轮：做位置扫描</h3><p>保持 30 份文档内容不变。</p>
+<p>只交换 policy-v7 的位置。</p>
+<p>示例结果：</p>
+<table>
+<thead>
+<tr>
+<th>位置</th>
+<th align="right">成功次数</th>
+<th align="right">总次数</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>开头</td>
+<td align="right">19</td>
+<td align="right">20</td>
+</tr>
+<tr>
+<td>前四分之一</td>
+<td align="right">18</td>
+<td align="right">20</td>
+</tr>
+<tr>
+<td>中间</td>
+<td align="right">12</td>
+<td align="right">20</td>
+</tr>
+<tr>
+<td>后四分之一</td>
+<td align="right">17</td>
+<td align="right">20</td>
+</tr>
+<tr>
+<td>结尾</td>
+<td align="right">19</td>
+<td align="right">20</td>
+</tr>
+</tbody></table>
+<p>这支持位置敏感假设。</p>
+<p>但仍不能解释为什么错误答案恰好来自 policy-v3。</p>
+<h3 id="5-第三轮：等长污染对照"><a href="#5-第三轮：等长污染对照" class="headerlink" title="5. 第三轮：等长污染对照"></a>5. 第三轮：等长污染对照</h3><p>测试构造三组：</p>
+<ul>
+<li>Clean：policy-v7 加等长无关文档；</li>
+<li>Conflict：policy-v7 加过期 policy-v3；</li>
+<li>Old only：只有 policy-v3。</li>
+</ul>
+<p>Conflict 组显著低于 Clean 组。</p>
+<p>错误输出多次引用 policy-v3。</p>
+<p>这说明问题不是单纯“中间弱化”。</p>
+<p>过期文档冲突放大了位置敏感。</p>
+<h3 id="6-根因拆分"><a href="#6-根因拆分" class="headerlink" title="6. 根因拆分"></a>6. 根因拆分</h3><p>该示例至少包含两个机制：</p>
+<ol>
+<li>模型在此任务和上下文结构下表现出位置敏感；</li>
+<li>系统没有在模型调用前处理版本冲突。</li>
+</ol>
+<p>第一项属于模型行为和上下文组织。</p>
+<p>第二项属于知识治理。</p>
+<p>把两者合并成“模型没认真读”，没有工程意义。</p>
+<h3 id="7-修复"><a href="#7-修复" class="headerlink" title="7. 修复"></a>7. 修复</h3><p>系统做了以下调整：</p>
+<ul>
+<li>检索阶段按 policy_id 聚合版本；</li>
+<li>只保留当前有效版本；</li>
+<li>将证据版本和有效期写入结构化元数据；</li>
+<li>发现冲突时输出 UNKNOWN 并列出冲突；</li>
+<li>先抽取 gate_code，再生成解释；</li>
+<li>关键字段用程序精确校验；</li>
+<li>将位置扫描纳入模型升级回归。</li>
+</ul>
+<p>修复后的重点不是某次回答正确。</p>
+<p>而是：</p>
+<ul>
+<li>过期文档不会进入正常决策上下文；</li>
+<li>冲突不会被静默吞掉；</li>
+<li>精确字段有硬断言；</li>
+<li>模型升级后可以重复验证。</li>
+</ul>
+<h2 id="十七、按故障层选择修复，不要统一“调-Prompt”"><a href="#十七、按故障层选择修复，不要统一“调-Prompt”" class="headerlink" title="十七、按故障层选择修复，不要统一“调 Prompt”"></a>十七、按故障层选择修复，不要统一“调 Prompt”</h2><h3 id="1-Token-边界问题"><a href="#1-Token-边界问题" class="headerlink" title="1. Token 边界问题"></a>1. Token 边界问题</h3><p>优先动作：</p>
+<ul>
+<li>输入规范化；</li>
+<li>使用稳定的结构化字段；</li>
+<li>固定分隔符；</li>
+<li>记录模型对应 Tokenizer；</li>
+<li>关键 ID 由程序传递和校验；</li>
+<li>对格式等价变换做变形测试。</li>
+</ul>
+<p>不推荐：</p>
+<ul>
+<li>仅凭字符数估算预算；</li>
+<li>通过更多自然语言描述精确 ID；</li>
+<li>用一个模型的 Token 比例外推所有模型。</li>
+</ul>
+<h3 id="2-Embedding-相似性问题"><a href="#2-Embedding-相似性问题" class="headerlink" title="2. Embedding 相似性问题"></a>2. Embedding 相似性问题</h3><p>优先动作：</p>
+<ul>
+<li>建 Hard Negative；</li>
+<li>混合词法与向量召回；</li>
+<li>加版本、权限和时间过滤；</li>
+<li>对候选进行重排；</li>
+<li>对数字、否定和主体关系做硬校验；</li>
+<li>对高风险证据要求引用。</li>
+</ul>
+<p>不推荐：</p>
+<ul>
+<li>把余弦阈值当成真值阈值；</li>
+<li>只测随机无关负样本；</li>
+<li>仅凭召回分数决定可执行动作。</li>
+</ul>
+<h3 id="3-位置利用问题"><a href="#3-位置利用问题" class="headerlink" title="3. 位置利用问题"></a>3. 位置利用问题</h3><p>优先动作：</p>
+<ul>
+<li>删除无关上下文；</li>
+<li>把当前任务和输出契约保持清晰；</li>
+<li>将检索与证据抽取分阶段；</li>
+<li>关键证据附近保留来源和字段名；</li>
+<li>对目标模型做位置扫描；</li>
+<li>模型升级后重新标定。</li>
+</ul>
+<p>不推荐：</p>
+<ul>
+<li>无限重复同一指令；</li>
+<li>把关键证据复制到所有位置；</li>
+<li>将论文中的位置曲线当作本地固定规律。</li>
+</ul>
+<h3 id="4-截断问题"><a href="#4-截断问题" class="headerlink" title="4. 截断问题"></a>4. 截断问题</h3><p>优先动作：</p>
+<ul>
+<li>请求前精确预算；</li>
+<li>明确输出预留；</li>
+<li>保存纳入与排除清单；</li>
+<li>超限时拒绝或拆分；</li>
+<li>记录结束原因；</li>
+<li>核对本地与服务端用量。</li>
+</ul>
+<p>不推荐：</p>
+<ul>
+<li>静默删除尾部；</li>
+<li>只保留最近消息；</li>
+<li>把不完整 JSON 当成模型格式能力差。</li>
+</ul>
+<h3 id="5-上下文污染问题"><a href="#5-上下文污染问题" class="headerlink" title="5. 上下文污染问题"></a>5. 上下文污染问题</h3><p>优先动作：</p>
+<ul>
+<li>来源分级；</li>
+<li>版本和有效期；</li>
+<li>去重；</li>
+<li>冲突检测；</li>
+<li>指令与资料隔离；</li>
+<li>输出引用校验；</li>
+<li>高风险不确定状态。</li>
+</ul>
+<p>不推荐：</p>
+<ul>
+<li>依靠一句“忽略错误内容”；</li>
+<li>把所有召回内容无差别拼接；</li>
+<li>让低信任文档覆盖系统策略。</li>
+</ul>
+<h2 id="十八、测试平台应怎样记录上下文证据"><a href="#十八、测试平台应怎样记录上下文证据" class="headerlink" title="十八、测试平台应怎样记录上下文证据"></a>十八、测试平台应怎样记录上下文证据</h2><p>一条可审计的上下文记录可以采用下面的 JSON 结构。</p>
+<p>敏感正文是否落盘需要遵守数据策略。</p>
+<p>无法保存正文时，至少保存可复现的版本、哈希和受控引用。</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;trace_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;ctx_20260312_00017&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;model&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;provider&quot;</span><span class="punctuation">:</span> <span class="string">&quot;internal-gateway&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;snapshot&quot;</span><span class="punctuation">:</span> <span class="string">&quot;model-snapshot-2026-03&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;tokenizer_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;tokenizer-sha256:...&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;api_contract&quot;</span><span class="punctuation">:</span> <span class="string">&quot;chat-adapter-v3&quot;</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;budget&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;window_limit&quot;</span><span class="punctuation">:</span> <span class="number">65536</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;reserved_output&quot;</span><span class="punctuation">:</span> <span class="number">1024</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;local_input_tokens&quot;</span><span class="punctuation">:</span> <span class="number">18210</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;server_input_tokens&quot;</span><span class="punctuation">:</span> <span class="number">18234</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;output_tokens&quot;</span><span class="punctuation">:</span> <span class="number">96</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;finish_reason&quot;</span><span class="punctuation">:</span> <span class="string">&quot;stop&quot;</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;sampling&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;temperature&quot;</span><span class="punctuation">:</span> <span class="number">0</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;top_p&quot;</span><span class="punctuation">:</span> <span class="number">1</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;seed&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">null</span></span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;context_items&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;system-policy-v4&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;system&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;position&quot;</span><span class="punctuation">:</span> <span class="number">0</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;priority&quot;</span><span class="punctuation">:</span> <span class="string">&quot;mandatory&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;included&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;sha256&quot;</span><span class="punctuation">:</span> <span class="string">&quot;...&quot;</span></span><br><span class="line">    <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;policy-v7#chunk-03&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;retrieval&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;position&quot;</span><span class="punctuation">:</span> <span class="number">8</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;priority&quot;</span><span class="punctuation">:</span> <span class="string">&quot;evidence&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;included&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;version&quot;</span><span class="punctuation">:</span> <span class="string">&quot;7&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;valid_at&quot;</span><span class="punctuation">:</span> <span class="string">&quot;2026-03-12T20:30:00+08:00&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;sha256&quot;</span><span class="punctuation">:</span> <span class="string">&quot;...&quot;</span></span><br><span class="line">    <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;policy-v3#chunk-01&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;retrieval&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;position&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">null</span></span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;priority&quot;</span><span class="punctuation">:</span> <span class="string">&quot;excluded&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;included&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">false</span></span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;exclude_reason&quot;</span><span class="punctuation">:</span> <span class="string">&quot;superseded_version&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;sha256&quot;</span><span class="punctuation">:</span> <span class="string">&quot;...&quot;</span></span><br><span class="line">    <span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;assertions&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;json_valid&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;gate_code_exact&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;evidence_allowed&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;conflict_reported&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span></span><br><span class="line">  <span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>这个结构有四个作用。</p>
+<h3 id="可复现"><a href="#可复现" class="headerlink" title="可复现"></a>可复现</h3><p>知道模型、Tokenizer、模板、证据版本和顺序。</p>
+<h3 id="可归因"><a href="#可归因" class="headerlink" title="可归因"></a>可归因</h3><p>能够区分召回、拼装、截断、生成和判定。</p>
+<h3 id="可审计"><a href="#可审计" class="headerlink" title="可审计"></a>可审计</h3><p>知道模型依据了什么，排除了什么。</p>
+<h3 id="可回归"><a href="#可回归" class="headerlink" title="可回归"></a>可回归</h3><p>模型、模板或检索策略升级后，可以重放同一组上下文条件。</p>
+<h2 id="十九、完整测试矩阵"><a href="#十九、完整测试矩阵" class="headerlink" title="十九、完整测试矩阵"></a>十九、完整测试矩阵</h2><h3 id="A-Token-与规范化"><a href="#A-Token-与规范化" class="headerlink" title="A. Token 与规范化"></a>A. Token 与规范化</h3><ul>
+<li>中英文空格；</li>
+<li>全角半角；</li>
+<li>标点替换；</li>
+<li>Unicode 规范化；</li>
+<li>零宽字符；</li>
+<li>大小写；</li>
+<li>长数字；</li>
+<li>小数和千分位；</li>
+<li>UUID；</li>
+<li>路径；</li>
+<li>代码块；</li>
+<li>JSON 字段顺序；</li>
+<li>特殊消息边界。</li>
+</ul>
+<h3 id="B-Embedding-与召回"><a href="#B-Embedding-与召回" class="headerlink" title="B. Embedding 与召回"></a>B. Embedding 与召回</h3><ul>
+<li>正样本；</li>
+<li>随机负样本；</li>
+<li>同主题 Hard Negative；</li>
+<li>否定反转；</li>
+<li>数字差异；</li>
+<li>主客体反转；</li>
+<li>版本差异；</li>
+<li>时间过期；</li>
+<li>权限不匹配；</li>
+<li>多语言表达；</li>
+<li>短查询；</li>
+<li>长查询。</li>
+</ul>
+<h3 id="C-位置"><a href="#C-位置" class="headerlink" title="C. 位置"></a>C. 位置</h3><ul>
+<li>开头；</li>
+<li>10%；</li>
+<li>25%；</li>
+<li>50%；</li>
+<li>75%；</li>
+<li>90%；</li>
+<li>结尾；</li>
+<li>多个证据分散；</li>
+<li>证据与问题相邻；</li>
+<li>证据与来源标签分离。</li>
+</ul>
+<h3 id="D-长度与截断"><a href="#D-长度与截断" class="headerlink" title="D. 长度与截断"></a>D. 长度与截断</h3><ul>
+<li>25% 窗口；</li>
+<li>50% 窗口；</li>
+<li>75% 窗口；</li>
+<li>90% 窗口；</li>
+<li>边界附近；</li>
+<li>明确超限；</li>
+<li>输出预留不足；</li>
+<li>工具 schema 大幅增加；</li>
+<li>长历史对话；</li>
+<li>多模态开销。</li>
+</ul>
+<h3 id="E-污染"><a href="#E-污染" class="headerlink" title="E. 污染"></a>E. 污染</h3><ul>
+<li>无关内容；</li>
+<li>重复内容；</li>
+<li>过期内容；</li>
+<li>数字冲突；</li>
+<li>否定冲突；</li>
+<li>来源冲突；</li>
+<li>间接提示注入；</li>
+<li>历史目标漂移；</li>
+<li>错误工具返回；</li>
+<li>摘要遗漏限制条件。</li>
+</ul>
+<h3 id="F-系统性能"><a href="#F-系统性能" class="headerlink" title="F. 系统性能"></a>F. 系统性能</h3><ul>
+<li>单请求时延；</li>
+<li>首 Token 时延；</li>
+<li>预填充时延；</li>
+<li>并发吞吐；</li>
+<li>超时率；</li>
+<li>限流率；</li>
+<li>缓存命中；</li>
+<li>输入成本；</li>
+<li>输出成本；</li>
+<li>长请求对短请求的干扰。</li>
+</ul>
+<h2 id="二十、常见误区"><a href="#二十、常见误区" class="headerlink" title="二十、常见误区"></a>二十、常见误区</h2><h3 id="误区-1：字符数可以稳定换算-Token-数"><a href="#误区-1：字符数可以稳定换算-Token-数" class="headerlink" title="误区 1：字符数可以稳定换算 Token 数"></a>误区 1：字符数可以稳定换算 Token 数</h3><p>错误。</p>
+<p>语言、格式、词表和 Tokenizer 都会影响切分。</p>
+<p>应对目标模型实测。</p>
+<h3 id="误区-2：Embedding-相似度高就说明答案正确"><a href="#误区-2：Embedding-相似度高就说明答案正确" class="headerlink" title="误区 2：Embedding 相似度高就说明答案正确"></a>误区 2：Embedding 相似度高就说明答案正确</h3><p>错误。</p>
+<p>相似度不是蕴含、有效期、权限或精确数字校验。</p>
+<h3 id="误区-3：注意力权重就是模型解释"><a href="#误区-3：注意力权重就是模型解释" class="headerlink" title="误区 3：注意力权重就是模型解释"></a>误区 3：注意力权重就是模型解释</h3><p>不充分。</p>
+<p>单层单头权重不能代替行为干预和因果证据。</p>
+<h3 id="误区-4：信息在窗口里，模型就一定能使用"><a href="#误区-4：信息在窗口里，模型就一定能使用" class="headerlink" title="误区 4：信息在窗口里，模型就一定能使用"></a>误区 4：信息在窗口里，模型就一定能使用</h3><p>错误。</p>
+<p>窗口容量和有效利用是两个维度。</p>
+<h3 id="误区-5：中间失败一定是-Lost-in-the-Middle"><a href="#误区-5：中间失败一定是-Lost-in-the-Middle" class="headerlink" title="误区 5：中间失败一定是 Lost in the Middle"></a>误区 5：中间失败一定是 Lost in the Middle</h3><p>错误。</p>
+<p>先排除截断、冲突、长度变化和随机波动。</p>
+<h3 id="误区-6：扩大窗口总会改善效果"><a href="#误区-6：扩大窗口总会改善效果" class="headerlink" title="误区 6：扩大窗口总会改善效果"></a>误区 6：扩大窗口总会改善效果</h3><p>错误。</p>
+<p>更长的上下文也可能带来更多噪声、冲突、成本和时延。</p>
+<h3 id="误区-7：温度设为-0-就完全确定"><a href="#误区-7：温度设为-0-就完全确定" class="headerlink" title="误区 7：温度设为 0 就完全确定"></a>误区 7：温度设为 0 就完全确定</h3><p>不应这样假设。</p>
+<p>服务实现、并行计算、模型快照和其他采样细节仍可能带来差异。</p>
+<p>应以重复试验观察实际稳定性。</p>
+<h3 id="误区-8：截断只发生在模型服务"><a href="#误区-8：截断只发生在模型服务" class="headerlink" title="误区 8：截断只发生在模型服务"></a>误区 8：截断只发生在模型服务</h3><p>错误。</p>
+<p>采集、检索、拼装、网关和客户端都可能先裁剪。</p>
+<h3 id="误区-9：重复关键指令可以解决位置问题"><a href="#误区-9：重复关键指令可以解决位置问题" class="headerlink" title="误区 9：重复关键指令可以解决位置问题"></a>误区 9：重复关键指令可以解决位置问题</h3><p>重复会消耗预算，也可能引入冲突。</p>
+<p>更好的方法是缩短上下文、结构化证据和分阶段处理。</p>
+<h3 id="误区-10：模型换代后旧结论仍然成立"><a href="#误区-10：模型换代后旧结论仍然成立" class="headerlink" title="误区 10：模型换代后旧结论仍然成立"></a>误区 10：模型换代后旧结论仍然成立</h3><p>不一定。</p>
+<p>Tokenizer、模板、位置机制和服务实现都可能变化。</p>
+<p>必须重跑基线。</p>
+<h2 id="二十一、上线前检查表"><a href="#二十一、上线前检查表" class="headerlink" title="二十一、上线前检查表"></a>二十一、上线前检查表</h2><h3 id="输入与-Tokenizer"><a href="#输入与-Tokenizer" class="headerlink" title="输入与 Tokenizer"></a>输入与 Tokenizer</h3><ul>
+<li><input disabled="" type="checkbox"> 是否记录模型快照和 Tokenizer 标识；</li>
+<li><input disabled="" type="checkbox"> 是否使用目标 Tokenizer 计算预算；</li>
+<li><input disabled="" type="checkbox"> 是否覆盖中文、英文、代码和结构化数据；</li>
+<li><input disabled="" type="checkbox"> 是否测试空格、标点和 Unicode 等价变换；</li>
+<li><input disabled="" type="checkbox"> 是否对关键 ID 做精确断言；</li>
+<li><input disabled="" type="checkbox"> 是否比较本地和服务端 Token 用量。</li>
+</ul>
+<h3 id="上下文拼装"><a href="#上下文拼装" class="headerlink" title="上下文拼装"></a>上下文拼装</h3><ul>
+<li><input disabled="" type="checkbox"> 是否保存最终纳入片段的顺序；</li>
+<li><input disabled="" type="checkbox"> 是否保存被排除片段及原因；</li>
+<li><input disabled="" type="checkbox"> 是否为输出保留明确预算；</li>
+<li><input disabled="" type="checkbox"> 是否禁止静默截断；</li>
+<li><input disabled="" type="checkbox"> 是否区分系统指令、证据和非可信数据；</li>
+<li><input disabled="" type="checkbox"> 是否有版本、有效期和来源等级。</li>
+</ul>
+<h3 id="位置与长度"><a href="#位置与长度" class="headerlink" title="位置与长度"></a>位置与长度</h3><ul>
+<li><input disabled="" type="checkbox"> 是否做至少五个位置的扫描；</li>
+<li><input disabled="" type="checkbox"> 是否保持总长度和干扰项一致；</li>
+<li><input disabled="" type="checkbox"> 是否在多个长度档位运行；</li>
+<li><input disabled="" type="checkbox"> 是否覆盖边界附近和明确超限；</li>
+<li><input disabled="" type="checkbox"> 是否记录结束原因；</li>
+<li><input disabled="" type="checkbox"> 是否对每个位置重复足够次数。</li>
+</ul>
+<h3 id="Embedding-与召回"><a href="#Embedding-与召回" class="headerlink" title="Embedding 与召回"></a>Embedding 与召回</h3><ul>
+<li><input disabled="" type="checkbox"> 是否包含否定、数字、版本等 Hard Negative；</li>
+<li><input disabled="" type="checkbox"> 是否评估过滤前后的差异；</li>
+<li><input disabled="" type="checkbox"> 是否评估重排前后的差异；</li>
+<li><input disabled="" type="checkbox"> 是否把高风险错误单独加权；</li>
+<li><input disabled="" type="checkbox"> 是否要求关键结论携带来源；</li>
+<li><input disabled="" type="checkbox"> 是否用程序校验精确字段。</li>
+</ul>
+<h3 id="污染与安全"><a href="#污染与安全" class="headerlink" title="污染与安全"></a>污染与安全</h3><ul>
+<li><input disabled="" type="checkbox"> 是否测试重复、过期和矛盾资料；</li>
+<li><input disabled="" type="checkbox"> 是否做等长 Clean 对照；</li>
+<li><input disabled="" type="checkbox"> 是否测试间接提示注入；</li>
+<li><input disabled="" type="checkbox"> 是否在冲突时进入 UNKNOWN 或人工复核；</li>
+<li><input disabled="" type="checkbox"> 是否阻止资料文本提升自身权限；</li>
+<li><input disabled="" type="checkbox"> 是否保存冲突检测结果。</li>
+</ul>
+<h3 id="观测与回归"><a href="#观测与回归" class="headerlink" title="观测与回归"></a>观测与回归</h3><ul>
+<li><input disabled="" type="checkbox"> 是否保存原始输出和首错；</li>
+<li><input disabled="" type="checkbox"> 是否区分首次和重试结果；</li>
+<li><input disabled="" type="checkbox"> 是否记录时延、成本和用量；</li>
+<li><input disabled="" type="checkbox"> 是否记录判定器版本；</li>
+<li><input disabled="" type="checkbox"> 是否在模型、模板、SDK、网关升级后重跑；</li>
+<li><input disabled="" type="checkbox"> 是否按失败类型输出诊断，而不是统一标记模型错误。</li>
+</ul>
+<h2 id="二十二、总结"><a href="#二十二、总结" class="headerlink" title="二十二、总结"></a>二十二、总结</h2><p>Token 决定模型看到的离散边界和实际预算。</p>
+<p>Embedding 把离散单元映射到连续空间，但相似性不等于业务真值。</p>
+<p>Self-Attention 让序列中的信息发生交互，但它不是一次万能检索，也不能用单张权重图解释完整行为。</p>
+<p>位置机制让顺序进入计算，而长上下文中的位置鲁棒性必须通过目标任务实测。</p>
+<p>上下文窗口描述容量边界，不等于实际送达、有效利用或业务可信。</p>
+<p>对测试开发工程师而言，最重要的不是把这些术语背下来。</p>
+<p>而是把每个机制变成可证伪的假设：</p>
+<ul>
+<li>怀疑 Token，就做等义边界变换并记录真实切分；</li>
+<li>怀疑截断，就核对最终请求、用量、哨兵和结束原因；</li>
+<li>怀疑位置，就做等长位置扫描；</li>
+<li>怀疑污染，就做等长冲突注入；</li>
+<li>怀疑 Embedding，就构造业务 Hard Negative；</li>
+<li>怀疑模型不稳定，就先固定模型、模板、参数和判定器并重复运行。</li>
+</ul>
+<p>只有这样，“模型没有理解上下文”才会从一句模糊判断，变成可以定位、修复和回归的质量问题。</p>
+<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><ol>
+<li>Vaswani 等，<a target="_blank" rel="noopener" href="https://arxiv.org/abs/1706.03762">Attention Is All You Need</a>，Transformer 与缩放点积注意力的原始论文。</li>
+<li>Kudo 与 Richardson，<a target="_blank" rel="noopener" href="https://aclanthology.org/D18-2012/">SentencePiece: A simple and language independent subword tokenizer and detokenizer for Neural Text Processing</a>，子词切分与原始文本训练方法。</li>
+<li>Sennrich、Haddow 与 Birch，<a target="_blank" rel="noopener" href="https://aclanthology.org/P16-1162/">Neural Machine Translation of Rare Words with Subword Units</a>，BPE 子词方法在神经机器翻译中的经典工作。</li>
+<li>Su 等，<a target="_blank" rel="noopener" href="https://arxiv.org/abs/2104.09864">RoFormer: Enhanced Transformer with Rotary Position Embedding</a>，旋转位置编码的论文。</li>
+<li>Liu 等，<a target="_blank" rel="noopener" href="https://arxiv.org/abs/2307.03172">Lost in the Middle: How Language Models Use Long Contexts</a>，长上下文位置信息利用的实证研究。</li>
+<li>Dao 等，<a target="_blank" rel="noopener" href="https://arxiv.org/abs/2205.14135">FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness</a>，注意力计算的 IO 感知优化。</li>
+<li>Kwon 等，<a target="_blank" rel="noopener" href="https://arxiv.org/abs/2309.06180">Efficient Memory Management for Large Language Model Serving with PagedAttention</a>，LLM 服务中的 KV Cache 内存管理。</li>
+<li>Unicode Consortium，<a target="_blank" rel="noopener" href="https://unicode.org/reports/tr15/">Unicode Standard Annex #15: Unicode Normalization Forms</a>，Unicode 规范化标准。</li>
+<li>NIST，<a target="_blank" rel="noopener" href="https://www.nist.gov/itl/ai-risk-management-framework">AI Risk Management Framework</a>，AI 系统测量、管理与治理的通用框架。</li>
+</ol>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/AI%E6%B5%8B%E8%AF%95/" rel="tag"># AI测试</a>
+              <a href="/tags/%E5%A4%A7%E8%AF%AD%E8%A8%80%E6%A8%A1%E5%9E%8B/" rel="tag"># 大语言模型</a>
+              <a href="/tags/Token/" rel="tag"># Token</a>
+              <a href="/tags/Embedding/" rel="tag"># Embedding</a>
+              <a href="/tags/Self-Attention/" rel="tag"># Self-Attention</a>
+              <a href="/tags/%E4%B8%8A%E4%B8%8B%E6%96%87%E7%AA%97%E5%8F%A3/" rel="tag"># 上下文窗口</a>
+              <a href="/tags/%E6%A8%A1%E5%9E%8B%E8%AF%84%E6%B5%8B/" rel="tag"># 模型评测</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2026/03/10/AI%E6%B5%8B%E8%AF%95-11-%E5%A4%A7%E6%A8%A1%E5%9E%8B%E4%BB%8E%E8%BE%93%E5%85%A5Token%E5%88%B0%E7%94%9F%E6%88%90%E7%BB%93%E6%9E%9C%E5%88%B0%E5%BA%95%E7%BB%8F%E5%8E%86%E4%BA%86%E4%BB%80%E4%B9%88/" rel="prev" title="AI测试-11-大模型从输入Token到生成结果到底经历了什么">
+                  <i class="fa fa-angle-left"></i> AI测试-11-大模型从输入Token到生成结果到底经历了什么
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2026/03/14/AI%E6%B5%8B%E8%AF%95-13-Prompt-RAG-%E5%BE%AE%E8%B0%83-%E5%B7%A5%E5%85%B7%E8%B0%83%E7%94%A8%E5%92%8CAgent%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E9%80%89/" rel="next" title="AI测试-13-Prompt-RAG-微调-工具调用和Agent应该怎么选">
+                  AI测试-13-Prompt-RAG-微调-工具调用和Agent应该怎么选 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">1.2m</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">75:29</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

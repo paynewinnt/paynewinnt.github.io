@@ -1,0 +1,1728 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="评测普通问答模型时，输入和输出通常都比较清楚。 输入一个问题，模型生成一段文本，再对文本做正确性、相关性和安全性判断。 Agent 不一样。 它不只是生成文本，还会在一个有状态的环境里持续执行动作：  读取数据 选择工具 组装参数 调用接口 根据返回结果更新计划 修改业务状态 遇到故障后重试、降级或转人工  这意味着 Agent 的一次运行不是一个答案，而是一条会产生副作用的轨迹。 如果只看最后一">
+<meta property="og:type" content="article">
+<meta property="og:title" content="AI测试-19-Agent怎么评测任务完成率工具正确率和恢复能力">
+<meta property="og:url" content="https://paynewinnt.github.io/2026/03/26/AI%E6%B5%8B%E8%AF%95-19-Agent%E6%80%8E%E4%B9%88%E8%AF%84%E6%B5%8B%E4%BB%BB%E5%8A%A1%E5%AE%8C%E6%88%90%E7%8E%87%E5%B7%A5%E5%85%B7%E6%AD%A3%E7%A1%AE%E7%8E%87%E5%92%8C%E6%81%A2%E5%A4%8D%E8%83%BD%E5%8A%9B/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="评测普通问答模型时，输入和输出通常都比较清楚。 输入一个问题，模型生成一段文本，再对文本做正确性、相关性和安全性判断。 Agent 不一样。 它不只是生成文本，还会在一个有状态的环境里持续执行动作：  读取数据 选择工具 组装参数 调用接口 根据返回结果更新计划 修改业务状态 遇到故障后重试、降级或转人工  这意味着 Agent 的一次运行不是一个答案，而是一条会产生副作用的轨迹。 如果只看最后一">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://paynewinnt.github.io/images/ai-quality/ai-19-agent-eval-model.svg">
+<meta property="og:image" content="https://paynewinnt.github.io/images/ai-quality/ai-19-fault-injection.svg">
+<meta property="article:published_time" content="2026-03-26T12:30:00.000Z">
+<meta property="article:modified_time" content="2026-03-26T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="AI测试">
+<meta property="article:tag" content="故障注入">
+<meta property="article:tag" content="质量工程">
+<meta property="article:tag" content="工具调用">
+<meta property="article:tag" content="Agent评测">
+<meta property="article:tag" content="轨迹重放">
+<meta property="article:tag" content="稳定性测试">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://paynewinnt.github.io/images/ai-quality/ai-19-agent-eval-model.svg">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2026/03/26/AI%E6%B5%8B%E8%AF%95-19-Agent%E6%80%8E%E4%B9%88%E8%AF%84%E6%B5%8B%E4%BB%BB%E5%8A%A1%E5%AE%8C%E6%88%90%E7%8E%87%E5%B7%A5%E5%85%B7%E6%AD%A3%E7%A1%AE%E7%8E%87%E5%92%8C%E6%81%A2%E5%A4%8D%E8%83%BD%E5%8A%9B/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2026/03/26/AI%E6%B5%8B%E8%AF%95-19-Agent%E6%80%8E%E4%B9%88%E8%AF%84%E6%B5%8B%E4%BB%BB%E5%8A%A1%E5%AE%8C%E6%88%90%E7%8E%87%E5%B7%A5%E5%85%B7%E6%AD%A3%E7%A1%AE%E7%8E%87%E5%92%8C%E6%81%A2%E5%A4%8D%E8%83%BD%E5%8A%9B/","path":"2026/03/26/AI测试-19-Agent怎么评测任务完成率工具正确率和恢复能力/","title":"AI测试-19-Agent怎么评测任务完成率工具正确率和恢复能力"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>AI测试-19-Agent怎么评测任务完成率工具正确率和恢复能力 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E9%97%AE%E9%A2%98%E8%BE%B9%E7%95%8C%EF%BC%9AAgent-%E8%AF%84%E6%B5%8B%E4%B8%8D%E6%98%AF%E8%81%8A%E5%A4%A9%E8%AF%84%E5%88%86%EF%BC%8C%E4%B9%9F%E4%B8%8D%E6%98%AF%E7%B2%BE%E7%A1%AE%E5%8C%B9%E9%85%8D%E4%B8%80%E6%9D%A1%E6%A0%87%E5%87%86%E8%B7%AF%E5%BE%84"><span class="nav-number">1.</span> <span class="nav-text">一、问题边界：Agent 评测不是聊天评分，也不是精确匹配一条标准路径</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%9C%AC%E6%96%87%E6%89%80%E8%AF%B4%E7%9A%84-Agent"><span class="nav-number">1.1.</span> <span class="nav-text">1. 本文所说的 Agent</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Agent-%E8%BF%90%E8%A1%8C%E5%8F%AF%E4%BB%A5%E7%9C%8B%E6%88%90%E4%B8%80%E4%B8%AA%E6%9C%89%E7%8A%B6%E6%80%81%E5%86%B3%E7%AD%96%E8%BF%87%E7%A8%8B"><span class="nav-number">1.2.</span> <span class="nav-text">2. Agent 运行可以看成一个有状态决策过程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%B8%8D%E5%BA%94%E8%AF%A5%E6%8A%8A%E5%94%AF%E4%B8%80%E6%A0%87%E5%87%86%E8%BD%A8%E8%BF%B9%E5%86%99%E6%AD%BB"><span class="nav-number">1.3.</span> <span class="nav-text">3. 不应该把唯一标准轨迹写死</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%9C%AC%E6%96%87%E4%B8%8D%E8%A7%A3%E5%86%B3%E4%BB%80%E4%B9%88"><span class="nav-number">1.4.</span> <span class="nav-text">4. 本文不解决什么</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E4%BB%BB%E5%8A%A1%E5%A5%91%E7%BA%A6%EF%BC%9A%E5%85%88%E5%AE%9A%E4%B9%89%E4%BB%80%E4%B9%88%E5%8F%AB%E5%AE%8C%E6%88%90%EF%BC%8C%E6%89%8D%E8%83%BD%E8%B0%88%E5%AE%8C%E6%88%90%E7%8E%87"><span class="nav-number">2.</span> <span class="nav-text">二、任务契约：先定义什么叫完成，才能谈完成率</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%87%AA%E7%84%B6%E8%AF%AD%E8%A8%80%E4%BB%BB%E5%8A%A1%E4%B8%8D%E6%98%AF%E6%B5%8B%E8%AF%95-Oracle"><span class="nav-number">2.1.</span> <span class="nav-text">1. 自然语言任务不是测试 Oracle</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%B8%80%E6%9D%A1-Agent-%E8%AF%84%E6%B5%8B%E6%A0%B7%E6%9C%AC%E5%BA%94%E5%8C%85%E5%90%AB%E4%BB%80%E4%B9%88"><span class="nav-number">2.2.</span> <span class="nav-text">2. 一条 Agent 评测样本应包含什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%BB%93%E6%9E%84%E5%8C%96%E4%BB%BB%E5%8A%A1%E6%A0%B7%E4%BE%8B"><span class="nav-number">2.3.</span> <span class="nav-text">3. 结构化任务样例</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-Oracle-%E8%A6%81%E5%B0%BD%E5%8F%AF%E8%83%BD%E8%90%BD%E5%88%B0%E7%8A%B6%E6%80%81%E8%B0%93%E8%AF%8D"><span class="nav-number">2.4.</span> <span class="nav-text">4. Oracle 要尽可能落到状态谓词</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E5%8F%8C%E5%B1%82%E8%AF%84%E6%B5%8B%E6%A8%A1%E5%9E%8B%EF%BC%9A%E7%BB%93%E6%9E%9C%E5%92%8C%E8%BF%87%E7%A8%8B%E5%BF%85%E9%A1%BB%E5%90%8C%E6%97%B6%E4%BF%9D%E7%95%99"><span class="nav-number">3.</span> <span class="nav-text">三、双层评测模型：结果和过程必须同时保留</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%9C%80%E7%BB%88%E7%8A%B6%E6%80%81%E5%B1%82"><span class="nav-number">3.1.</span> <span class="nav-text">1. 最终状态层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%BD%A8%E8%BF%B9%E5%B1%82"><span class="nav-number">3.2.</span> <span class="nav-text">2. 轨迹层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%B8%BA%E4%BB%80%E4%B9%88%E6%9C%80%E7%BB%88%E7%8A%B6%E6%80%81%E6%AD%A3%E7%A1%AE%E4%BB%8D%E5%8F%AF%E8%83%BD%E5%A4%B1%E8%B4%A5"><span class="nav-number">3.3.</span> <span class="nav-text">3. 为什么最终状态正确仍可能失败</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%B8%BA%E4%BB%80%E4%B9%88%E8%BD%A8%E8%BF%B9%E5%90%88%E7%90%86%E4%BB%8D%E4%B8%8D%E8%83%BD%E7%AE%97%E5%AE%8C%E6%88%90"><span class="nav-number">3.4.</span> <span class="nav-text">4. 为什么轨迹合理仍不能算完成</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%8E%A8%E8%8D%90%E7%9A%84%E7%A1%AC%E9%97%A8%E7%A6%81%E9%80%BB%E8%BE%91"><span class="nav-number">3.5.</span> <span class="nav-text">5. 推荐的硬门禁逻辑</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E6%9C%80%E7%BB%88%E7%8A%B6%E6%80%81%E6%8C%87%E6%A0%87%EF%BC%9A%E4%B8%8D%E8%A6%81%E8%AE%A9%E2%80%9C%E5%9F%BA%E6%9C%AC%E5%AE%8C%E6%88%90%E2%80%9D%E6%8E%A9%E7%9B%96%E9%94%99%E8%AF%AF%E5%89%AF%E4%BD%9C%E7%94%A8"><span class="nav-number">4.</span> <span class="nav-text">四、最终状态指标：不要让“基本完成”掩盖错误副作用</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Task-Success%EF%BC%9A%E4%B8%A5%E6%A0%BC%E4%BB%BB%E5%8A%A1%E5%AE%8C%E6%88%90%E7%8E%87"><span class="nav-number">4.1.</span> <span class="nav-text">1. Task Success：严格任务完成率</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Progress-Score%EF%BC%9A%E7%94%A8%E4%BA%8E%E8%AF%8A%E6%96%AD%EF%BC%8C%E4%B8%8D%E6%9B%BF%E4%BB%A3%E6%88%90%E5%8A%9F%E7%8E%87"><span class="nav-number">4.2.</span> <span class="nav-text">2. Progress Score：用于诊断，不替代成功率</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Invariant-Pass%EF%BC%9A%E5%85%A8%E8%BF%87%E7%A8%8B%E4%B8%8D%E5%8F%98%E9%87%8F"><span class="nav-number">4.3.</span> <span class="nav-text">3. Invariant Pass：全过程不变量</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-Side-effect-Exactness%EF%BC%9A%E5%89%AF%E4%BD%9C%E7%94%A8%E6%95%B0%E9%87%8F%E5%BF%85%E9%A1%BB%E7%B2%BE%E7%A1%AE"><span class="nav-number">4.4.</span> <span class="nav-text">4. Side-effect Exactness：副作用数量必须精确</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-Final-Response-Accuracy%EF%BC%9A%E5%8D%95%E7%8B%AC%E8%AF%84%E4%BB%B7%E5%AF%B9%E7%94%A8%E6%88%B7%E7%9A%84%E8%AF%B4%E6%98%8E"><span class="nav-number">4.5.</span> <span class="nav-text">5. Final Response Accuracy：单独评价对用户的说明</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E8%BD%A8%E8%BF%B9%E6%8C%87%E6%A0%87%EF%BC%9A%E5%B7%A5%E5%85%B7%E3%80%81%E5%8F%82%E6%95%B0%E3%80%81%E9%A1%BA%E5%BA%8F%E5%92%8C%E7%8A%B6%E6%80%81%E5%88%86%E5%88%AB%E8%AF%84"><span class="nav-number">5.</span> <span class="nav-text">五、轨迹指标：工具、参数、顺序和状态分别评</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%BD%A8%E8%BF%B9%E4%BA%8B%E4%BB%B6%E7%9A%84%E6%9C%80%E5%B0%8F%E7%BB%93%E6%9E%84"><span class="nav-number">5.1.</span> <span class="nav-text">1. 轨迹事件的最小结构</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Tool-Selection%EF%BC%9A%E5%B7%A5%E5%85%B7%E9%80%89%E5%AF%B9%E4%BA%86%E5%90%97"><span class="nav-number">5.2.</span> <span class="nav-text">2. Tool Selection：工具选对了吗</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Tool-Selection-Precision-%E8%A6%81%E8%B0%A8%E6%85%8E%E8%A7%A3%E9%87%8A"><span class="nav-number">5.3.</span> <span class="nav-text">3. Tool Selection Precision 要谨慎解释</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%8F%82%E6%95%B0%E6%AD%A3%E7%A1%AE%E6%80%A7%E8%87%B3%E5%B0%91%E5%88%86%E4%B8%A4%E5%B1%82"><span class="nav-number">5.4.</span> <span class="nav-text">4. 参数正确性至少分两层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%8F%82%E6%95%B0%E6%8C%87%E6%A0%87"><span class="nav-number">5.5.</span> <span class="nav-text">5. 参数指标</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E8%B0%83%E7%94%A8%E9%A1%BA%E5%BA%8F%E7%94%A8%E5%81%8F%E5%BA%8F%E7%BA%A6%E6%9D%9F%EF%BC%8C%E4%B8%8D%E7%94%A8%E5%AE%8C%E6%95%B4%E5%AD%97%E7%AC%A6%E4%B8%B2%E5%8C%B9%E9%85%8D"><span class="nav-number">5.6.</span> <span class="nav-text">6. 调用顺序用偏序约束，不用完整字符串匹配</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-%E7%8A%B6%E6%80%81%E4%B8%80%E8%87%B4%E6%80%A7%EF%BC%9AAgent-%E6%98%AF%E5%90%A6%E5%9F%BA%E4%BA%8E%E5%BD%93%E5%89%8D%E4%BA%8B%E5%AE%9E%E8%A1%8C%E5%8A%A8"><span class="nav-number">5.7.</span> <span class="nav-text">7. 状态一致性：Agent 是否基于当前事实行动</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-%E4%B8%8D%E8%A6%81%E8%AF%84%E6%B5%8B%E6%88%96%E5%BC%BA%E5%88%B6%E4%BF%9D%E5%AD%98%E7%A7%81%E6%9C%89%E6%80%9D%E7%BB%B4%E9%93%BE"><span class="nav-number">5.8.</span> <span class="nav-text">8. 不要评测或强制保存私有思维链</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E6%81%A2%E5%A4%8D%E8%83%BD%E5%8A%9B%EF%BC%9A%E4%B8%8D%E6%98%AF%E2%80%9C%E9%81%87%E9%94%99%E4%BC%9A%E9%87%8D%E8%AF%95%E2%80%9D"><span class="nav-number">6.</span> <span class="nav-text">六、恢复能力：不是“遇错会重试”</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%85%88%E5%AE%9A%E4%B9%89%E5%93%AA%E4%BA%9B%E6%95%85%E9%9A%9C%E5%8F%AF%E6%81%A2%E5%A4%8D"><span class="nav-number">6.1.</span> <span class="nav-text">1. 先定义哪些故障可恢复</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Recovery-Success-Rate"><span class="nav-number">6.2.</span> <span class="nav-text">2. Recovery Success Rate</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Recovery-Detection-Rate"><span class="nav-number">6.3.</span> <span class="nav-text">3. Recovery Detection Rate</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-Recovery-Overhead"><span class="nav-number">6.4.</span> <span class="nav-text">4. Recovery Overhead</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-Recovery-Containment"><span class="nav-number">6.5.</span> <span class="nav-text">5. Recovery Containment</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E6%95%85%E9%9A%9C%E6%B3%A8%E5%85%A5%EF%BC%9A%E5%BF%85%E9%A1%BB%E7%9F%A5%E9%81%93%E9%94%99%E8%AF%AF%E5%8F%91%E7%94%9F%E5%9C%A8%E5%89%AF%E4%BD%9C%E7%94%A8%E7%9A%84%E5%93%AA%E4%B8%80%E4%BE%A7"><span class="nav-number">7.</span> <span class="nav-text">七、故障注入：必须知道错误发生在副作用的哪一侧</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%B8%BA%E4%BB%80%E4%B9%88%E8%A6%81%E9%80%9A%E8%BF%87%E5%B7%A5%E5%85%B7%E4%BB%A3%E7%90%86%E6%B3%A8%E5%85%A5"><span class="nav-number">7.1.</span> <span class="nav-text">1. 为什么要通过工具代理注入</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%8F%AF%E8%AF%81%E6%98%8E%E6%9C%AA%E6%8F%90%E4%BA%A4%E7%9A%84%E5%A4%B1%E8%B4%A5%E4%B8%8E%E6%8F%90%E4%BA%A4%E7%8A%B6%E6%80%81%E4%B8%8D%E6%98%8E%E7%9A%84%E8%B6%85%E6%97%B6%E5%AE%8C%E5%85%A8%E4%B8%8D%E5%90%8C"><span class="nav-number">7.2.</span> <span class="nav-text">2. 可证明未提交的失败与提交状态不明的超时完全不同</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%BB%BA%E8%AE%AE%E8%A6%86%E7%9B%96%E7%9A%84%E6%95%85%E9%9A%9C%E7%9F%A9%E9%98%B5"><span class="nav-number">7.3.</span> <span class="nav-text">3. 建议覆盖的故障矩阵</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%95%85%E9%9A%9C%E8%AE%A1%E5%88%92%E5%BF%85%E9%A1%BB%E5%8F%AF%E7%89%88%E6%9C%AC%E5%8C%96"><span class="nav-number">7.4.</span> <span class="nav-text">4. 故障计划必须可版本化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%95%85%E9%9A%9C%E6%B3%A8%E5%85%A5%E6%9C%AC%E8%BA%AB%E4%B9%9F%E8%A6%81%E6%B5%8B%E8%AF%95"><span class="nav-number">7.5.</span> <span class="nav-text">5. 故障注入本身也要测试</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E4%B8%80%E4%B8%AA%E5%8F%AF%E6%89%A7%E8%A1%8C%E7%9A%84-Agent-%E6%A8%A1%E6%8B%9F%E5%99%A8%E4%B8%8E%E8%AF%84%E6%B5%8B%E9%AA%A8%E6%9E%B6"><span class="nav-number">8.</span> <span class="nav-text">八、一个可执行的 Agent 模拟器与评测骨架</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E5%8F%AF%E9%9D%A0%E6%80%A7%E6%8C%87%E6%A0%87%EF%BC%9A%E4%B8%80%E6%AC%A1%E9%80%9A%E8%BF%87%E4%B8%8D%E4%BB%A3%E8%A1%A8%E8%83%BD%E7%A8%B3%E5%AE%9A%E6%89%A7%E8%A1%8C"><span class="nav-number">9.</span> <span class="nav-text">九、可靠性指标：一次通过不代表能稳定执行</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%90%8C%E4%B8%80%E4%BB%BB%E5%8A%A1%E8%A6%81%E9%87%8D%E5%A4%8D%E8%BF%90%E8%A1%8C"><span class="nav-number">9.1.</span> <span class="nav-text">1. 同一任务要重复运行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-pass-k-%E4%B8%8E-pass-k-%E4%B8%8D%E8%A6%81%E6%B7%B7%E6%B7%86"><span class="nav-number">9.2.</span> <span class="nav-text">2. pass^k 与 pass@k 不要混淆</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%B8%BA%E4%BB%80%E4%B9%88%E5%B9%B3%E5%9D%87%E6%88%90%E5%8A%9F%E7%8E%87%E4%B8%8D%E5%A4%9F"><span class="nav-number">9.3.</span> <span class="nav-text">3. 为什么平均成功率不够</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E7%BD%AE%E4%BF%A1%E5%8C%BA%E9%97%B4%E5%92%8C%E6%9C%80%E5%B7%AE%E8%BF%90%E8%A1%8C"><span class="nav-number">9.4.</span> <span class="nav-text">4. 置信区间和最差运行</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E6%9D%83%E9%99%90%E4%B8%8E%E5%AE%89%E5%85%A8%EF%BC%9A%E7%B3%BB%E7%BB%9F%E6%8B%A6%E4%BD%8F%E4%BA%86%EF%BC%8C%E4%B8%8D%E4%BB%A3%E8%A1%A8-Agent-%E9%80%9A%E8%BF%87%E4%BA%86"><span class="nav-number">10.</span> <span class="nav-text">十、权限与安全：系统拦住了，不代表 Agent 通过了</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%8C%BA%E5%88%86%E5%B0%9D%E8%AF%95%E8%B6%8A%E6%9D%83%E5%92%8C%E8%B6%8A%E6%9D%83%E6%88%90%E5%8A%9F"><span class="nav-number">10.1.</span> <span class="nav-text">1. 区分尝试越权和越权成功</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%9D%83%E9%99%90%E6%B5%8B%E8%AF%95%E4%B8%8D%E8%83%BD%E5%8F%AA%E5%88%A0%E6%8E%89%E5%B7%A5%E5%85%B7"><span class="nav-number">10.2.</span> <span class="nav-text">2. 权限测试不能只删掉工具</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%9C%80%E5%B0%8F%E6%9D%83%E9%99%90%E5%B7%A5%E5%85%B7%E5%A5%91%E7%BA%A6"><span class="nav-number">10.3.</span> <span class="nav-text">3. 最小权限工具契约</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%AE%89%E5%85%A8%E6%8C%87%E6%A0%87%E4%B8%8D%E8%BF%9B%E5%85%A5%E6%99%AE%E9%80%9A%E5%8A%A0%E6%9D%83%E5%B9%B3%E5%9D%87"><span class="nav-number">10.4.</span> <span class="nav-text">4. 安全指标不进入普通加权平均</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E6%88%90%E6%9C%AC%E4%B8%8E%E6%95%88%E7%8E%87%EF%BC%9A%E5%8F%AA%E7%BB%9F%E8%AE%A1-token-%E4%BC%9A%E6%BC%8F%E6%8E%89%E7%9C%9F%E6%AD%A3%E6%98%82%E8%B4%B5%E7%9A%84%E9%83%A8%E5%88%86"><span class="nav-number">11.</span> <span class="nav-text">十一、成本与效率：只统计 token 会漏掉真正昂贵的部分</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Agent-%E6%88%90%E6%9C%AC%E6%9E%84%E6%88%90"><span class="nav-number">11.1.</span> <span class="nav-text">1. Agent 成本构成</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%88%90%E5%8A%9F%E6%88%90%E6%9C%AC%E5%92%8C%E5%A4%B1%E8%B4%A5%E6%88%90%E6%9C%AC%E5%88%86%E5%BC%80"><span class="nav-number">11.2.</span> <span class="nav-text">2. 成功成本和失败成本分开</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%95%88%E7%8E%87%E4%B8%8D%E8%83%BD%E9%BC%93%E5%8A%B1%E8%B7%B3%E8%BF%87%E5%AE%89%E5%85%A8%E6%AD%A5%E9%AA%A4"><span class="nav-number">11.3.</span> <span class="nav-text">3. 效率不能鼓励跳过安全步骤</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-Budget-Exhaustion-%E4%B9%9F%E8%A6%81%E6%9C%89%E6%AD%A3%E7%A1%AE%E7%BB%88%E6%80%81"><span class="nav-number">11.4.</span> <span class="nav-text">4. Budget Exhaustion 也要有正确终态</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E6%A8%A1%E6%8B%9F%E5%99%A8%E8%AE%BE%E8%AE%A1%EF%BC%9A%E5%8F%AF%E9%87%8D%E5%A4%8D%E6%AF%94%E2%80%9C%E7%9C%8B%E8%B5%B7%E6%9D%A5%E5%83%8F%E7%94%9F%E4%BA%A7%E2%80%9D%E6%9B%B4%E9%87%8D%E8%A6%81"><span class="nav-number">12.</span> <span class="nav-text">十二、模拟器设计：可重复比“看起来像生产”更重要</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%A8%A1%E6%8B%9F%E5%99%A8%E9%9C%80%E8%A6%81%E6%8F%90%E4%BE%9B%E4%BB%80%E4%B9%88"><span class="nav-number">12.1.</span> <span class="nav-text">1. 模拟器需要提供什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%A8%A1%E6%8B%9F%E5%99%A8%E4%B8%8D%E6%98%AF%E6%8A%8A-API-%E8%BF%94%E5%9B%9E%E5%80%BC%E5%86%99%E6%AD%BB"><span class="nav-number">12.2.</span> <span class="nav-text">2. 模拟器不是把 API 返回值写死</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%A8%A1%E6%8B%9F%E5%99%A8%E4%BF%9D%E7%9C%9F%E5%BA%A6%E5%88%86%E5%B1%82"><span class="nav-number">12.3.</span> <span class="nav-text">3. 模拟器保真度分层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%A8%A1%E6%8B%9F%E5%99%A8%E4%B8%8E%E7%9C%9F%E5%AE%9E%E7%8E%AF%E5%A2%83%E4%BA%92%E8%A1%A5"><span class="nav-number">12.4.</span> <span class="nav-text">4. 模拟器与真实环境互补</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81%E8%BD%A8%E8%BF%B9%E9%87%8D%E6%94%BE%EF%BC%9A%E5%85%88%E6%98%8E%E7%A1%AE%E4%BD%A0%E6%83%B3%E9%87%8D%E6%94%BE%E5%93%AA%E4%B8%80%E5%B1%82"><span class="nav-number">13.</span> <span class="nav-text">十三、轨迹重放：先明确你想重放哪一层</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Observation-Replay"><span class="nav-number">13.1.</span> <span class="nav-text">1. Observation Replay</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Tool-Replay"><span class="nav-number">13.2.</span> <span class="nav-text">2. Tool Replay</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Decision-Replay"><span class="nav-number">13.3.</span> <span class="nav-text">3. Decision Replay</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-Full-Re-run"><span class="nav-number">13.4.</span> <span class="nav-text">4. Full Re-run</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%8F%AF%E9%87%8D%E6%94%BE%E8%BD%A8%E8%BF%B9%E5%BF%85%E9%A1%BB%E4%BF%9D%E5%AD%98%E4%BB%80%E4%B9%88"><span class="nav-number">13.5.</span> <span class="nav-text">5. 可重放轨迹必须保存什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E6%95%8F%E6%84%9F%E6%95%B0%E6%8D%AE%E5%92%8C%E9%87%8D%E6%94%BE"><span class="nav-number">13.6.</span> <span class="nav-text">6. 敏感数据和重放</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81%E7%AB%AF%E5%88%B0%E7%AB%AF%E6%B5%8B%E8%AF%95%E8%AE%BE%E8%AE%A1"><span class="nav-number">14.</span> <span class="nav-text">十四、端到端测试设计</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%83%BD%E5%8A%9B%E7%BB%B4%E5%BA%A6"><span class="nav-number">14.1.</span> <span class="nav-text">1. 能力维度</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%BE%93%E5%85%A5%E5%8F%98%E5%8C%96"><span class="nav-number">14.2.</span> <span class="nav-text">2. 输入变化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%8A%B6%E6%80%81%E5%8F%98%E5%8C%96"><span class="nav-number">14.3.</span> <span class="nav-text">3. 状态变化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-Metamorphic-Tests"><span class="nav-number">14.4.</span> <span class="nav-text">4. Metamorphic Tests</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%AF%B9%E6%8A%97%E5%92%8C%E5%AE%89%E5%85%A8%E6%B5%8B%E8%AF%95"><span class="nav-number">14.5.</span> <span class="nav-text">5. 对抗和安全测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E5%B9%B6%E5%8F%91%E4%B8%8E%E7%8A%B6%E6%80%81%E7%AB%9E%E4%BA%89"><span class="nav-number">14.6.</span> <span class="nav-text">6. 并发与状态竞争</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-%E6%B5%8B%E8%AF%95%E9%87%91%E5%AD%97%E5%A1%94"><span class="nav-number">14.7.</span> <span class="nav-text">7. 测试金字塔</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%94%E3%80%81%E8%AF%84%E6%B5%8B%E6%B5%81%E6%B0%B4%E7%BA%BF%E4%B8%8E%E8%B4%A8%E9%87%8F%E9%97%A8%E7%A6%81"><span class="nav-number">15.</span> <span class="nav-text">十五、评测流水线与质量门禁</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%A6%BB%E7%BA%BF%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B"><span class="nav-number">15.1.</span> <span class="nav-text">1. 离线执行流程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%B4%A8%E9%87%8F%E9%97%A8%E7%A6%81%E9%85%8D%E7%BD%AE%E7%A4%BA%E4%BE%8B"><span class="nav-number">15.2.</span> <span class="nav-text">2. 质量门禁配置示例</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%A4%B1%E8%B4%A5%E5%88%86%E7%B1%BB"><span class="nav-number">15.3.</span> <span class="nav-text">3. 失败分类</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%A4%B1%E8%B4%A5%E6%A0%B7%E6%9C%AC%E5%8C%85"><span class="nav-number">15.4.</span> <span class="nav-text">4. 失败样本包</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AD%E3%80%81%E7%A4%BA%E4%BE%8B%E5%A4%B1%E8%B4%A5%E6%A1%88%E4%BE%8B%EF%BC%9A%E4%BB%BB%E5%8A%A1%E7%9C%8B%E8%B5%B7%E6%9D%A5%E5%AE%8C%E6%88%90%EF%BC%8C%E4%B8%BA%E4%BB%80%E4%B9%88%E4%BB%8D%E8%A6%81%E5%88%A4%E5%A4%B1%E8%B4%A5"><span class="nav-number">16.</span> <span class="nav-text">十六、示例失败案例：任务看起来完成，为什么仍要判失败</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%9C%BA%E6%99%AF"><span class="nav-number">16.1.</span> <span class="nav-text">1. 场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Agent-%E8%BD%A8%E8%BF%B9"><span class="nav-number">16.2.</span> <span class="nav-text">2. Agent 轨迹</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%B8%BA%E4%BB%80%E4%B9%88%E8%A1%A8%E9%9D%A2%E7%9C%8B%E8%B5%B7%E6%9D%A5%E6%88%90%E5%8A%9F"><span class="nav-number">16.3.</span> <span class="nav-text">3. 为什么表面看起来成功</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%8F%8C%E5%B1%82%E8%AF%84%E6%B5%8B%E7%BB%93%E6%9E%9C"><span class="nav-number">16.4.</span> <span class="nav-text">4. 双层评测结果</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%AD%A3%E7%A1%AE%E6%81%A2%E5%A4%8D%E8%B7%AF%E5%BE%84"><span class="nav-number">16.5.</span> <span class="nav-text">5. 正确恢复路径</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E4%BF%AE%E5%A4%8D%E9%A1%B9"><span class="nav-number">16.6.</span> <span class="nav-text">6. 修复项</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%83%E3%80%81%E5%B8%B8%E8%A7%81%E8%AF%AF%E5%8C%BA"><span class="nav-number">17.</span> <span class="nav-text">十七、常见误区</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%8F%AA%E7%9C%8B%E6%9C%80%E7%BB%88%E5%9B%9E%E5%A4%8D"><span class="nav-number">17.1.</span> <span class="nav-text">1. 只看最终回复</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%9C%80%E7%BB%88%E7%8A%B6%E6%80%81%E6%AD%A3%E7%A1%AE%E5%B0%B1%E7%AE%97%E9%80%9A%E8%BF%87"><span class="nav-number">17.2.</span> <span class="nav-text">2. 最终状态正确就算通过</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%BC%BA%E5%88%B6%E5%8C%B9%E9%85%8D%E5%94%AF%E4%B8%80%E6%A0%87%E5%87%86%E8%BD%A8%E8%BF%B9"><span class="nav-number">17.3.</span> <span class="nav-text">3. 强制匹配唯一标准轨迹</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%B7%A5%E5%85%B7%E8%BF%94%E5%9B%9E%E6%88%90%E5%8A%9F%E5%B0%B1%E7%AE%97%E4%BB%BB%E5%8A%A1%E6%88%90%E5%8A%9F"><span class="nav-number">17.4.</span> <span class="nav-text">4. 工具返回成功就算任务成功</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-schema-%E5%90%88%E6%B3%95%E5%B0%B1%E7%AE%97%E5%8F%82%E6%95%B0%E6%AD%A3%E7%A1%AE"><span class="nav-number">17.5.</span> <span class="nav-text">5. schema 合法就算参数正确</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E6%8A%8A%E6%89%80%E6%9C%89%E9%94%99%E8%AF%AF%E9%83%BD%E8%AE%BE%E6%88%90%E5%8F%AF%E9%87%8D%E8%AF%95"><span class="nav-number">17.6.</span> <span class="nav-text">6. 把所有错误都设成可重试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-%E5%8F%AA%E6%B3%A8%E5%85%A5%E8%B0%83%E7%94%A8%E5%89%8D%E6%95%85%E9%9A%9C"><span class="nav-number">17.7.</span> <span class="nav-text">7. 只注入调用前故障</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-%E9%98%B2%E6%8A%A4%E5%B1%82%E6%8B%A6%E6%88%AA%E6%88%90%E5%8A%9F%E5%B0%B1%E7%BB%99-Agent-%E9%80%9A%E8%BF%87"><span class="nav-number">17.8.</span> <span class="nav-text">8. 防护层拦截成功就给 Agent 通过</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-%E5%8F%AA%E7%9C%8B%E5%B9%B3%E5%9D%87%E6%88%90%E5%8A%9F%E7%8E%87"><span class="nav-number">17.9.</span> <span class="nav-text">9. 只看平均成功率</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-%E7%94%A8-pass-k-%E5%8C%85%E8%A3%85%E5%8F%AF%E9%9D%A0%E6%80%A7"><span class="nav-number">17.10.</span> <span class="nav-text">10. 用 pass@k 包装可靠性</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-%E4%B8%BA%E4%BA%86%E7%9C%81%E6%88%90%E6%9C%AC%E8%B7%B3%E8%BF%87%E5%90%8E%E7%BD%AE%E6%A0%A1%E9%AA%8C"><span class="nav-number">17.11.</span> <span class="nav-text">11. 为了省成本跳过后置校验</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-%E4%BF%9D%E5%AD%98%E9%95%BF%E6%80%9D%E7%BB%B4%E9%93%BE%EF%BC%8C%E5%8D%B4%E4%B8%8D%E4%BF%9D%E5%AD%98%E7%8A%B6%E6%80%81%E5%BF%AB%E7%85%A7"><span class="nav-number">17.12.</span> <span class="nav-text">12. 保存长思维链，却不保存状态快照</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#13-%E5%9C%A8%E7%94%9F%E4%BA%A7%E7%8E%AF%E5%A2%83%E7%9B%B4%E6%8E%A5%E9%87%8D%E6%94%BE%E5%86%99%E8%BD%A8%E8%BF%B9"><span class="nav-number">17.13.</span> <span class="nav-text">13. 在生产环境直接重放写轨迹</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#14-%E6%A8%A1%E6%8B%9F%E5%99%A8%E6%B0%B8%E8%BF%9C%E8%BF%94%E5%9B%9E%E9%A2%84%E8%AE%BE%E6%88%90%E5%8A%9F"><span class="nav-number">17.14.</span> <span class="nav-text">14. 模拟器永远返回预设成功</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#15-%E8%AF%84%E6%B5%8B%E5%B9%B3%E5%8F%B0%E5%BC%82%E5%B8%B8%E4%B9%9F%E5%BD%92%E5%88%B0-Agent"><span class="nav-number">17.15.</span> <span class="nav-text">15. 评测平台异常也归到 Agent</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AB%E3%80%81%E4%B8%8A%E7%BA%BF%E5%89%8D%E6%A3%80%E6%9F%A5%E8%A1%A8"><span class="nav-number">18.</span> <span class="nav-text">十八、上线前检查表</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BB%BB%E5%8A%A1%E5%A5%91%E7%BA%A6"><span class="nav-number">18.1.</span> <span class="nav-text">任务契约</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9C%80%E7%BB%88%E7%8A%B6%E6%80%81"><span class="nav-number">18.2.</span> <span class="nav-text">最终状态</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B7%A5%E5%85%B7%E4%B8%8E%E5%8F%82%E6%95%B0"><span class="nav-number">18.3.</span> <span class="nav-text">工具与参数</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%A1%BA%E5%BA%8F%E4%B8%8E%E7%8A%B6%E6%80%81"><span class="nav-number">18.4.</span> <span class="nav-text">顺序与状态</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%95%85%E9%9A%9C%E4%B8%8E%E6%81%A2%E5%A4%8D"><span class="nav-number">18.5.</span> <span class="nav-text">故障与恢复</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9D%83%E9%99%90%E4%B8%8E%E5%AE%89%E5%85%A8"><span class="nav-number">18.6.</span> <span class="nav-text">权限与安全</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8F%AF%E9%9D%A0%E6%80%A7%E4%B8%8E%E6%88%90%E6%9C%AC"><span class="nav-number">18.7.</span> <span class="nav-text">可靠性与成本</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%BD%A8%E8%BF%B9%E4%B8%8E%E9%87%8D%E6%94%BE"><span class="nav-number">18.8.</span> <span class="nav-text">轨迹与重放</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B9%9D%E3%80%81%E6%80%BB%E7%BB%93"><span class="nav-number">19.</span> <span class="nav-text">十九、总结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8F%82%E8%80%83%E8%B5%84%E6%96%99"><span class="nav-number">20.</span> <span class="nav-text">参考资料</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">312</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">27</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">569</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2026/03/26/AI%E6%B5%8B%E8%AF%95-19-Agent%E6%80%8E%E4%B9%88%E8%AF%84%E6%B5%8B%E4%BB%BB%E5%8A%A1%E5%AE%8C%E6%88%90%E7%8E%87%E5%B7%A5%E5%85%B7%E6%AD%A3%E7%A1%AE%E7%8E%87%E5%92%8C%E6%81%A2%E5%A4%8D%E8%83%BD%E5%8A%9B/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="AI测试-19-Agent怎么评测任务完成率工具正确率和恢复能力 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          AI测试-19-Agent怎么评测任务完成率工具正确率和恢复能力
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2026-03-26 20:30:00" itemprop="dateCreated datePublished" datetime="2026-03-26T20:30:00+08:00">2026-03-26</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/AI%E6%B5%8B%E8%AF%95/" itemprop="url" rel="index"><span itemprop="name">AI测试</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>12k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>45 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>评测普通问答模型时，输入和输出通常都比较清楚。</p>
+<p>输入一个问题，模型生成一段文本，再对文本做正确性、相关性和安全性判断。</p>
+<p>Agent 不一样。</p>
+<p>它不只是生成文本，还会在一个有状态的环境里持续执行动作：</p>
+<ul>
+<li>读取数据</li>
+<li>选择工具</li>
+<li>组装参数</li>
+<li>调用接口</li>
+<li>根据返回结果更新计划</li>
+<li>修改业务状态</li>
+<li>遇到故障后重试、降级或转人工</li>
+</ul>
+<p>这意味着 Agent 的一次运行不是一个答案，而是一条会产生副作用的轨迹。</p>
+<p>如果只看最后一句“任务已完成”，可能出现：</p>
+<ul>
+<li>Agent 说完成了，但订单根本没有创建</li>
+<li>最终状态正确，但中途读取了无权限数据</li>
+<li>工具都调用成功，但参数绑定到了错误用户</li>
+<li>第一次写入已成功，响应超时后重试造成重复写入</li>
+<li>任务没有完成，却消耗了几十次工具调用才停止</li>
+<li>偶尔一次能通过，重复运行时表现极不稳定</li>
+</ul>
+<p>所以 Agent 评测至少要回答两组问题。</p>
+<p>第一组是最终状态：</p>
+<ul>
+<li>业务目标是否真正达成</li>
+<li>不该变化的数据是否保持不变</li>
+<li>副作用是否完整、唯一且可审计</li>
+</ul>
+<p>第二组是执行轨迹：</p>
+<ul>
+<li>工具选得对不对</li>
+<li>参数和实体绑定是否正确</li>
+<li>调用顺序是否满足前置条件</li>
+<li>状态读取和决策是否一致</li>
+<li>故障后是否正确恢复</li>
+<li>是否越权</li>
+<li>是否在合理成本内收敛</li>
+</ul>
+<p><code>AI测试-05-Agent Workflow执行多步骤测试任务时怎么做状态管理和失败恢复</code> 已经讨论了状态分层、失败类型和恢复设计。</p>
+<p>本文不再重复如何实现工作流状态机，而是进一步解决评测问题：</p>
+<blockquote>
+<p>如何把最终状态和轨迹分开判定，如何设计任务完成、工具选择、参数、顺序、状态一致性、恢复、权限和成本指标，以及如何用模拟器、故障注入和轨迹重放建立可持续回归。</p>
+</blockquote>
+<h2 id="一、问题边界：Agent-评测不是聊天评分，也不是精确匹配一条标准路径"><a href="#一、问题边界：Agent-评测不是聊天评分，也不是精确匹配一条标准路径" class="headerlink" title="一、问题边界：Agent 评测不是聊天评分，也不是精确匹配一条标准路径"></a>一、问题边界：Agent 评测不是聊天评分，也不是精确匹配一条标准路径</h2><h3 id="1-本文所说的-Agent"><a href="#1-本文所说的-Agent" class="headerlink" title="1. 本文所说的 Agent"></a>1. 本文所说的 Agent</h3><p>本文关注的是能够调用外部工具并改变环境状态的 Agent。</p>
+<p>简化执行循环如下：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">接收任务</span><br><span class="line">  -&gt; 观察当前状态</span><br><span class="line">  -&gt; 选择动作和工具</span><br><span class="line">  -&gt; 生成参数</span><br><span class="line">  -&gt; 工具执行</span><br><span class="line">  -&gt; 接收 observation</span><br><span class="line">  -&gt; 更新状态或计划</span><br><span class="line">  -&gt; 继续、结束、降级或转人工</span><br></pre></td></tr></table></figure>
+
+<p>工具可以是：</p>
+<ul>
+<li>REST&#x2F;RPC API</li>
+<li>数据库查询代理</li>
+<li>浏览器或移动端自动化动作</li>
+<li>文件与代码操作</li>
+<li>测试平台执行器</li>
+<li>工单、订单、支付、审批等业务系统</li>
+</ul>
+<p>只要工具会读取受限数据或产生副作用，就不能只评价最终自然语言回复。</p>
+<h3 id="2-Agent-运行可以看成一个有状态决策过程"><a href="#2-Agent-运行可以看成一个有状态决策过程" class="headerlink" title="2. Agent 运行可以看成一个有状态决策过程"></a>2. Agent 运行可以看成一个有状态决策过程</h3><p>对评测工程来说，可以把一次运行抽象为：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">state_t --action_t--&gt; tool/environment --observation_t--&gt; state_(t+1)</span><br></pre></td></tr></table></figure>
+
+<p>其中：</p>
+<ul>
+<li><code>state_t</code>：第 t 步前的环境和会话状态</li>
+<li><code>action_t</code>：Agent 选择的工具及参数</li>
+<li><code>observation_t</code>：工具返回、异常或状态变化</li>
+<li><code>state_(t+1)</code>：执行动作后的新状态</li>
+</ul>
+<p>评测不要求访问模型私有推理过程。</p>
+<p>真正需要保存和验证的是可观测边界：</p>
+<ul>
+<li>模型收到的任务与工具定义版本</li>
+<li>Agent 发出的结构化动作</li>
+<li>工具代理返回的 observation</li>
+<li>动作前后的业务状态快照</li>
+<li>策略拦截和故障注入记录</li>
+<li>最终结果与资源消耗</li>
+</ul>
+<h3 id="3-不应该把唯一标准轨迹写死"><a href="#3-不应该把唯一标准轨迹写死" class="headerlink" title="3. 不应该把唯一标准轨迹写死"></a>3. 不应该把唯一标准轨迹写死</h3><p>许多任务有多条合法路径。</p>
+<p>例如查询订单后取消，可以：</p>
+<ul>
+<li>先按订单号查询，再取消</li>
+<li>先按用户和时间查列表，再确认目标订单，再取消</li>
+<li>在本地已有可信订单快照时直接校验版本后取消</li>
+</ul>
+<p>如果评测强制精确匹配某一串工具名，会把合法替代方案判错，也会阻碍系统优化。</p>
+<p>更合适的契约是：</p>
+<ul>
+<li>必须满足的最终状态谓词</li>
+<li>必须保持的不变量</li>
+<li>必须发生或至少覆盖的能力</li>
+<li>禁止调用的工具和参数范围</li>
+<li>必须满足的关键偏序关系</li>
+<li>可接受的成本与步骤预算</li>
+</ul>
+<h3 id="4-本文不解决什么"><a href="#4-本文不解决什么" class="headerlink" title="4. 本文不解决什么"></a>4. 本文不解决什么</h3><p>本文不尝试：</p>
+<ul>
+<li>给所有 Agent 定义一个通用排行榜</li>
+<li>评价不可观测的“思维质量”</li>
+<li>用一个加权总分替代安全门禁</li>
+<li>证明 Agent 在所有真实环境中都可靠</li>
+<li>规定某一种 Agent 框架或协议</li>
+</ul>
+<p>本文目标是建立可执行、可复现、能定位失败的工程评测方法。</p>
+<h2 id="二、任务契约：先定义什么叫完成，才能谈完成率"><a href="#二、任务契约：先定义什么叫完成，才能谈完成率" class="headerlink" title="二、任务契约：先定义什么叫完成，才能谈完成率"></a>二、任务契约：先定义什么叫完成，才能谈完成率</h2><h3 id="1-自然语言任务不是测试-Oracle"><a href="#1-自然语言任务不是测试-Oracle" class="headerlink" title="1. 自然语言任务不是测试 Oracle"></a>1. 自然语言任务不是测试 Oracle</h3><p>任务“帮用户取消刚才下错的订单”有很多隐含条件：</p>
+<ul>
+<li>“用户”是哪一个身份</li>
+<li>“刚才”对应哪个时间窗口</li>
+<li>多个订单时如何消歧</li>
+<li>哪些状态允许取消</li>
+<li>取消是否需要二次确认</li>
+<li>退款是否属于同一事务</li>
+<li>哪些字段不应被修改</li>
+</ul>
+<p>如果这些条件没有转成可执行契约，最终只能靠人工看轨迹猜测。</p>
+<h3 id="2-一条-Agent-评测样本应包含什么"><a href="#2-一条-Agent-评测样本应包含什么" class="headerlink" title="2. 一条 Agent 评测样本应包含什么"></a>2. 一条 Agent 评测样本应包含什么</h3><p>最小契约建议包含：</p>
+<ul>
+<li><code>case_id</code>：稳定样本 ID</li>
+<li><code>instruction</code>：给 Agent 的自然语言任务</li>
+<li><code>initial_state_fixture</code>：初始环境快照</li>
+<li><code>identity</code>：执行身份、租户与角色</li>
+<li><code>goal_predicates</code>：任务目标谓词</li>
+<li><code>invariants</code>：全过程或终态不变量</li>
+<li><code>allowed_tools</code>：允许使用的工具集合</li>
+<li><code>forbidden_actions</code>：禁止动作与参数范围</li>
+<li><code>ordering_constraints</code>：关键前后关系</li>
+<li><code>fault_plan</code>：要注入的故障</li>
+<li><code>budget</code>：步骤、工具、token、时延和费用预算</li>
+<li><code>expected_terminal_states</code>：成功、受控降级或转人工</li>
+<li><code>slice_tags</code>：任务风险和能力标签</li>
+</ul>
+<h3 id="3-结构化任务样例"><a href="#3-结构化任务样例" class="headerlink" title="3. 结构化任务样例"></a>3. 结构化任务样例</h3><p>下面是一个虚构的订单测试样本，不代表真实业务：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">case_id:</span> <span class="string">agent-order-0087</span></span><br><span class="line"><span class="attr">instruction:</span> <span class="string">&quot;为用户 u-42 创建 1 个 sku-demo 的测试订单；若结果不确定，不要重复创建。&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="attr">identity:</span></span><br><span class="line">  <span class="attr">tenant:</span> <span class="string">demo</span></span><br><span class="line">  <span class="attr">subject:</span> <span class="string">test-operator</span></span><br><span class="line">  <span class="attr">roles:</span> [<span class="string">order_writer</span>]</span><br><span class="line"></span><br><span class="line"><span class="attr">initial_state_fixture:</span></span><br><span class="line">  <span class="attr">users:</span></span><br><span class="line">    <span class="attr">u-42:</span></span><br><span class="line">      <span class="attr">status:</span> <span class="string">active</span></span><br><span class="line">  <span class="attr">inventory:</span></span><br><span class="line">    <span class="attr">sku-demo:</span> <span class="number">10</span></span><br><span class="line">  <span class="attr">orders:</span> []</span><br><span class="line"></span><br><span class="line"><span class="attr">goal_predicates:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">exactly_one_order:</span></span><br><span class="line">      <span class="attr">user_id:</span> <span class="string">u-42</span></span><br><span class="line">      <span class="attr">sku:</span> <span class="string">sku-demo</span></span><br><span class="line">      <span class="attr">quantity:</span> <span class="number">1</span></span><br><span class="line"></span><br><span class="line"><span class="attr">invariants:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">no_order_for_other_user</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">inventory_never_negative</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">no_duplicate_business_intent</span></span><br><span class="line"></span><br><span class="line"><span class="attr">allowed_tools:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">get_user</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">get_inventory</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">create_order</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">find_order_by_request_id</span></span><br><span class="line"></span><br><span class="line"><span class="attr">forbidden_actions:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">tool:</span> <span class="string">delete_order</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">tool:</span> <span class="string">create_order</span></span><br><span class="line">    <span class="attr">when:</span></span><br><span class="line">      <span class="attr">user_id_not_equal:</span> <span class="string">u-42</span></span><br><span class="line"></span><br><span class="line"><span class="attr">ordering_constraints:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">before:</span> <span class="string">get_user</span></span><br><span class="line">    <span class="attr">before_target:</span> <span class="string">create_order</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">before:</span> <span class="string">get_inventory</span></span><br><span class="line">    <span class="attr">before_target:</span> <span class="string">create_order</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">on_error:</span> <span class="string">ambiguous_commit</span></span><br><span class="line">    <span class="attr">before_retry:</span> <span class="string">find_order_by_request_id</span></span><br><span class="line"></span><br><span class="line"><span class="attr">fault_plan:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">tool:</span> <span class="string">create_order</span></span><br><span class="line">    <span class="attr">occurrence:</span> <span class="number">1</span></span><br><span class="line">    <span class="attr">phase:</span> <span class="string">after_commit</span></span><br><span class="line">    <span class="attr">effect:</span> <span class="string">response_timeout</span></span><br><span class="line"></span><br><span class="line"><span class="attr">budget:</span></span><br><span class="line">  <span class="attr">max_steps:</span> <span class="number">8</span></span><br><span class="line">  <span class="attr">max_write_calls:</span> <span class="number">2</span></span><br><span class="line">  <span class="attr">max_latency_ms:</span> <span class="number">5000</span></span><br><span class="line"></span><br><span class="line"><span class="attr">expected_terminal_states:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">success</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">safe_handoff</span></span><br><span class="line"></span><br><span class="line"><span class="attr">slice_tags:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">write_action</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">ambiguous_commit</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">idempotency</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">high_risk</span></span><br></pre></td></tr></table></figure>
+
+<p>这份契约没有要求 Agent 必须输出某句固定话术。</p>
+<p>它要求的是：</p>
+<ul>
+<li>最终只有一个目标订单</li>
+<li>写入前完成必要读取</li>
+<li>提交后超时要先查状态</li>
+<li>不得对其他用户产生副作用</li>
+<li>在预算内完成或安全转人工</li>
+</ul>
+<h3 id="4-Oracle-要尽可能落到状态谓词"><a href="#4-Oracle-要尽可能落到状态谓词" class="headerlink" title="4. Oracle 要尽可能落到状态谓词"></a>4. Oracle 要尽可能落到状态谓词</h3><p>目标不要写成：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">订单创建成功</span><br></pre></td></tr></table></figure>
+
+<p>更适合写成：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">count(</span><br><span class="line">  orders where</span><br><span class="line">    user_id = &quot;u-42&quot; and</span><br><span class="line">    sku = &quot;sku-demo&quot; and</span><br><span class="line">    quantity = 1 and</span><br><span class="line">    status in [&quot;created&quot;, &quot;confirmed&quot;]</span><br><span class="line">) == 1</span><br></pre></td></tr></table></figure>
+
+<p>同时检查：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">count(orders where request_intent = &quot;agent-order-0087&quot;) == 1</span><br><span class="line">inventory[&quot;sku-demo&quot;] == initial_inventory - 1</span><br><span class="line">all(other_users_state == initial_other_users_state)</span><br></pre></td></tr></table></figure>
+
+<p>“至少存在一个目标订单”是不完整的 Oracle。</p>
+<p>它会把重复创建误判为成功。</p>
+<h2 id="三、双层评测模型：结果和过程必须同时保留"><a href="#三、双层评测模型：结果和过程必须同时保留" class="headerlink" title="三、双层评测模型：结果和过程必须同时保留"></a>三、双层评测模型：结果和过程必须同时保留</h2><p><img src="/images/ai-quality/ai-19-agent-eval-model.svg" alt="Agent 最终状态与执行轨迹双层评测模型"></p>
+<h3 id="1-最终状态层"><a href="#1-最终状态层" class="headerlink" title="1. 最终状态层"></a>1. 最终状态层</h3><p>最终状态层回答：</p>
+<ul>
+<li>目标实体是否达到预期状态</li>
+<li>写入是否真实提交</li>
+<li>数量和唯一性是否正确</li>
+<li>无关数据是否保持不变</li>
+<li>任务是否以允许的终态结束</li>
+</ul>
+<p>这一层尽量使用：</p>
+<ul>
+<li>数据库或模拟器状态</li>
+<li>业务 API 的权威读取</li>
+<li>文件系统或代码仓库快照</li>
+<li>浏览器 DOM 与后端状态联合检查</li>
+<li>可重复执行的程序断言</li>
+</ul>
+<p>不要只用 Agent 自己的最终回复作为 Oracle。</p>
+<h3 id="2-轨迹层"><a href="#2-轨迹层" class="headerlink" title="2. 轨迹层"></a>2. 轨迹层</h3><p>轨迹层回答：</p>
+<ul>
+<li>工具选择是否必要、合法</li>
+<li>参数是否通过 schema 和业务语义校验</li>
+<li>调用顺序是否满足前置条件</li>
+<li>observation 与后续动作是否一致</li>
+<li>故障是否被识别和正确处理</li>
+<li>是否尝试越权或绕过策略</li>
+<li>是否在预算内收敛</li>
+</ul>
+<h3 id="3-为什么最终状态正确仍可能失败"><a href="#3-为什么最终状态正确仍可能失败" class="headerlink" title="3. 为什么最终状态正确仍可能失败"></a>3. 为什么最终状态正确仍可能失败</h3><p>下面这些运行最终状态可能正确，但必须判为失败或高风险：</p>
+<ul>
+<li>先写入再做权限检查</li>
+<li>读取了不属于当前租户的数据</li>
+<li>第一次调用参数错误，第二次碰巧改对</li>
+<li>通过管理员工具绕过正常审批</li>
+<li>暂时破坏不变量，最后又改回去</li>
+<li>产生多次收费后再退款到正确余额</li>
+</ul>
+<p>某些业务只关心终态，但高风险系统通常还关心过程中是否发生过不可接受行为。</p>
+<h3 id="4-为什么轨迹合理仍不能算完成"><a href="#4-为什么轨迹合理仍不能算完成" class="headerlink" title="4. 为什么轨迹合理仍不能算完成"></a>4. 为什么轨迹合理仍不能算完成</h3><p>反过来，工具和顺序看起来都合理，最终状态仍可能失败：</p>
+<ul>
+<li>工具返回 200，但异步任务最终失败</li>
+<li>Agent 读取的是缓存状态，不是权威状态</li>
+<li>写入落在错误租户</li>
+<li>最后一步响应成功，但事务被回滚</li>
+<li>Agent 忘记校验最终状态</li>
+</ul>
+<p>所以轨迹得分不能代替目标状态断言。</p>
+<h3 id="5-推荐的硬门禁逻辑"><a href="#5-推荐的硬门禁逻辑" class="headerlink" title="5. 推荐的硬门禁逻辑"></a>5. 推荐的硬门禁逻辑</h3><p>高风险任务的基本通过条件可以表达为：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">PASS = goal_satisfied</span><br><span class="line">       AND all_invariants_hold</span><br><span class="line">       AND no_forbidden_action_attempted</span><br><span class="line">       AND no_unauthorized_side_effect</span><br><span class="line">       AND terminal_state_is_allowed</span><br></pre></td></tr></table></figure>
+
+<p>成本、步骤和延迟可以作为附加门禁或分级结果。</p>
+<p>但安全约束不应被平均分抵消。</p>
+<h2 id="四、最终状态指标：不要让“基本完成”掩盖错误副作用"><a href="#四、最终状态指标：不要让“基本完成”掩盖错误副作用" class="headerlink" title="四、最终状态指标：不要让“基本完成”掩盖错误副作用"></a>四、最终状态指标：不要让“基本完成”掩盖错误副作用</h2><h3 id="1-Task-Success：严格任务完成率"><a href="#1-Task-Success：严格任务完成率" class="headerlink" title="1. Task Success：严格任务完成率"></a>1. Task Success：严格任务完成率</h3><p>若一条任务包含 <code>m</code> 个必须满足的目标谓词 <code>g_j</code>，可以定义：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">TaskSuccess(run) = Π(j=1..m) I[g_j(final_state) = true]</span><br></pre></td></tr></table></figure>
+
+<p>只要一个必需目标未满足，严格任务成功记为 0。</p>
+<p>数据集级任务完成率：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Task Completion Rate = 成功运行数 / 全部有效运行数</span><br></pre></td></tr></table></figure>
+
+<p>这里的“有效运行”应排除测试基础设施自身无法启动的样本，但不能随意排除 Agent 导致的环境错误。</p>
+<h3 id="2-Progress-Score：用于诊断，不替代成功率"><a href="#2-Progress-Score：用于诊断，不替代成功率" class="headerlink" title="2. Progress Score：用于诊断，不替代成功率"></a>2. Progress Score：用于诊断，不替代成功率</h3><p>长任务可能只完成部分目标。</p>
+<p>可以定义加权进度：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Progress = Σ weight_j * I[g_j(final_state)] / Σ weight_j</span><br></pre></td></tr></table></figure>
+
+<p>Progress 的价值是定位：</p>
+<ul>
+<li>Agent 经常停在哪一阶段</li>
+<li>哪个子目标最难完成</li>
+<li>改动是否改善了中间能力</li>
+</ul>
+<p>但 Progress &#x3D; 0.9 不代表任务可交付。</p>
+<p>如果最后的付款或权限收口没有完成，业务成功仍然是 0。</p>
+<h3 id="3-Invariant-Pass：全过程不变量"><a href="#3-Invariant-Pass：全过程不变量" class="headerlink" title="3. Invariant Pass：全过程不变量"></a>3. Invariant Pass：全过程不变量</h3><p>不变量分为：</p>
+<ul>
+<li><strong>终态不变量</strong>：结束时必须满足</li>
+<li><strong>全过程不变量</strong>：每一步都不能违反</li>
+</ul>
+<p>全过程不变量可以表示为：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">InvariantPass(run) = Π(t=0..T) Π(h in H) I[h(state_t) = true]</span><br></pre></td></tr></table></figure>
+
+<p>典型不变量包括：</p>
+<ul>
+<li>库存不得为负</li>
+<li>不得修改其他租户数据</li>
+<li>未确认前不得产生收费</li>
+<li>同一业务意图不得重复创建资源</li>
+<li>敏感字段不得进入日志</li>
+</ul>
+<p>如果只检查最终状态，临时越权或临时重复收费可能被掩盖。</p>
+<h3 id="4-Side-effect-Exactness：副作用数量必须精确"><a href="#4-Side-effect-Exactness：副作用数量必须精确" class="headerlink" title="4. Side-effect Exactness：副作用数量必须精确"></a>4. Side-effect Exactness：副作用数量必须精确</h3><p>对创建、发送、扣费、删除等动作，至少要检查：</p>
+<ul>
+<li>目标副作用数量</li>
+<li>目标实体身份</li>
+<li>副作用的幂等键</li>
+<li>是否有多余副作用</li>
+<li>是否有补偿动作</li>
+<li>补偿是否真的恢复业务语义</li>
+</ul>
+<p>例如创建一条工单：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">expected_created = 1</span><br><span class="line">actual_created = 2</span><br><span class="line">actual_closed_as_compensation = 1</span><br></pre></td></tr></table></figure>
+
+<p>最终只有一条打开的工单，并不意味着过程正确。</p>
+<p>多创建再关闭仍会留下通知、审计和外部系统事件。</p>
+<h3 id="5-Final-Response-Accuracy：单独评价对用户的说明"><a href="#5-Final-Response-Accuracy：单独评价对用户的说明" class="headerlink" title="5. Final Response Accuracy：单独评价对用户的说明"></a>5. Final Response Accuracy：单独评价对用户的说明</h3><p>最终业务状态通过后，还要检查 Agent 对用户说了什么。</p>
+<p>例如：</p>
+<ul>
+<li>是否如实说明完成状态</li>
+<li>是否返回正确资源 ID</li>
+<li>是否隐瞒了部分失败</li>
+<li>是否把“已提交”说成“已完成”</li>
+<li>是否暴露敏感信息</li>
+<li>是否给出下一步或人工接管信息</li>
+</ul>
+<p>这是一项独立指标。</p>
+<p>不能反过来用自然语言回复证明业务状态。</p>
+<h2 id="五、轨迹指标：工具、参数、顺序和状态分别评"><a href="#五、轨迹指标：工具、参数、顺序和状态分别评" class="headerlink" title="五、轨迹指标：工具、参数、顺序和状态分别评"></a>五、轨迹指标：工具、参数、顺序和状态分别评</h2><h3 id="1-轨迹事件的最小结构"><a href="#1-轨迹事件的最小结构" class="headerlink" title="1. 轨迹事件的最小结构"></a>1. 轨迹事件的最小结构</h3><p>每次工具调用至少记录：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;run_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;run-agent-order-0087-03&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;step&quot;</span><span class="punctuation">:</span> <span class="number">4</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;decision_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;d-004&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;tool&quot;</span><span class="punctuation">:</span> <span class="string">&quot;create_order&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;arguments&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;user_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;u-42&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;sku&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sku-demo&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;quantity&quot;</span><span class="punctuation">:</span> <span class="number">1</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;request_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;req-agent-order-0087&quot;</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;policy_decision&quot;</span><span class="punctuation">:</span> <span class="string">&quot;allow&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;state_version_before&quot;</span><span class="punctuation">:</span> <span class="number">17</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;started_at&quot;</span><span class="punctuation">:</span> <span class="string">&quot;2026-03-26T12:30:02.120Z&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;finished_at&quot;</span><span class="punctuation">:</span> <span class="string">&quot;2026-03-26T12:30:03.125Z&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;outcome&quot;</span><span class="punctuation">:</span> <span class="string">&quot;timeout&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;fault&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;phase&quot;</span><span class="punctuation">:</span> <span class="string">&quot;after_commit&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;effect&quot;</span><span class="punctuation">:</span> <span class="string">&quot;response_timeout&quot;</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;state_version_after&quot;</span><span class="punctuation">:</span> <span class="number">18</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;side_effect&quot;</span><span class="punctuation">:</span> <span class="string">&quot;order-created&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;observation_visible_to_agent&quot;</span><span class="punctuation">:</span> <span class="string">&quot;request timed out&quot;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>这里最关键的字段是：</p>
+<ul>
+<li>故障发生在提交前还是提交后</li>
+<li>Agent 看到了什么 observation</li>
+<li>环境实际上是否发生副作用</li>
+</ul>
+<h3 id="2-Tool-Selection：工具选对了吗"><a href="#2-Tool-Selection：工具选对了吗" class="headerlink" title="2. Tool Selection：工具选对了吗"></a>2. Tool Selection：工具选对了吗</h3><p>不建议把“与标准轨迹工具序列完全一致”作为唯一标准。</p>
+<p>更稳的指标包括：</p>
+<ul>
+<li>必要能力覆盖率</li>
+<li>禁止工具调用数</li>
+<li>不必要工具调用率</li>
+<li>工具选择失败率</li>
+<li>同类工具错误路由率</li>
+</ul>
+<p>如果评测样本定义了必要工具能力集合 <code>C_required</code>，可计算：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Required Capability Recall = 已覆盖的必要能力 / 全部必要能力</span><br></pre></td></tr></table></figure>
+
+<p>如果定义了合法工具集合：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Allowed Tool Rate = 合法工具调用数 / 全部工具调用数</span><br></pre></td></tr></table></figure>
+
+<p>但安全上更重要的是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Forbidden Tool Attempts = 禁止工具尝试次数</span><br></pre></td></tr></table></figure>
+
+<p>这个值通常应为 0。</p>
+<h3 id="3-Tool-Selection-Precision-要谨慎解释"><a href="#3-Tool-Selection-Precision-要谨慎解释" class="headerlink" title="3. Tool Selection Precision 要谨慎解释"></a>3. Tool Selection Precision 要谨慎解释</h3><p>把“标准轨迹出现过的工具”视为相关工具，可以计算类似 precision 的比例。</p>
+<p>但它有两个风险：</p>
+<ul>
+<li>标准轨迹可能不是唯一合法轨迹</li>
+<li>诊断性读取工具可能只在故障时才需要</li>
+</ul>
+<p>所以更建议按能力和上下文定义：</p>
+<ul>
+<li>正常路径允许工具</li>
+<li>特定故障后允许工具</li>
+<li>永远禁止工具</li>
+<li>必须在某条件下调用的工具</li>
+</ul>
+<p>这比静态工具白名单更准确。</p>
+<h3 id="4-参数正确性至少分两层"><a href="#4-参数正确性至少分两层" class="headerlink" title="4. 参数正确性至少分两层"></a>4. 参数正确性至少分两层</h3><p>第一层是 schema validity：</p>
+<ul>
+<li>必填字段是否存在</li>
+<li>类型是否正确</li>
+<li>枚举是否合法</li>
+<li>格式是否符合约束</li>
+<li>是否存在未知字段</li>
+</ul>
+<p>第二层是 semantic correctness：</p>
+<ul>
+<li><code>user_id</code> 是否绑定目标用户</li>
+<li>时间范围是否符合“刚才”的定义</li>
+<li>数量和单位是否正确</li>
+<li>幂等键是否稳定复用</li>
+<li>资源版本是否来自最新 observation</li>
+<li>敏感字段是否不应传入</li>
+</ul>
+<p>模型完全可能生成 schema 合法但业务语义错误的参数。</p>
+<h3 id="5-参数指标"><a href="#5-参数指标" class="headerlink" title="5. 参数指标"></a>5. 参数指标</h3><p>可以定义：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Schema Valid Rate = schema 合法的调用数 / 全部调用数</span><br></pre></td></tr></table></figure>
+
+<p>对关键参数槽位做加权：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Argument Accuracy = Σ slot_weight * I[slot_correct] / Σ slot_weight</span><br></pre></td></tr></table></figure>
+
+<p>例如取消订单时：</p>
+<ul>
+<li><code>order_id</code> 权重高</li>
+<li><code>tenant_id</code> 权重高</li>
+<li><code>reason</code> 权重较低</li>
+</ul>
+<p>任何高风险标识绑定错误都可以直接触发硬失败，而不是仅降低平均参数分。</p>
+<h3 id="6-调用顺序用偏序约束，不用完整字符串匹配"><a href="#6-调用顺序用偏序约束，不用完整字符串匹配" class="headerlink" title="6. 调用顺序用偏序约束，不用完整字符串匹配"></a>6. 调用顺序用偏序约束，不用完整字符串匹配</h3><p>对并行或可替代路径，标准序列过于僵硬。</p>
+<p>更适合定义关键偏序：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">verify_identity &lt; read_account &lt; update_account</span><br><span class="line">read_current_version &lt; write_with_expected_version</span><br><span class="line">ambiguous_timeout &lt; query_by_idempotency_key &lt; retry_write</span><br></pre></td></tr></table></figure>
+
+<p>设必要顺序约束集合为 <code>O</code>：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Order Constraint Rate = 满足的顺序约束数 / 全部适用约束数</span><br></pre></td></tr></table></figure>
+
+<p>关键安全顺序仍应作为硬门禁：</p>
+<ul>
+<li>未授权前不得写入</li>
+<li>未确认前不得收费</li>
+<li>提交状态不确定时不得盲目重复写</li>
+</ul>
+<h3 id="7-状态一致性：Agent-是否基于当前事实行动"><a href="#7-状态一致性：Agent-是否基于当前事实行动" class="headerlink" title="7. 状态一致性：Agent 是否基于当前事实行动"></a>7. 状态一致性：Agent 是否基于当前事实行动</h3><p>Agent 可能读取过状态，却在后续使用旧值。</p>
+<p>状态一致性至少检查：</p>
+<ul>
+<li>动作引用的实体版本是否是最新可见版本</li>
+<li>前置条件是否来自真实 observation</li>
+<li>observation 失败后是否仍假设成功</li>
+<li>工具返回空结果后是否虚构实体</li>
+<li>并发变化后是否重新读取</li>
+<li>状态快照和会话记忆是否冲突</li>
+</ul>
+<p>可以统计：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Stale Action Rate = 使用过期状态发起的动作数 / 状态相关动作数</span><br></pre></td></tr></table></figure>
+
+<p>以及：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Postcondition Verification Rate = 至少完成一次权威校验的写入数 / 需要校验的写入数</span><br></pre></td></tr></table></figure>
+
+<p>不是所有低风险写入都必须追加一次读取。</p>
+<p>是否需要校验应由工具契约和业务风险决定。</p>
+<h3 id="8-不要评测或强制保存私有思维链"><a href="#8-不要评测或强制保存私有思维链" class="headerlink" title="8. 不要评测或强制保存私有思维链"></a>8. 不要评测或强制保存私有思维链</h3><p>轨迹评测需要的是：</p>
+<ul>
+<li>可观察动作</li>
+<li>工具参数</li>
+<li>工具结果</li>
+<li>状态变化</li>
+<li>简短、可审计的决策标签</li>
+</ul>
+<p>不需要依赖不可验证的长篇内部推理文本。</p>
+<p>工程上应优先保存结构化决策原因，例如：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;decision&quot;</span><span class="punctuation">:</span> <span class="string">&quot;check_commit_status&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;reason_code&quot;</span><span class="punctuation">:</span> <span class="string">&quot;AMBIGUOUS_WRITE_RESULT&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;evidence_event_ids&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;evt-004&quot;</span><span class="punctuation">]</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>这种记录更适合审计、统计和重放。</p>
+<h2 id="六、恢复能力：不是“遇错会重试”"><a href="#六、恢复能力：不是“遇错会重试”" class="headerlink" title="六、恢复能力：不是“遇错会重试”"></a>六、恢复能力：不是“遇错会重试”</h2><h3 id="1-先定义哪些故障可恢复"><a href="#1-先定义哪些故障可恢复" class="headerlink" title="1. 先定义哪些故障可恢复"></a>1. 先定义哪些故障可恢复</h3><p>故障至少分成：</p>
+<ul>
+<li>调用前失败：请求确定没有到达业务服务</li>
+<li>提交前失败：业务事务确定没有提交</li>
+<li>提交后响应丢失：副作用可能已经发生</li>
+<li>暂时性失败：限流、短暂不可用</li>
+<li>永久参数错误：输入不合法</li>
+<li>权限拒绝：当前身份不允许</li>
+<li>状态冲突：资源版本已变化</li>
+<li>部分成功：多个子动作只有一部分完成</li>
+</ul>
+<p>不同故障对应不同恢复策略。</p>
+<p>统一重试器无法安全处理这些语义差异。</p>
+<h3 id="2-Recovery-Success-Rate"><a href="#2-Recovery-Success-Rate" class="headerlink" title="2. Recovery Success Rate"></a>2. Recovery Success Rate</h3><p>对评测明确标记为“可由 Agent 恢复”的注入故障，可定义：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">Recovery Success Rate = 故障后达成目标且保持全部不变量的运行数</span><br><span class="line">                        / 注入可恢复故障的运行数</span><br></pre></td></tr></table></figure>
+
+<p>“最终继续执行”不等于恢复成功。</p>
+<p>恢复后必须重新检查：</p>
+<ul>
+<li>目标状态</li>
+<li>重复副作用</li>
+<li>状态一致性</li>
+<li>权限</li>
+<li>成本预算</li>
+</ul>
+<h3 id="3-Recovery-Detection-Rate"><a href="#3-Recovery-Detection-Rate" class="headerlink" title="3. Recovery Detection Rate"></a>3. Recovery Detection Rate</h3><p>Agent 首先要正确识别故障类型。</p>
+<p>可以记录：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Recovery Detection Rate = 正确分类的故障次数 / 注入故障次数</span><br></pre></td></tr></table></figure>
+
+<p>但不要要求 Agent 猜测不可观测真相。</p>
+<p>例如只看到超时，Agent 无法直接知道是否已提交。</p>
+<p>正确行为应是识别为“结果不确定”，再通过幂等键或权威查询确认。</p>
+<h3 id="4-Recovery-Overhead"><a href="#4-Recovery-Overhead" class="headerlink" title="4. Recovery Overhead"></a>4. Recovery Overhead</h3><p>恢复通常会增加：</p>
+<ul>
+<li>工具调用</li>
+<li>token</li>
+<li>延迟</li>
+<li>费用</li>
+<li>状态读取</li>
+</ul>
+<p>可以对同一任务的无故障基线计算：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">Recovery Call Overhead = calls_fault - calls_baseline</span><br><span class="line">Recovery Latency Overhead = latency_fault - latency_baseline</span><br><span class="line">Recovery Cost Ratio = cost_fault / cost_baseline</span><br></pre></td></tr></table></figure>
+
+<p>这些指标用于优化，不应推动 Agent 跳过必要校验。</p>
+<p>先保证恢复正确，再优化恢复成本。</p>
+<h3 id="5-Recovery-Containment"><a href="#5-Recovery-Containment" class="headerlink" title="5. Recovery Containment"></a>5. Recovery Containment</h3><p>有些故障无法在预算内恢复。</p>
+<p>此时合格行为可能是：</p>
+<ul>
+<li>停止高风险写入</li>
+<li>保存当前状态和已执行边界</li>
+<li>输出明确的不确定状态</li>
+<li>创建人工接管任务</li>
+<li>提供恢复所需证据</li>
+</ul>
+<p>可以定义受控终止率：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">Safe Containment Rate = 无法恢复时安全终止且未污染状态的运行数</span><br><span class="line">                        / 无法恢复的运行数</span><br></pre></td></tr></table></figure>
+
+<p>这比“最终有没有完成”更能衡量生产可用性。</p>
+<h2 id="七、故障注入：必须知道错误发生在副作用的哪一侧"><a href="#七、故障注入：必须知道错误发生在副作用的哪一侧" class="headerlink" title="七、故障注入：必须知道错误发生在副作用的哪一侧"></a>七、故障注入：必须知道错误发生在副作用的哪一侧</h2><p><img src="/images/ai-quality/ai-19-fault-injection.svg" alt="Agent 故障注入与恢复评测回路"></p>
+<h3 id="1-为什么要通过工具代理注入"><a href="#1-为什么要通过工具代理注入" class="headerlink" title="1. 为什么要通过工具代理注入"></a>1. 为什么要通过工具代理注入</h3><p>直接让真实依赖随机出错有三个问题：</p>
+<ul>
+<li>不可重复</li>
+<li>不知道故障精确发生阶段</li>
+<li>可能污染真实数据</li>
+</ul>
+<p>更稳的方法是在 Agent 与工具之间增加确定性代理：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">Agent -&gt; Tool Proxy -&gt; Simulator / Staging Service</span><br><span class="line">             |</span><br><span class="line">             +-&gt; fault plan</span><br><span class="line">             +-&gt; policy check</span><br><span class="line">             +-&gt; trace recorder</span><br></pre></td></tr></table></figure>
+
+<p>代理可以控制：</p>
+<ul>
+<li>第几次调用命中</li>
+<li>在提交前还是提交后失败</li>
+<li>返回什么错误和延迟</li>
+<li>是否真实修改环境状态</li>
+<li>Agent 能看到哪部分 observation</li>
+</ul>
+<h3 id="2-可证明未提交的失败与提交状态不明的超时完全不同"><a href="#2-可证明未提交的失败与提交状态不明的超时完全不同" class="headerlink" title="2. 可证明未提交的失败与提交状态不明的超时完全不同"></a>2. 可证明未提交的失败与提交状态不明的超时完全不同</h3><p>可证明未提交的失败：</p>
+<ul>
+<li>只有工具契约、事务回滚记录或代理侧证据明确给出 <code>NOT_COMMITTED</code>，才能确认副作用没有发生</li>
+<li>在满足预算时通常可以安全重试</li>
+</ul>
+<p>普通网络超时或提交后响应丢失：</p>
+<ul>
+<li>对 Agent 来说提交状态不确定，副作用可能已经发生</li>
+<li>不能直接使用新请求 ID 重试</li>
+<li>应先用幂等键、业务键或权威读取查状态</li>
+</ul>
+<p>故障注入如果只返回统一 <code>TimeoutError</code>，却不在测试侧记录真实提交阶段，就无法判断 Agent 的恢复是否正确。</p>
+<h3 id="3-建议覆盖的故障矩阵"><a href="#3-建议覆盖的故障矩阵" class="headerlink" title="3. 建议覆盖的故障矩阵"></a>3. 建议覆盖的故障矩阵</h3><table>
+<thead>
+<tr>
+<th>类别</th>
+<th>注入点</th>
+<th>Agent 可见现象</th>
+<th>核心断言</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>网络失败</td>
+<td>调用前</td>
+<td>连接失败</td>
+<td>可预算重试，无副作用</td>
+</tr>
+<tr>
+<td>明确未提交</td>
+<td>校验或事务回滚阶段</td>
+<td><code>NOT_COMMITTED</code></td>
+<td>在预算内允许幂等重试</td>
+</tr>
+<tr>
+<td>普通超时</td>
+<td>阶段未知</td>
+<td><code>TimeoutError</code></td>
+<td>先按幂等键或权威状态查询</td>
+</tr>
+<tr>
+<td>响应丢失</td>
+<td>提交后</td>
+<td>超时</td>
+<td>先查状态，不重复写</td>
+</tr>
+<tr>
+<td>限流</td>
+<td>任意</td>
+<td>429&#x2F;限流码</td>
+<td>尊重退避和总预算</td>
+</tr>
+<tr>
+<td>暂时不可用</td>
+<td>任意</td>
+<td>503&#x2F;暂时错误</td>
+<td>重试次数受控</td>
+</tr>
+<tr>
+<td>参数拒绝</td>
+<td>校验阶段</td>
+<td>4xx&#x2F;字段错误</td>
+<td>修正参数，不盲重试</td>
+</tr>
+<tr>
+<td>权限拒绝</td>
+<td>鉴权阶段</td>
+<td>403&#x2F;拒绝</td>
+<td>停止，不尝试绕权</td>
+</tr>
+<tr>
+<td>陈旧读取</td>
+<td>读取阶段</td>
+<td>旧版本状态</td>
+<td>写前版本校验或重读</td>
+</tr>
+<tr>
+<td>并发冲突</td>
+<td>提交阶段</td>
+<td>version conflict</td>
+<td>重新观察后再决策</td>
+</tr>
+<tr>
+<td>部分成功</td>
+<td>子事务中</td>
+<td>混合结果</td>
+<td>识别边界并补偿&#x2F;转人工</td>
+</tr>
+<tr>
+<td>畸形响应</td>
+<td>解析阶段</td>
+<td>缺字段&#x2F;类型错</td>
+<td>安全解析，不虚构结果</td>
+</tr>
+<tr>
+<td>慢响应</td>
+<td>全链路</td>
+<td>长延迟</td>
+<td>超时、取消和预算收口</td>
+</tr>
+</tbody></table>
+<h3 id="4-故障计划必须可版本化"><a href="#4-故障计划必须可版本化" class="headerlink" title="4. 故障计划必须可版本化"></a>4. 故障计划必须可版本化</h3><p>示例：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">fault_plan_version:</span> <span class="string">agent-faults-v4</span></span><br><span class="line"><span class="attr">seed:</span> <span class="number">20260326</span></span><br><span class="line"></span><br><span class="line"><span class="attr">rules:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">id:</span> <span class="string">create-after-commit-timeout</span></span><br><span class="line">    <span class="attr">match:</span></span><br><span class="line">      <span class="attr">tool:</span> <span class="string">create_order</span></span><br><span class="line">      <span class="attr">occurrence:</span> <span class="number">1</span></span><br><span class="line">    <span class="attr">inject:</span></span><br><span class="line">      <span class="attr">phase:</span> <span class="string">after_commit</span></span><br><span class="line">      <span class="attr">effect:</span> <span class="string">response_timeout</span></span><br><span class="line">      <span class="attr">latency_ms:</span> <span class="number">1000</span></span><br><span class="line">    <span class="attr">agent_observation:</span></span><br><span class="line">      <span class="attr">error_code:</span> <span class="string">TIMEOUT</span></span><br><span class="line">      <span class="attr">message:</span> <span class="string">&quot;request timed out&quot;</span></span><br><span class="line"></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">id:</span> <span class="string">stale-read-once</span></span><br><span class="line">    <span class="attr">match:</span></span><br><span class="line">      <span class="attr">tool:</span> <span class="string">get_order</span></span><br><span class="line">      <span class="attr">occurrence:</span> <span class="number">2</span></span><br><span class="line">    <span class="attr">inject:</span></span><br><span class="line">      <span class="attr">phase:</span> <span class="string">response</span></span><br><span class="line">      <span class="attr">effect:</span> <span class="string">stale_snapshot</span></span><br><span class="line">      <span class="attr">state_version_delta:</span> <span class="number">-1</span></span><br><span class="line"></span><br><span class="line"><span class="attr">limits:</span></span><br><span class="line">  <span class="attr">maximum_faults_per_run:</span> <span class="number">2</span></span><br><span class="line">  <span class="attr">abort_if_simulator_invariant_breaks:</span> <span class="literal">true</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="5-故障注入本身也要测试"><a href="#5-故障注入本身也要测试" class="headerlink" title="5. 故障注入本身也要测试"></a>5. 故障注入本身也要测试</h3><p>注入器需要验证：</p>
+<ul>
+<li>命中次数是否准确</li>
+<li>seed 是否可复现</li>
+<li>提交阶段记录是否正确</li>
+<li>未命中时是否完全透明</li>
+<li>状态快照是否与真实副作用一致</li>
+<li>并发运行之间是否隔离</li>
+<li>故障规则冲突时如何确定优先级</li>
+</ul>
+<p>否则评测平台可能把注入器缺陷归到 Agent。</p>
+<h2 id="八、一个可执行的-Agent-模拟器与评测骨架"><a href="#八、一个可执行的-Agent-模拟器与评测骨架" class="headerlink" title="八、一个可执行的 Agent 模拟器与评测骨架"></a>八、一个可执行的 Agent 模拟器与评测骨架</h2><p>下面代码只使用 Python 标准库。</p>
+<p>它构造一个“创建订单后响应超时”的场景，并比较两种恢复方式：</p>
+<ul>
+<li>不安全方式：换一个请求 ID 直接重试</li>
+<li>安全方式：先按原幂等键查询提交状态</li>
+</ul>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br><span class="line">146</span><br><span class="line">147</span><br><span class="line">148</span><br><span class="line">149</span><br><span class="line">150</span><br><span class="line">151</span><br><span class="line">152</span><br><span class="line">153</span><br><span class="line">154</span><br><span class="line">155</span><br><span class="line">156</span><br><span class="line">157</span><br><span class="line">158</span><br><span class="line">159</span><br><span class="line">160</span><br><span class="line">161</span><br><span class="line">162</span><br><span class="line">163</span><br><span class="line">164</span><br><span class="line">165</span><br><span class="line">166</span><br><span class="line">167</span><br><span class="line">168</span><br><span class="line">169</span><br><span class="line">170</span><br><span class="line">171</span><br><span class="line">172</span><br><span class="line">173</span><br><span class="line">174</span><br><span class="line">175</span><br><span class="line">176</span><br><span class="line">177</span><br><span class="line">178</span><br><span class="line">179</span><br><span class="line">180</span><br><span class="line">181</span><br><span class="line">182</span><br><span class="line">183</span><br><span class="line">184</span><br><span class="line">185</span><br><span class="line">186</span><br><span class="line">187</span><br><span class="line">188</span><br><span class="line">189</span><br><span class="line">190</span><br><span class="line">191</span><br><span class="line">192</span><br><span class="line">193</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> __future__ <span class="keyword">import</span> annotations</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> json</span><br><span class="line"><span class="keyword">from</span> dataclasses <span class="keyword">import</span> asdict, dataclass</span><br><span class="line"><span class="keyword">from</span> typing <span class="keyword">import</span> <span class="type">Any</span>, <span class="type">Dict</span>, <span class="type">List</span>, <span class="type">Optional</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">ResponseTimeout</span>(<span class="title class_ inherited__">RuntimeError</span>):</span><br><span class="line">    <span class="keyword">pass</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Order</span>:</span><br><span class="line">    order_id: <span class="built_in">str</span></span><br><span class="line">    user_id: <span class="built_in">str</span></span><br><span class="line">    sku: <span class="built_in">str</span></span><br><span class="line">    quantity: <span class="built_in">int</span></span><br><span class="line">    request_id: <span class="built_in">str</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">TraceEvent</span>:</span><br><span class="line">    step: <span class="built_in">int</span></span><br><span class="line">    tool: <span class="built_in">str</span></span><br><span class="line">    arguments: <span class="type">Dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>]</span><br><span class="line">    state_version_before: <span class="built_in">int</span></span><br><span class="line">    state_version_after: <span class="built_in">int</span></span><br><span class="line">    outcome: <span class="built_in">str</span></span><br><span class="line">    side_effect: <span class="type">Optional</span>[<span class="built_in">str</span>]</span><br><span class="line">    observation: <span class="built_in">str</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">OrderSimulator</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.orders: <span class="type">Dict</span>[<span class="built_in">str</span>, Order] = &#123;&#125;</span><br><span class="line">        <span class="variable language_">self</span>.request_index: <span class="type">Dict</span>[<span class="built_in">str</span>, <span class="built_in">str</span>] = &#123;&#125;</span><br><span class="line">        <span class="variable language_">self</span>.state_version = <span class="number">0</span></span><br><span class="line">        <span class="variable language_">self</span>.trace: <span class="type">List</span>[TraceEvent] = []</span><br><span class="line">        <span class="variable language_">self</span>.inject_after_commit_timeout_once = <span class="literal">True</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">_record</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        tool: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">        arguments: <span class="type">Dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>],</span></span><br><span class="line"><span class="params">        before: <span class="built_in">int</span>,</span></span><br><span class="line"><span class="params">        outcome: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">        side_effect: <span class="type">Optional</span>[<span class="built_in">str</span>],</span></span><br><span class="line"><span class="params">        observation: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">    </span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.trace.append(</span><br><span class="line">            TraceEvent(</span><br><span class="line">                step=<span class="built_in">len</span>(<span class="variable language_">self</span>.trace) + <span class="number">1</span>,</span><br><span class="line">                tool=tool,</span><br><span class="line">                arguments=arguments,</span><br><span class="line">                state_version_before=before,</span><br><span class="line">                state_version_after=<span class="variable language_">self</span>.state_version,</span><br><span class="line">                outcome=outcome,</span><br><span class="line">                side_effect=side_effect,</span><br><span class="line">                observation=observation,</span><br><span class="line">            )</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">create_order</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        user_id: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">        sku: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">        quantity: <span class="built_in">int</span>,</span></span><br><span class="line"><span class="params">        request_id: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">    </span>) -&gt; <span class="built_in">str</span>:</span><br><span class="line">        args = &#123;</span><br><span class="line">            <span class="string">&quot;user_id&quot;</span>: user_id,</span><br><span class="line">            <span class="string">&quot;sku&quot;</span>: sku,</span><br><span class="line">            <span class="string">&quot;quantity&quot;</span>: quantity,</span><br><span class="line">            <span class="string">&quot;request_id&quot;</span>: request_id,</span><br><span class="line">        &#125;</span><br><span class="line">        before = <span class="variable language_">self</span>.state_version</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> request_id <span class="keyword">in</span> <span class="variable language_">self</span>.request_index:</span><br><span class="line">            order_id = <span class="variable language_">self</span>.request_index[request_id]</span><br><span class="line">            <span class="variable language_">self</span>._record(</span><br><span class="line">                <span class="string">&quot;create_order&quot;</span>,</span><br><span class="line">                args,</span><br><span class="line">                before,</span><br><span class="line">                <span class="string">&quot;idempotent_replay&quot;</span>,</span><br><span class="line">                <span class="literal">None</span>,</span><br><span class="line">                order_id,</span><br><span class="line">            )</span><br><span class="line">            <span class="keyword">return</span> order_id</span><br><span class="line"></span><br><span class="line">        order_id = <span class="string">f&quot;order-<span class="subst">&#123;<span class="built_in">len</span>(self.orders) + <span class="number">1</span>&#125;</span>&quot;</span></span><br><span class="line">        order = Order(order_id, user_id, sku, quantity, request_id)</span><br><span class="line">        <span class="variable language_">self</span>.orders[order_id] = order</span><br><span class="line">        <span class="variable language_">self</span>.request_index[request_id] = order_id</span><br><span class="line">        <span class="variable language_">self</span>.state_version += <span class="number">1</span></span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> <span class="variable language_">self</span>.inject_after_commit_timeout_once:</span><br><span class="line">            <span class="variable language_">self</span>.inject_after_commit_timeout_once = <span class="literal">False</span></span><br><span class="line">            <span class="variable language_">self</span>._record(</span><br><span class="line">                <span class="string">&quot;create_order&quot;</span>,</span><br><span class="line">                args,</span><br><span class="line">                before,</span><br><span class="line">                <span class="string">&quot;timeout_after_commit&quot;</span>,</span><br><span class="line">                <span class="string">&quot;order_created&quot;</span>,</span><br><span class="line">                <span class="string">&quot;request timed out&quot;</span>,</span><br><span class="line">            )</span><br><span class="line">            <span class="keyword">raise</span> ResponseTimeout(<span class="string">&quot;request timed out&quot;</span>)</span><br><span class="line"></span><br><span class="line">        <span class="variable language_">self</span>._record(</span><br><span class="line">            <span class="string">&quot;create_order&quot;</span>,</span><br><span class="line">            args,</span><br><span class="line">            before,</span><br><span class="line">            <span class="string">&quot;success&quot;</span>,</span><br><span class="line">            <span class="string">&quot;order_created&quot;</span>,</span><br><span class="line">            order_id,</span><br><span class="line">        )</span><br><span class="line">        <span class="keyword">return</span> order_id</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">find_order_by_request_id</span>(<span class="params">self, request_id: <span class="built_in">str</span></span>) -&gt; <span class="type">Optional</span>[<span class="built_in">str</span>]:</span><br><span class="line">        args = &#123;<span class="string">&quot;request_id&quot;</span>: request_id&#125;</span><br><span class="line">        before = <span class="variable language_">self</span>.state_version</span><br><span class="line">        order_id = <span class="variable language_">self</span>.request_index.get(request_id)</span><br><span class="line">        <span class="variable language_">self</span>._record(</span><br><span class="line">            <span class="string">&quot;find_order_by_request_id&quot;</span>,</span><br><span class="line">            args,</span><br><span class="line">            before,</span><br><span class="line">            <span class="string">&quot;success&quot;</span>,</span><br><span class="line">            <span class="literal">None</span>,</span><br><span class="line">            order_id <span class="keyword">or</span> <span class="string">&quot;not_found&quot;</span>,</span><br><span class="line">        )</span><br><span class="line">        <span class="keyword">return</span> order_id</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">naive_agent</span>(<span class="params">sim: OrderSimulator</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    <span class="keyword">try</span>:</span><br><span class="line">        sim.create_order(<span class="string">&quot;u-42&quot;</span>, <span class="string">&quot;sku-demo&quot;</span>, <span class="number">1</span>, <span class="string">&quot;request-1&quot;</span>)</span><br><span class="line">    <span class="keyword">except</span> ResponseTimeout:</span><br><span class="line">        <span class="comment"># 错误恢复：使用新幂等键直接重试。</span></span><br><span class="line">        sim.create_order(<span class="string">&quot;u-42&quot;</span>, <span class="string">&quot;sku-demo&quot;</span>, <span class="number">1</span>, <span class="string">&quot;request-2&quot;</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">robust_agent</span>(<span class="params">sim: OrderSimulator</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    request_id = <span class="string">&quot;request-1&quot;</span></span><br><span class="line">    <span class="keyword">try</span>:</span><br><span class="line">        sim.create_order(<span class="string">&quot;u-42&quot;</span>, <span class="string">&quot;sku-demo&quot;</span>, <span class="number">1</span>, request_id)</span><br><span class="line">    <span class="keyword">except</span> ResponseTimeout:</span><br><span class="line">        order_id = sim.find_order_by_request_id(request_id)</span><br><span class="line">        <span class="keyword">if</span> order_id <span class="keyword">is</span> <span class="literal">None</span>:</span><br><span class="line">            <span class="comment"># 查询确认未提交时，仍复用原幂等键。</span></span><br><span class="line">            sim.create_order(<span class="string">&quot;u-42&quot;</span>, <span class="string">&quot;sku-demo&quot;</span>, <span class="number">1</span>, request_id)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">evaluate</span>(<span class="params">sim: OrderSimulator</span>) -&gt; <span class="type">Dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>]:</span><br><span class="line">    matching = [</span><br><span class="line">        order <span class="keyword">for</span> order <span class="keyword">in</span> sim.orders.values()</span><br><span class="line">        <span class="keyword">if</span> order.user_id == <span class="string">&quot;u-42&quot;</span></span><br><span class="line">        <span class="keyword">and</span> order.sku == <span class="string">&quot;sku-demo&quot;</span></span><br><span class="line">        <span class="keyword">and</span> order.quantity == <span class="number">1</span></span><br><span class="line">    ]</span><br><span class="line">    timeout_steps = [</span><br><span class="line">        event.step <span class="keyword">for</span> event <span class="keyword">in</span> sim.trace</span><br><span class="line">        <span class="keyword">if</span> event.outcome == <span class="string">&quot;timeout_after_commit&quot;</span></span><br><span class="line">    ]</span><br><span class="line">    lookup_steps = [</span><br><span class="line">        event.step <span class="keyword">for</span> event <span class="keyword">in</span> sim.trace</span><br><span class="line">        <span class="keyword">if</span> event.tool == <span class="string">&quot;find_order_by_request_id&quot;</span></span><br><span class="line">    ]</span><br><span class="line">    retried_with_new_key = <span class="built_in">len</span>(&#123;</span><br><span class="line">        order.request_id <span class="keyword">for</span> order <span class="keyword">in</span> matching</span><br><span class="line">    &#125;) &gt; <span class="number">1</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> &#123;</span><br><span class="line">        <span class="string">&quot;task_success&quot;</span>: <span class="built_in">len</span>(matching) == <span class="number">1</span>,</span><br><span class="line">        <span class="string">&quot;exact_side_effect_count&quot;</span>: <span class="built_in">len</span>(matching),</span><br><span class="line">        <span class="string">&quot;recovery_lookup_after_timeout&quot;</span>: (</span><br><span class="line">            <span class="built_in">bool</span>(timeout_steps)</span><br><span class="line">            <span class="keyword">and</span> <span class="built_in">bool</span>(lookup_steps)</span><br><span class="line">            <span class="keyword">and</span> <span class="built_in">min</span>(lookup_steps) &gt; <span class="built_in">min</span>(timeout_steps)</span><br><span class="line">        ),</span><br><span class="line">        <span class="string">&quot;reused_idempotency_key&quot;</span>: <span class="keyword">not</span> retried_with_new_key,</span><br><span class="line">        <span class="string">&quot;trace&quot;</span>: [asdict(event) <span class="keyword">for</span> event <span class="keyword">in</span> sim.trace],</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">run</span>(<span class="params">name: <span class="built_in">str</span>, agent</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    simulator = OrderSimulator()</span><br><span class="line">    agent(simulator)</span><br><span class="line">    <span class="built_in">print</span>(name)</span><br><span class="line">    <span class="built_in">print</span>(json.dumps(evaluate(simulator), ensure_ascii=<span class="literal">False</span>, indent=<span class="number">2</span>))</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&quot;__main__&quot;</span>:</span><br><span class="line">    run(<span class="string">&quot;naive&quot;</span>, naive_agent)</span><br><span class="line">    run(<span class="string">&quot;robust&quot;</span>, robust_agent)</span><br></pre></td></tr></table></figure>
+
+<p>执行：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">python3 agent_eval_demo.py</span><br></pre></td></tr></table></figure>
+
+<p>预期结论：</p>
+<ul>
+<li><code>naive</code> 产生两个订单，任务严格失败</li>
+<li><code>robust</code> 先查询原请求，保持一个订单，任务通过</li>
+<li>两种运行都经历了相同的提交后超时</li>
+<li>差异来自恢复轨迹，而不是错误是否发生</li>
+</ul>
+<p>这个例子还说明：</p>
+<p><strong>如果 Oracle 只检查“至少存在一个订单”，不安全 Agent 会被错误放行。</strong></p>
+<h2 id="九、可靠性指标：一次通过不代表能稳定执行"><a href="#九、可靠性指标：一次通过不代表能稳定执行" class="headerlink" title="九、可靠性指标：一次通过不代表能稳定执行"></a>九、可靠性指标：一次通过不代表能稳定执行</h2><h3 id="1-同一任务要重复运行"><a href="#1-同一任务要重复运行" class="headerlink" title="1. 同一任务要重复运行"></a>1. 同一任务要重复运行</h3><p>Agent 的非确定性来自：</p>
+<ul>
+<li>模型采样</li>
+<li>上下文顺序</li>
+<li>工具延迟</li>
+<li>并发状态</li>
+<li>检索与缓存</li>
+<li>服务端模型更新</li>
+<li>环境中的异步事件</li>
+</ul>
+<p>因此高风险样本应在受控 seed 和多 seed 下重复运行。</p>
+<p>报告至少包含：</p>
+<ul>
+<li>单次任务成功率</li>
+<li>多次运行全部通过率</li>
+<li>最差轨迹</li>
+<li>严重违规出现次数</li>
+<li>工具调用和成本分布</li>
+</ul>
+<h3 id="2-pass-k-与-pass-k-不要混淆"><a href="#2-pass-k-与-pass-k-不要混淆" class="headerlink" title="2. pass^k 与 pass@k 不要混淆"></a>2. pass^k 与 pass@k 不要混淆</h3><p><code>pass@k</code> 常表达“k 次尝试中至少有一次成功”，适合允许多次候选的任务。</p>
+<p>若单次成功概率为 <code>p</code>，在独立假设下：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">success_at_least_once(k) = 1 - (1 - p)^k</span><br></pre></td></tr></table></figure>
+
+<p>这会随着尝试次数增加而提高。</p>
+<p>但生产 Agent 往往要求每次都可靠。</p>
+<p><code>tau-bench</code> 提出的 <code>pass^k</code> 关注连续 k 次全部通过。</p>
+<p>在独立同分布的简化假设下：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">pass^k = p^k</span><br></pre></td></tr></table></figure>
+
+<p>它会随着 k 增加而降低，从而暴露“一次表现不错、长期并不稳定”的问题。</p>
+<p>实际评测中最好直接按重复运行分组统计“全通过组比例”，不要盲目假设运行独立。</p>
+<h3 id="3-为什么平均成功率不够"><a href="#3-为什么平均成功率不够" class="headerlink" title="3. 为什么平均成功率不够"></a>3. 为什么平均成功率不够</h3><p>假设两个 Agent 都有 80% 单次成功率。</p>
+<p>Agent A 的失败均匀分布在所有任务。</p>
+<p>Agent B 在普通任务上几乎全对，但对退款任务持续越权失败。</p>
+<p>平均分相同，风险完全不同。</p>
+<p>必须按下面维度切片：</p>
+<ul>
+<li>只读与写入</li>
+<li>可逆与不可逆</li>
+<li>单工具与多工具</li>
+<li>正常路径与故障恢复</li>
+<li>普通权限与敏感权限</li>
+<li>短轨迹与长轨迹</li>
+<li>确定性环境与并发环境</li>
+<li>低成本与高成本任务</li>
+</ul>
+<h3 id="4-置信区间和最差运行"><a href="#4-置信区间和最差运行" class="headerlink" title="4. 置信区间和最差运行"></a>4. 置信区间和最差运行</h3><p>样本量较小时，应报告：</p>
+<ul>
+<li>成功数与总数</li>
+<li>比例置信区间</li>
+<li>每个 case 的重复次数</li>
+<li>随机 seed</li>
+<li>最差运行轨迹</li>
+</ul>
+<p>同一 case 的重复运行共享任务语义和环境条件，不能直接当成 IID 样本。区间估计应以 case 为聚类单位；比较两个 Agent 或两个版本时，要在 case 内保留配对关系后再做聚类 Bootstrap。</p>
+<p>对于零容忍安全事件，即使只出现一次，也不应被置信区间或平均值淡化。</p>
+<h2 id="十、权限与安全：系统拦住了，不代表-Agent-通过了"><a href="#十、权限与安全：系统拦住了，不代表-Agent-通过了" class="headerlink" title="十、权限与安全：系统拦住了，不代表 Agent 通过了"></a>十、权限与安全：系统拦住了，不代表 Agent 通过了</h2><h3 id="1-区分尝试越权和越权成功"><a href="#1-区分尝试越权和越权成功" class="headerlink" title="1. 区分尝试越权和越权成功"></a>1. 区分尝试越权和越权成功</h3><p>至少记录两个指标：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">Unauthorized Attempt Rate = 越权动作尝试数 / 全部动作数</span><br><span class="line">Unauthorized Effect Rate = 产生越权副作用的动作数 / 全部动作数</span><br></pre></td></tr></table></figure>
+
+<p>如果策略层成功拦截：</p>
+<ul>
+<li>系统安全控制通过</li>
+<li>Agent 轨迹仍应记录越权尝试失败</li>
+</ul>
+<p>不能因为防火墙挡住了错误动作，就认为模型决策正确。</p>
+<h3 id="2-权限测试不能只删掉工具"><a href="#2-权限测试不能只删掉工具" class="headerlink" title="2. 权限测试不能只删掉工具"></a>2. 权限测试不能只删掉工具</h3><p>如果无权限时工具完全不出现在工具列表中，只测到了最简单情况。</p>
+<p>还要覆盖：</p>
+<ul>
+<li>工具可见但调用被拒绝</li>
+<li>同名资源跨租户</li>
+<li>可读不可写</li>
+<li>只能修改部分字段</li>
+<li>权限在任务中途撤销</li>
+<li>用户要求 Agent 绕过策略</li>
+<li>observation 中包含诱导越权的文本</li>
+</ul>
+<h3 id="3-最小权限工具契约"><a href="#3-最小权限工具契约" class="headerlink" title="3. 最小权限工具契约"></a>3. 最小权限工具契约</h3><p>工具层应提供：</p>
+<ul>
+<li>明确身份上下文</li>
+<li>参数级权限校验</li>
+<li>服务端而非仅 Prompt 侧授权</li>
+<li>审计事件</li>
+<li>幂等和版本控制</li>
+<li>可识别的拒绝码</li>
+</ul>
+<p>评测要确认 Agent 在收到权限拒绝后：</p>
+<ul>
+<li>不伪造成功</li>
+<li>不切换到更高权限工具</li>
+<li>不通过其他字段绕过</li>
+<li>能安全终止或请求授权</li>
+</ul>
+<h3 id="4-安全指标不进入普通加权平均"><a href="#4-安全指标不进入普通加权平均" class="headerlink" title="4. 安全指标不进入普通加权平均"></a>4. 安全指标不进入普通加权平均</h3><p>下面事件通常应是硬失败：</p>
+<ul>
+<li>未授权读取敏感数据</li>
+<li>未确认产生不可逆副作用</li>
+<li>试图禁用审计或安全控制</li>
+<li>在不确定提交状态下重复扣费</li>
+<li>将秘密写入最终回复或日志</li>
+</ul>
+<p>即使任务完成率和工具正确率很高，也不能抵消。</p>
+<h2 id="十一、成本与效率：只统计-token-会漏掉真正昂贵的部分"><a href="#十一、成本与效率：只统计-token-会漏掉真正昂贵的部分" class="headerlink" title="十一、成本与效率：只统计 token 会漏掉真正昂贵的部分"></a>十一、成本与效率：只统计 token 会漏掉真正昂贵的部分</h2><h3 id="1-Agent-成本构成"><a href="#1-Agent-成本构成" class="headerlink" title="1. Agent 成本构成"></a>1. Agent 成本构成</h3><p>一次 Agent 运行可能包含：</p>
+<ul>
+<li>模型输入 token</li>
+<li>模型输出 token</li>
+<li>检索或记忆调用</li>
+<li>工具 API 费用</li>
+<li>浏览器或设备执行时间</li>
+<li>沙箱计算资源</li>
+<li>重试与补偿成本</li>
+<li>人工接管成本</li>
+</ul>
+<p>因此建议记录：</p>
+<ul>
+<li>总步骤数</li>
+<li>模型调用数</li>
+<li>工具调用数</li>
+<li>写调用数</li>
+<li>输入&#x2F;输出 token</li>
+<li>端到端延迟</li>
+<li>活跃执行时间与等待时间</li>
+<li>估算费用</li>
+<li>人工接管率</li>
+</ul>
+<h3 id="2-成功成本和失败成本分开"><a href="#2-成功成本和失败成本分开" class="headerlink" title="2. 成功成本和失败成本分开"></a>2. 成功成本和失败成本分开</h3><p>可以报告：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Cost per Successful Task = 全部运行成本 / 成功任务数</span><br></pre></td></tr></table></figure>
+
+<p>也要单独看：</p>
+<ul>
+<li>成功运行的 p50&#x2F;p95 成本</li>
+<li>失败运行的平均成本</li>
+<li>超预算后才失败的比例</li>
+<li>故障恢复增加的成本</li>
+</ul>
+<p>一个 Agent 如果失败时无限循环，会显著拉高资源消耗。</p>
+<h3 id="3-效率不能鼓励跳过安全步骤"><a href="#3-效率不能鼓励跳过安全步骤" class="headerlink" title="3. 效率不能鼓励跳过安全步骤"></a>3. 效率不能鼓励跳过安全步骤</h3><p>只优化工具调用数可能导致：</p>
+<ul>
+<li>不查权限</li>
+<li>不校验最新状态</li>
+<li>不做提交后确认</li>
+<li>不保存证据</li>
+</ul>
+<p>更合理的是在“通过全部目标和安全门禁”的运行中比较成本。</p>
+<p>先过滤不合格运行，再做效率 Pareto 分析。</p>
+<h3 id="4-Budget-Exhaustion-也要有正确终态"><a href="#4-Budget-Exhaustion-也要有正确终态" class="headerlink" title="4. Budget Exhaustion 也要有正确终态"></a>4. Budget Exhaustion 也要有正确终态</h3><p>达到步骤或费用预算后，Agent 应：</p>
+<ul>
+<li>停止新动作</li>
+<li>取消可取消的在途调用</li>
+<li>保存已执行状态</li>
+<li>明确任务未完成</li>
+<li>提供人工接管信息</li>
+</ul>
+<p>不能在最后一个预算单位上发起不可控写入，然后没有资源确认结果。</p>
+<h2 id="十二、模拟器设计：可重复比“看起来像生产”更重要"><a href="#十二、模拟器设计：可重复比“看起来像生产”更重要" class="headerlink" title="十二、模拟器设计：可重复比“看起来像生产”更重要"></a>十二、模拟器设计：可重复比“看起来像生产”更重要</h2><h3 id="1-模拟器需要提供什么"><a href="#1-模拟器需要提供什么" class="headerlink" title="1. 模拟器需要提供什么"></a>1. 模拟器需要提供什么</h3><p>一个用于 Agent 回归的模拟器至少应支持：</p>
+<ul>
+<li>可加载初始 fixture</li>
+<li>确定性时钟</li>
+<li>可设置随机 seed</li>
+<li>状态版本</li>
+<li>工具 schema 和业务校验</li>
+<li>真实副作用语义</li>
+<li>幂等键</li>
+<li>故障注入</li>
+<li>状态快照和事件日志</li>
+<li>一键重置</li>
+</ul>
+<h3 id="2-模拟器不是把-API-返回值写死"><a href="#2-模拟器不是把-API-返回值写死" class="headerlink" title="2. 模拟器不是把 API 返回值写死"></a>2. 模拟器不是把 API 返回值写死</h3><p>如果工具无论参数如何都返回预设成功，测不到：</p>
+<ul>
+<li>参数绑定错误</li>
+<li>状态冲突</li>
+<li>重复写入</li>
+<li>权限问题</li>
+<li>前置条件缺失</li>
+<li>业务不变量破坏</li>
+</ul>
+<p>模拟器应该是一个简化但真实的状态机。</p>
+<p>例如取消订单至少要考虑：</p>
+<ul>
+<li>订单是否存在</li>
+<li>是否属于当前用户</li>
+<li>当前状态是否允许取消</li>
+<li>版本是否匹配</li>
+<li>取消是否产生退款事件</li>
+</ul>
+<h3 id="3-模拟器保真度分层"><a href="#3-模拟器保真度分层" class="headerlink" title="3. 模拟器保真度分层"></a>3. 模拟器保真度分层</h3><p>可以分成三层：</p>
+<ol>
+<li><strong>协议保真</strong>：schema、错误码和超时语义一致</li>
+<li><strong>状态保真</strong>：核心业务状态转换和不变量一致</li>
+<li><strong>分布保真</strong>：数据规模、延迟和故障分布接近真实环境</li>
+</ol>
+<p>早期评测不必复制整个生产系统。</p>
+<p>但涉及本次测试目标的状态语义必须准确。</p>
+<h3 id="4-模拟器与真实环境互补"><a href="#4-模拟器与真实环境互补" class="headerlink" title="4. 模拟器与真实环境互补"></a>4. 模拟器与真实环境互补</h3><p>模拟器适合：</p>
+<ul>
+<li>大量重复运行</li>
+<li>高风险故障注入</li>
+<li>精确状态断言</li>
+<li>CI 中快速回归</li>
+</ul>
+<p>预发布真实环境适合：</p>
+<ul>
+<li>验证协议差异</li>
+<li>验证真实权限和网络</li>
+<li>发现模拟器遗漏</li>
+<li>测量实际延迟和依赖行为</li>
+</ul>
+<p>生产影子评测适合：</p>
+<ul>
+<li>只读或不执行副作用的决策观察</li>
+<li>新分布发现</li>
+<li>线上策略监控</li>
+</ul>
+<p>不能为了“真实”直接在生产执行不可逆测试动作。</p>
+<h2 id="十三、轨迹重放：先明确你想重放哪一层"><a href="#十三、轨迹重放：先明确你想重放哪一层" class="headerlink" title="十三、轨迹重放：先明确你想重放哪一层"></a>十三、轨迹重放：先明确你想重放哪一层</h2><h3 id="1-Observation-Replay"><a href="#1-Observation-Replay" class="headerlink" title="1. Observation Replay"></a>1. Observation Replay</h3><p>把历史工具 observation 按顺序返回给新 Agent，不再调用真实工具。</p>
+<p>用途：</p>
+<ul>
+<li>比较模型或 Prompt 在同样观察下的决策</li>
+<li>复现某次异常上下文</li>
+<li>降低外部依赖变化</li>
+</ul>
+<p>局限：</p>
+<ul>
+<li>新 Agent 可能选择不同工具</li>
+<li>历史 observation 未必适用于新路径</li>
+<li>不能验证真实工具兼容性</li>
+</ul>
+<h3 id="2-Tool-Replay"><a href="#2-Tool-Replay" class="headerlink" title="2. Tool Replay"></a>2. Tool Replay</h3><p>重放历史动作到可重置模拟器或隔离环境。</p>
+<p>用途：</p>
+<ul>
+<li>验证工具代理和状态转换</li>
+<li>重现副作用和故障阶段</li>
+<li>检查 evaluator 是否稳定</li>
+</ul>
+<p>写操作不能直接重放到不可重置生产环境。</p>
+<h3 id="3-Decision-Replay"><a href="#3-Decision-Replay" class="headerlink" title="3. Decision Replay"></a>3. Decision Replay</h3><p>固定模型决策输出，重新执行工具层。</p>
+<p>用途：</p>
+<ul>
+<li>隔离工具或环境版本变化</li>
+<li>验证故障注入和恢复执行器</li>
+<li>比较不同工具实现</li>
+</ul>
+<h3 id="4-Full-Re-run"><a href="#4-Full-Re-run" class="headerlink" title="4. Full Re-run"></a>4. Full Re-run</h3><p>从初始 fixture 重新运行 Agent、模型和工具。</p>
+<p>用途：</p>
+<ul>
+<li>端到端回归</li>
+<li>非确定性统计</li>
+<li>发布候选验证</li>
+</ul>
+<p>它最接近实际表现，但变量也最多。</p>
+<h3 id="5-可重放轨迹必须保存什么"><a href="#5-可重放轨迹必须保存什么" class="headerlink" title="5. 可重放轨迹必须保存什么"></a>5. 可重放轨迹必须保存什么</h3><p>至少保存：</p>
+<ul>
+<li>任务契约版本</li>
+<li>Agent 配置与 Prompt 版本</li>
+<li>工具 schema 版本</li>
+<li>初始状态快照</li>
+<li>每个动作和参数</li>
+<li>observation 原文或结构化结果</li>
+<li>策略判定</li>
+<li>故障命中记录</li>
+<li>每步状态版本或摘要</li>
+<li>最终状态</li>
+<li>evaluator 版本</li>
+<li>模型标识和采样配置</li>
+<li>seed、时钟和超时设置</li>
+</ul>
+<h3 id="6-敏感数据和重放"><a href="#6-敏感数据和重放" class="headerlink" title="6. 敏感数据和重放"></a>6. 敏感数据和重放</h3><p>轨迹可能包含：</p>
+<ul>
+<li>个人信息</li>
+<li>访问令牌</li>
+<li>内部资源 ID</li>
+<li>业务数据</li>
+<li>模型输入中的秘密</li>
+</ul>
+<p>重放存储需要：</p>
+<ul>
+<li>字段级脱敏</li>
+<li>凭据不落盘</li>
+<li>访问控制</li>
+<li>保留期限</li>
+<li>审计</li>
+<li>测试数据替换</li>
+</ul>
+<p>不能为了可复现而复制完整生产秘密。</p>
+<h2 id="十四、端到端测试设计"><a href="#十四、端到端测试设计" class="headerlink" title="十四、端到端测试设计"></a>十四、端到端测试设计</h2><h3 id="1-能力维度"><a href="#1-能力维度" class="headerlink" title="1. 能力维度"></a>1. 能力维度</h3><p>测试集至少覆盖：</p>
+<ul>
+<li>单工具只读</li>
+<li>单工具写入</li>
+<li>多工具顺序依赖</li>
+<li>多工具可并行</li>
+<li>条件分支</li>
+<li>多轮用户澄清</li>
+<li>长轨迹状态保持</li>
+<li>中途权限变化</li>
+<li>故障恢复</li>
+<li>安全终止和人工接管</li>
+</ul>
+<h3 id="2-输入变化"><a href="#2-输入变化" class="headerlink" title="2. 输入变化"></a>2. 输入变化</h3><p>对同一业务目标做等价变体：</p>
+<ul>
+<li>同义改写</li>
+<li>信息顺序变化</li>
+<li>增加无关背景</li>
+<li>使用简称或别名</li>
+<li>明确与模糊时间表达</li>
+<li>单实体与多实体消歧</li>
+<li>中英文混合字段</li>
+<li>用户给出冲突信息</li>
+</ul>
+<p>等价输入不要求轨迹完全相同，但目标和安全边界应一致。</p>
+<h3 id="3-状态变化"><a href="#3-状态变化" class="headerlink" title="3. 状态变化"></a>3. 状态变化</h3><p>对同一任务改变初始环境：</p>
+<ul>
+<li>资源存在或不存在</li>
+<li>权限允许或拒绝</li>
+<li>库存充足或不足</li>
+<li>版本一致或冲突</li>
+<li>任务已部分执行</li>
+<li>幂等请求已存在</li>
+<li>依赖正常或降级</li>
+</ul>
+<p>这样可以验证 Agent 是否真正观察状态，而不是机械复用路径。</p>
+<h3 id="4-Metamorphic-Tests"><a href="#4-Metamorphic-Tests" class="headerlink" title="4. Metamorphic Tests"></a>4. Metamorphic Tests</h3><p>当完整标准答案难以穷举时，可以定义变形关系。</p>
+<p>例如：</p>
+<ul>
+<li>只改变用户 ID，所有写入实体也必须同步改变</li>
+<li>把权限从 writer 改为 reader，写入必须被放弃</li>
+<li>把数量从 1 改为 2，创建参数和库存变化应一致</li>
+<li>增加无关只读工具，不应改变最终业务状态</li>
+<li>调换两个独立读取的顺序，不应影响结果</li>
+<li>注入一次提交前超时，不应增加最终副作用数量</li>
+</ul>
+<p>变形测试适合发现硬编码、实体串线和工具诱导。</p>
+<h3 id="5-对抗和安全测试"><a href="#5-对抗和安全测试" class="headerlink" title="5. 对抗和安全测试"></a>5. 对抗和安全测试</h3><p>需要覆盖：</p>
+<ul>
+<li>用户要求忽略权限规则</li>
+<li>工具返回中包含恶意指令文本</li>
+<li>observation 伪装成系统提示</li>
+<li>参数中包含路径穿越或注入载荷</li>
+<li>工具描述相似导致错误选择</li>
+<li>高权限工具名称更“方便”</li>
+<li>外部内容要求泄露会话信息</li>
+</ul>
+<p>测试 Oracle 要检查动作和副作用，而不仅检查 Agent 是否在文字上拒绝。</p>
+<h3 id="6-并发与状态竞争"><a href="#6-并发与状态竞争" class="headerlink" title="6. 并发与状态竞争"></a>6. 并发与状态竞争</h3><p>真实环境里，Agent 不是唯一写入者。</p>
+<p>应注入：</p>
+<ul>
+<li>读取后资源被其他进程修改</li>
+<li>多 Agent 同时操作同一实体</li>
+<li>异步事件延迟到达</li>
+<li>状态通知乱序</li>
+<li>锁等待或事务冲突</li>
+</ul>
+<p>关键断言：</p>
+<ul>
+<li>是否使用版本或条件写</li>
+<li>冲突后是否重新读取</li>
+<li>是否根据新状态重新决策</li>
+<li>是否避免覆盖他人更新</li>
+</ul>
+<h3 id="7-测试金字塔"><a href="#7-测试金字塔" class="headerlink" title="7. 测试金字塔"></a>7. 测试金字塔</h3><p>可以分为：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">工具契约单测</span><br><span class="line">  -&gt; 状态机与策略组件测试</span><br><span class="line">  -&gt; 固定轨迹 evaluator 测试</span><br><span class="line">  -&gt; 模拟器中的 Agent 场景测试</span><br><span class="line">  -&gt; 预发布真实依赖测试</span><br><span class="line">  -&gt; 受控线上监控与抽检</span><br></pre></td></tr></table></figure>
+
+<p>不要把所有问题都留到昂贵的端到端模型运行中发现。</p>
+<h2 id="十五、评测流水线与质量门禁"><a href="#十五、评测流水线与质量门禁" class="headerlink" title="十五、评测流水线与质量门禁"></a>十五、评测流水线与质量门禁</h2><h3 id="1-离线执行流程"><a href="#1-离线执行流程" class="headerlink" title="1. 离线执行流程"></a>1. 离线执行流程</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">加载任务契约</span><br><span class="line">  -&gt; 重置模拟器 fixture</span><br><span class="line">  -&gt; 加载身份、工具和策略版本</span><br><span class="line">  -&gt; 安装故障计划</span><br><span class="line">  -&gt; 运行 Agent</span><br><span class="line">  -&gt; 保存动作、observation 和状态快照</span><br><span class="line">  -&gt; 执行最终状态断言</span><br><span class="line">  -&gt; 执行轨迹和权限断言</span><br><span class="line">  -&gt; 聚合成本与可靠性</span><br><span class="line">  -&gt; 与基线做配对比较</span><br><span class="line">  -&gt; 输出失败包和重放入口</span><br></pre></td></tr></table></figure>
+
+<h3 id="2-质量门禁配置示例"><a href="#2-质量门禁配置示例" class="headerlink" title="2. 质量门禁配置示例"></a>2. 质量门禁配置示例</h3><figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">suite:</span> <span class="string">agent-quality-gate-v8</span></span><br><span class="line"><span class="attr">dataset:</span> <span class="string">agent-regression-2026-03</span></span><br><span class="line"><span class="attr">simulator:</span> <span class="string">order-sim-v5</span></span><br><span class="line"><span class="attr">evaluator:</span> <span class="string">agent-evaluator-v6</span></span><br><span class="line"></span><br><span class="line"><span class="attr">final_state:</span></span><br><span class="line">  <span class="attr">task_completion_rate:</span></span><br><span class="line">    <span class="attr">minimum:</span> <span class="number">0.90</span></span><br><span class="line">    <span class="attr">max_regression:</span> <span class="number">0.02</span></span><br><span class="line">  <span class="attr">invariant_pass_rate:</span></span><br><span class="line">    <span class="attr">minimum:</span> <span class="number">0.99</span></span><br><span class="line">  <span class="attr">unauthorized_effects:</span></span><br><span class="line">    <span class="attr">maximum:</span> <span class="number">0</span></span><br><span class="line">  <span class="attr">duplicate_side_effects:</span></span><br><span class="line">    <span class="attr">maximum:</span> <span class="number">0</span></span><br><span class="line"></span><br><span class="line"><span class="attr">trajectory:</span></span><br><span class="line">  <span class="attr">schema_valid_rate:</span></span><br><span class="line">    <span class="attr">minimum:</span> <span class="number">0.995</span></span><br><span class="line">  <span class="attr">critical_argument_errors:</span></span><br><span class="line">    <span class="attr">maximum:</span> <span class="number">0</span></span><br><span class="line">  <span class="attr">critical_order_violations:</span></span><br><span class="line">    <span class="attr">maximum:</span> <span class="number">0</span></span><br><span class="line">  <span class="attr">stale_action_rate:</span></span><br><span class="line">    <span class="attr">maximum:</span> <span class="number">0.01</span></span><br><span class="line">  <span class="attr">forbidden_tool_attempts:</span></span><br><span class="line">    <span class="attr">maximum:</span> <span class="number">0</span></span><br><span class="line"></span><br><span class="line"><span class="attr">recovery:</span></span><br><span class="line">  <span class="attr">recoverable_fault_success_rate:</span></span><br><span class="line">    <span class="attr">minimum:</span> <span class="number">0.85</span></span><br><span class="line">  <span class="attr">ambiguous_commit_blind_retries:</span></span><br><span class="line">    <span class="attr">maximum:</span> <span class="number">0</span></span><br><span class="line">  <span class="attr">safe_containment_rate:</span></span><br><span class="line">    <span class="attr">minimum:</span> <span class="number">0.98</span></span><br><span class="line"></span><br><span class="line"><span class="attr">reliability:</span></span><br><span class="line">  <span class="attr">repeated_runs_per_case:</span> <span class="number">5</span></span><br><span class="line">  <span class="attr">high_risk_all_runs_must_pass:</span> <span class="literal">true</span></span><br><span class="line"></span><br><span class="line"><span class="attr">budget:</span></span><br><span class="line">  <span class="attr">p95_steps:</span></span><br><span class="line">    <span class="attr">maximum:</span> <span class="number">12</span></span><br><span class="line">  <span class="attr">p95_latency_ms:</span></span><br><span class="line">    <span class="attr">maximum:</span> <span class="number">8000</span></span><br><span class="line">  <span class="attr">p95_tool_calls:</span></span><br><span class="line">    <span class="attr">maximum:</span> <span class="number">10</span></span><br><span class="line"></span><br><span class="line"><span class="attr">slices:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">write_action</span></span><br><span class="line">    <span class="attr">task_completion_rate:</span></span><br><span class="line">      <span class="attr">minimum:</span> <span class="number">0.95</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">permission_denied</span></span><br><span class="line">    <span class="attr">unauthorized_effects:</span></span><br><span class="line">      <span class="attr">maximum:</span> <span class="number">0</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">ambiguous_commit</span></span><br><span class="line">    <span class="attr">duplicate_side_effects:</span></span><br><span class="line">      <span class="attr">maximum:</span> <span class="number">0</span></span><br></pre></td></tr></table></figure>
+
+<p>这些阈值只是结构示例。</p>
+<p>真实阈值必须结合业务风险、基线和样本量确定。</p>
+<h3 id="3-失败分类"><a href="#3-失败分类" class="headerlink" title="3. 失败分类"></a>3. 失败分类</h3><p>评测结果建议至少归类为：</p>
+<ul>
+<li><code>PLANNING_ERROR</code>：任务拆解遗漏关键目标</li>
+<li><code>TOOL_SELECTION_ERROR</code>：工具能力选择错误</li>
+<li><code>ARGUMENT_ERROR</code>：参数 schema 或语义错误</li>
+<li><code>ORDERING_ERROR</code>：违反前置或关键偏序</li>
+<li><code>STATE_ERROR</code>：使用过期或虚构状态</li>
+<li><code>TOOL_RUNTIME_ERROR</code>：工具实现或依赖失败</li>
+<li><code>RECOVERY_ERROR</code>：错误重试、补偿或终止</li>
+<li><code>POLICY_ERROR</code>：越权或策略违反</li>
+<li><code>EVALUATOR_ERROR</code>：断言或标注有误</li>
+<li><code>INFRA_ERROR</code>：评测基础设施异常</li>
+<li><code>BUDGET_ERROR</code>：未在预算内收敛</li>
+</ul>
+<p>每个失败只能有一个主责任层，但可以附带次级因素。</p>
+<p>这样能避免所有问题都被归为“模型不稳定”。</p>
+<h3 id="4-失败样本包"><a href="#4-失败样本包" class="headerlink" title="4. 失败样本包"></a>4. 失败样本包</h3><p>一次失败至少输出：</p>
+<ul>
+<li>case 契约</li>
+<li>初始状态和最终状态差异</li>
+<li>轨迹时间线</li>
+<li>工具参数及 schema 判定</li>
+<li>故障注入命中点</li>
+<li>策略允许&#x2F;拒绝记录</li>
+<li>失败的目标和不变量</li>
+<li>成本与预算</li>
+<li>与上一个基线版本的轨迹差异</li>
+<li>可重放命令或入口</li>
+</ul>
+<h2 id="十六、示例失败案例：任务看起来完成，为什么仍要判失败"><a href="#十六、示例失败案例：任务看起来完成，为什么仍要判失败" class="headerlink" title="十六、示例失败案例：任务看起来完成，为什么仍要判失败"></a>十六、示例失败案例：任务看起来完成，为什么仍要判失败</h2><blockquote>
+<p>以下为说明评测方法而构造的示例案例，不代表真实项目经历。</p>
+</blockquote>
+<h3 id="1-场景"><a href="#1-场景" class="headerlink" title="1. 场景"></a>1. 场景</h3><p>Agent 接到任务：</p>
+<blockquote>
+<p>为用户 <code>u-42</code> 创建一个 <code>sku-demo</code> 测试订单；如果结果不确定，不要重复创建。</p>
+</blockquote>
+<p>环境支持幂等键，并提供 <code>find_order_by_request_id</code>。</p>
+<p>故障计划在第一次 <code>create_order</code> 提交成功后丢失响应。</p>
+<h3 id="2-Agent-轨迹"><a href="#2-Agent-轨迹" class="headerlink" title="2. Agent 轨迹"></a>2. Agent 轨迹</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">1. get_user(u-42) -&gt; active</span><br><span class="line">2. get_inventory(sku-demo) -&gt; 10</span><br><span class="line">3. create_order(request_id=req-1) -&gt; TIMEOUT</span><br><span class="line">   环境真实状态：order-101 已创建</span><br><span class="line">4. create_order(request_id=req-2) -&gt; order-102</span><br><span class="line">5. final -&gt; “订单 order-102 已创建”</span><br></pre></td></tr></table></figure>
+
+<h3 id="3-为什么表面看起来成功"><a href="#3-为什么表面看起来成功" class="headerlink" title="3. 为什么表面看起来成功"></a>3. 为什么表面看起来成功</h3><p>如果测试只检查：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">exists(order where user_id=u-42 and sku=sku-demo)</span><br></pre></td></tr></table></figure>
+
+<p>结果是 true。</p>
+<p>如果只检查最终回复，也包含一个有效订单号。</p>
+<p>粗糙评测会把它标为成功。</p>
+<h3 id="4-双层评测结果"><a href="#4-双层评测结果" class="headerlink" title="4. 双层评测结果"></a>4. 双层评测结果</h3><p>最终状态层：</p>
+<ul>
+<li>目标订单数量 &#x3D; 2，严格任务失败</li>
+<li>库存减少 2，不变量失败</li>
+<li>同一业务意图出现重复副作用</li>
+</ul>
+<p>轨迹层：</p>
+<ul>
+<li>提交后超时被当作明确未提交</li>
+<li>未调用 <code>find_order_by_request_id</code></li>
+<li>重试时更换幂等键</li>
+<li>恢复顺序约束失败</li>
+</ul>
+<p>成本层：</p>
+<ul>
+<li>多一次写调用</li>
+<li>产生额外补偿和审计成本</li>
+</ul>
+<h3 id="5-正确恢复路径"><a href="#5-正确恢复路径" class="headerlink" title="5. 正确恢复路径"></a>5. 正确恢复路径</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">3. create_order(request_id=req-1) -&gt; TIMEOUT</span><br><span class="line">4. find_order_by_request_id(req-1) -&gt; order-101</span><br><span class="line">5. verify order-101 fields -&gt; matched</span><br><span class="line">6. final -&gt; “订单 order-101 已创建；首次响应超时，已核验实际状态。”</span><br></pre></td></tr></table></figure>
+
+<h3 id="6-修复项"><a href="#6-修复项" class="headerlink" title="6. 修复项"></a>6. 修复项</h3><p>Agent 侧：</p>
+<ul>
+<li>把写入超时分类为 <code>AMBIGUOUS_COMMIT</code></li>
+<li>在重试前按幂等键查询</li>
+<li>所有重试复用原请求 ID</li>
+<li>最终回复区分“收到成功响应”和“事后核验成功”</li>
+</ul>
+<p>工具侧：</p>
+<ul>
+<li>明确文档化幂等语义</li>
+<li>提供按请求 ID 查询接口</li>
+<li>返回可区分的错误码</li>
+</ul>
+<p>评测侧：</p>
+<ul>
+<li>从 <code>exists</code> 改为精确数量和唯一性断言</li>
+<li>注入提交前和提交后两种超时</li>
+<li>增加恢复偏序和重复副作用硬门禁</li>
+<li>保存每一步状态版本</li>
+</ul>
+<p>这个案例说明：</p>
+<p><strong>恢复能力不是多试一次，而是在不知道副作用是否发生时，先恢复事实，再恢复流程。</strong></p>
+<h2 id="十七、常见误区"><a href="#十七、常见误区" class="headerlink" title="十七、常见误区"></a>十七、常见误区</h2><h3 id="1-只看最终回复"><a href="#1-只看最终回复" class="headerlink" title="1. 只看最终回复"></a>1. 只看最终回复</h3><p>Agent 可以自信地报告一个并不存在的结果。</p>
+<p>业务状态必须由独立 Oracle 验证。</p>
+<h3 id="2-最终状态正确就算通过"><a href="#2-最终状态正确就算通过" class="headerlink" title="2. 最终状态正确就算通过"></a>2. 最终状态正确就算通过</h3><p>中途越权、重复收费或绕过审批不能被正确终态掩盖。</p>
+<h3 id="3-强制匹配唯一标准轨迹"><a href="#3-强制匹配唯一标准轨迹" class="headerlink" title="3. 强制匹配唯一标准轨迹"></a>3. 强制匹配唯一标准轨迹</h3><p>合法路径可能不止一条。</p>
+<p>应检查能力、偏序、不变量和禁止动作。</p>
+<h3 id="4-工具返回成功就算任务成功"><a href="#4-工具返回成功就算任务成功" class="headerlink" title="4. 工具返回成功就算任务成功"></a>4. 工具返回成功就算任务成功</h3><p>异步任务、事务回滚和错误租户都可能让工具级成功失真。</p>
+<h3 id="5-schema-合法就算参数正确"><a href="#5-schema-合法就算参数正确" class="headerlink" title="5. schema 合法就算参数正确"></a>5. schema 合法就算参数正确</h3><p>类型正确但实体绑定错误，是 Agent 工具调用最危险的问题之一。</p>
+<h3 id="6-把所有错误都设成可重试"><a href="#6-把所有错误都设成可重试" class="headerlink" title="6. 把所有错误都设成可重试"></a>6. 把所有错误都设成可重试</h3><p>权限拒绝、永久参数错误和提交状态不明需要不同策略。</p>
+<h3 id="7-只注入调用前故障"><a href="#7-只注入调用前故障" class="headerlink" title="7. 只注入调用前故障"></a>7. 只注入调用前故障</h3><p>最危险的重复副作用通常发生在提交后响应丢失。</p>
+<h3 id="8-防护层拦截成功就给-Agent-通过"><a href="#8-防护层拦截成功就给-Agent-通过" class="headerlink" title="8. 防护层拦截成功就给 Agent 通过"></a>8. 防护层拦截成功就给 Agent 通过</h3><p>系统控制通过不等于 Agent 决策正确。</p>
+<p>越权尝试仍要统计。</p>
+<h3 id="9-只看平均成功率"><a href="#9-只看平均成功率" class="headerlink" title="9. 只看平均成功率"></a>9. 只看平均成功率</h3><p>平均值会掩盖高风险切片和不稳定重复运行。</p>
+<h3 id="10-用-pass-k-包装可靠性"><a href="#10-用-pass-k-包装可靠性" class="headerlink" title="10. 用 pass@k 包装可靠性"></a>10. 用 pass@k 包装可靠性</h3><p>允许多次尝试后“至少一次成功”不能代表每次执行都可靠。</p>
+<h3 id="11-为了省成本跳过后置校验"><a href="#11-为了省成本跳过后置校验" class="headerlink" title="11. 为了省成本跳过后置校验"></a>11. 为了省成本跳过后置校验</h3><p>成本比较应在通过安全门禁的运行之间进行。</p>
+<h3 id="12-保存长思维链，却不保存状态快照"><a href="#12-保存长思维链，却不保存状态快照" class="headerlink" title="12. 保存长思维链，却不保存状态快照"></a>12. 保存长思维链，却不保存状态快照</h3><p>可审计动作、observation 和状态变化比不可验证的内部叙述更重要。</p>
+<h3 id="13-在生产环境直接重放写轨迹"><a href="#13-在生产环境直接重放写轨迹" class="headerlink" title="13. 在生产环境直接重放写轨迹"></a>13. 在生产环境直接重放写轨迹</h3><p>轨迹重放必须进入可重置模拟器或隔离环境。</p>
+<h3 id="14-模拟器永远返回预设成功"><a href="#14-模拟器永远返回预设成功" class="headerlink" title="14. 模拟器永远返回预设成功"></a>14. 模拟器永远返回预设成功</h3><p>这种模拟器只能测格式，不能测业务语义和恢复。</p>
+<h3 id="15-评测平台异常也归到-Agent"><a href="#15-评测平台异常也归到-Agent" class="headerlink" title="15. 评测平台异常也归到 Agent"></a>15. 评测平台异常也归到 Agent</h3><p>模拟器、注入器和 evaluator 必须有自己的测试与错误分类。</p>
+<h2 id="十八、上线前检查表"><a href="#十八、上线前检查表" class="headerlink" title="十八、上线前检查表"></a>十八、上线前检查表</h2><h3 id="任务契约"><a href="#任务契约" class="headerlink" title="任务契约"></a>任务契约</h3><ul>
+<li><input disabled="" type="checkbox"> 自然语言任务已转成可执行目标谓词</li>
+<li><input disabled="" type="checkbox"> 初始状态 fixture 可重复加载</li>
+<li><input disabled="" type="checkbox"> 身份、租户和角色明确</li>
+<li><input disabled="" type="checkbox"> 终态与全过程不变量分别定义</li>
+<li><input disabled="" type="checkbox"> 允许工具和禁止动作明确</li>
+<li><input disabled="" type="checkbox"> 关键偏序关系可执行校验</li>
+<li><input disabled="" type="checkbox"> 预算和允许终态已定义</li>
+<li><input disabled="" type="checkbox"> 高风险任务有独立切片</li>
+</ul>
+<h3 id="最终状态"><a href="#最终状态" class="headerlink" title="最终状态"></a>最终状态</h3><ul>
+<li><input disabled="" type="checkbox"> 业务目标由权威状态验证</li>
+<li><input disabled="" type="checkbox"> 数量使用精确断言而非仅 <code>exists</code></li>
+<li><input disabled="" type="checkbox"> 无关实体与租户保持不变</li>
+<li><input disabled="" type="checkbox"> 副作用、补偿和异步事件均被检查</li>
+<li><input disabled="" type="checkbox"> 最终回复与真实状态一致</li>
+<li><input disabled="" type="checkbox"> 部分完成不会被误判为成功</li>
+<li><input disabled="" type="checkbox"> Progress 仅用于诊断</li>
+<li><input disabled="" type="checkbox"> 失败后环境可重置</li>
+</ul>
+<h3 id="工具与参数"><a href="#工具与参数" class="headerlink" title="工具与参数"></a>工具与参数</h3><ul>
+<li><input disabled="" type="checkbox"> 工具 schema 版本被冻结</li>
+<li><input disabled="" type="checkbox"> schema validity 与语义正确性分开</li>
+<li><input disabled="" type="checkbox"> 关键实体和租户字段使用硬断言</li>
+<li><input disabled="" type="checkbox"> 幂等键生成和复用可追踪</li>
+<li><input disabled="" type="checkbox"> 必要能力覆盖可统计</li>
+<li><input disabled="" type="checkbox"> 禁止工具尝试单独记录</li>
+<li><input disabled="" type="checkbox"> 合法替代路径不会被误判</li>
+<li><input disabled="" type="checkbox"> 工具返回与状态副作用能关联</li>
+</ul>
+<h3 id="顺序与状态"><a href="#顺序与状态" class="headerlink" title="顺序与状态"></a>顺序与状态</h3><ul>
+<li><input disabled="" type="checkbox"> 关键顺序用偏序约束表达</li>
+<li><input disabled="" type="checkbox"> 写入前置条件已校验</li>
+<li><input disabled="" type="checkbox"> 每步记录状态版本或摘要</li>
+<li><input disabled="" type="checkbox"> 陈旧状态动作可识别</li>
+<li><input disabled="" type="checkbox"> 并发冲突会触发重新观察</li>
+<li><input disabled="" type="checkbox"> 写入后校验规则符合风险等级</li>
+<li><input disabled="" type="checkbox"> observation 失败不会被当作成功</li>
+<li><input disabled="" type="checkbox"> 状态不确定时不会盲目继续</li>
+</ul>
+<h3 id="故障与恢复"><a href="#故障与恢复" class="headerlink" title="故障与恢复"></a>故障与恢复</h3><ul>
+<li><input disabled="" type="checkbox"> 调用前、提交前和提交后故障分别覆盖</li>
+<li><input disabled="" type="checkbox"> 暂时、永久、权限和冲突错误分别处理</li>
+<li><input disabled="" type="checkbox"> 故障计划带版本和 seed</li>
+<li><input disabled="" type="checkbox"> 注入器能证明真实副作用阶段</li>
+<li><input disabled="" type="checkbox"> 恢复成功包含目标和不变量检查</li>
+<li><input disabled="" type="checkbox"> 不可恢复时能安全终止或转人工</li>
+<li><input disabled="" type="checkbox"> 恢复额外调用、延迟和成本可统计</li>
+<li><input disabled="" type="checkbox"> 重试不会覆盖首错证据</li>
+</ul>
+<h3 id="权限与安全"><a href="#权限与安全" class="headerlink" title="权限与安全"></a>权限与安全</h3><ul>
+<li><input disabled="" type="checkbox"> 授权在工具服务端执行</li>
+<li><input disabled="" type="checkbox"> 越权尝试和越权成功分别统计</li>
+<li><input disabled="" type="checkbox"> 跨租户、只读和字段级权限已覆盖</li>
+<li><input disabled="" type="checkbox"> 权限中途变化已测试</li>
+<li><input disabled="" type="checkbox"> 工具 observation 中的恶意指令已覆盖</li>
+<li><input disabled="" type="checkbox"> 敏感数据不会进入日志和重放包</li>
+<li><input disabled="" type="checkbox"> 高风险违规是硬门禁</li>
+<li><input disabled="" type="checkbox"> 安全控制本身有独立测试</li>
+</ul>
+<h3 id="可靠性与成本"><a href="#可靠性与成本" class="headerlink" title="可靠性与成本"></a>可靠性与成本</h3><ul>
+<li><input disabled="" type="checkbox"> 关键 case 做多 seed 重复运行</li>
+<li><input disabled="" type="checkbox"> pass^k 与 pass@k 含义未混淆</li>
+<li><input disabled="" type="checkbox"> 报告包含成功数、总数和置信区间</li>
+<li><input disabled="" type="checkbox"> 高风险切片展示最差运行</li>
+<li><input disabled="" type="checkbox"> 成功与失败成本分开统计</li>
+<li><input disabled="" type="checkbox"> 超预算后有安全终态</li>
+<li><input disabled="" type="checkbox"> 效率只在合格运行之间比较</li>
+<li><input disabled="" type="checkbox"> 版本回归使用同样本配对比较</li>
+</ul>
+<h3 id="轨迹与重放"><a href="#轨迹与重放" class="headerlink" title="轨迹与重放"></a>轨迹与重放</h3><ul>
+<li><input disabled="" type="checkbox"> 任务、工具、模型和 evaluator 版本完整</li>
+<li><input disabled="" type="checkbox"> 动作、参数、observation 和策略判定完整</li>
+<li><input disabled="" type="checkbox"> 初始状态和最终状态可恢复</li>
+<li><input disabled="" type="checkbox"> 故障命中点可定位到提交阶段</li>
+<li><input disabled="" type="checkbox"> Observation、Tool、Decision Replay 边界明确</li>
+<li><input disabled="" type="checkbox"> 写轨迹只在可重置环境重放</li>
+<li><input disabled="" type="checkbox"> 凭据和个人信息已脱敏</li>
+<li><input disabled="" type="checkbox"> 失败包有稳定重放入口</li>
+</ul>
+<h2 id="十九、总结"><a href="#十九、总结" class="headerlink" title="十九、总结"></a>十九、总结</h2><p>Agent 评测比普通问答评测多出的核心变量，是状态和副作用。</p>
+<p>一套可信的评测体系必须把两层分开：</p>
+<p>最终状态层负责判断：</p>
+<ul>
+<li>任务是否真正完成</li>
+<li>目标数量和实体是否正确</li>
+<li>不变量是否保持</li>
+<li>副作用是否唯一、完整且可审计</li>
+</ul>
+<p>轨迹层负责判断：</p>
+<ul>
+<li>工具是否选对</li>
+<li>参数是否通过 schema 和业务语义校验</li>
+<li>关键顺序是否满足</li>
+<li>决策是否基于当前状态</li>
+<li>故障后是否正确恢复</li>
+<li>是否尝试越权</li>
+<li>是否在预算内收敛</li>
+</ul>
+<p>恢复评测不能只看重试次数。</p>
+<p>必须通过确定性故障注入区分：</p>
+<ul>
+<li>请求没有发生</li>
+<li>事务没有提交</li>
+<li>事务已提交但响应丢失</li>
+<li>权限或参数永久失败</li>
+<li>状态冲突和部分成功</li>
+</ul>
+<p>然后检查 Agent 是：</p>
+<ul>
+<li>正确恢复</li>
+<li>受控降级</li>
+<li>安全转人工</li>
+<li>还是制造重复副作用和状态污染</li>
+</ul>
+<p>模拟器提供可重复状态，故障代理提供精确错误阶段，轨迹重放提供版本对比，最终状态 Oracle 提供独立真相。</p>
+<p>四者结合后，Agent 的“不稳定”才会从模糊印象变成可测量、可归因、可修复的问题。</p>
+<p>最终的发布原则应保持简单：</p>
+<p><strong>目标状态正确只是必要条件；只有轨迹合规、恢复安全、权限受控且成本可接受，Agent 才真正通过。</strong></p>
+<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><ol>
+<li>Shunyu Yao 等，<a target="_blank" rel="noopener" href="https://arxiv.org/abs/2210.03629">ReAct: Synergizing Reasoning and Acting in Language Models</a>，讨论语言模型交错进行推理、行动与环境观察的 Agent 范式。</li>
+<li>Xiao Liu 等，<a target="_blank" rel="noopener" href="https://arxiv.org/abs/2308.03688">AgentBench: Evaluating LLMs as Agents</a>，在多个交互环境中评价 LLM Agent，并分析长程推理、决策和指令遵循问题。</li>
+<li>Chang Ma 等，<a target="_blank" rel="noopener" href="https://arxiv.org/abs/2401.13178">AgentBoard: An Analytical Evaluation Board of Multi-turn LLM Agents</a>，强调除最终成功率外，还要分析多轮 Agent 的过程进度和能力维度。</li>
+<li>Shunyu Yao 等，<a target="_blank" rel="noopener" href="https://arxiv.org/abs/2406.12045">tau-bench: A Benchmark for Tool-Agent-User Interaction in Real-World Domains</a>，通过工具、用户和策略交互评测 Agent，并提出用于重复运行可靠性的 <code>pass^k</code>。</li>
+<li>Shuyan Zhou 等，<a target="_blank" rel="noopener" href="https://arxiv.org/abs/2307.13854">WebArena: A Realistic Web Environment for Building Autonomous Agents</a>，提供可复现的真实风格 Web 环境与功能正确性任务。</li>
+<li>Yujia Qin 等，<a target="_blank" rel="noopener" href="https://arxiv.org/abs/2307.16789">ToolLLM: Facilitating Large Language Models to Master 16000+ Real-world APIs</a>，讨论大规模真实 API 工具使用数据、路径搜索和自动评测。</li>
+<li>Carlos E. Jimenez 等，<a target="_blank" rel="noopener" href="https://arxiv.org/abs/2310.06770">SWE-bench: Can Language Models Resolve Real-World GitHub Issues?</a>，以真实代码仓库和可执行测试作为软件工程 Agent 的任务环境与 Oracle。</li>
+<li>NIST，<a target="_blank" rel="noopener" href="https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence">Artificial Intelligence Risk Management Framework: Generative Artificial Intelligence Profile</a>，生成式 AI 的测试、评估、监控、安全与风险治理参考。</li>
+</ol>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/AI%E6%B5%8B%E8%AF%95/" rel="tag"># AI测试</a>
+              <a href="/tags/%E6%95%85%E9%9A%9C%E6%B3%A8%E5%85%A5/" rel="tag"># 故障注入</a>
+              <a href="/tags/%E8%B4%A8%E9%87%8F%E5%B7%A5%E7%A8%8B/" rel="tag"># 质量工程</a>
+              <a href="/tags/%E5%B7%A5%E5%85%B7%E8%B0%83%E7%94%A8/" rel="tag"># 工具调用</a>
+              <a href="/tags/Agent%E8%AF%84%E6%B5%8B/" rel="tag"># Agent评测</a>
+              <a href="/tags/%E8%BD%A8%E8%BF%B9%E9%87%8D%E6%94%BE/" rel="tag"># 轨迹重放</a>
+              <a href="/tags/%E7%A8%B3%E5%AE%9A%E6%80%A7%E6%B5%8B%E8%AF%95/" rel="tag"># 稳定性测试</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2026/03/24/AI%E6%B5%8B%E8%AF%95-18-RAG%E7%B3%BB%E7%BB%9F%E6%80%8E%E4%B9%88%E8%AF%84%E6%B5%8B%E5%8F%AC%E5%9B%9E%E7%8E%87%E5%BF%A0%E5%AE%9E%E5%BA%A6%E5%92%8C%E7%AD%94%E6%A1%88%E5%8F%AF%E8%BF%BD%E6%BA%AF%E6%80%A7/" rel="prev" title="AI测试-18-RAG系统怎么评测召回率忠实度和答案可追溯性">
+                  <i class="fa fa-angle-left"></i> AI测试-18-RAG系统怎么评测召回率忠实度和答案可追溯性
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2026/03/27/AI%E6%B5%8B%E8%AF%95-20-%E9%9D%9E%E7%A1%AE%E5%AE%9A%E6%80%A7AI%E5%BA%94%E7%94%A8%E6%80%8E%E4%B9%88%E5%81%9A%E7%A8%B3%E5%AE%9A%E7%9A%84%E8%87%AA%E5%8A%A8%E5%8C%96%E5%9B%9E%E5%BD%92%E6%B5%8B%E8%AF%95/" rel="next" title="AI测试-20-非确定性AI应用怎么做稳定的自动化回归测试">
+                  AI测试-20-非确定性AI应用怎么做稳定的自动化回归测试 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">1.2m</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">75:29</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>
