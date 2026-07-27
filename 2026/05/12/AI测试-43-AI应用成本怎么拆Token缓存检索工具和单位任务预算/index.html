@@ -1,0 +1,1233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="一个 AI 应用本月模型账单下降 20%，能不能说明优化成功？ 不一定。它可能把更多请求转给了人工，可能关闭 rerank 后让任务返工，可能把失败重试记在另一个项目，也可能因为回答变短而降低业务完成率。反过来，模型 Token 成本上升也不一定是退化：系统可能增加了必要证据、减少人工复核并提高一次任务完成率。 成本治理最常见的错误，是把厂商控制台上的 Token 总额直接除以 HTTP 请求数。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="AI测试-43-AI应用成本怎么拆Token缓存检索工具和单位任务预算">
+<meta property="og:url" content="https://paynewinnt.github.io/2026/05/12/AI%E6%B5%8B%E8%AF%95-43-AI%E5%BA%94%E7%94%A8%E6%88%90%E6%9C%AC%E6%80%8E%E4%B9%88%E6%8B%86Token%E7%BC%93%E5%AD%98%E6%A3%80%E7%B4%A2%E5%B7%A5%E5%85%B7%E5%92%8C%E5%8D%95%E4%BD%8D%E4%BB%BB%E5%8A%A1%E9%A2%84%E7%AE%97/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="一个 AI 应用本月模型账单下降 20%，能不能说明优化成功？ 不一定。它可能把更多请求转给了人工，可能关闭 rerank 后让任务返工，可能把失败重试记在另一个项目，也可能因为回答变短而降低业务完成率。反过来，模型 Token 成本上升也不一定是退化：系统可能增加了必要证据、减少人工复核并提高一次任务完成率。 成本治理最常见的错误，是把厂商控制台上的 Token 总额直接除以 HTTP 请求数。">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://paynewinnt.github.io/images/ai-quality/ai-43-cost-allocation.svg">
+<meta property="og:image" content="https://paynewinnt.github.io/images/ai-quality/ai-43-unit-economics.svg">
+<meta property="article:published_time" content="2026-05-12T12:30:00.000Z">
+<meta property="article:modified_time" content="2026-05-12T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="AI测试">
+<meta property="article:tag" content="质量工程">
+<meta property="article:tag" content="AI成本治理">
+<meta property="article:tag" content="Token成本">
+<meta property="article:tag" content="成本账本">
+<meta property="article:tag" content="单位经济">
+<meta property="article:tag" content="FinOps">
+<meta property="article:tag" content="预算门禁">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://paynewinnt.github.io/images/ai-quality/ai-43-cost-allocation.svg">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2026/05/12/AI%E6%B5%8B%E8%AF%95-43-AI%E5%BA%94%E7%94%A8%E6%88%90%E6%9C%AC%E6%80%8E%E4%B9%88%E6%8B%86Token%E7%BC%93%E5%AD%98%E6%A3%80%E7%B4%A2%E5%B7%A5%E5%85%B7%E5%92%8C%E5%8D%95%E4%BD%8D%E4%BB%BB%E5%8A%A1%E9%A2%84%E7%AE%97/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2026/05/12/AI%E6%B5%8B%E8%AF%95-43-AI%E5%BA%94%E7%94%A8%E6%88%90%E6%9C%AC%E6%80%8E%E4%B9%88%E6%8B%86Token%E7%BC%93%E5%AD%98%E6%A3%80%E7%B4%A2%E5%B7%A5%E5%85%B7%E5%92%8C%E5%8D%95%E4%BD%8D%E4%BB%BB%E5%8A%A1%E9%A2%84%E7%AE%97/","path":"2026/05/12/AI测试-43-AI应用成本怎么拆Token缓存检索工具和单位任务预算/","title":"AI测试-43-AI应用成本怎么拆Token缓存检索工具和单位任务预算"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>AI测试-43-AI应用成本怎么拆Token缓存检索工具和单位任务预算 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E5%85%88%E7%BB%99%E7%BB%93%E8%AE%BA%EF%BC%9A%E6%88%90%E6%9C%AC%E6%8E%A7%E5%88%B6%E5%AF%B9%E8%B1%A1%E5%BA%94%E6%98%AF%E5%90%88%E6%A0%BC%E4%BB%BB%E5%8A%A1%EF%BC%8C%E4%B8%8D%E6%98%AF%E4%BE%BF%E5%AE%9C-Token"><span class="nav-number">1.</span> <span class="nav-text">一、先给结论：成本控制对象应是合格任务，不是便宜 Token</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E5%B7%A5%E7%A8%8B%E5%AE%9A%E4%B9%89%E4%B8%8E%E8%BE%B9%E7%95%8C%EF%BC%9A%E5%85%88%E5%8C%BA%E5%88%86%E4%BB%B7%E6%A0%BC%E3%80%81%E6%88%90%E6%9C%AC%E3%80%81%E9%A2%84%E7%AE%97%E5%92%8C%E4%BB%B7%E5%80%BC"><span class="nav-number">2.</span> <span class="nav-text">二、工程定义与边界：先区分价格、成本、预算和价值</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-List-Price-%E4%B8%8E-List-Cost"><span class="nav-number">2.1.</span> <span class="nav-text">1. List Price 与 List Cost</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Contracted%E3%80%81Billed-%E4%B8%8E-Effective-Cost"><span class="nav-number">2.2.</span> <span class="nav-text">2. Contracted、Billed 与 Effective Cost</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Allocated-Cost"><span class="nav-number">2.3.</span> <span class="nav-text">3. Allocated Cost</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-Quality-adjusted-Unit-Cost"><span class="nav-number">2.4.</span> <span class="nav-text">4. Quality-adjusted Unit Cost</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-Budget"><span class="nav-number">2.5.</span> <span class="nav-text">5. Budget</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E5%9B%9B%E7%BA%A7%E8%BA%AB%E4%BB%BD%E6%A8%A1%E5%9E%8B%EF%BC%9ARequest%E3%80%81Run%E3%80%81Task%E3%80%81Tenant"><span class="nav-number">3.</span> <span class="nav-text">三、四级身份模型：Request、Run、Task、Tenant</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Request"><span class="nav-number">3.1.</span> <span class="nav-text">1. Request</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Run"><span class="nav-number">3.2.</span> <span class="nav-text">2. Run</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Task"><span class="nav-number">3.3.</span> <span class="nav-text">3. Task</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-Tenant"><span class="nav-number">3.4.</span> <span class="nav-text">4. Tenant</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%85%B3%E8%81%94%E8%A7%84%E5%88%99"><span class="nav-number">3.5.</span> <span class="nav-text">5. 关联规则</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E5%AE%8C%E6%95%B4%E6%9E%B6%E6%9E%84%EF%BC%9A%E4%BB%8E%E5%8E%9F%E5%A7%8B%E4%BA%8B%E4%BB%B6%E5%88%B0%E5%8F%AF%E5%AF%B9%E8%B4%A6%E5%8D%95%E4%BD%8D%E7%BB%8F%E6%B5%8E"><span class="nav-number">4.</span> <span class="nav-text">四、完整架构：从原始事件到可对账单位经济</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Usage-Collectors"><span class="nav-number">4.1.</span> <span class="nav-text">1. Usage Collectors</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Provider-Adapters"><span class="nav-number">4.2.</span> <span class="nav-text">2. Provider Adapters</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Price-Book"><span class="nav-number">4.3.</span> <span class="nav-text">3. Price Book</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-Immutable-Ledger"><span class="nav-number">4.4.</span> <span class="nav-text">4. Immutable Ledger</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-Allocation-Engine"><span class="nav-number">4.5.</span> <span class="nav-text">5. Allocation Engine</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-Outcome-Join"><span class="nav-number">4.6.</span> <span class="nav-text">6. Outcome Join</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-Controls-and-Views"><span class="nav-number">4.7.</span> <span class="nav-text">7. Controls and Views</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E5%8E%9F%E5%A7%8B%E7%94%A8%E9%87%8F%E6%A8%A1%E5%9E%8B%EF%BC%9A%E8%A7%82%E6%B5%8B%E4%BA%8B%E5%AE%9E%E4%B8%8D%E8%A6%81%E5%85%88%E5%8E%8B%E6%88%90%E4%B8%80%E4%B8%AA-total-tokens"><span class="nav-number">5.</span> <span class="nav-text">五、原始用量模型：观测事实不要先压成一个 total_tokens</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Raw-Observation"><span class="nav-number">5.1.</span> <span class="nav-text">1. Raw Observation</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Normalized-Usage-Event"><span class="nav-number">5.2.</span> <span class="nav-text">2. Normalized Usage Event</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Cost-Entry"><span class="nav-number">5.3.</span> <span class="nav-text">3. Cost Entry</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E6%A8%A1%E5%9E%8B-Token-%E6%88%90%E6%9C%AC%EF%BC%9A%E8%BE%93%E5%85%A5%E3%80%81%E8%BE%93%E5%87%BA%E4%B8%8E-Reasoning-%E5%BF%85%E9%A1%BB%E4%BA%92%E6%96%A5"><span class="nav-number">6.</span> <span class="nav-text">六、模型 Token 成本：输入、输出与 Reasoning 必须互斥</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%BE%93%E5%85%A5-Token"><span class="nav-number">6.1.</span> <span class="nav-text">1. 输入 Token</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%BE%93%E5%87%BA-Token"><span class="nav-number">6.2.</span> <span class="nav-text">2. 输出 Token</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Reasoning-Token"><span class="nav-number">6.3.</span> <span class="nav-text">3. Reasoning Token</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%B8%8A%E4%B8%8B%E6%96%87%E9%98%88%E5%80%BC%E5%92%8C%E6%9C%8D%E5%8A%A1%E5%B1%82"><span class="nav-number">6.4.</span> <span class="nav-text">4. 上下文阈值和服务层</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81Cache-%E6%88%90%E6%9C%AC%EF%BC%9AWrite%E3%80%81Read-%E4%B8%8E-Storage-%E6%98%AF%E4%B8%89%E4%B8%AA%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F"><span class="nav-number">7.</span> <span class="nav-text">七、Cache 成本：Write、Read 与 Storage 是三个生命周期</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Cache-Write"><span class="nav-number">7.1.</span> <span class="nav-text">1. Cache Write</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Cache-Read"><span class="nav-number">7.2.</span> <span class="nav-text">2. Cache Read</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Cache-Storage"><span class="nav-number">7.3.</span> <span class="nav-text">3. Cache Storage</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%AE%89%E5%85%A8%E4%B8%8E%E8%AF%AD%E4%B9%89%E6%88%90%E6%9C%AC"><span class="nav-number">7.4.</span> <span class="nav-text">4. 安全与语义成本</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81Embedding%E3%80%81Rerank-%E4%B8%8E-Vector-DB%EF%BC%9A%E6%A3%80%E7%B4%A2%E9%93%BE%E8%B7%AF%E4%B8%8D%E6%98%AF%E5%85%8D%E8%B4%B9%E5%89%8D%E5%A4%84%E7%90%86"><span class="nav-number">8.</span> <span class="nav-text">八、Embedding、Rerank 与 Vector DB：检索链路不是免费前处理</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Embedding"><span class="nav-number">8.1.</span> <span class="nav-text">1. Embedding</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Rerank"><span class="nav-number">8.2.</span> <span class="nav-text">2. Rerank</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Vector-DB"><span class="nav-number">8.3.</span> <span class="nav-text">3. Vector DB</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%95%B0%E6%8D%AE%E5%A4%84%E7%90%86"><span class="nav-number">8.4.</span> <span class="nav-text">4. 数据处理</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E5%B7%A5%E5%85%B7%E4%B8%8E%E7%BD%91%E7%BB%9C%EF%BC%9A%E4%B8%80%E6%AC%A1-Agent-%E4%BB%BB%E5%8A%A1%E5%8F%AF%E8%83%BD%E6%9C%89%E5%A4%9A%E7%A7%8D%E8%AE%A1%E8%B4%B9%E5%8D%95%E4%BD%8D"><span class="nav-number">9.</span> <span class="nav-text">九、工具与网络：一次 Agent 任务可能有多种计费单位</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%86%85%E5%BB%BA%E5%B7%A5%E5%85%B7"><span class="nav-number">9.1.</span> <span class="nav-text">1. 内建工具</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%87%AA%E5%AE%9A%E4%B9%89%E5%B7%A5%E5%85%B7"><span class="nav-number">9.2.</span> <span class="nav-text">2. 自定义工具</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%BD%91%E7%BB%9C"><span class="nav-number">9.3.</span> <span class="nav-text">3. 网络</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%8F%8C%E9%87%8D%E6%88%90%E6%9C%AC"><span class="nav-number">9.4.</span> <span class="nav-text">4. 双重成本</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E9%87%8D%E8%AF%95%E3%80%81%E5%A4%B1%E8%B4%A5%E6%B5%AA%E8%B4%B9%E4%B8%8E%E5%8F%96%E6%B6%88%EF%BC%9A%E4%B8%8D%E8%A6%81%E8%AE%A9%E6%9C%80%E7%BB%88%E6%88%90%E5%8A%9F%E8%A6%86%E7%9B%96%E6%88%90%E6%9C%AC%E5%8E%86%E5%8F%B2"><span class="nav-number">10.</span> <span class="nav-text">十、重试、失败浪费与取消：不要让最终成功覆盖成本历史</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Attempt-%E6%A8%A1%E5%9E%8B"><span class="nav-number">10.1.</span> <span class="nav-text">1. Attempt 模型</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%A4%B1%E8%B4%A5%E6%B5%AA%E8%B4%B9%E5%8F%A3%E5%BE%84"><span class="nav-number">10.2.</span> <span class="nav-text">2. 失败浪费口径</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Retry-amplification"><span class="nav-number">10.3.</span> <span class="nav-text">3. Retry amplification</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%A4%B1%E8%B4%A5%E7%B1%BB%E5%9E%8B"><span class="nav-number">10.4.</span> <span class="nav-text">4. 失败类型</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E4%BA%BA%E5%B7%A5%E5%A4%8D%E6%A0%B8%EF%BC%9A%E8%87%AA%E5%8A%A8%E5%8C%96%E7%B3%BB%E7%BB%9F%E6%9C%80%E5%AE%B9%E6%98%93%E6%BC%8F%E6%8E%89%E7%9A%84%E6%88%90%E6%9C%AC"><span class="nav-number">11.</span> <span class="nav-text">十一、人工复核：自动化系统最容易漏掉的成本</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%97%B6%E9%97%B4%E4%B8%8E%E8%B4%B9%E7%8E%87"><span class="nav-number">11.1.</span> <span class="nav-text">1. 时间与费率</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%BA%BA%E5%B7%A5%E4%B8%8D%E6%98%AF%E5%A4%B1%E8%B4%A5%E5%9E%83%E5%9C%BE%E6%A1%B6"><span class="nav-number">11.2.</span> <span class="nav-text">2. 人工不是失败垃圾桶</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%B4%A8%E9%87%8F%E8%B0%83%E6%95%B4%E5%90%8E%E7%9A%84%E7%9C%9F%E5%AE%9E%E6%AF%94%E8%BE%83"><span class="nav-number">11.3.</span> <span class="nav-text">3. 质量调整后的真实比较</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E8%87%AA%E5%BB%BA%E6%8E%A8%E7%90%86%E6%91%8A%E9%94%80%EF%BC%9AGPU-%E5%B0%8F%E6%97%B6%E4%BB%B7%E5%8F%AA%E6%98%AF%E6%88%90%E6%9C%AC%E7%9A%84%E4%B8%80%E9%83%A8%E5%88%86"><span class="nav-number">12.</span> <span class="nav-text">十二、自建推理摊销：GPU 小时价只是成本的一部分</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%88%90%E6%9C%AC%E6%B1%A0"><span class="nav-number">12.1.</span> <span class="nav-text">1. 成本池</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%AE%B9%E9%87%8F%E6%88%90%E6%9C%AC%E4%B8%8E%E4%BD%BF%E7%94%A8%E6%88%90%E6%9C%AC"><span class="nav-number">12.2.</span> <span class="nav-text">2. 容量成本与使用成本</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E9%97%B2%E7%BD%AE%E6%88%90%E6%9C%AC%E4%B8%8D%E8%83%BD%E6%B6%88%E5%A4%B1"><span class="nav-number">12.3.</span> <span class="nav-text">3. 闲置成本不能消失</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E8%87%AA%E5%BB%BA%E4%B8%8E-API-%E7%9A%84%E5%8F%AF%E6%AF%94%E8%BE%B9%E7%95%8C"><span class="nav-number">12.4.</span> <span class="nav-text">4. 自建与 API 的可比边界</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81%E4%BB%B7%E6%A0%BC%E7%B0%BF%E8%AE%BE%E8%AE%A1%EF%BC%9A%E5%8E%82%E5%95%86%E4%BB%B7%E6%A0%BC%E6%98%AF%E5%B8%A6%E7%89%88%E6%9C%AC%E7%9A%84%E5%A4%96%E9%83%A8%E9%85%8D%E7%BD%AE"><span class="nav-number">13.</span> <span class="nav-text">十三、价格簿设计：厂商价格是带版本的外部配置</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Price-Key"><span class="nav-number">13.1.</span> <span class="nav-text">1. Price Key</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%9D%A5%E6%BA%90%E4%B8%8E%E6%89%B9%E5%87%86"><span class="nav-number">13.2.</span> <span class="nav-text">2. 来源与批准</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%BB%B7%E6%A0%BC%E5%BF%AB%E7%85%A7%E7%AD%96%E7%95%A5"><span class="nav-number">13.3.</span> <span class="nav-text">3. 价格快照策略</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%BB%B7%E6%A0%BC%E9%A1%B5%E9%9D%A2%E7%9A%84%E6%97%B6%E9%97%B4%E8%BE%B9%E7%95%8C"><span class="nav-number">13.4.</span> <span class="nav-text">4. 价格页面的时间边界</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81%E8%AE%A1%E4%BB%B7%E8%A7%84%E5%88%99%EF%BC%9ADecimal%E3%80%81%E5%8D%95%E4%BD%8D%E5%92%8C%E8%88%8D%E5%85%A5%E4%B8%8D%E8%83%BD%E9%9D%A0%E6%84%9F%E8%A7%89"><span class="nav-number">14.</span> <span class="nav-text">十四、计价规则：Decimal、单位和舍入不能靠感觉</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%A6%81%E6%AD%A2%E4%BA%8C%E8%BF%9B%E5%88%B6%E6%B5%AE%E7%82%B9%E8%AE%A1%E9%92%B1"><span class="nav-number">14.1.</span> <span class="nav-text">1. 禁止二进制浮点计钱</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E7%BB%9F%E4%B8%80%E5%8D%95%E4%BD%8D"><span class="nav-number">14.2.</span> <span class="nav-text">2. 统一单位</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%88%8D%E5%85%A5%E6%97%B6%E6%9C%BA"><span class="nav-number">14.3.</span> <span class="nav-text">3. 舍入时机</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%A4%9A%E5%B8%81%E7%A7%8D"><span class="nav-number">14.4.</span> <span class="nav-text">4. 多币种</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%94%E3%80%81%E5%88%86%E6%91%8A%E8%AE%BE%E8%AE%A1%EF%BC%9A%E5%AE%88%E6%81%92%E3%80%81%E5%8F%AF%E8%A7%A3%E9%87%8A%E3%80%81%E5%8F%AF%E5%9B%9E%E6%94%BE"><span class="nav-number">15.</span> <span class="nav-text">十五、分摊设计：守恒、可解释、可回放</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%9B%B4%E6%8E%A5%E5%BD%92%E5%B1%9E%E4%BC%98%E5%85%88"><span class="nav-number">15.1.</span> <span class="nav-text">1. 直接归属优先</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%85%B1%E4%BA%AB%E6%88%90%E6%9C%AC%E5%88%86%E9%85%8D"><span class="nav-number">15.2.</span> <span class="nav-text">2. 共享成本分配</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%88%86%E6%91%8A%E4%BA%8B%E4%BB%B6"><span class="nav-number">15.3.</span> <span class="nav-text">3. 分摊事件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%AE%88%E6%81%92%E6%A3%80%E6%9F%A5"><span class="nav-number">15.4.</span> <span class="nav-text">4. 守恒检查</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AD%E3%80%81Showback-%E4%B8%8E-Chargeback%EF%BC%9A%E9%80%8F%E6%98%8E%E5%92%8C%E7%BB%93%E7%AE%97%E4%B8%8D%E6%98%AF%E5%90%8C%E4%B8%80%E5%8A%A8%E4%BD%9C"><span class="nav-number">16.</span> <span class="nav-text">十六、Showback 与 Chargeback：透明和结算不是同一动作</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%83%E3%80%81%E9%A2%84%E7%AE%97%E9%97%A8%E7%A6%81%EF%BC%9A%E4%BA%8B%E5%89%8D%E4%BC%B0%E7%AE%97%E3%80%81%E8%BF%90%E8%A1%8C%E4%B8%AD%E9%A2%84%E7%95%99%E3%80%81%E4%BA%8B%E5%90%8E%E5%AE%9E%E7%AE%97"><span class="nav-number">17.</span> <span class="nav-text">十七、预算门禁：事前估算、运行中预留、事后实算</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%BA%8B%E5%89%8D%E4%BC%B0%E7%AE%97"><span class="nav-number">17.1.</span> <span class="nav-text">1. 事前估算</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E9%A2%84%E7%AE%97%E9%A2%84%E7%95%99"><span class="nav-number">17.2.</span> <span class="nav-text">2. 预算预留</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%BF%90%E8%A1%8C%E4%B8%AD%E9%97%A8%E7%A6%81"><span class="nav-number">17.3.</span> <span class="nav-text">3. 运行中门禁</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E8%B4%A8%E9%87%8F%E5%BA%95%E7%BA%BF%E4%BC%98%E5%85%88"><span class="nav-number">17.4.</span> <span class="nav-text">4. 质量底线优先</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E7%A7%9F%E6%88%B7%E5%91%A8%E6%9C%9F%E9%A2%84%E7%AE%97"><span class="nav-number">17.5.</span> <span class="nav-text">5. 租户周期预算</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AB%E3%80%81%E4%BC%B0%E7%AE%97%E8%AF%AF%E5%B7%AE%EF%BC%9A%E9%A2%84%E7%AE%97%E7%B3%BB%E7%BB%9F%E5%BF%85%E9%A1%BB%E6%89%BF%E8%AE%A4%E8%87%AA%E5%B7%B1%E4%BC%9A%E9%94%99"><span class="nav-number">18.</span> <span class="nav-text">十八、估算误差：预算系统必须承认自己会错</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%81%8F%E4%BD%8E%E4%BC%B0%E7%9A%84%E6%9D%A5%E6%BA%90"><span class="nav-number">18.1.</span> <span class="nav-text">1. 偏低估的来源</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%81%8F%E9%AB%98%E4%BC%B0%E7%9A%84%E6%9D%A5%E6%BA%90"><span class="nav-number">18.2.</span> <span class="nav-text">2. 偏高估的来源</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%A0%A1%E5%87%86%E5%8A%A8%E4%BD%9C"><span class="nav-number">18.3.</span> <span class="nav-text">3. 校准动作</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B9%9D%E3%80%81%E6%97%A0%E9%9C%80-API-Key-%E7%9A%84%E5%8F%AF%E6%89%A7%E8%A1%8C-Decimal-%E6%88%90%E6%9C%AC%E8%B4%A6%E6%9C%AC"><span class="nav-number">19.</span> <span class="nav-text">十九、无需 API Key 的可执行 Decimal 成本账本</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E3%80%81%E8%87%AA%E5%8A%A8%E5%8C%96%E6%B5%8B%E8%AF%95%EF%BC%9A%E6%88%90%E6%9C%AC%E4%BB%A3%E7%A0%81%E8%A6%81%E9%AA%8C%E8%AF%81%E6%95%B0%E5%AD%A6%EF%BC%8C%E4%B9%9F%E8%A6%81%E9%AA%8C%E8%AF%81%E8%AF%AD%E4%B9%89"><span class="nav-number">20.</span> <span class="nav-text">二十、自动化测试：成本代码要验证数学，也要验证语义</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Price-Book-%E6%B5%8B%E8%AF%95"><span class="nav-number">20.1.</span> <span class="nav-text">1. Price Book 测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Usage-%E6%98%A0%E5%B0%84%E6%B5%8B%E8%AF%95"><span class="nav-number">20.2.</span> <span class="nav-text">2. Usage 映射测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Ledger-%E6%B5%8B%E8%AF%95"><span class="nav-number">20.3.</span> <span class="nav-text">3. Ledger 测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-Allocation-%E6%B5%8B%E8%AF%95"><span class="nav-number">20.4.</span> <span class="nav-text">4. Allocation 测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-Budget-Gate-%E6%B5%8B%E8%AF%95"><span class="nav-number">20.5.</span> <span class="nav-text">5. Budget Gate 测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-Outcome-%E6%B5%8B%E8%AF%95"><span class="nav-number">20.6.</span> <span class="nav-text">6. Outcome 测试</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%80%E3%80%81%E8%B4%A8%E9%87%8F%E7%BA%A6%E6%9D%9F%E5%8D%95%E4%BD%8D%E7%BB%8F%E6%B5%8E%EF%BC%9A%E5%88%86%E6%AF%8D%E6%AF%94%E5%88%86%E5%AD%90%E6%9B%B4%E5%AE%B9%E6%98%93%E8%A2%AB%E6%93%8D%E7%BA%B5"><span class="nav-number">21.</span> <span class="nav-text">二十一、质量约束单位经济：分母比分子更容易被操纵</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Accepted-Task-%E5%AE%9A%E4%B9%89"><span class="nav-number">21.1.</span> <span class="nav-text">1. Accepted Task 定义</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%88%86%E6%AF%8D%E6%94%BB%E5%87%BB"><span class="nav-number">21.2.</span> <span class="nav-text">2. 分母攻击</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Cohort-%E4%B8%80%E8%87%B4%E6%80%A7"><span class="nav-number">21.3.</span> <span class="nav-text">3. Cohort 一致性</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%A4%9A%E7%9B%AE%E6%A0%87%E5%86%B3%E7%AD%96"><span class="nav-number">21.4.</span> <span class="nav-text">4. 多目标决策</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%8C%E3%80%81%E6%88%90%E6%9C%AC%E6%8C%87%E6%A0%87%E4%BD%93%E7%B3%BB%EF%BC%9A%E4%BB%8E%E8%A6%86%E7%9B%96%E3%80%81%E5%AF%B9%E8%B4%A6%E5%88%B0%E4%B8%9A%E5%8A%A1%E7%BB%93%E6%9E%9C"><span class="nav-number">22.</span> <span class="nav-text">二十二、成本指标体系：从覆盖、对账到业务结果</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%95%B0%E6%8D%AE%E5%81%A5%E5%BA%B7"><span class="nav-number">22.1.</span> <span class="nav-text">1. 数据健康</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%AF%B9%E8%B4%A6"><span class="nav-number">22.2.</span> <span class="nav-text">2. 对账</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%BD%BF%E7%94%A8%E5%BC%BA%E5%BA%A6"><span class="nav-number">22.3.</span> <span class="nav-text">3. 使用强度</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%88%90%E6%9C%AC"><span class="nav-number">22.4.</span> <span class="nav-text">4. 成本</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%95%88%E7%8E%87%E4%B8%8E%E4%BB%B7%E5%80%BC"><span class="nav-number">22.5.</span> <span class="nav-text">5. 效率与价值</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%89%E3%80%81%E6%88%90%E6%9C%AC%E5%BC%82%E5%B8%B8%E6%A3%80%E6%B5%8B%EF%BC%9A%E5%85%88%E5%88%86%E8%A7%A3%E6%95%B0%E9%87%8F%E3%80%81%E8%B4%B9%E7%8E%87%E3%80%81Mix-%E5%92%8C%E8%B4%A8%E9%87%8F"><span class="nav-number">23.</span> <span class="nav-text">二十三、成本异常检测：先分解数量、费率、Mix 和质量</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Volume-Anomaly"><span class="nav-number">23.1.</span> <span class="nav-text">1. Volume Anomaly</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Usage-Intensity-Anomaly"><span class="nav-number">23.2.</span> <span class="nav-text">2. Usage Intensity Anomaly</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Rate-Anomaly"><span class="nav-number">23.3.</span> <span class="nav-text">3. Rate Anomaly</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-Mix-Anomaly"><span class="nav-number">23.4.</span> <span class="nav-text">4. Mix Anomaly</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-Reliability-Anomaly"><span class="nav-number">23.5.</span> <span class="nav-text">5. Reliability Anomaly</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-Quality-Anomaly"><span class="nav-number">23.6.</span> <span class="nav-text">6. Quality Anomaly</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%9B%9B%E3%80%81%E4%BC%98%E5%8C%96%E7%AD%96%E7%95%A5%E4%B8%80%EF%BC%9APrompt-%E4%B8%8E%E4%B8%8A%E4%B8%8B%E6%96%87"><span class="nav-number">24.</span> <span class="nav-text">二十四、优化策略一：Prompt 与上下文</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%88%A0%E9%99%A4%E6%97%A0%E6%95%88-Token"><span class="nav-number">24.1.</span> <span class="nav-text">1. 删除无效 Token</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%B8%8A%E4%B8%8B%E6%96%87%E5%8E%8B%E7%BC%A9"><span class="nav-number">24.2.</span> <span class="nav-text">2. 上下文压缩</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%BE%93%E5%87%BA%E9%A2%84%E7%AE%97"><span class="nav-number">24.3.</span> <span class="nav-text">3. 输出预算</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%94%E3%80%81%E4%BC%98%E5%8C%96%E7%AD%96%E7%95%A5%E4%BA%8C%EF%BC%9ACache"><span class="nav-number">25.</span> <span class="nav-text">二十五、优化策略二：Cache</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%8F%90%E9%AB%98%E5%8F%AF%E5%A4%8D%E7%94%A8%E5%89%8D%E7%BC%80"><span class="nav-number">25.1.</span> <span class="nav-text">1. 提高可复用前缀</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-TTL-%E4%BC%98%E5%8C%96"><span class="nav-number">25.2.</span> <span class="nav-text">2. TTL 优化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%B8%8D%E8%A6%81%E8%B7%A8%E4%BE%9B%E5%BA%94%E5%95%86%E5%81%87%E8%AE%BE%E8%AF%AD%E4%B9%89%E4%B8%80%E8%87%B4"><span class="nav-number">25.3.</span> <span class="nav-text">3. 不要跨供应商假设语义一致</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%85%AD%E3%80%81%E4%BC%98%E5%8C%96%E7%AD%96%E7%95%A5%E4%B8%89%EF%BC%9A%E6%A8%A1%E5%9E%8B%E8%B7%AF%E7%94%B1%E4%B8%8E%E6%9C%8D%E5%8A%A1%E5%B1%82"><span class="nav-number">26.</span> <span class="nav-text">二十六、优化策略三：模型路由与服务层</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%83%BD%E5%8A%9B%E5%A5%91%E7%BA%A6"><span class="nav-number">26.1.</span> <span class="nav-text">1. 能力契约</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%B7%AF%E7%94%B1%E6%88%90%E6%9C%AC"><span class="nav-number">26.2.</span> <span class="nav-text">2. 路由成本</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Batch-Flex-Priority-%E7%AD%89%E5%B1%82"><span class="nav-number">26.3.</span> <span class="nav-text">3. Batch&#x2F;Flex&#x2F;Priority 等层</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%83%E3%80%81%E4%BC%98%E5%8C%96%E7%AD%96%E7%95%A5%E5%9B%9B%EF%BC%9A%E6%A3%80%E7%B4%A2%E4%B8%8E%E5%B7%A5%E5%85%B7"><span class="nav-number">27.</span> <span class="nav-text">二十七、优化策略四：检索与工具</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%80%99%E9%80%89%E6%95%B0%E5%92%8C-Rerank"><span class="nav-number">27.1.</span> <span class="nav-text">1. 候选数和 Rerank</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%B7%A5%E5%85%B7%E8%B0%83%E7%94%A8%E6%B2%BB%E7%90%86"><span class="nav-number">27.2.</span> <span class="nav-text">2. 工具调用治理</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%BF%94%E5%9B%9E%E8%BD%BD%E8%8D%B7"><span class="nav-number">27.3.</span> <span class="nav-text">3. 返回载荷</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%85%AB%E3%80%81%E4%BC%98%E5%8C%96%E7%AD%96%E7%95%A5%E4%BA%94%EF%BC%9A%E8%87%AA%E5%BB%BA%E5%AE%B9%E9%87%8F%E4%B8%8E%E5%88%A9%E7%94%A8%E7%8E%87"><span class="nav-number">28.</span> <span class="nav-text">二十八、优化策略五：自建容量与利用率</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%8F%90%E5%8D%87%E5%88%A9%E7%94%A8%E7%8E%87%E4%B8%8D%E7%AD%89%E4%BA%8E%E8%BF%BD%E6%B1%82-100"><span class="nav-number">28.1.</span> <span class="nav-text">1. 提升利用率不等于追求 100%</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E9%A2%84%E7%95%99%E4%B8%8E%E6%8C%89%E9%9C%80%E7%BB%84%E5%90%88"><span class="nav-number">28.2.</span> <span class="nav-text">2. 预留与按需组合</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%A4%9A%E7%A7%9F%E6%88%B7%E5%85%AC%E5%B9%B3"><span class="nav-number">28.3.</span> <span class="nav-text">3. 多租户公平</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B9%9D%E3%80%81%E4%BC%98%E5%8C%96%E5%9B%9E%E5%BD%92%EF%BC%9A%E6%88%90%E6%9C%AC%E4%B8%8B%E9%99%8D%E5%BF%85%E9%A1%BB%E5%90%8C%E6%97%B6%E8%AF%81%E6%98%8E%E8%B4%A8%E9%87%8F%E4%B8%8D%E9%80%80%E5%8C%96"><span class="nav-number">29.</span> <span class="nav-text">二十九、优化回归：成本下降必须同时证明质量不退化</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%A6%BB%E7%BA%BF%E9%98%B6%E6%AE%B5"><span class="nav-number">29.1.</span> <span class="nav-text">1. 离线阶段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%BD%B1%E5%AD%90%E9%98%B6%E6%AE%B5"><span class="nav-number">29.2.</span> <span class="nav-text">2. 影子阶段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%81%B0%E5%BA%A6%E9%98%B6%E6%AE%B5"><span class="nav-number">29.3.</span> <span class="nav-text">3. 灰度阶段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%8F%91%E5%B8%83%E9%97%A8%E7%A6%81"><span class="nav-number">29.4.</span> <span class="nav-text">4. 发布门禁</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%A4%B1%E8%B4%A5%E6%B3%A8%E5%85%A5%EF%BC%9A%E9%AA%8C%E8%AF%81%E8%B4%A6%E6%9C%AC%E4%BC%9A%E6%8B%92%E7%BB%9D%E3%80%81%E4%BF%9D%E7%95%99%E5%B9%B6%E5%91%8A%E8%AD%A6"><span class="nav-number">29.5.</span> <span class="nav-text">5. 失败注入：验证账本会拒绝、保留并告警</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E5%8D%81%E3%80%81%E5%AE%8C%E6%95%B4%E5%A4%B1%E8%B4%A5%E6%A1%88%E4%BE%8B%E4%B8%80%EF%BC%9ACached-Tokens-%E8%A2%AB%E9%87%8D%E5%A4%8D%E8%AE%A1%E8%B4%B9"><span class="nav-number">30.</span> <span class="nav-text">三十、完整失败案例一：Cached Tokens 被重复计费</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8E%B0%E8%B1%A1"><span class="nav-number">30.1.</span> <span class="nav-text">现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%81%E6%8D%AE%E9%93%BE"><span class="nav-number">30.2.</span> <span class="nav-text">证据链</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A0%B9%E5%9B%A0%E4%B8%8E%E4%BF%AE%E5%A4%8D"><span class="nav-number">30.3.</span> <span class="nav-text">根因与修复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E5%8D%81%E4%B8%80%E3%80%81%E5%AE%8C%E6%95%B4%E5%A4%B1%E8%B4%A5%E6%A1%88%E4%BE%8B%E4%BA%8C%EF%BC%9A%E6%9C%80%E7%BB%88%E6%88%90%E5%8A%9F%E6%8E%A9%E7%9B%96%E9%87%8D%E8%AF%95%E6%B5%AA%E8%B4%B9"><span class="nav-number">31.</span> <span class="nav-text">三十一、完整失败案例二：最终成功掩盖重试浪费</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8E%B0%E8%B1%A1-1"><span class="nav-number">31.1.</span> <span class="nav-text">现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%81%E6%8D%AE%E9%93%BE-1"><span class="nav-number">31.2.</span> <span class="nav-text">证据链</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A0%B9%E5%9B%A0%E4%B8%8E%E4%BF%AE%E5%A4%8D-1"><span class="nav-number">31.3.</span> <span class="nav-text">根因与修复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E5%8D%81%E4%BA%8C%E3%80%81%E5%AE%8C%E6%95%B4%E5%A4%B1%E8%B4%A5%E6%A1%88%E4%BE%8B%E4%B8%89%EF%BC%9A%E6%9B%B4%E4%BE%BF%E5%AE%9C%E6%A8%A1%E5%9E%8B%E5%AF%BC%E8%87%B4%E4%BA%BA%E5%B7%A5%E6%88%90%E6%9C%AC%E5%8F%8D%E8%B6%85"><span class="nav-number">32.</span> <span class="nav-text">三十二、完整失败案例三：更便宜模型导致人工成本反超</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8E%B0%E8%B1%A1-2"><span class="nav-number">32.1.</span> <span class="nav-text">现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%81%E6%8D%AE%E9%93%BE-2"><span class="nav-number">32.2.</span> <span class="nav-text">证据链</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A0%B9%E5%9B%A0%E4%B8%8E%E4%BF%AE%E5%A4%8D-2"><span class="nav-number">32.3.</span> <span class="nav-text">根因与修复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E5%8D%81%E4%B8%89%E3%80%81%E5%AE%8C%E6%95%B4%E5%A4%B1%E8%B4%A5%E6%A1%88%E4%BE%8B%E5%9B%9B%EF%BC%9A%E5%85%B1%E4%BA%AB-GPU-%E6%88%90%E6%9C%AC%E8%A2%AB%E9%87%8D%E5%A4%8D%E5%88%86%E6%91%8A"><span class="nav-number">33.</span> <span class="nav-text">三十三、完整失败案例四：共享 GPU 成本被重复分摊</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8E%B0%E8%B1%A1-3"><span class="nav-number">33.1.</span> <span class="nav-text">现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%81%E6%8D%AE%E9%93%BE-3"><span class="nav-number">33.2.</span> <span class="nav-text">证据链</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A0%B9%E5%9B%A0%E4%B8%8E%E4%BF%AE%E5%A4%8D-3"><span class="nav-number">33.3.</span> <span class="nav-text">根因与修复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E5%8D%81%E5%9B%9B%E3%80%81%E5%AE%8C%E6%95%B4%E5%A4%B1%E8%B4%A5%E6%A1%88%E4%BE%8B%E4%BA%94%EF%BC%9A%E4%BB%B7%E6%A0%BC%E6%9B%B4%E6%96%B0%E6%94%B9%E5%86%99%E4%BA%86%E5%8E%86%E5%8F%B2"><span class="nav-number">34.</span> <span class="nav-text">三十四、完整失败案例五：价格更新改写了历史</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8E%B0%E8%B1%A1-4"><span class="nav-number">34.1.</span> <span class="nav-text">现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%81%E6%8D%AE%E9%93%BE-4"><span class="nav-number">34.2.</span> <span class="nav-text">证据链</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A0%B9%E5%9B%A0%E4%B8%8E%E4%BF%AE%E5%A4%8D-4"><span class="nav-number">34.3.</span> <span class="nav-text">根因与修复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E5%8D%81%E4%BA%94%E3%80%81%E5%AE%8C%E6%95%B4%E5%A4%B1%E8%B4%A5%E6%A1%88%E4%BE%8B%E5%85%AD%EF%BC%9A%E7%BC%93%E5%AD%98%E5%91%BD%E4%B8%AD%E7%8E%87%E4%B8%8A%E5%8D%87%E4%BD%86%E5%87%80%E6%88%90%E6%9C%AC%E5%A2%9E%E5%8A%A0"><span class="nav-number">35.</span> <span class="nav-text">三十五、完整失败案例六：缓存命中率上升但净成本增加</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8E%B0%E8%B1%A1-5"><span class="nav-number">35.1.</span> <span class="nav-text">现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%81%E6%8D%AE%E9%93%BE-5"><span class="nav-number">35.2.</span> <span class="nav-text">证据链</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A0%B9%E5%9B%A0%E4%B8%8E%E4%BF%AE%E5%A4%8D-5"><span class="nav-number">35.3.</span> <span class="nav-text">根因与修复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E5%8D%81%E5%85%AD%E3%80%81%E5%AE%8C%E6%95%B4%E5%A4%B1%E8%B4%A5%E6%A1%88%E4%BE%8B%E4%B8%83%EF%BC%9A%E9%A2%84%E7%AE%97%E9%97%A8%E7%A6%81%E5%9C%A8%E5%B9%B6%E5%8F%91-Agent-%E4%B8%AD%E8%B6%85%E5%8D%96"><span class="nav-number">36.</span> <span class="nav-text">三十六、完整失败案例七：预算门禁在并发 Agent 中超卖</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8E%B0%E8%B1%A1-6"><span class="nav-number">36.1.</span> <span class="nav-text">现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%81%E6%8D%AE%E9%93%BE-6"><span class="nav-number">36.2.</span> <span class="nav-text">证据链</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A0%B9%E5%9B%A0%E4%B8%8E%E4%BF%AE%E5%A4%8D-6"><span class="nav-number">36.3.</span> <span class="nav-text">根因与修复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E5%8D%81%E4%B8%83%E3%80%81%E5%AE%8C%E6%95%B4%E5%A4%B1%E8%B4%A5%E6%A1%88%E4%BE%8B%E5%85%AB%EF%BC%9A%E8%87%AA%E5%BB%BA%E6%8E%A8%E7%90%86%E2%80%9C%E4%BD%8E%E4%BB%B7%E2%80%9D%E6%9D%A5%E8%87%AA%E5%81%87%E8%AE%BE%E6%BB%A1%E8%BD%BD"><span class="nav-number">37.</span> <span class="nav-text">三十七、完整失败案例八：自建推理“低价”来自假设满载</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8E%B0%E8%B1%A1-7"><span class="nav-number">37.1.</span> <span class="nav-text">现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%81%E6%8D%AE%E9%93%BE-7"><span class="nav-number">37.2.</span> <span class="nav-text">证据链</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A0%B9%E5%9B%A0%E4%B8%8E%E4%BF%AE%E5%A4%8D-7"><span class="nav-number">37.3.</span> <span class="nav-text">根因与修复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E5%8D%81%E5%85%AB%E3%80%81%E8%AF%81%E6%8D%AE%E6%8E%92%E6%9F%A5%E6%89%8B%E5%86%8C%EF%BC%9A%E4%BB%8E%E6%80%BB%E9%A2%9D%E5%BC%82%E5%B8%B8%E5%9B%9E%E5%88%B0%E5%8D%95%E6%9D%A1%E4%BA%8B%E4%BB%B6"><span class="nav-number">38.</span> <span class="nav-text">三十八、证据排查手册：从总额异常回到单条事件</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%80%BB%E6%88%90%E6%9C%AC%E7%AA%81%E5%A2%9E"><span class="nav-number">38.1.</span> <span class="nav-text">1. 总成本突增</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%B4%A6%E6%9C%AC%E4%B8%8E%E8%B4%A6%E5%8D%95%E4%B8%8D%E4%B8%80%E8%87%B4"><span class="nav-number">38.2.</span> <span class="nav-text">2. 账本与账单不一致</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%8D%95%E4%BD%8D%E6%88%90%E6%9C%AC%E4%B8%8B%E9%99%8D%E4%BD%86%E6%80%BB%E6%88%90%E6%9C%AC%E4%B8%8A%E5%8D%87"><span class="nav-number">38.3.</span> <span class="nav-text">3. 单位成本下降但总成本上升</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%88%90%E6%9C%AC%E4%B8%8B%E9%99%8D%E4%BD%86%E4%BA%BA%E5%B7%A5%E4%B8%8A%E5%8D%87"><span class="nav-number">38.4.</span> <span class="nav-text">4. 成本下降但人工上升</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%9F%90-tenant-%E5%BC%82%E5%B8%B8"><span class="nav-number">38.5.</span> <span class="nav-text">5. 某 tenant 异常</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E5%8D%81%E4%B9%9D%E3%80%81%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86%E4%B8%8E%E5%AE%89%E5%85%A8"><span class="nav-number">39.</span> <span class="nav-text">三十九、数据治理与安全</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%9C%80%E5%B0%8F%E5%8C%96%E5%86%85%E5%AE%B9"><span class="nav-number">39.1.</span> <span class="nav-text">1. 最小化内容</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Tenant-%E9%98%B2%E4%BC%AA"><span class="nav-number">39.2.</span> <span class="nav-text">2. Tenant 防伪</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%BB%B7%E6%A0%BC%E4%B8%8E%E5%90%88%E5%90%8C%E6%9D%83%E9%99%90"><span class="nav-number">39.3.</span> <span class="nav-text">3. 价格与合同权限</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%AE%A1%E8%AE%A1"><span class="nav-number">39.4.</span> <span class="nav-text">4. 审计</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E5%8D%81%E3%80%81%E4%BB%8E-0-%E5%88%B0-1-%E7%9A%84%E8%90%BD%E5%9C%B0%E9%A1%BA%E5%BA%8F"><span class="nav-number">40.</span> <span class="nav-text">四十、从 0 到 1 的落地顺序</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5%E4%B8%80%EF%BC%9A%E5%BB%BA%E7%AB%8B%E8%BA%AB%E4%BB%BD%E4%B8%8E%E5%8E%9F%E5%A7%8B%E4%BA%8B%E4%BB%B6"><span class="nav-number">40.1.</span> <span class="nav-text">阶段一：建立身份与原始事件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5%E4%BA%8C%EF%BC%9A%E4%BB%B7%E6%A0%BC%E7%B0%BF%E4%B8%8E%E8%B4%A6%E6%9C%AC"><span class="nav-number">40.2.</span> <span class="nav-text">阶段二：价格簿与账本</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5%E4%B8%89%EF%BC%9A%E5%88%86%E6%91%8A%E4%B8%8E%E5%8D%95%E4%BD%8D%E7%BB%8F%E6%B5%8E"><span class="nav-number">40.3.</span> <span class="nav-text">阶段三：分摊与单位经济</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5%E5%9B%9B%EF%BC%9A%E9%A2%84%E7%AE%97%E4%B8%8E%E4%BC%98%E5%8C%96"><span class="nav-number">40.4.</span> <span class="nav-text">阶段四：预算与优化</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E5%8D%81%E4%B8%80%E3%80%81%E4%B8%8A%E7%BA%BF%E6%A3%80%E6%9F%A5%E6%B8%85%E5%8D%95"><span class="nav-number">41.</span> <span class="nav-text">四十一、上线检查清单</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%BA%AB%E4%BB%BD%E4%B8%8E%E4%BA%8B%E4%BB%B6"><span class="nav-number">41.1.</span> <span class="nav-text">身份与事件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Token-%E4%B8%8E%E7%BC%93%E5%AD%98"><span class="nav-number">41.2.</span> <span class="nav-text">Token 与缓存</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BB%B7%E6%A0%BC%E4%B8%8E%E8%B4%A6%E6%9C%AC"><span class="nav-number">41.3.</span> <span class="nav-text">价格与账本</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%86%E6%91%8A%E4%B8%8E%E5%AF%B9%E8%B4%A6"><span class="nav-number">41.4.</span> <span class="nav-text">分摊与对账</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%A2%84%E7%AE%97"><span class="nav-number">41.5.</span> <span class="nav-text">预算</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%B4%A8%E9%87%8F%E4%B8%8E%E5%8D%95%E4%BD%8D%E7%BB%8F%E6%B5%8E"><span class="nav-number">41.6.</span> <span class="nav-text">质量与单位经济</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%BF%90%E8%90%A5%E4%B8%8E%E6%9D%83%E9%99%90"><span class="nav-number">41.7.</span> <span class="nav-text">运营与权限</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E5%8D%81%E4%BA%8C%E3%80%81%E6%80%BB%E7%BB%93"><span class="nav-number">42.</span> <span class="nav-text">四十二、总结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8F%82%E8%80%83%E8%B5%84%E6%96%99"><span class="nav-number">43.</span> <span class="nav-text">参考资料</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">358</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">27</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">796</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2026/05/12/AI%E6%B5%8B%E8%AF%95-43-AI%E5%BA%94%E7%94%A8%E6%88%90%E6%9C%AC%E6%80%8E%E4%B9%88%E6%8B%86Token%E7%BC%93%E5%AD%98%E6%A3%80%E7%B4%A2%E5%B7%A5%E5%85%B7%E5%92%8C%E5%8D%95%E4%BD%8D%E4%BB%BB%E5%8A%A1%E9%A2%84%E7%AE%97/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="AI测试-43-AI应用成本怎么拆Token缓存检索工具和单位任务预算 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          AI测试-43-AI应用成本怎么拆Token缓存检索工具和单位任务预算
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2026-05-12 20:30:00" itemprop="dateCreated datePublished" datetime="2026-05-12T20:30:00+08:00">2026-05-12</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/AI%E6%B5%8B%E8%AF%95/" itemprop="url" rel="index"><span itemprop="name">AI测试</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>16k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>58 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>一个 AI 应用本月模型账单下降 20%，能不能说明优化成功？</p>
+<p>不一定。它可能把更多请求转给了人工，可能关闭 rerank 后让任务返工，可能把失败重试记在另一个项目，也可能因为回答变短而降低业务完成率。反过来，模型 Token 成本上升也不一定是退化：系统可能增加了必要证据、减少人工复核并提高一次任务完成率。</p>
+<p>成本治理最常见的错误，是把厂商控制台上的 Token 总额直接除以 HTTP 请求数。这个公式遗漏了至少三层事实：</p>
+<ol>
+<li>一个用户任务可能包含多次模型请求、检索、rerank、工具、网络和重试。</li>
+<li>目录价、合同后价格、账单实际成本与分摊到业务的成本不是同一个数。</li>
+<li>请求返回 200、JSON 合法或模型置信度较高，并不代表任务被业务验收。</li>
+</ol>
+<p>因此，真正需要建立的是一套从使用事件到业务结果的成本账本：每一笔量来自哪里，按哪一版价格计算，属于哪个 request、run、task 和 tenant，失败是否被保留，共享 GPU 或平台成本如何守恒分摊，最终每个<strong>合格业务任务</strong>消耗了多少成本。</p>
+<p>本文建立这套完整方法，覆盖输入、输出、reasoning、cache write&#x2F;read&#x2F;storage、embedding、rerank、vector DB、工具、网络、重试、失败浪费、人工复核和自建推理摊销；明确区分 list price、effective cost、allocated cost 与 quality-adjusted unit cost；并给出不需要真实 API Key 的 <code>Decimal</code> 账本、预算门禁和自动化测试。</p>
+<p>所有厂商价格均具有时间、产品、模型、区域、上下文长度、服务层和合同条件。正文不写死任何厂商单价，代码中的费率全部是<strong>构造参数</strong>。资料与官方价格页面核对截止 2026-07-26，不能把该日快照当作永久事实。</p>
+<h2 id="一、先给结论：成本控制对象应是合格任务，不是便宜-Token"><a href="#一、先给结论：成本控制对象应是合格任务，不是便宜-Token" class="headerlink" title="一、先给结论：成本控制对象应是合格任务，不是便宜 Token"></a>一、先给结论：成本控制对象应是合格任务，不是便宜 Token</h2><p>一套可用的 AI 成本系统至少遵守十二条原则：</p>
+<ol>
+<li><strong>原始用量与价格分离。</strong> 用量事件不可因价格更新而改写，价格簿必须有生效区间和来源。</li>
+<li><strong>计费项互斥。</strong> cached input、reasoning 等如果已经包含在总量中，不能再无条件相加。</li>
+<li><strong>一次物理调用一个 request&#x2F;attempt。</strong> 重试不得覆盖第一次失败。</li>
+<li><strong>一次工作流执行一个 run。</strong> 模型、检索、工具和恢复步骤都挂在同一执行图上。</li>
+<li><strong>一个业务目标一个 task。</strong> 多个 run、人工补救和延迟结果最终归到任务。</li>
+<li><strong>tenant 是责任与隔离边界。</strong> 产品、客户、成本中心和环境维度要稳定，不能靠 Prompt 文本猜。</li>
+<li><strong>List、Effective、Allocated 分开。</strong> 目录价基线、实际经济成本和责任分摊回答不同问题。</li>
+<li><strong>失败成本不删除。</strong> 超时、取消、废弃回答和工具重试都是已经消耗的资源。</li>
+<li><strong>共享成本按版本化规则守恒分配。</strong> 分摊和必须等于来源成本，未分摊部分显式保留。</li>
+<li><strong>预算门禁是估算与预留，不是精确预言。</strong> 运行中还要持续扣减，结束后再用实算校正。</li>
+<li><strong>任何成本优化都受质量与安全底线约束。</strong> HTTP 200、Schema、相似度和模型置信度不能代替业务验收。</li>
+<li><strong>报表必须可对账。</strong> 账本与供应商账单可能因延迟、税费、信用和舍入暂时不同，但差异要能解释。</li>
+</ol>
+<p>最终要得到的不是一张“Token 花费排行榜”，而是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">每个合格任务的直接成本</span><br><span class="line">+ 失败与重试成本</span><br><span class="line">+ 可解释的共享成本</span><br><span class="line">+ 人工复核和纠错成本</span><br><span class="line">= 质量约束下的单位任务成本</span><br></pre></td></tr></table></figure>
+
+<h2 id="二、工程定义与边界：先区分价格、成本、预算和价值"><a href="#二、工程定义与边界：先区分价格、成本、预算和价值" class="headerlink" title="二、工程定义与边界：先区分价格、成本、预算和价值"></a>二、工程定义与边界：先区分价格、成本、预算和价值</h2><h3 id="1-List-Price-与-List-Cost"><a href="#1-List-Price-与-List-Cost" class="headerlink" title="1. List Price 与 List Cost"></a>1. List Price 与 List Cost</h3><p><code>list price</code> 是某个 SKU 在特定条件下公开或标准的单位价格，例如每百万 Token、每千次工具调用或每 GB-day。它本身不是本次使用的总成本。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">list_cost = pricing_quantity × list_unit_price</span><br></pre></td></tr></table></figure>
+
+<p>FOCUS 1.3 将 List Cost 定义为 List Unit Price 与 Pricing Quantity 的乘积，并用于与 Contracted、Billed、Effective Cost 比较。本文沿用这个思想，但 AI 内部账本还要增加模型、服务层、上下文区间和计费项等细粒度维度。</p>
+<h3 id="2-Contracted、Billed-与-Effective-Cost"><a href="#2-Contracted、Billed-与-Effective-Cost" class="headerlink" title="2. Contracted、Billed 与 Effective Cost"></a>2. Contracted、Billed 与 Effective Cost</h3><ul>
+<li><code>contracted_cost</code>：合同单位价乘计价数量，反映谈判折扣，但不一定包含承诺购买的摊销。</li>
+<li><code>billed_cost</code>：发票或应付账单基础，接近现金口径；预付、信用、税和调整会影响它。</li>
+<li><code>effective_cost</code>：将折扣及相关预付&#x2F;承诺购买按规则摊销后的经济成本，更适合观察消费趋势。</li>
+</ul>
+<p>FOCUS 1.3 对 Effective Cost 的定义强调折扣与预付购买的摊销，并明确同一账期 Effective Cost 总和可能与发票总和不同。本文的内部 <code>effective_cost</code> 应尽量与采购&#x2F;FinOps 的批准口径对齐；在账单未到时可以先标记为 estimated，不能假装已经实算。</p>
+<h3 id="3-Allocated-Cost"><a href="#3-Allocated-Cost" class="headerlink" title="3. Allocated Cost"></a>3. Allocated Cost</h3><p><code>allocated_cost</code> 是把 effective cost 归属到 request、run、task、tenant 或产品后的责任成本：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">allocated_cost(object)</span><br><span class="line">= direct_effective_cost(object)</span><br><span class="line">+ allocated_share_of_shared_cost(object)</span><br></pre></td></tr></table></figure>
+
+<p>它不是厂商原生价格概念，而是组织内部责任口径。分摊方法必须公开：按有效 Token、GPU-seconds、预留显存、任务数、活跃用户、收入，还是固定比例。FOCUS 1.3 的 split cost allocation 要求分摊记录在可聚合指标上加总回来源记录，并记录方法标识和细节；这个守恒原则非常适合 AI 成本账本。</p>
+<h3 id="4-Quality-adjusted-Unit-Cost"><a href="#4-Quality-adjusted-Unit-Cost" class="headerlink" title="4. Quality-adjusted Unit Cost"></a>4. Quality-adjusted Unit Cost</h3><p>本文定义一段观察窗口内：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">quality_adjusted_unit_cost</span><br><span class="line">= cohort_allocated_cost / accepted_business_units</span><br></pre></td></tr></table></figure>
+
+<p>分子包含观察窗口内为这批任务付出的直接、共享、失败和人工成本；分母只包含通过预定义业务后置条件、质量与安全门槛的去重任务。失败任务的成本留在分子，却不进入成功分母。</p>
+<p>如果任务价值差异很大，可以按业务事先定义权重：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">quality_adjusted_cost_per_weighted_unit</span><br><span class="line">= cohort_allocated_cost / Σ accepted_task_weight</span><br></pre></td></tr></table></figure>
+
+<p>权重必须来自业务价值模型，不能为了让报表好看而事后调整。</p>
+<h3 id="5-Budget"><a href="#5-Budget" class="headerlink" title="5. Budget"></a>5. Budget</h3><p>预算是对未来允许消耗的约束，不是已发生成本。至少区分：</p>
+<ul>
+<li>task 硬上限：单任务超过即停止或转人工</li>
+<li>run 软上限：接近时降低非必要步骤或请求审批</li>
+<li>tenant 周期预算：日、周、月的总额和增长率</li>
+<li>风险预算：高价值任务允许更高成本，但安全底线不变</li>
+<li>预留额：在异步调用开始前占住最坏合理成本，结束后释放差额</li>
+</ul>
+<p>把账单告警称为“预算控制”太晚了；控制必须在请求前和运行中发生。</p>
+<h2 id="三、四级身份模型：Request、Run、Task、Tenant"><a href="#三、四级身份模型：Request、Run、Task、Tenant" class="headerlink" title="三、四级身份模型：Request、Run、Task、Tenant"></a>三、四级身份模型：Request、Run、Task、Tenant</h2><p>成本无法归因，通常不是缺一列 <code>cost</code>，而是身份模型不稳定。</p>
+<h3 id="1-Request"><a href="#1-Request" class="headerlink" title="1. Request"></a>1. Request</h3><p>Request 表示一次对外部模型、内部推理、embedding、rerank、vector DB 或工具的<strong>物理调用 attempt</strong>。至少包含：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">request_id, logical_step_id, attempt_no</span><br><span class="line">provider, service, model_or_sku, region, service_tier</span><br><span class="line">started_at, ended_at, status, error_class</span><br><span class="line">provider_request_id, idempotency_key</span><br><span class="line">usage_observation_ids</span><br></pre></td></tr></table></figure>
+
+<p>同一逻辑步骤重试两次，应有两个 request&#x2F;attempt。最终成功不能覆盖第一次超时。</p>
+<h3 id="2-Run"><a href="#2-Run" class="headerlink" title="2. Run"></a>2. Run</h3><p>Run 表示一次工作流执行图。一个 run 可以包含多个模型请求、检索、工具和校验，也可能因为恢复策略生成分支。它至少包含：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">run_id, workflow_name, workflow_version</span><br><span class="line">task_id, tenant_id, parent_run_id</span><br><span class="line">route_policy_version, prompt_version, retrieval_version</span><br><span class="line">started_at, ended_at, terminal_status</span><br></pre></td></tr></table></figure>
+
+<p>Agent 循环中“又想了一次”不是免费内部行为：只要产生可计量调用，就必须形成 request 并挂到 run。</p>
+<h3 id="3-Task"><a href="#3-Task" class="headerlink" title="3. Task"></a>3. Task</h3><p>Task 是业务目标，例如“完成一张工单分类并落库”“生成一份通过审核的合同摘要”“完成一次退款资格判断”。一个 task 可能经历：</p>
+<ul>
+<li>初次自动 run</li>
+<li>自动 retry run</li>
+<li>降级 run</li>
+<li>人工复核与纠错</li>
+<li>延迟到达的业务真值</li>
+</ul>
+<p>Task 才是单位经济分母。HTTP 请求、对话 turn 或模型调用不一定等于一个任务。</p>
+<h3 id="4-Tenant"><a href="#4-Tenant" class="headerlink" title="4. Tenant"></a>4. Tenant</h3><p>Tenant 是成本责任和数据隔离边界，可以映射客户、产品线、成本中心、环境或内部团队。建议使用稳定 ID，并把展示名、组织变更和结算关系放到维表。不要直接把用户输入中的公司名当 tenant，也不要让模型决定成本归属。</p>
+<h3 id="5-关联规则"><a href="#5-关联规则" class="headerlink" title="5. 关联规则"></a>5. 关联规则</h3><p>每个 usage event 必须能直接或间接关联：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">usage_event -&gt; request/attempt -&gt; run -&gt; task -&gt; tenant</span><br></pre></td></tr></table></figure>
+
+<p>对于共享 GPU、平台许可或公共索引，原始事件可以先关联 shared pool，再由 allocation event 分到 task&#x2F;tenant。无法归属的记录进入 <code>unallocated</code>，不能丢弃或平均塞给所有人。</p>
+<h2 id="四、完整架构：从原始事件到可对账单位经济"><a href="#四、完整架构：从原始事件到可对账单位经济" class="headerlink" title="四、完整架构：从原始事件到可对账单位经济"></a>四、完整架构：从原始事件到可对账单位经济</h2><p><img src="/images/ai-quality/ai-43-cost-allocation.svg" alt="AI应用成本事件账本与四级分摊架构"></p>
+<p>推荐把系统拆成七层。</p>
+<h3 id="1-Usage-Collectors"><a href="#1-Usage-Collectors" class="headerlink" title="1. Usage Collectors"></a>1. Usage Collectors</h3><p>从供应商响应、网关、SDK、推理引擎、检索服务、工具平台、云账单和人工系统采集原始用量。Collector 只负责忠实记录，不在边缘节点写死最终价格。</p>
+<h3 id="2-Provider-Adapters"><a href="#2-Provider-Adapters" class="headerlink" title="2. Provider Adapters"></a>2. Provider Adapters</h3><p>把厂商字段映射到内部语义，但保留原始 payload、文档版本和映射版本。适配器必须处理“总量包含子量”的关系，不能把名字相似的字段直接求和。</p>
+<h3 id="3-Price-Book"><a href="#3-Price-Book" class="headerlink" title="3. Price Book"></a>3. Price Book</h3><p>价格簿由 provider、SKU、region、service tier、usage kind、unit、currency、valid_from、valid_to、来源 URL 和合同版本组成。费率变更追加新版本，不覆盖历史。</p>
+<h3 id="4-Immutable-Ledger"><a href="#4-Immutable-Ledger" class="headerlink" title="4. Immutable Ledger"></a>4. Immutable Ledger</h3><p>将用量与当时有效价格结合，生成不可变成本分录。更正通过冲销和新分录完成，不能直接修改历史金额。每条分录记录估算&#x2F;实算状态、舍入规则和来源。</p>
+<h3 id="5-Allocation-Engine"><a href="#5-Allocation-Engine" class="headerlink" title="5. Allocation Engine"></a>5. Allocation Engine</h3><p>把共享池成本按版本化方法分给对象，输出来源、权重、比例、分摊金额和未分摊余量。引擎执行守恒检查和重复检查。</p>
+<h3 id="6-Outcome-Join"><a href="#6-Outcome-Join" class="headerlink" title="6. Outcome Join"></a>6. Outcome Join</h3><p>将 Task 的业务后置条件、质量、安全、人工裁决、申诉和最终真值连接到账本。质量数据可以晚到，因此单位成本需要 <code>provisional</code> 与 <code>final</code> 状态。</p>
+<h3 id="7-Controls-and-Views"><a href="#7-Controls-and-Views" class="headerlink" title="7. Controls and Views"></a>7. Controls and Views</h3><p>同一事实层提供预算门禁、预测、异常检测、showback、chargeback、优化实验和财务对账。不同视图不应各自重算一套成本，否则定义会漂移。</p>
+<h2 id="五、原始用量模型：观测事实不要先压成一个-total-tokens"><a href="#五、原始用量模型：观测事实不要先压成一个-total-tokens" class="headerlink" title="五、原始用量模型：观测事实不要先压成一个 total_tokens"></a>五、原始用量模型：观测事实不要先压成一个 total_tokens</h2><p>建议保存三层数据。</p>
+<h3 id="1-Raw-Observation"><a href="#1-Raw-Observation" class="headerlink" title="1. Raw Observation"></a>1. Raw Observation</h3><figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;observation_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;obs-...&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;request_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;req-...&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;source&quot;</span><span class="punctuation">:</span> <span class="string">&quot;provider_response&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;source_schema_version&quot;</span><span class="punctuation">:</span> <span class="string">&quot;...&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;observed_at&quot;</span><span class="punctuation">:</span> <span class="string">&quot;...&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;raw_usage&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span><span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;raw_digest&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sha256:...&quot;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>原始响应可能包含敏感内容，usage 通常可以与内容分开保留。对账需要 provider request ID、时间、项目和 SKU，不一定需要保存 Prompt 全文。</p>
+<h3 id="2-Normalized-Usage-Event"><a href="#2-Normalized-Usage-Event" class="headerlink" title="2. Normalized Usage Event"></a>2. Normalized Usage Event</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">event_id, observation_id, request_id, run_id, task_id, tenant_id</span><br><span class="line">usage_kind, quantity, unit</span><br><span class="line">occurred_at, provider, sku, region, service_tier</span><br><span class="line">status, billability, mapping_version</span><br></pre></td></tr></table></figure>
+
+<p>一个 observation 可拆成多个互斥事件，例如 uncached input、cache read、visible output、reasoning、tool call。事件数量允许为零，但缺失与零要区分。</p>
+<h3 id="3-Cost-Entry"><a href="#3-Cost-Entry" class="headerlink" title="3. Cost Entry"></a>3. Cost Entry</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">entry_id, event_id, price_id</span><br><span class="line">list_cost, contracted_cost, estimated_effective_cost</span><br><span class="line">final_effective_cost, currency</span><br><span class="line">calculation_version, valuation_status</span><br></pre></td></tr></table></figure>
+
+<p>同一用量可以生成多种估值列，却不能生成多条都进入总额的重复分录。</p>
+<h2 id="六、模型-Token-成本：输入、输出与-Reasoning-必须互斥"><a href="#六、模型-Token-成本：输入、输出与-Reasoning-必须互斥" class="headerlink" title="六、模型 Token 成本：输入、输出与 Reasoning 必须互斥"></a>六、模型 Token 成本：输入、输出与 Reasoning 必须互斥</h2><h3 id="1-输入-Token"><a href="#1-输入-Token" class="headerlink" title="1. 输入 Token"></a>1. 输入 Token</h3><p>输入可能包含系统指令、用户消息、历史对话、检索证据、工具定义、工具结果、图片&#x2F;音频编码和框架包装。应用侧 tokenizer 估算与供应商最终 usage 可能不同，预算阶段使用估算，结算阶段优先使用合同认可的供应商计量。</p>
+<p>至少记录：</p>
+<ul>
+<li><code>input_tokens_total</code></li>
+<li><code>cached_input_tokens</code></li>
+<li><code>uncached_input_tokens</code></li>
+<li><code>cache_write_input_tokens</code></li>
+<li><code>modality</code> 与上下文价格区间</li>
+</ul>
+<p>但这些字段不一定互斥。OpenTelemetry GenAI 属性注册表在截止日期可见的说明中指出，<code>gen_ai.usage.input_tokens</code> 应包含包括 cached tokens 在内的所有输入类型；cache creation&#x2F;read 是子量。若直接计算 <code>input_total + cache_read</code>，会重复计数。</p>
+<p>正确方法是建立厂商适配器规则，例如：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">若 provider_total 已包含 cache_read：</span><br><span class="line">  uncached = provider_total - cache_read - 其他明确包含的子量</span><br><span class="line">否则：</span><br><span class="line">  按供应商官方计费响应直接映射互斥项</span><br></pre></td></tr></table></figure>
+
+<p>不能跨厂商写一个猜测公式。出现负数或子量大于总量时应隔离数据并报警。</p>
+<h3 id="2-输出-Token"><a href="#2-输出-Token" class="headerlink" title="2. 输出 Token"></a>2. 输出 Token</h3><p>输出至少区分用户可见文本、结构化字段、工具调用参数、音频&#x2F;图片等 modality，以及供应商报告的总输出。流式取消后，供应商已经生成但客户端未收到的 Token 仍可能计费，需保留 <code>delivered</code> 与 <code>billed</code> 两个状态。</p>
+<h3 id="3-Reasoning-Token"><a href="#3-Reasoning-Token" class="headerlink" title="3. Reasoning Token"></a>3. Reasoning Token</h3><p>Reasoning&#x2F;Thinking 的可见性和计费方式随产品、模型与版本不同。OpenTelemetry 的对应语义说明 reasoning output tokens 应包含在 output token 总量中。内部账本可以把 reasoning 作为分析维度；只有当合同明确把它作为独立、互斥费率时，才拆成独立计费行。否则对 output total 与 reasoning 同时计价会重复。</p>
+<p>代码示例使用 <code>visible_output_token</code> 与 <code>reasoning_token</code> 两个互斥构造项，是为了展示账本能力，不代表任何厂商真实计费结构。</p>
+<h3 id="4-上下文阈值和服务层"><a href="#4-上下文阈值和服务层" class="headerlink" title="4. 上下文阈值和服务层"></a>4. 上下文阈值和服务层</h3><p>同一模型可能因上下文长度、批处理、优先级、区域或异步层采用不同费率。价格键不能只有 <code>provider/model</code>，至少还需 <code>service_tier</code>、<code>context_band</code>、<code>region</code> 与有效时间。请求实际使用的服务层可能与提交值不同，应按响应和合同规则结算。</p>
+<h2 id="七、Cache-成本：Write、Read-与-Storage-是三个生命周期"><a href="#七、Cache-成本：Write、Read-与-Storage-是三个生命周期" class="headerlink" title="七、Cache 成本：Write、Read 与 Storage 是三个生命周期"></a>七、Cache 成本：Write、Read 与 Storage 是三个生命周期</h2><p>缓存不是一个“命中就省钱”的布尔值。</p>
+<h3 id="1-Cache-Write"><a href="#1-Cache-Write" class="headerlink" title="1. Cache Write"></a>1. Cache Write</h3><p>创建缓存可能按写入 Token、倍率或固定操作计费，也可能包含在普通输入中。记录：写入量、TTL、缓存 ID&#x2F;前缀摘要、创建时间、作用域和价格版本。</p>
+<h3 id="2-Cache-Read"><a href="#2-Cache-Read" class="headerlink" title="2. Cache Read"></a>2. Cache Read</h3><p>读取通常按复用 Token 计量。除了成本，还应计算：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">economic_hit_rate = 节省的未缓存有效成本 / 无缓存反事实 List Cost</span><br><span class="line">reuse_efficiency = 被读取 Token / 已写入 Token</span><br></pre></td></tr></table></figure>
+
+<p>请求命中率不能说明复用规模；一次命中几十 Token 与几万 Token 的经济意义不同。</p>
+<h3 id="3-Cache-Storage"><a href="#3-Cache-Storage" class="headerlink" title="3. Cache Storage"></a>3. Cache Storage</h3><p>有的产品对显式 context cache 按 Token-hour、GB-hour 或 TTL 收费。即使读价低，长期保留低复用缓存也可能比每次重算更贵：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">cache_net_saving</span><br><span class="line">= avoided_uncached_cost</span><br><span class="line">- write_cost</span><br><span class="line">- read_cost</span><br><span class="line">- storage_cost</span><br><span class="line">- invalidation_and_operations_cost</span><br></pre></td></tr></table></figure>
+
+<p>价格页面只说明供应商 SKU；真实净收益还依赖命中局部性、失效和质量。</p>
+<h3 id="4-安全与语义成本"><a href="#4-安全与语义成本" class="headerlink" title="4. 安全与语义成本"></a>4. 安全与语义成本</h3><p>缓存键遗漏 tenant、权限、模型版本、Prompt 模板或数据新鲜度，会造成跨租户泄漏或错误复用。高命中率不能抵消安全事故。缓存优化上线前必须过隔离、新鲜度和语义回归。</p>
+<h2 id="八、Embedding、Rerank-与-Vector-DB：检索链路不是免费前处理"><a href="#八、Embedding、Rerank-与-Vector-DB：检索链路不是免费前处理" class="headerlink" title="八、Embedding、Rerank 与 Vector DB：检索链路不是免费前处理"></a>八、Embedding、Rerank 与 Vector DB：检索链路不是免费前处理</h2><p>本文不重复通用 RAG 召回率、忠实度与可追溯性评测，而只讨论成本归集及其与已有质量结果的连接。</p>
+<h3 id="1-Embedding"><a href="#1-Embedding" class="headerlink" title="1. Embedding"></a>1. Embedding</h3><p>区分离线索引和在线查询：</p>
+<ul>
+<li>文档切分后的 embedding Token</li>
+<li>查询 embedding Token</li>
+<li>模型&#x2F;维度&#x2F;批处理模式</li>
+<li>重建索引、失败重试和重复写入</li>
+<li>多语言或多模态编码</li>
+</ul>
+<p>离线重建不能全部压到某一次在线请求。可按索引版本受益窗口、文档数、查询量或业务所有权分摊，并保留未摊余额。</p>
+<h3 id="2-Rerank"><a href="#2-Rerank" class="headerlink" title="2. Rerank"></a>2. Rerank</h3><p>可能按请求、文档对或 Token 计费。必须记录候选数、实际送入数、截断和失败。把 <code>top_k=100</code> 改成 20 可能降低成本，也可能降低目标任务质量；优化门禁应连接独立检索&#x2F;任务评测。</p>
+<h3 id="3-Vector-DB"><a href="#3-Vector-DB" class="headerlink" title="3. Vector DB"></a>3. Vector DB</h3><p>成本可能来自查询、读写单元、容量、索引、备份、节点、复制、网络和最低承诺。在线 query 能直接归属 request；基础容量与闲置部分属于共享成本。仅按 API 查询次数分摊，可能让大向量、高过滤开销或跨区流量被错误平均。</p>
+<h3 id="4-数据处理"><a href="#4-数据处理" class="headerlink" title="4. 数据处理"></a>4. 数据处理</h3><p>解析、OCR、切分、清洗和增量同步也会消耗计算与人工。它们不一定进入每次任务边际成本，却应进入产品总拥有成本和索引版本摊销。否则 SaaS 模型看起来昂贵，自建数据管道却被当作免费。</p>
+<h2 id="九、工具与网络：一次-Agent-任务可能有多种计费单位"><a href="#九、工具与网络：一次-Agent-任务可能有多种计费单位" class="headerlink" title="九、工具与网络：一次 Agent 任务可能有多种计费单位"></a>九、工具与网络：一次 Agent 任务可能有多种计费单位</h2><h3 id="1-内建工具"><a href="#1-内建工具" class="headerlink" title="1. 内建工具"></a>1. 内建工具</h3><p>Web search、file search、code execution、容器、地图或第三方连接器可能按调用、会话、搜索查询、存储和附加 Token 收费。工具返回内容进入后续模型上下文时，还可能再次形成输入 Token 成本。</p>
+<p>截至资料日期，OpenAI、Anthropic 与 Gemini 的官方价格页面均展示了 Token 之外的工具或缓存计费维度，但产品、模型和条件各不相同。账本必须按实际产品快照建 SKU，不能维护一个永远有效的“搜索一次多少钱”常量。</p>
+<h3 id="2-自定义工具"><a href="#2-自定义工具" class="headerlink" title="2. 自定义工具"></a>2. 自定义工具</h3><p>自定义工具即使没有供应商调用费，也有：</p>
+<ul>
+<li>第三方 API 费用</li>
+<li>内部服务计算、数据库和队列</li>
+<li>凭证、审计和安全网关</li>
+<li>幂等查询与对账</li>
+<li>超时后仍执行的副作用</li>
+</ul>
+<p>工具返回成功只说明协议结果，业务后置条件仍需校验。</p>
+<h3 id="3-网络"><a href="#3-网络" class="headerlink" title="3. 网络"></a>3. 网络</h3><p>网络成本可能按跨区、跨云、互联网出口或 CDN 计价。长检索证据、图片、音频和多 Agent 传输会放大它。记录源区域、目标区域、字节和方向；不要用 Prompt Token 推算所有网络字节。</p>
+<h3 id="4-双重成本"><a href="#4-双重成本" class="headerlink" title="4. 双重成本"></a>4. 双重成本</h3><p>一次搜索可能同时产生工具调用费、搜索内容 Token、普通输入&#x2F;输出 Token和网络。它们是不同事件，不是重复；但同一个搜索内容 Token 如果已经包含在输入总量，又不能再按普通输入外额外加一次。关键在于使用供应商官方计费语义定义互斥项。</p>
+<h2 id="十、重试、失败浪费与取消：不要让最终成功覆盖成本历史"><a href="#十、重试、失败浪费与取消：不要让最终成功覆盖成本历史" class="headerlink" title="十、重试、失败浪费与取消：不要让最终成功覆盖成本历史"></a>十、重试、失败浪费与取消：不要让最终成功覆盖成本历史</h2><h3 id="1-Attempt-模型"><a href="#1-Attempt-模型" class="headerlink" title="1. Attempt 模型"></a>1. Attempt 模型</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">logical_step_id: retrieve_policy</span><br><span class="line">request_id: req-1, attempt=1, status=timeout</span><br><span class="line">request_id: req-2, attempt=2, status=success</span><br></pre></td></tr></table></figure>
+
+<p>两次调用都进入成本。Run 的结果可以成功，但 run 内包含 <code>retry_cost</code> 和 <code>failure_waste</code>。</p>
+<h3 id="2-失败浪费口径"><a href="#2-失败浪费口径" class="headerlink" title="2. 失败浪费口径"></a>2. 失败浪费口径</h3><p>本文定义：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">failure_waste</span><br><span class="line">= 终态未被当前或后续任务复用的失败 attempt effective cost</span><br><span class="line">+ 被丢弃输出的成本</span><br><span class="line">+ 取消后仍执行的成本</span><br><span class="line">+ 重复副作用的修复成本</span><br></pre></td></tr></table></figure>
+
+<p>若失败产物被后续恢复流程复用，不一定全部是浪费，可以按证据标记 <code>recovered_value</code>。但默认不能因为最终成功而把前序成本归零。</p>
+<h3 id="3-Retry-amplification"><a href="#3-Retry-amplification" class="headerlink" title="3. Retry amplification"></a>3. Retry amplification</h3><p>SDK、网关、业务层和 Agent 可能各自重试。成本异常检测应记录每个层级和因果关系：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">attempts_per_successful_task</span><br><span class="line">retry_effective_cost / total_effective_cost</span><br><span class="line">failed_generated_tokens / all_billed_tokens</span><br><span class="line">cancelled_but_billed_cost</span><br></pre></td></tr></table></figure>
+
+<p>出现重试风暴时，先修可靠性和幂等，不要只切更便宜模型。</p>
+<h3 id="4-失败类型"><a href="#4-失败类型" class="headerlink" title="4. 失败类型"></a>4. 失败类型</h3><p>至少区分认证、限流、过载、超时、连接中断、内容策略、Schema、质量门、工具后置条件和用户取消。不同类型的 billability 与治理动作不同，不能统称 <code>error</code>。</p>
+<h2 id="十一、人工复核：自动化系统最容易漏掉的成本"><a href="#十一、人工复核：自动化系统最容易漏掉的成本" class="headerlink" title="十一、人工复核：自动化系统最容易漏掉的成本"></a>十一、人工复核：自动化系统最容易漏掉的成本</h2><p>人工成本至少包括：</p>
+<ul>
+<li>正常审批或复核分钟数</li>
+<li>纠错、重写和补录</li>
+<li>申诉、退款或事故处理</li>
+<li>标注与质量抽样</li>
+<li>专家升级与等待占用</li>
+<li>培训和规则维护</li>
+</ul>
+<h3 id="1-时间与费率"><a href="#1-时间与费率" class="headerlink" title="1. 时间与费率"></a>1. 时间与费率</h3><p>记录实际 active handling time 与角色费率，不要把排队等待全部算作人工劳动；但等待导致的业务损失可作为单独价值指标。费率可包含工资、福利和管理摊销，必须由财务口径批准。</p>
+<h3 id="2-人工不是失败垃圾桶"><a href="#2-人工不是失败垃圾桶" class="headerlink" title="2. 人工不是失败垃圾桶"></a>2. 人工不是失败垃圾桶</h3><p>“转人工”可能提高质量，却受容量限制。成本模型要关联转人工率、每单处理时间、积压、超时和最终解决率。仅看模型成本下降，可能只是把负担移给客服。</p>
+<h3 id="3-质量调整后的真实比较"><a href="#3-质量调整后的真实比较" class="headerlink" title="3. 质量调整后的真实比较"></a>3. 质量调整后的真实比较</h3><p>方案 A 每任务模型成本低，但 30% 需要人工；方案 B 模型成本高一些，但一次通过率更高。应比较：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(模型 + 检索 + 工具 + 失败 + 人工 + 分摊) / 合格任务</span><br></pre></td></tr></table></figure>
+
+<p>数字必须来自同一观察窗口和任务分布。</p>
+<h2 id="十二、自建推理摊销：GPU-小时价只是成本的一部分"><a href="#十二、自建推理摊销：GPU-小时价只是成本的一部分" class="headerlink" title="十二、自建推理摊销：GPU 小时价只是成本的一部分"></a>十二、自建推理摊销：GPU 小时价只是成本的一部分</h2><h3 id="1-成本池"><a href="#1-成本池" class="headerlink" title="1. 成本池"></a>1. 成本池</h3><p>自建推理至少包含：</p>
+<ul>
+<li>GPU&#x2F;加速器租赁或折旧</li>
+<li>CPU、内存、本地盘和对象存储</li>
+<li>电力、机房和网络</li>
+<li>集群、编排、负载均衡与观测</li>
+<li>模型下载、镜像、冷启动和缓存</li>
+<li>预留但未使用的容量</li>
+<li>工程维护、值班和升级验证</li>
+<li>故障冗余与灾备</li>
+</ul>
+<h3 id="2-容量成本与使用成本"><a href="#2-容量成本与使用成本" class="headerlink" title="2. 容量成本与使用成本"></a>2. 容量成本与使用成本</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">period_effective_pool_cost</span><br><span class="line">= amortized_commitment</span><br><span class="line">+ on_demand_usage</span><br><span class="line">+ platform_and_operations</span><br><span class="line">+ unused_commitment</span><br></pre></td></tr></table></figure>
+
+<p>然后选择分摊因子。按输出 Token 最简单，却可能让长 prefill 的任务少承担；按总 Token 仍忽略模型大小和多模态编码；按 GPU-second 更接近设备占用，却可能忽略 KV 显存长期保留。高精度场景可使用组合权重：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">allocation_weight</span><br><span class="line">= a × gpu_seconds</span><br><span class="line">+ b × prefill_tokens</span><br><span class="line">+ c × decode_tokens</span><br><span class="line">+ d × reserved_kv_token_seconds</span><br></pre></td></tr></table></figure>
+
+<p>系数由成本驱动分析校准，并版本化。复杂方法只有在分配结果足以改变决策时才值得维护。</p>
+<h3 id="3-闲置成本不能消失"><a href="#3-闲置成本不能消失" class="headerlink" title="3. 闲置成本不能消失"></a>3. 闲置成本不能消失</h3><p>将成本只分给实际请求会导致低利用率时单位成本急升，这正是事实。也可以把“业务使用成本”和“平台闲置成本”分开 showback，但两者加总必须等于成本池。不能用理论满载 Token 数做分母，把闲置当作不存在。</p>
+<h3 id="4-自建与-API-的可比边界"><a href="#4-自建与-API-的可比边界" class="headerlink" title="4. 自建与 API 的可比边界"></a>4. 自建与 API 的可比边界</h3><p>比较应使用同一质量、可用性、区域、合规、尾延迟和业务任务。API 价格可能包含托管和弹性，自建成本可能包含长期承诺；只比一百万 Token 单价会遗漏利用率、人工和故障余量。</p>
+<h2 id="十三、价格簿设计：厂商价格是带版本的外部配置"><a href="#十三、价格簿设计：厂商价格是带版本的外部配置" class="headerlink" title="十三、价格簿设计：厂商价格是带版本的外部配置"></a>十三、价格簿设计：厂商价格是带版本的外部配置</h2><h3 id="1-Price-Key"><a href="#1-Price-Key" class="headerlink" title="1. Price Key"></a>1. Price Key</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">provider</span><br><span class="line">product_or_api</span><br><span class="line">model_or_sku</span><br><span class="line">region</span><br><span class="line">service_tier</span><br><span class="line">context_band</span><br><span class="line">modality</span><br><span class="line">usage_kind</span><br><span class="line">unit</span><br><span class="line">currency</span><br><span class="line">valid_from / valid_to</span><br><span class="line">contract_id</span><br></pre></td></tr></table></figure>
+
+<p>缺任何会改变价格的维度，都可能把历史请求套上错误费率。</p>
+<h3 id="2-来源与批准"><a href="#2-来源与批准" class="headerlink" title="2. 来源与批准"></a>2. 来源与批准</h3><p>每版价格记录：官方 URL、抓取时间、人工复核人、合同附件摘要、税前&#x2F;税后、汇率来源和审批状态。公开价格变化不应自动覆盖合同价；合同价也不能公开到不该访问的报表。</p>
+<h3 id="3-价格快照策略"><a href="#3-价格快照策略" class="headerlink" title="3. 价格快照策略"></a>3. 价格快照策略</h3><p>至少在以下时点快照：</p>
+<ul>
+<li>厂商公告或页面变化</li>
+<li>模型&#x2F;产品版本上线</li>
+<li>合同或承诺购买生效</li>
+<li>区域、服务层或上下文档位变化</li>
+<li>账单出现未知 SKU</li>
+</ul>
+<p>代码配置中只引用 <code>price_book_version</code>，不散落单价常量。</p>
+<h3 id="4-价格页面的时间边界"><a href="#4-价格页面的时间边界" class="headerlink" title="4. 价格页面的时间边界"></a>4. 价格页面的时间边界</h3><p>截至 2026-07-26，官方页面展示的模型、缓存、批处理、工具和存储项目会随产品变化。本文参考资料保留这些页面用于核对，但不会把某个单价写成架构事实。实施时应归档组织有权使用的当日快照，并遵守页面和合同条款。</p>
+<h2 id="十四、计价规则：Decimal、单位和舍入不能靠感觉"><a href="#十四、计价规则：Decimal、单位和舍入不能靠感觉" class="headerlink" title="十四、计价规则：Decimal、单位和舍入不能靠感觉"></a>十四、计价规则：Decimal、单位和舍入不能靠感觉</h2><h3 id="1-禁止二进制浮点计钱"><a href="#1-禁止二进制浮点计钱" class="headerlink" title="1. 禁止二进制浮点计钱"></a>1. 禁止二进制浮点计钱</h3><p><code>0.1 + 0.2</code> 的二进制浮点表示不精确。账本使用 <code>Decimal</code> 或数据库定点数，从字符串解析费率和数量。对 Token 这类整数数量仍使用 Decimal 计算金额。</p>
+<h3 id="2-统一单位"><a href="#2-统一单位" class="headerlink" title="2. 统一单位"></a>2. 统一单位</h3><p>供应商可能写 per token、per 1K、per 1M、per call、per second、per GB-day。价格簿应明确 <code>pricing_unit</code> 和 <code>unit_size</code>，规范化时进行量纲检查。<code>token</code> 与 <code>token_hour</code> 不能因名字相近相加。</p>
+<h3 id="3-舍入时机"><a href="#3-舍入时机" class="headerlink" title="3. 舍入时机"></a>3. 舍入时机</h3><p>中间计算保留足够精度，在合同规定的结算层级舍入。每请求先四舍五入到分再求和，会让大量微额请求全部变成零；只在月末舍入又可能与供应商逐项目账单不同。账本同时保留高精度计算额和结算额。</p>
+<h3 id="4-多币种"><a href="#4-多币种" class="headerlink" title="4. 多币种"></a>4. 多币种</h3><p>原币成本、汇率、汇率日期和本位币金额分别记录。不同币种不能直接求和。汇率变化属于财务因素，不应被误判为 Token 优化回归。</p>
+<h2 id="十五、分摊设计：守恒、可解释、可回放"><a href="#十五、分摊设计：守恒、可解释、可回放" class="headerlink" title="十五、分摊设计：守恒、可解释、可回放"></a>十五、分摊设计：守恒、可解释、可回放</h2><h3 id="1-直接归属优先"><a href="#1-直接归属优先" class="headerlink" title="1. 直接归属优先"></a>1. 直接归属优先</h3><p>模型 request、在线检索、工具和人工处理如果已有 task&#x2F;tenant，直接归属，不要再按比例平均。</p>
+<h3 id="2-共享成本分配"><a href="#2-共享成本分配" class="headerlink" title="2. 共享成本分配"></a>2. 共享成本分配</h3><p>常见规则：</p>
+<table>
+<thead>
+<tr>
+<th>成本池</th>
+<th>可选因子</th>
+<th>风险</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>GPU 池</td>
+<td>GPU-second、Token、KV token-second</td>
+<td>指标缺失时可能偏向某类任务</td>
+</tr>
+<tr>
+<td>Vector DB 容量</td>
+<td>索引字节、查询量、租户文档量</td>
+<td>公共索引收益难划分</td>
+</tr>
+<tr>
+<td>平台基础设施</td>
+<td>活跃 task、直接成本比例、固定配额</td>
+<td>小租户可能被不合理分摊</td>
+</tr>
+<tr>
+<td>人工质检</td>
+<td>抽样任务或业务线</td>
+<td>公共改进工作需单列</td>
+</tr>
+<tr>
+<td>预付承诺闲置</td>
+<td>预留份额或平台中心</td>
+<td>全部分给活跃请求会扭曲边际成本</td>
+</tr>
+</tbody></table>
+<h3 id="3-分摊事件"><a href="#3-分摊事件" class="headerlink" title="3. 分摊事件"></a>3. 分摊事件</h3><figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;allocation_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;alloc-...&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;origin_entry_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;cost-shared-gpu&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;method_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;gpu_seconds_v3&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;target_task_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;task-...&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;weight&quot;</span><span class="punctuation">:</span> <span class="string">&quot;0.41&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;allocated_effective_cost&quot;</span><span class="punctuation">:</span> <span class="string">&quot;12.3401&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;calculated_at&quot;</span><span class="punctuation">:</span> <span class="string">&quot;...&quot;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>若规则更新，生成新 allocation version；历史财务已关闭时按更正流程处理。</p>
+<h3 id="4-守恒检查"><a href="#4-守恒检查" class="headerlink" title="4. 守恒检查"></a>4. 守恒检查</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Σ allocated_cost + unallocated_remainder = origin_effective_cost</span><br></pre></td></tr></table></figure>
+
+<p>任何不等都阻止发布到 chargeback。比例总和为 1 仍不够，还要检查同一来源是否重复参与两次分摊。</p>
+<h2 id="十六、Showback-与-Chargeback：透明和结算不是同一动作"><a href="#十六、Showback-与-Chargeback：透明和结算不是同一动作" class="headerlink" title="十六、Showback 与 Chargeback：透明和结算不是同一动作"></a>十六、Showback 与 Chargeback：透明和结算不是同一动作</h2><p><code>showback</code> 向团队展示其用量与分摊成本，不实际转移预算；适合先发现标签缺失和规则争议。<code>chargeback</code> 将金额记入成本中心或内部结算，对数据完整性、审批、账期冻结和更正要求更高。</p>
+<p>建议演进：</p>
+<ol>
+<li>先做覆盖率和对账，标出 estimated 与 unallocated。</li>
+<li>运行 showback，让业务验证归属和分摊解释。</li>
+<li>对稳定直接成本启用 chargeback。</li>
+<li>对高争议共享成本保留平台中心或只 showback。</li>
+<li>账期关闭后使用冲销与补充分录，不静默改历史。</li>
+</ol>
+<p>成本报表必须允许从 tenant 下钻到 task、run、request、usage event 和价格版本，同时受权限控制。只给总额而无法解释，会让 chargeback 失去信任。</p>
+<h2 id="十七、预算门禁：事前估算、运行中预留、事后实算"><a href="#十七、预算门禁：事前估算、运行中预留、事后实算" class="headerlink" title="十七、预算门禁：事前估算、运行中预留、事后实算"></a>十七、预算门禁：事前估算、运行中预留、事后实算</h2><h3 id="1-事前估算"><a href="#1-事前估算" class="headerlink" title="1. 事前估算"></a>1. 事前估算</h3><p>对一个 task，估算：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">estimated_cost</span><br><span class="line">= estimated_input</span><br><span class="line">+ estimated_output_or_reasoning</span><br><span class="line">+ expected_cache</span><br><span class="line">+ expected_retrieval_and_tools</span><br><span class="line">+ expected_retry</span><br><span class="line">+ expected_human_review</span><br><span class="line">+ allocated_platform_reserve</span><br></pre></td></tr></table></figure>
+
+<p>输入可在调用前 tokenizer 估算；输出、Agent 步数和工具次数是不确定变量，应使用历史条件分布，例如按任务类型给 P50&#x2F;P95，而不是一个均值。</p>
+<h3 id="2-预算预留"><a href="#2-预算预留" class="headerlink" title="2. 预算预留"></a>2. 预算预留</h3><p>异步并发步骤启动前先预留可能成本，防止多个分支各自看到同一剩余额度。步骤结束后以实算释放差额。预留服务需要幂等键、TTL 和崩溃回收。</p>
+<h3 id="3-运行中门禁"><a href="#3-运行中门禁" class="headerlink" title="3. 运行中门禁"></a>3. 运行中门禁</h3><p>每个循环更新：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">remaining_budget</span><br><span class="line">= task_budget - posted_cost - active_reservations</span><br></pre></td></tr></table></figure>
+
+<p>预算不足时可以：停止非必要扩展检索、降低候选数、请求用户缩小范围、转人工审批，或明确终止。不能截断到一半后把不完整结果当成功。</p>
+<h3 id="4-质量底线优先"><a href="#4-质量底线优先" class="headerlink" title="4. 质量底线优先"></a>4. 质量底线优先</h3><p>候选路由即使预算内，只要其目标任务质量、安全或能力低于最低契约，就不能自动使用。预算门禁返回的是 <code>authorized_to_spend</code>，不是 <code>business_correct</code>。</p>
+<h3 id="5-租户周期预算"><a href="#5-租户周期预算" class="headerlink" title="5. 租户周期预算"></a>5. 租户周期预算</h3><p>使用原子扣减或有序事件，避免并发超卖。预算状态与最终账本允许短暂差异，但要有 reconciliation：丢失预留、迟到 usage 和价格调整都需修正。</p>
+<h2 id="十八、估算误差：预算系统必须承认自己会错"><a href="#十八、估算误差：预算系统必须承认自己会错" class="headerlink" title="十八、估算误差：预算系统必须承认自己会错"></a>十八、估算误差：预算系统必须承认自己会错</h2><p>至少报告：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">signed_error = actual - estimate</span><br><span class="line">relative_error = (actual - estimate) / estimate</span><br><span class="line">absolute_percentage_error = abs(actual - estimate) / actual</span><br><span class="line">interval_coverage = actual 是否落在预测 P05-P95</span><br></pre></td></tr></table></figure>
+
+<p>对 actual&#x3D;0 或 estimate&#x3D;0 需单独定义，避免除零。总体可使用 WAPE，并按任务、模型、路由、输出长度和失败类型切片。</p>
+<h3 id="1-偏低估的来源"><a href="#1-偏低估的来源" class="headerlink" title="1. 偏低估的来源"></a>1. 偏低估的来源</h3><ul>
+<li>实际输出或 reasoning 长于预计</li>
+<li>Agent 循环、工具重试和恢复分支</li>
+<li>cache 命中低于预计</li>
+<li>价格簿漏掉工具、网络或存储</li>
+<li>人工复核晚到</li>
+</ul>
+<h3 id="2-偏高估的来源"><a href="#2-偏高估的来源" class="headerlink" title="2. 偏高估的来源"></a>2. 偏高估的来源</h3><ul>
+<li>提前满足停止条件</li>
+<li>cache 命中更高</li>
+<li>路由到更低费率层</li>
+<li>用户取消且供应商未产生完整用量</li>
+<li>预留按最坏上限，实际较短</li>
+</ul>
+<h3 id="3-校准动作"><a href="#3-校准动作" class="headerlink" title="3. 校准动作"></a>3. 校准动作</h3><p>预测分布按最近稳定窗口更新，但价格和策略变更后分段建模。只把 P95 乘一个越来越大的安全系数，会降低预算利用率；应修复最主要误差来源。</p>
+<h2 id="十九、无需-API-Key-的可执行-Decimal-成本账本"><a href="#十九、无需-API-Key-的可执行-Decimal-成本账本" class="headerlink" title="十九、无需 API Key 的可执行 Decimal 成本账本"></a>十九、无需 API Key 的可执行 Decimal 成本账本</h2><p>下面脚本只使用 Python 标准库。价格簿中的所有费率与用量均为<strong>构造数据</strong>，不对应 OpenAI、Anthropic、Google 或任何真实合同。它演示：</p>
+<ul>
+<li>用 <code>Decimal</code> 计算 list&#x2F;effective cost</li>
+<li>通过有效日期选择价格版本</li>
+<li>保存 request&#x2F;run&#x2F;task&#x2F;tenant 与成功&#x2F;失败状态</li>
+<li>按任意层级聚合并统计失败浪费</li>
+<li>对共享 GPU 成本做守恒分摊</li>
+<li>计算质量调整单位任务成本</li>
+<li>测试重复事件、未知价格、预算超限和质量底线</li>
+</ul>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br><span class="line">146</span><br><span class="line">147</span><br><span class="line">148</span><br><span class="line">149</span><br><span class="line">150</span><br><span class="line">151</span><br><span class="line">152</span><br><span class="line">153</span><br><span class="line">154</span><br><span class="line">155</span><br><span class="line">156</span><br><span class="line">157</span><br><span class="line">158</span><br><span class="line">159</span><br><span class="line">160</span><br><span class="line">161</span><br><span class="line">162</span><br><span class="line">163</span><br><span class="line">164</span><br><span class="line">165</span><br><span class="line">166</span><br><span class="line">167</span><br><span class="line">168</span><br><span class="line">169</span><br><span class="line">170</span><br><span class="line">171</span><br><span class="line">172</span><br><span class="line">173</span><br><span class="line">174</span><br><span class="line">175</span><br><span class="line">176</span><br><span class="line">177</span><br><span class="line">178</span><br><span class="line">179</span><br><span class="line">180</span><br><span class="line">181</span><br><span class="line">182</span><br><span class="line">183</span><br><span class="line">184</span><br><span class="line">185</span><br><span class="line">186</span><br><span class="line">187</span><br><span class="line">188</span><br><span class="line">189</span><br><span class="line">190</span><br><span class="line">191</span><br><span class="line">192</span><br><span class="line">193</span><br><span class="line">194</span><br><span class="line">195</span><br><span class="line">196</span><br><span class="line">197</span><br><span class="line">198</span><br><span class="line">199</span><br><span class="line">200</span><br><span class="line">201</span><br><span class="line">202</span><br><span class="line">203</span><br><span class="line">204</span><br><span class="line">205</span><br><span class="line">206</span><br><span class="line">207</span><br><span class="line">208</span><br><span class="line">209</span><br><span class="line">210</span><br><span class="line">211</span><br><span class="line">212</span><br><span class="line">213</span><br><span class="line">214</span><br><span class="line">215</span><br><span class="line">216</span><br><span class="line">217</span><br><span class="line">218</span><br><span class="line">219</span><br><span class="line">220</span><br><span class="line">221</span><br><span class="line">222</span><br><span class="line">223</span><br><span class="line">224</span><br><span class="line">225</span><br><span class="line">226</span><br><span class="line">227</span><br><span class="line">228</span><br><span class="line">229</span><br><span class="line">230</span><br><span class="line">231</span><br><span class="line">232</span><br><span class="line">233</span><br><span class="line">234</span><br><span class="line">235</span><br><span class="line">236</span><br><span class="line">237</span><br><span class="line">238</span><br><span class="line">239</span><br><span class="line">240</span><br><span class="line">241</span><br><span class="line">242</span><br><span class="line">243</span><br><span class="line">244</span><br><span class="line">245</span><br><span class="line">246</span><br><span class="line">247</span><br><span class="line">248</span><br><span class="line">249</span><br><span class="line">250</span><br><span class="line">251</span><br><span class="line">252</span><br><span class="line">253</span><br><span class="line">254</span><br><span class="line">255</span><br><span class="line">256</span><br><span class="line">257</span><br><span class="line">258</span><br><span class="line">259</span><br><span class="line">260</span><br><span class="line">261</span><br><span class="line">262</span><br><span class="line">263</span><br><span class="line">264</span><br><span class="line">265</span><br><span class="line">266</span><br><span class="line">267</span><br><span class="line">268</span><br><span class="line">269</span><br><span class="line">270</span><br><span class="line">271</span><br><span class="line">272</span><br><span class="line">273</span><br><span class="line">274</span><br><span class="line">275</span><br><span class="line">276</span><br><span class="line">277</span><br><span class="line">278</span><br><span class="line">279</span><br><span class="line">280</span><br><span class="line">281</span><br><span class="line">282</span><br><span class="line">283</span><br><span class="line">284</span><br><span class="line">285</span><br><span class="line">286</span><br><span class="line">287</span><br><span class="line">288</span><br><span class="line">289</span><br><span class="line">290</span><br><span class="line">291</span><br><span class="line">292</span><br><span class="line">293</span><br><span class="line">294</span><br><span class="line">295</span><br><span class="line">296</span><br><span class="line">297</span><br><span class="line">298</span><br><span class="line">299</span><br><span class="line">300</span><br><span class="line">301</span><br><span class="line">302</span><br><span class="line">303</span><br><span class="line">304</span><br><span class="line">305</span><br><span class="line">306</span><br><span class="line">307</span><br><span class="line">308</span><br><span class="line">309</span><br><span class="line">310</span><br><span class="line">311</span><br><span class="line">312</span><br><span class="line">313</span><br><span class="line">314</span><br><span class="line">315</span><br><span class="line">316</span><br><span class="line">317</span><br><span class="line">318</span><br><span class="line">319</span><br><span class="line">320</span><br><span class="line">321</span><br><span class="line">322</span><br><span class="line">323</span><br><span class="line">324</span><br><span class="line">325</span><br><span class="line">326</span><br><span class="line">327</span><br><span class="line">328</span><br><span class="line">329</span><br><span class="line">330</span><br><span class="line">331</span><br><span class="line">332</span><br><span class="line">333</span><br><span class="line">334</span><br><span class="line">335</span><br><span class="line">336</span><br><span class="line">337</span><br><span class="line">338</span><br><span class="line">339</span><br><span class="line">340</span><br><span class="line">341</span><br><span class="line">342</span><br><span class="line">343</span><br><span class="line">344</span><br><span class="line">345</span><br><span class="line">346</span><br><span class="line">347</span><br><span class="line">348</span><br><span class="line">349</span><br><span class="line">350</span><br><span class="line">351</span><br><span class="line">352</span><br><span class="line">353</span><br><span class="line">354</span><br><span class="line">355</span><br><span class="line">356</span><br><span class="line">357</span><br><span class="line">358</span><br><span class="line">359</span><br><span class="line">360</span><br><span class="line">361</span><br><span class="line">362</span><br><span class="line">363</span><br><span class="line">364</span><br><span class="line">365</span><br><span class="line">366</span><br><span class="line">367</span><br><span class="line">368</span><br><span class="line">369</span><br><span class="line">370</span><br><span class="line">371</span><br><span class="line">372</span><br><span class="line">373</span><br><span class="line">374</span><br><span class="line">375</span><br><span class="line">376</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> __future__ <span class="keyword">import</span> annotations</span><br><span class="line"></span><br><span class="line"><span class="keyword">from</span> dataclasses <span class="keyword">import</span> dataclass</span><br><span class="line"><span class="keyword">from</span> datetime <span class="keyword">import</span> date</span><br><span class="line"><span class="keyword">from</span> decimal <span class="keyword">import</span> Decimal, getcontext</span><br><span class="line"><span class="keyword">from</span> typing <span class="keyword">import</span> Iterable, <span class="type">Optional</span></span><br><span class="line"><span class="keyword">import</span> sys</span><br><span class="line"><span class="keyword">import</span> unittest</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">getcontext().prec = <span class="number">28</span></span><br><span class="line">D = Decimal</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Price</span>:</span><br><span class="line">    price_id: <span class="built_in">str</span></span><br><span class="line">    usage_kind: <span class="built_in">str</span></span><br><span class="line">    unit: <span class="built_in">str</span></span><br><span class="line">    currency: <span class="built_in">str</span></span><br><span class="line">    valid_from: date</span><br><span class="line">    valid_to: date</span><br><span class="line">    list_unit_price: Decimal</span><br><span class="line">    effective_unit_price: Decimal</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">UsageEvent</span>:</span><br><span class="line">    event_id: <span class="built_in">str</span></span><br><span class="line">    request_id: <span class="type">Optional</span>[<span class="built_in">str</span>]</span><br><span class="line">    run_id: <span class="type">Optional</span>[<span class="built_in">str</span>]</span><br><span class="line">    task_id: <span class="type">Optional</span>[<span class="built_in">str</span>]</span><br><span class="line">    tenant_id: <span class="built_in">str</span></span><br><span class="line">    usage_kind: <span class="built_in">str</span></span><br><span class="line">    quantity: Decimal</span><br><span class="line">    unit: <span class="built_in">str</span></span><br><span class="line">    occurred_on: date</span><br><span class="line">    status: <span class="built_in">str</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">LedgerEntry</span>:</span><br><span class="line">    event: UsageEvent</span><br><span class="line">    price_id: <span class="built_in">str</span></span><br><span class="line">    currency: <span class="built_in">str</span></span><br><span class="line">    list_cost: Decimal</span><br><span class="line">    effective_cost: Decimal</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Allocation</span>:</span><br><span class="line">    origin_event_id: <span class="built_in">str</span></span><br><span class="line">    target_task_id: <span class="built_in">str</span></span><br><span class="line">    method_id: <span class="built_in">str</span></span><br><span class="line">    weight: Decimal</span><br><span class="line">    allocated_effective_cost: Decimal</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">PriceBook</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, prices: Iterable[Price]</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.prices = <span class="built_in">tuple</span>(prices)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">resolve</span>(<span class="params">self, event: UsageEvent</span>) -&gt; Price:</span><br><span class="line">        matches = [</span><br><span class="line">            price</span><br><span class="line">            <span class="keyword">for</span> price <span class="keyword">in</span> <span class="variable language_">self</span>.prices</span><br><span class="line">            <span class="keyword">if</span> price.usage_kind == event.usage_kind</span><br><span class="line">            <span class="keyword">and</span> price.unit == event.unit</span><br><span class="line">            <span class="keyword">and</span> price.valid_from &lt;= event.occurred_on &lt; price.valid_to</span><br><span class="line">        ]</span><br><span class="line">        <span class="keyword">if</span> <span class="built_in">len</span>(matches) != <span class="number">1</span>:</span><br><span class="line">            <span class="keyword">raise</span> ValueError(</span><br><span class="line">                <span class="string">f&quot;<span class="subst">&#123;event.event_id&#125;</span>: expected one price, found <span class="subst">&#123;<span class="built_in">len</span>(matches)&#125;</span>&quot;</span></span><br><span class="line">            )</span><br><span class="line">        <span class="keyword">return</span> matches[<span class="number">0</span>]</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Ledger</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, price_book: PriceBook</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.price_book = price_book</span><br><span class="line">        <span class="variable language_">self</span>.entries: <span class="built_in">list</span>[LedgerEntry] = []</span><br><span class="line">        <span class="variable language_">self</span>._event_ids: <span class="built_in">set</span>[<span class="built_in">str</span>] = <span class="built_in">set</span>()</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">post</span>(<span class="params">self, event: UsageEvent</span>) -&gt; LedgerEntry:</span><br><span class="line">        <span class="keyword">if</span> event.event_id <span class="keyword">in</span> <span class="variable language_">self</span>._event_ids:</span><br><span class="line">            <span class="keyword">raise</span> ValueError(<span class="string">f&quot;duplicate event_id: <span class="subst">&#123;event.event_id&#125;</span>&quot;</span>)</span><br><span class="line">        <span class="keyword">if</span> event.quantity &lt; <span class="number">0</span>:</span><br><span class="line">            <span class="keyword">raise</span> ValueError(<span class="string">f&quot;<span class="subst">&#123;event.event_id&#125;</span>: quantity must be non-negative&quot;</span>)</span><br><span class="line">        price = <span class="variable language_">self</span>.price_book.resolve(event)</span><br><span class="line">        entry = LedgerEntry(</span><br><span class="line">            event=event,</span><br><span class="line">            price_id=price.price_id,</span><br><span class="line">            currency=price.currency,</span><br><span class="line">            list_cost=event.quantity * price.list_unit_price,</span><br><span class="line">            effective_cost=event.quantity * price.effective_unit_price,</span><br><span class="line">        )</span><br><span class="line">        <span class="variable language_">self</span>.entries.append(entry)</span><br><span class="line">        <span class="variable language_">self</span>._event_ids.add(event.event_id)</span><br><span class="line">        <span class="keyword">return</span> entry</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">total</span>(<span class="params">self, cost_field: <span class="built_in">str</span> = <span class="string">&quot;effective_cost&quot;</span></span>) -&gt; Decimal:</span><br><span class="line">        <span class="keyword">return</span> <span class="built_in">sum</span>((<span class="built_in">getattr</span>(e, cost_field) <span class="keyword">for</span> e <span class="keyword">in</span> <span class="variable language_">self</span>.entries), D(<span class="string">&quot;0&quot;</span>))</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">totals_by</span>(<span class="params">self, event_field: <span class="built_in">str</span></span>) -&gt; <span class="built_in">dict</span>[<span class="built_in">str</span>, Decimal]:</span><br><span class="line">        totals: <span class="built_in">dict</span>[<span class="built_in">str</span>, Decimal] = &#123;&#125;</span><br><span class="line">        <span class="keyword">for</span> entry <span class="keyword">in</span> <span class="variable language_">self</span>.entries:</span><br><span class="line">            key = <span class="built_in">getattr</span>(entry.event, event_field)</span><br><span class="line">            <span class="keyword">if</span> key <span class="keyword">is</span> <span class="literal">None</span>:</span><br><span class="line">                <span class="keyword">continue</span></span><br><span class="line">            totals[key] = totals.get(key, D(<span class="string">&quot;0&quot;</span>)) + entry.effective_cost</span><br><span class="line">        <span class="keyword">return</span> totals</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">failure_waste</span>(<span class="params">self</span>) -&gt; Decimal:</span><br><span class="line">        <span class="keyword">return</span> <span class="built_in">sum</span>(</span><br><span class="line">            (e.effective_cost <span class="keyword">for</span> e <span class="keyword">in</span> <span class="variable language_">self</span>.entries <span class="keyword">if</span> e.event.status != <span class="string">&quot;success&quot;</span>),</span><br><span class="line">            D(<span class="string">&quot;0&quot;</span>),</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">allocate_shared</span>(<span class="params"></span></span><br><span class="line"><span class="params">    origin: LedgerEntry,</span></span><br><span class="line"><span class="params">    task_weights: <span class="built_in">dict</span>[<span class="built_in">str</span>, Decimal],</span></span><br><span class="line"><span class="params">    method_id: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params"></span>) -&gt; <span class="built_in">tuple</span>[Allocation, ...]:</span><br><span class="line">    <span class="keyword">if</span> origin.event.task_id <span class="keyword">is</span> <span class="keyword">not</span> <span class="literal">None</span>:</span><br><span class="line">        <span class="keyword">raise</span> ValueError(<span class="string">&quot;origin must be a shared entry without task_id&quot;</span>)</span><br><span class="line">    total_weight = <span class="built_in">sum</span>(task_weights.values(), D(<span class="string">&quot;0&quot;</span>))</span><br><span class="line">    <span class="keyword">if</span> total_weight &lt;= <span class="number">0</span> <span class="keyword">or</span> <span class="built_in">any</span>(weight &lt; <span class="number">0</span> <span class="keyword">for</span> weight <span class="keyword">in</span> task_weights.values()):</span><br><span class="line">        <span class="keyword">raise</span> ValueError(<span class="string">&quot;allocation weights must be non-negative with positive sum&quot;</span>)</span><br><span class="line"></span><br><span class="line">    allocations = <span class="built_in">tuple</span>(</span><br><span class="line">        Allocation(</span><br><span class="line">            origin_event_id=origin.event.event_id,</span><br><span class="line">            target_task_id=task_id,</span><br><span class="line">            method_id=method_id,</span><br><span class="line">            weight=weight / total_weight,</span><br><span class="line">            allocated_effective_cost=origin.effective_cost * weight / total_weight,</span><br><span class="line">        )</span><br><span class="line">        <span class="keyword">for</span> task_id, weight <span class="keyword">in</span> <span class="built_in">sorted</span>(task_weights.items())</span><br><span class="line">    )</span><br><span class="line">    allocated_sum = <span class="built_in">sum</span>(</span><br><span class="line">        (item.allocated_effective_cost <span class="keyword">for</span> item <span class="keyword">in</span> allocations), D(<span class="string">&quot;0&quot;</span>)</span><br><span class="line">    )</span><br><span class="line">    <span class="keyword">if</span> allocated_sum != origin.effective_cost:</span><br><span class="line">        <span class="keyword">raise</span> AssertionError(<span class="string">&quot;allocation must conserve effective cost&quot;</span>)</span><br><span class="line">    <span class="keyword">return</span> allocations</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">quality_adjusted_unit_cost</span>(<span class="params"></span></span><br><span class="line"><span class="params">    allocated_task_costs: <span class="built_in">dict</span>[<span class="built_in">str</span>, Decimal],</span></span><br><span class="line"><span class="params">    accepted_task_ids: <span class="built_in">set</span>[<span class="built_in">str</span>],</span></span><br><span class="line"><span class="params"></span>) -&gt; Decimal:</span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> accepted_task_ids:</span><br><span class="line">        <span class="keyword">raise</span> ValueError(<span class="string">&quot;at least one accepted task is required&quot;</span>)</span><br><span class="line">    unknown = accepted_task_ids - allocated_task_costs.keys()</span><br><span class="line">    <span class="keyword">if</span> unknown:</span><br><span class="line">        <span class="keyword">raise</span> ValueError(<span class="string">f&quot;accepted tasks have no cost: <span class="subst">&#123;<span class="built_in">sorted</span>(unknown)&#125;</span>&quot;</span>)</span><br><span class="line">    cohort_cost = <span class="built_in">sum</span>(allocated_task_costs.values(), D(<span class="string">&quot;0&quot;</span>))</span><br><span class="line">    <span class="keyword">return</span> cohort_cost / D(<span class="built_in">len</span>(accepted_task_ids))</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">BudgetExceeded</span>(<span class="title class_ inherited__">RuntimeError</span>):</span><br><span class="line">    <span class="keyword">pass</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">QualityFloorBreach</span>(<span class="title class_ inherited__">RuntimeError</span>):</span><br><span class="line">    <span class="keyword">pass</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">authorize_budget</span>(<span class="params"></span></span><br><span class="line"><span class="params">    *,</span></span><br><span class="line"><span class="params">    posted_cost: Decimal,</span></span><br><span class="line"><span class="params">    active_reservations: Decimal,</span></span><br><span class="line"><span class="params">    new_estimate: Decimal,</span></span><br><span class="line"><span class="params">    task_budget: Decimal,</span></span><br><span class="line"><span class="params">    candidate_quality: Decimal,</span></span><br><span class="line"><span class="params">    minimum_quality: Decimal,</span></span><br><span class="line"><span class="params"></span>) -&gt; Decimal:</span><br><span class="line">    <span class="keyword">if</span> candidate_quality &lt; minimum_quality:</span><br><span class="line">        <span class="keyword">raise</span> QualityFloorBreach(<span class="string">&quot;candidate is below the quality floor&quot;</span>)</span><br><span class="line">    projected = posted_cost + active_reservations + new_estimate</span><br><span class="line">    <span class="keyword">if</span> projected &gt; task_budget:</span><br><span class="line">        <span class="keyword">raise</span> BudgetExceeded(<span class="string">f&quot;projected=<span class="subst">&#123;projected&#125;</span> budget=<span class="subst">&#123;task_budget&#125;</span>&quot;</span>)</span><br><span class="line">    <span class="keyword">return</span> task_budget - projected</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">DAY = date(<span class="number">2026</span>, <span class="number">7</span>, <span class="number">26</span>)</span><br><span class="line">NEXT = date(<span class="number">2027</span>, <span class="number">1</span>, <span class="number">1</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">synthetic_price_book</span>() -&gt; PriceBook:</span><br><span class="line">    <span class="comment"># All rates below are arbitrary fixtures, not vendor prices.</span></span><br><span class="line">    rows = (</span><br><span class="line">        (<span class="string">&quot;uncached_input_token&quot;</span>, <span class="string">&quot;token&quot;</span>, <span class="string">&quot;0.000002&quot;</span>, <span class="string">&quot;0.0000018&quot;</span>),</span><br><span class="line">        (<span class="string">&quot;cache_read_input_token&quot;</span>, <span class="string">&quot;token&quot;</span>, <span class="string">&quot;0.0000005&quot;</span>, <span class="string">&quot;0.0000004&quot;</span>),</span><br><span class="line">        (<span class="string">&quot;cache_write_input_token&quot;</span>, <span class="string">&quot;token&quot;</span>, <span class="string">&quot;0.0000025&quot;</span>, <span class="string">&quot;0.0000022&quot;</span>),</span><br><span class="line">        (<span class="string">&quot;cache_storage_token_hour&quot;</span>, <span class="string">&quot;token_hour&quot;</span>, <span class="string">&quot;0.00000001&quot;</span>, <span class="string">&quot;0.000000009&quot;</span>),</span><br><span class="line">        (<span class="string">&quot;visible_output_token&quot;</span>, <span class="string">&quot;token&quot;</span>, <span class="string">&quot;0.000008&quot;</span>, <span class="string">&quot;0.000007&quot;</span>),</span><br><span class="line">        (<span class="string">&quot;reasoning_token&quot;</span>, <span class="string">&quot;token&quot;</span>, <span class="string">&quot;0.000003&quot;</span>, <span class="string">&quot;0.0000028&quot;</span>),</span><br><span class="line">        (<span class="string">&quot;embedding_token&quot;</span>, <span class="string">&quot;token&quot;</span>, <span class="string">&quot;0.0000001&quot;</span>, <span class="string">&quot;0.00000008&quot;</span>),</span><br><span class="line">        (<span class="string">&quot;rerank_document&quot;</span>, <span class="string">&quot;document&quot;</span>, <span class="string">&quot;0.00002&quot;</span>, <span class="string">&quot;0.000018&quot;</span>),</span><br><span class="line">        (<span class="string">&quot;vector_query&quot;</span>, <span class="string">&quot;query&quot;</span>, <span class="string">&quot;0.0004&quot;</span>, <span class="string">&quot;0.00035&quot;</span>),</span><br><span class="line">        (<span class="string">&quot;tool_call&quot;</span>, <span class="string">&quot;call&quot;</span>, <span class="string">&quot;0.002&quot;</span>, <span class="string">&quot;0.0018&quot;</span>),</span><br><span class="line">        (<span class="string">&quot;network_gb&quot;</span>, <span class="string">&quot;gb&quot;</span>, <span class="string">&quot;0.08&quot;</span>, <span class="string">&quot;0.06&quot;</span>),</span><br><span class="line">        (<span class="string">&quot;human_minute&quot;</span>, <span class="string">&quot;minute&quot;</span>, <span class="string">&quot;0.50&quot;</span>, <span class="string">&quot;0.50&quot;</span>),</span><br><span class="line">        (<span class="string">&quot;gpu_second&quot;</span>, <span class="string">&quot;second&quot;</span>, <span class="string">&quot;0.0008&quot;</span>, <span class="string">&quot;0.00065&quot;</span>),</span><br><span class="line">    )</span><br><span class="line">    <span class="keyword">return</span> PriceBook(</span><br><span class="line">        Price(</span><br><span class="line">            price_id=<span class="string">f&quot;fixture-v1-<span class="subst">&#123;kind&#125;</span>&quot;</span>,</span><br><span class="line">            usage_kind=kind,</span><br><span class="line">            unit=unit,</span><br><span class="line">            currency=<span class="string">&quot;USD&quot;</span>,</span><br><span class="line">            valid_from=DAY,</span><br><span class="line">            valid_to=NEXT,</span><br><span class="line">            list_unit_price=D(list_rate),</span><br><span class="line">            effective_unit_price=D(effective_rate),</span><br><span class="line">        )</span><br><span class="line">        <span class="keyword">for</span> kind, unit, list_rate, effective_rate <span class="keyword">in</span> rows</span><br><span class="line">    )</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">event</span>(<span class="params"></span></span><br><span class="line"><span class="params">    event_id: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">    request_id: <span class="type">Optional</span>[<span class="built_in">str</span>],</span></span><br><span class="line"><span class="params">    run_id: <span class="type">Optional</span>[<span class="built_in">str</span>],</span></span><br><span class="line"><span class="params">    task_id: <span class="type">Optional</span>[<span class="built_in">str</span>],</span></span><br><span class="line"><span class="params">    tenant_id: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">    kind: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">    quantity: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">    unit: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">    status: <span class="built_in">str</span> = <span class="string">&quot;success&quot;</span>,</span></span><br><span class="line"><span class="params"></span>) -&gt; UsageEvent:</span><br><span class="line">    <span class="keyword">return</span> UsageEvent(</span><br><span class="line">        event_id, request_id, run_id, task_id, tenant_id,</span><br><span class="line">        kind, D(quantity), unit, DAY, status,</span><br><span class="line">    )</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">synthetic_events</span>() -&gt; <span class="built_in">tuple</span>[UsageEvent, ...]:</span><br><span class="line">    <span class="keyword">return</span> (</span><br><span class="line">        event(<span class="string">&quot;e01&quot;</span>, <span class="string">&quot;req-a2&quot;</span>, <span class="string">&quot;run-a&quot;</span>, <span class="string">&quot;task-a&quot;</span>, <span class="string">&quot;tenant-blue&quot;</span>, <span class="string">&quot;uncached_input_token&quot;</span>, <span class="string">&quot;1000&quot;</span>, <span class="string">&quot;token&quot;</span>),</span><br><span class="line">        event(<span class="string">&quot;e02&quot;</span>, <span class="string">&quot;req-a2&quot;</span>, <span class="string">&quot;run-a&quot;</span>, <span class="string">&quot;task-a&quot;</span>, <span class="string">&quot;tenant-blue&quot;</span>, <span class="string">&quot;visible_output_token&quot;</span>, <span class="string">&quot;200&quot;</span>, <span class="string">&quot;token&quot;</span>),</span><br><span class="line">        event(<span class="string">&quot;e03&quot;</span>, <span class="string">&quot;req-a2&quot;</span>, <span class="string">&quot;run-a&quot;</span>, <span class="string">&quot;task-a&quot;</span>, <span class="string">&quot;tenant-blue&quot;</span>, <span class="string">&quot;reasoning_token&quot;</span>, <span class="string">&quot;80&quot;</span>, <span class="string">&quot;token&quot;</span>),</span><br><span class="line">        event(<span class="string">&quot;e04&quot;</span>, <span class="string">&quot;req-a2&quot;</span>, <span class="string">&quot;run-a&quot;</span>, <span class="string">&quot;task-a&quot;</span>, <span class="string">&quot;tenant-blue&quot;</span>, <span class="string">&quot;cache_write_input_token&quot;</span>, <span class="string">&quot;800&quot;</span>, <span class="string">&quot;token&quot;</span>),</span><br><span class="line">        event(<span class="string">&quot;e05&quot;</span>, <span class="string">&quot;req-a2&quot;</span>, <span class="string">&quot;run-a&quot;</span>, <span class="string">&quot;task-a&quot;</span>, <span class="string">&quot;tenant-blue&quot;</span>, <span class="string">&quot;embedding_token&quot;</span>, <span class="string">&quot;500&quot;</span>, <span class="string">&quot;token&quot;</span>),</span><br><span class="line">        event(<span class="string">&quot;e06&quot;</span>, <span class="string">&quot;req-a2&quot;</span>, <span class="string">&quot;run-a&quot;</span>, <span class="string">&quot;task-a&quot;</span>, <span class="string">&quot;tenant-blue&quot;</span>, <span class="string">&quot;rerank_document&quot;</span>, <span class="string">&quot;20&quot;</span>, <span class="string">&quot;document&quot;</span>),</span><br><span class="line">        event(<span class="string">&quot;e07&quot;</span>, <span class="string">&quot;req-a2&quot;</span>, <span class="string">&quot;run-a&quot;</span>, <span class="string">&quot;task-a&quot;</span>, <span class="string">&quot;tenant-blue&quot;</span>, <span class="string">&quot;vector_query&quot;</span>, <span class="string">&quot;1&quot;</span>, <span class="string">&quot;query&quot;</span>),</span><br><span class="line">        event(<span class="string">&quot;e08&quot;</span>, <span class="string">&quot;req-a2&quot;</span>, <span class="string">&quot;run-a&quot;</span>, <span class="string">&quot;task-a&quot;</span>, <span class="string">&quot;tenant-blue&quot;</span>, <span class="string">&quot;tool_call&quot;</span>, <span class="string">&quot;2&quot;</span>, <span class="string">&quot;call&quot;</span>),</span><br><span class="line">        event(<span class="string">&quot;e09&quot;</span>, <span class="string">&quot;req-a2&quot;</span>, <span class="string">&quot;run-a&quot;</span>, <span class="string">&quot;task-a&quot;</span>, <span class="string">&quot;tenant-blue&quot;</span>, <span class="string">&quot;network_gb&quot;</span>, <span class="string">&quot;0.01&quot;</span>, <span class="string">&quot;gb&quot;</span>),</span><br><span class="line">        event(<span class="string">&quot;e10&quot;</span>, <span class="string">&quot;req-a1&quot;</span>, <span class="string">&quot;run-a&quot;</span>, <span class="string">&quot;task-a&quot;</span>, <span class="string">&quot;tenant-blue&quot;</span>, <span class="string">&quot;uncached_input_token&quot;</span>, <span class="string">&quot;600&quot;</span>, <span class="string">&quot;token&quot;</span>, <span class="string">&quot;failed&quot;</span>),</span><br><span class="line">        event(<span class="string">&quot;e11&quot;</span>, <span class="string">&quot;req-b1&quot;</span>, <span class="string">&quot;run-b&quot;</span>, <span class="string">&quot;task-b&quot;</span>, <span class="string">&quot;tenant-green&quot;</span>, <span class="string">&quot;cache_read_input_token&quot;</span>, <span class="string">&quot;1200&quot;</span>, <span class="string">&quot;token&quot;</span>),</span><br><span class="line">        event(<span class="string">&quot;e12&quot;</span>, <span class="string">&quot;req-b1&quot;</span>, <span class="string">&quot;run-b&quot;</span>, <span class="string">&quot;task-b&quot;</span>, <span class="string">&quot;tenant-green&quot;</span>, <span class="string">&quot;visible_output_token&quot;</span>, <span class="string">&quot;100&quot;</span>, <span class="string">&quot;token&quot;</span>),</span><br><span class="line">        event(<span class="string">&quot;e13&quot;</span>, <span class="string">&quot;req-b1&quot;</span>, <span class="string">&quot;run-b&quot;</span>, <span class="string">&quot;task-b&quot;</span>, <span class="string">&quot;tenant-green&quot;</span>, <span class="string">&quot;cache_storage_token_hour&quot;</span>, <span class="string">&quot;600&quot;</span>, <span class="string">&quot;token_hour&quot;</span>),</span><br><span class="line">        event(<span class="string">&quot;e14&quot;</span>, <span class="literal">None</span>, <span class="string">&quot;run-a&quot;</span>, <span class="string">&quot;task-a&quot;</span>, <span class="string">&quot;tenant-blue&quot;</span>, <span class="string">&quot;human_minute&quot;</span>, <span class="string">&quot;3&quot;</span>, <span class="string">&quot;minute&quot;</span>),</span><br><span class="line">        event(<span class="string">&quot;e15&quot;</span>, <span class="literal">None</span>, <span class="literal">None</span>, <span class="literal">None</span>, <span class="string">&quot;shared-platform&quot;</span>, <span class="string">&quot;gpu_second&quot;</span>, <span class="string">&quot;30&quot;</span>, <span class="string">&quot;second&quot;</span>),</span><br><span class="line">    )</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">build_fixture</span>() -&gt; <span class="built_in">tuple</span>[Ledger, LedgerEntry, <span class="built_in">tuple</span>[Allocation, ...]]:</span><br><span class="line">    ledger = Ledger(synthetic_price_book())</span><br><span class="line">    shared: <span class="type">Optional</span>[LedgerEntry] = <span class="literal">None</span></span><br><span class="line">    <span class="keyword">for</span> usage <span class="keyword">in</span> synthetic_events():</span><br><span class="line">        posted = ledger.post(usage)</span><br><span class="line">        <span class="keyword">if</span> usage.event_id == <span class="string">&quot;e15&quot;</span>:</span><br><span class="line">            shared = posted</span><br><span class="line">    <span class="keyword">assert</span> shared <span class="keyword">is</span> <span class="keyword">not</span> <span class="literal">None</span></span><br><span class="line">    allocations = allocate_shared(</span><br><span class="line">        shared,</span><br><span class="line">        &#123;<span class="string">&quot;task-a&quot;</span>: D(<span class="string">&quot;2&quot;</span>), <span class="string">&quot;task-b&quot;</span>: D(<span class="string">&quot;1&quot;</span>)&#125;,</span><br><span class="line">        method_id=<span class="string">&quot;constructed_gpu_weight_v1&quot;</span>,</span><br><span class="line">    )</span><br><span class="line">    <span class="keyword">return</span> ledger, shared, allocations</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">allocated_task_totals</span>(<span class="params"></span></span><br><span class="line"><span class="params">    ledger: Ledger,</span></span><br><span class="line"><span class="params">    shared: LedgerEntry,</span></span><br><span class="line"><span class="params">    allocations: <span class="built_in">tuple</span>[Allocation, ...],</span></span><br><span class="line"><span class="params"></span>) -&gt; <span class="built_in">dict</span>[<span class="built_in">str</span>, Decimal]:</span><br><span class="line">    totals = ledger.totals_by(<span class="string">&quot;task_id&quot;</span>)</span><br><span class="line">    <span class="comment"># The shared origin has no task_id, so replacing it with allocations</span></span><br><span class="line">    <span class="comment"># preserves the ledger total without double counting.</span></span><br><span class="line">    <span class="keyword">for</span> allocation <span class="keyword">in</span> allocations:</span><br><span class="line">        totals[allocation.target_task_id] = (</span><br><span class="line">            totals.get(allocation.target_task_id, D(<span class="string">&quot;0&quot;</span>))</span><br><span class="line">            + allocation.allocated_effective_cost</span><br><span class="line">        )</span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">sum</span>(totals.values(), D(<span class="string">&quot;0&quot;</span>)) != ledger.total():</span><br><span class="line">        <span class="keyword">raise</span> AssertionError(<span class="string">&quot;task allocations must reconcile to ledger total&quot;</span>)</span><br><span class="line">    <span class="keyword">return</span> totals</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">LedgerTests</span>(unittest.TestCase):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_decimal_costs_are_exact</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        ledger, _, _ = build_fixture()</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(ledger.total(<span class="string">&quot;list_cost&quot;</span>), D(<span class="string">&quot;1.53809600&quot;</span>))</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(ledger.total(), D(<span class="string">&quot;1.531899400&quot;</span>))</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_failure_cost_is_preserved</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        ledger, _, _ = build_fixture()</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(ledger.failure_waste(), D(<span class="string">&quot;0.0010800&quot;</span>))</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_request_run_task_tenant_aggregation</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        ledger, _, _ = build_fixture()</span><br><span class="line">        <span class="variable language_">self</span>.assertIn(<span class="string">&quot;req-a1&quot;</span>, ledger.totals_by(<span class="string">&quot;request_id&quot;</span>))</span><br><span class="line">        <span class="variable language_">self</span>.assertIn(<span class="string">&quot;run-a&quot;</span>, ledger.totals_by(<span class="string">&quot;run_id&quot;</span>))</span><br><span class="line">        <span class="variable language_">self</span>.assertIn(<span class="string">&quot;task-a&quot;</span>, ledger.totals_by(<span class="string">&quot;task_id&quot;</span>))</span><br><span class="line">        <span class="variable language_">self</span>.assertGreater(</span><br><span class="line">            ledger.totals_by(<span class="string">&quot;tenant_id&quot;</span>)[<span class="string">&quot;tenant-blue&quot;</span>],</span><br><span class="line">            ledger.totals_by(<span class="string">&quot;tenant_id&quot;</span>)[<span class="string">&quot;tenant-green&quot;</span>],</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_duplicate_event_is_rejected</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        ledger = Ledger(synthetic_price_book())</span><br><span class="line">        usage = synthetic_events()[<span class="number">0</span>]</span><br><span class="line">        ledger.post(usage)</span><br><span class="line">        <span class="keyword">with</span> <span class="variable language_">self</span>.assertRaisesRegex(ValueError, <span class="string">&quot;duplicate event_id&quot;</span>):</span><br><span class="line">            ledger.post(usage)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_unknown_price_is_rejected</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        ledger = Ledger(synthetic_price_book())</span><br><span class="line">        unknown = event(<span class="string">&quot;x&quot;</span>, <span class="string">&quot;r&quot;</span>, <span class="string">&quot;run&quot;</span>, <span class="string">&quot;task&quot;</span>, <span class="string">&quot;tenant&quot;</span>, <span class="string">&quot;unknown&quot;</span>, <span class="string">&quot;1&quot;</span>, <span class="string">&quot;call&quot;</span>)</span><br><span class="line">        <span class="keyword">with</span> <span class="variable language_">self</span>.assertRaisesRegex(ValueError, <span class="string">&quot;expected one price&quot;</span>):</span><br><span class="line">            ledger.post(unknown)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_shared_allocation_conserves_cost</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        ledger, shared, allocations = build_fixture()</span><br><span class="line">        totals = allocated_task_totals(ledger, shared, allocations)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(totals[<span class="string">&quot;task-a&quot;</span>], D(<span class="string">&quot;1.5242140&quot;</span>))</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(totals[<span class="string">&quot;task-b&quot;</span>], D(<span class="string">&quot;0.007685400&quot;</span>))</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(<span class="built_in">sum</span>(totals.values(), D(<span class="string">&quot;0&quot;</span>)), ledger.total())</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_budget_and_quality_gates</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        remaining = authorize_budget(</span><br><span class="line">            posted_cost=D(<span class="string">&quot;0.20&quot;</span>),</span><br><span class="line">            active_reservations=D(<span class="string">&quot;0.10&quot;</span>),</span><br><span class="line">            new_estimate=D(<span class="string">&quot;0.30&quot;</span>),</span><br><span class="line">            task_budget=D(<span class="string">&quot;0.75&quot;</span>),</span><br><span class="line">            candidate_quality=D(<span class="string">&quot;0.96&quot;</span>),</span><br><span class="line">            minimum_quality=D(<span class="string">&quot;0.90&quot;</span>),</span><br><span class="line">        )</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(remaining, D(<span class="string">&quot;0.15&quot;</span>))</span><br><span class="line">        <span class="keyword">with</span> <span class="variable language_">self</span>.assertRaises(BudgetExceeded):</span><br><span class="line">            authorize_budget(</span><br><span class="line">                posted_cost=D(<span class="string">&quot;0.40&quot;</span>), active_reservations=D(<span class="string">&quot;0.20&quot;</span>),</span><br><span class="line">                new_estimate=D(<span class="string">&quot;0.30&quot;</span>), task_budget=D(<span class="string">&quot;0.75&quot;</span>),</span><br><span class="line">                candidate_quality=D(<span class="string">&quot;0.96&quot;</span>), minimum_quality=D(<span class="string">&quot;0.90&quot;</span>),</span><br><span class="line">            )</span><br><span class="line">        <span class="keyword">with</span> <span class="variable language_">self</span>.assertRaises(QualityFloorBreach):</span><br><span class="line">            authorize_budget(</span><br><span class="line">                posted_cost=D(<span class="string">&quot;0.10&quot;</span>), active_reservations=D(<span class="string">&quot;0.00&quot;</span>),</span><br><span class="line">                new_estimate=D(<span class="string">&quot;0.10&quot;</span>), task_budget=D(<span class="string">&quot;0.75&quot;</span>),</span><br><span class="line">                candidate_quality=D(<span class="string">&quot;0.80&quot;</span>), minimum_quality=D(<span class="string">&quot;0.90&quot;</span>),</span><br><span class="line">            )</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">money</span>(<span class="params">value: Decimal</span>) -&gt; <span class="built_in">str</span>:</span><br><span class="line">    <span class="keyword">return</span> <span class="string">f&quot;USD <span class="subst">&#123;value.quantize(D(<span class="string">&#x27;0.000001&#x27;</span>))&#125;</span>&quot;</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&quot;__main__&quot;</span>:</span><br><span class="line">    suite = unittest.defaultTestLoader.loadTestsFromTestCase(LedgerTests)</span><br><span class="line">    outcome = unittest.TextTestRunner(stream=sys.stdout, verbosity=<span class="number">1</span>).run(suite)</span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> outcome.wasSuccessful():</span><br><span class="line">        <span class="keyword">raise</span> SystemExit(<span class="number">1</span>)</span><br><span class="line"></span><br><span class="line">    ledger, shared, allocations = build_fixture()</span><br><span class="line">    task_totals = allocated_task_totals(ledger, shared, allocations)</span><br><span class="line">    qa_unit = quality_adjusted_unit_cost(task_totals, &#123;<span class="string">&quot;task-a&quot;</span>&#125;)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&quot;list_cost=<span class="subst">&#123;money(ledger.total(<span class="string">&#x27;list_cost&#x27;</span>))&#125;</span>&quot;</span>)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&quot;effective_cost=<span class="subst">&#123;money(ledger.total())&#125;</span>&quot;</span>)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&quot;failure_waste=<span class="subst">&#123;money(ledger.failure_waste())&#125;</span>&quot;</span>)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&quot;task-a_allocated=<span class="subst">&#123;money(task_totals[<span class="string">&#x27;task-a&#x27;</span>])&#125;</span>&quot;</span>)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&quot;task-b_allocated=<span class="subst">&#123;money(task_totals[<span class="string">&#x27;task-b&#x27;</span>])&#125;</span>&quot;</span>)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&quot;quality_adjusted_unit_cost=<span class="subst">&#123;money(qa_unit)&#125;</span>&quot;</span>)</span><br></pre></td></tr></table></figure>
+
+<p>实际执行输出为：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">.......</span><br><span class="line">----------------------------------------------------------------------</span><br><span class="line">Ran 7 tests in 0.002s</span><br><span class="line"></span><br><span class="line">OK</span><br><span class="line">list_cost=USD 1.538096</span><br><span class="line">effective_cost=USD 1.531899</span><br><span class="line">failure_waste=USD 0.001080</span><br><span class="line">task-a_allocated=USD 1.524214</span><br><span class="line">task-b_allocated=USD 0.007685</span><br><span class="line">quality_adjusted_unit_cost=USD 1.531899</span><br></pre></td></tr></table></figure>
+
+<p><code>task-a</code> 是唯一构造的合格任务，因此整个 cohort 的分摊成本都留在分子，分母为 1；<code>task-b</code> 未验收，其成本没有消失。人工 3 分钟的构造成本远高于 Token，刻意说明只优化模型单价可能抓错重点。上述金额绝不是厂商报价或真实业务数据。</p>
+<h2 id="二十、自动化测试：成本代码要验证数学，也要验证语义"><a href="#二十、自动化测试：成本代码要验证数学，也要验证语义" class="headerlink" title="二十、自动化测试：成本代码要验证数学，也要验证语义"></a>二十、自动化测试：成本代码要验证数学，也要验证语义</h2><h3 id="1-Price-Book-测试"><a href="#1-Price-Book-测试" class="headerlink" title="1. Price Book 测试"></a>1. Price Book 测试</h3><ul>
+<li>生效时间边界使用左闭右开，避免午夜重复匹配</li>
+<li>同一价格键和时间只能命中一个版本</li>
+<li>未知 SKU、单位或币种拒绝计价</li>
+<li>价格来源、批准状态和版本摘要完整</li>
+<li>历史事件重算时仍选择历史价格</li>
+</ul>
+<h3 id="2-Usage-映射测试"><a href="#2-Usage-映射测试" class="headerlink" title="2. Usage 映射测试"></a>2. Usage 映射测试</h3><ul>
+<li>input total 与 cache read&#x2F;write 的包含关系按厂商 Fixture 校验</li>
+<li>output total 与 reasoning 子量不重复</li>
+<li>工具调用费与工具内容 Token 各自只计一次</li>
+<li>streaming 取消和 usage 缺失进入明确状态</li>
+<li>retry attempt 具有独立 event_id 与 request_id</li>
+<li>数量非负，整数 Token 不出现无解释小数</li>
+</ul>
+<h3 id="3-Ledger-测试"><a href="#3-Ledger-测试" class="headerlink" title="3. Ledger 测试"></a>3. Ledger 测试</h3><ul>
+<li>使用 Decimal 精确乘法</li>
+<li>event_id 幂等，重复投递不重复入账</li>
+<li>冲销与更正净额符合原始分录</li>
+<li>request&#x2F;run&#x2F;task&#x2F;tenant 聚合相互对得上</li>
+<li>失败与取消成本被保留</li>
+<li>多币种不直接求和</li>
+</ul>
+<h3 id="4-Allocation-测试"><a href="#4-Allocation-测试" class="headerlink" title="4. Allocation 测试"></a>4. Allocation 测试</h3><ul>
+<li>权重非负且至少一个正值</li>
+<li>分摊和加未分摊余量等于来源成本</li>
+<li>同一来源不会被两个 active 规则重复分摊</li>
+<li>method_id、规则版本和目标对象完整</li>
+<li>零使用租户的闲置份额按政策显式处理</li>
+</ul>
+<h3 id="5-Budget-Gate-测试"><a href="#5-Budget-Gate-测试" class="headerlink" title="5. Budget Gate 测试"></a>5. Budget Gate 测试</h3><ul>
+<li>posted + reservations + new estimate 不超过预算时授权</li>
+<li>超预算时返回可审计原因</li>
+<li>并发预留不超卖</li>
+<li>预留超时与任务结束会释放</li>
+<li>质量低于底线时即使更便宜也拒绝</li>
+<li>执行中迟到 usage 能触发停止或审批</li>
+</ul>
+<h3 id="6-Outcome-测试"><a href="#6-Outcome-测试" class="headerlink" title="6. Outcome 测试"></a>6. Outcome 测试</h3><ul>
+<li>Schema 合法、HTTP 200、相似度和模型置信度不会自动设置 task accepted</li>
+<li>业务后置条件、质量、安全和人工裁决按版本合并</li>
+<li>迟到真值可以把 provisional 改为 final，并保留历史</li>
+<li>重复任务不会扩大单位经济分母</li>
+</ul>
+<h2 id="二十一、质量约束单位经济：分母比分子更容易被操纵"><a href="#二十一、质量约束单位经济：分母比分子更容易被操纵" class="headerlink" title="二十一、质量约束单位经济：分母比分子更容易被操纵"></a>二十一、质量约束单位经济：分母比分子更容易被操纵</h2><p><img src="/images/ai-quality/ai-43-unit-economics.svg" alt="AI应用质量约束单位任务经济模型"></p>
+<h3 id="1-Accepted-Task-定义"><a href="#1-Accepted-Task-定义" class="headerlink" title="1. Accepted Task 定义"></a>1. Accepted Task 定义</h3><p>每种任务明确：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">task_type:</span> <span class="string">support_case_resolution</span></span><br><span class="line"><span class="attr">acceptance:</span></span><br><span class="line">  <span class="attr">transport_complete:</span> <span class="literal">true</span></span><br><span class="line">  <span class="attr">business_postcondition:</span> <span class="string">case_state_updated</span></span><br><span class="line">  <span class="attr">factuality_gate:</span> <span class="string">pass</span></span><br><span class="line">  <span class="attr">safety_gate:</span> <span class="string">pass</span></span><br><span class="line">  <span class="attr">duplicate:</span> <span class="literal">false</span></span><br><span class="line">  <span class="attr">observation_window_hours:</span> <span class="number">72</span></span><br></pre></td></tr></table></figure>
+
+<p>这些只是结构示意。真正门槛来自业务和风险，不能以 JSON Schema 替代。</p>
+<h3 id="2-分母攻击"><a href="#2-分母攻击" class="headerlink" title="2. 分母攻击"></a>2. 分母攻击</h3><p>成本看板常见的“美化”方式：</p>
+<ul>
+<li>把模型调用数当任务数，一个 Agent 循环产生多个“单位”</li>
+<li>把失败后人工完成同时算自动任务和人工任务</li>
+<li>删除昂贵异常任务</li>
+<li>在质量真值到达前就把 provisional 当 accepted</li>
+<li>将低价值简单任务混入，稀释高风险任务成本</li>
+<li>优化后输出变短但业务不完整，仍按 HTTP 成功计数</li>
+</ul>
+<p>防御方法是 task 去重、终态状态机、观察窗口和分层报告。</p>
+<h3 id="3-Cohort-一致性"><a href="#3-Cohort-一致性" class="headerlink" title="3. Cohort 一致性"></a>3. Cohort 一致性</h3><p>比较优化前后要固定或重加权任务分布：语言、长度、租户、风险、工具需求、缓存机会和时段。总体单位成本下降可能只是简单任务占比上升。</p>
+<h3 id="4-多目标决策"><a href="#4-多目标决策" class="headerlink" title="4. 多目标决策"></a>4. 多目标决策</h3><p>可使用受约束优化：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">minimize quality_adjusted_unit_cost</span><br><span class="line">subject to:</span><br><span class="line">  task_success_rate &gt;= floor</span><br><span class="line">  safety_incident_rate &lt;= ceiling</span><br><span class="line">  p99_latency &lt;= SLO</span><br><span class="line">  human_escalation_rate &lt;= capacity</span><br></pre></td></tr></table></figure>
+
+<p>不要把质量、延迟和安全随意折算成一个可相互抵消的分数。高风险硬门槛失败应直接否决。</p>
+<h2 id="二十二、成本指标体系：从覆盖、对账到业务结果"><a href="#二十二、成本指标体系：从覆盖、对账到业务结果" class="headerlink" title="二十二、成本指标体系：从覆盖、对账到业务结果"></a>二十二、成本指标体系：从覆盖、对账到业务结果</h2><h3 id="1-数据健康"><a href="#1-数据健康" class="headerlink" title="1. 数据健康"></a>1. 数据健康</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">usage_coverage = 有完整 usage 的 requests / 应计 requests</span><br><span class="line">identity_coverage = 可归属 task/tenant 的成本 / 总成本</span><br><span class="line">price_match_rate = 唯一命中有效价格的事件 / 全部事件</span><br><span class="line">duplicate_event_rate</span><br><span class="line">late_usage_rate</span><br><span class="line">unallocated_cost_ratio</span><br></pre></td></tr></table></figure>
+
+<p>覆盖率不足时，总成本图应标记不完整，不能默认缺失为零。</p>
+<h3 id="2-对账"><a href="#2-对账" class="headerlink" title="2. 对账"></a>2. 对账</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">reconciliation_variance</span><br><span class="line">= ledger_billed_basis - provider_invoice</span><br><span class="line"></span><br><span class="line">reconciliation_rate</span><br><span class="line">= abs(variance) / provider_invoice</span><br></pre></td></tr></table></figure>
+
+<p>按账期、币种、账号、SKU 和区域逐层下钻。差异可能来自账单延迟、信用、税、最低消费、舍入和未知 SKU。</p>
+<h3 id="3-使用强度"><a href="#3-使用强度" class="headerlink" title="3. 使用强度"></a>3. 使用强度</h3><ul>
+<li>input&#x2F;output&#x2F;reasoning Token per task</li>
+<li>cache write&#x2F;read&#x2F;storage per task</li>
+<li>embedding Token、rerank documents、vector queries per task</li>
+<li>tool calls、network bytes、attempts 与 Agent steps per task</li>
+<li>human minutes per accepted task</li>
+</ul>
+<h3 id="4-成本"><a href="#4-成本" class="headerlink" title="4. 成本"></a>4. 成本</h3><ul>
+<li>list、contracted、billed、effective 与 allocated cost</li>
+<li>direct&#x2F;shared&#x2F;unallocated cost</li>
+<li>failure waste、retry cost、cancelled-but-billed cost</li>
+<li>cost per request&#x2F;run&#x2F;task&#x2F;tenant</li>
+<li>quality-adjusted unit cost</li>
+</ul>
+<h3 id="5-效率与价值"><a href="#5-效率与价值" class="headerlink" title="5. 效率与价值"></a>5. 效率与价值</h3><ul>
+<li>cache net saving，而非只看 hit rate</li>
+<li>effective&#x2F;list cost ratio</li>
+<li>accepted tasks per GPU-hour</li>
+<li>cost per avoided human minute</li>
+<li>cost per incremental accepted task</li>
+<li>优化的净节省与回收期</li>
+</ul>
+<p>“节省”必须指定反事实基线。目录价减 effective cost 是采购&#x2F;承诺节省，不等于工程优化节省；模型切换前后成本差需要控制质量和任务 mix。</p>
+<h2 id="二十三、成本异常检测：先分解数量、费率、Mix-和质量"><a href="#二十三、成本异常检测：先分解数量、费率、Mix-和质量" class="headerlink" title="二十三、成本异常检测：先分解数量、费率、Mix 和质量"></a>二十三、成本异常检测：先分解数量、费率、Mix 和质量</h2><p>总成本变化可近似分解：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">总成本 = 任务量 × 每任务使用强度 × 有效单位价 + 共享/人工成本</span><br></pre></td></tr></table></figure>
+
+<p>异常检测分别观察：</p>
+<h3 id="1-Volume-Anomaly"><a href="#1-Volume-Anomaly" class="headerlink" title="1. Volume Anomaly"></a>1. Volume Anomaly</h3><p>任务数或租户数增加。可能是业务增长，也可能是重复消费、队列回放或攻击。检查唯一 task、幂等键与来源。</p>
+<h3 id="2-Usage-Intensity-Anomaly"><a href="#2-Usage-Intensity-Anomaly" class="headerlink" title="2. Usage Intensity Anomaly"></a>2. Usage Intensity Anomaly</h3><p>每任务 input、output、reasoning、检索候选、工具和步数上升。常见根因是 Prompt 膨胀、历史未裁剪、Agent 循环和工具返回过大。</p>
+<h3 id="3-Rate-Anomaly"><a href="#3-Rate-Anomaly" class="headerlink" title="3. Rate Anomaly"></a>3. Rate Anomaly</h3><p>相同 SKU 的有效单位价变化。检查价格版本、服务层、上下文档位、区域、合同和汇率。不要把价格变化归因于 Prompt 优化。</p>
+<h3 id="4-Mix-Anomaly"><a href="#4-Mix-Anomaly" class="headerlink" title="4. Mix Anomaly"></a>4. Mix Anomaly</h3><p>更多任务路由到昂贵模型、高优先级层、长上下文或人工。总体平均会变，但单切片可能稳定。</p>
+<h3 id="5-Reliability-Anomaly"><a href="#5-Reliability-Anomaly" class="headerlink" title="5. Reliability Anomaly"></a>5. Reliability Anomaly</h3><p>retry、失败、超时、取消后生成增加。完成任务数可能不变，失败浪费率先升。</p>
+<h3 id="6-Quality-Anomaly"><a href="#6-Quality-Anomaly" class="headerlink" title="6. Quality Anomaly"></a>6. Quality Anomaly</h3><p>账面单位调用成本下降，但 accepted task 比例下降、人工复核增加。此时 quality-adjusted unit cost 可能上升。</p>
+<p>异常门槛使用季节性、发布窗口和最低样本量；每个异常保留贡献分解和相关 Trace，而不是只发“今日成本高 30%”。</p>
+<h2 id="二十四、优化策略一：Prompt-与上下文"><a href="#二十四、优化策略一：Prompt-与上下文" class="headerlink" title="二十四、优化策略一：Prompt 与上下文"></a>二十四、优化策略一：Prompt 与上下文</h2><h3 id="1-删除无效-Token"><a href="#1-删除无效-Token" class="headerlink" title="1. 删除无效 Token"></a>1. 删除无效 Token</h3><p>从系统指令重复、历史对话、工具 Schema、检索证据和序列化包装入手。使用 tokenizer 计量并做语义回归。删除一段看似重复的安全要求可能造成风险，不能只按 Token 数决定。</p>
+<h3 id="2-上下文压缩"><a href="#2-上下文压缩" class="headerlink" title="2. 上下文压缩"></a>2. 上下文压缩</h3><p>摘要、裁剪和结构化状态能减少输入，但可能丢失关键约束。测试需要覆盖长会话、引用、新鲜度和冲突事实。摘要模型自身也有成本和失败率，应进入 run 账本。</p>
+<h3 id="3-输出预算"><a href="#3-输出预算" class="headerlink" title="3. 输出预算"></a>3. 输出预算</h3><p>明确任务需要的最大输出与停止条件，避免无边界生成。若截断导致任务不完整，成本下降不算成功。对结构化任务可使用字段级完成验证，但 Schema 仅保证形状。</p>
+<h2 id="二十五、优化策略二：Cache"><a href="#二十五、优化策略二：Cache" class="headerlink" title="二十五、优化策略二：Cache"></a>二十五、优化策略二：Cache</h2><h3 id="1-提高可复用前缀"><a href="#1-提高可复用前缀" class="headerlink" title="1. 提高可复用前缀"></a>1. 提高可复用前缀</h3><p>将稳定指令放在前缀、避免无意义动态字段破坏匹配、按授权域设计键。收益通过复用 Token、写&#x2F;读&#x2F;存储总成本和质量验证计算。</p>
+<h3 id="2-TTL-优化"><a href="#2-TTL-优化" class="headerlink" title="2. TTL 优化"></a>2. TTL 优化</h3><p>过短导致反复写，过长产生存储和陈旧风险。按复用间隔分布计算期望净收益，并为政策、权限和数据版本提供主动失效。</p>
+<h3 id="3-不要跨供应商假设语义一致"><a href="#3-不要跨供应商假设语义一致" class="headerlink" title="3. 不要跨供应商假设语义一致"></a>3. 不要跨供应商假设语义一致</h3><p>不同厂商的自动缓存、显式缓存、写入倍率、读取价、TTL 和存储费不同。Price Adapter 和 Usage Adapter 必须绑定产品版本。</p>
+<h2 id="二十六、优化策略三：模型路由与服务层"><a href="#二十六、优化策略三：模型路由与服务层" class="headerlink" title="二十六、优化策略三：模型路由与服务层"></a>二十六、优化策略三：模型路由与服务层</h2><h3 id="1-能力契约"><a href="#1-能力契约" class="headerlink" title="1. 能力契约"></a>1. 能力契约</h3><p>为任务定义最低质量、安全、上下文、工具和结构能力。低价模型只有通过目标切片评测才进入候选。</p>
+<h3 id="2-路由成本"><a href="#2-路由成本" class="headerlink" title="2. 路由成本"></a>2. 路由成本</h3><p>路由器自身可能调用分类模型、增加延迟并产生误路由。比较：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">routed_total_cost</span><br><span class="line">= router_cost + selected_path_cost + misroute_recovery_cost</span><br></pre></td></tr></table></figure>
+
+<p>只看被选模型单价会高估收益。</p>
+<h3 id="3-Batch-Flex-Priority-等层"><a href="#3-Batch-Flex-Priority-等层" class="headerlink" title="3. Batch&#x2F;Flex&#x2F;Priority 等层"></a>3. Batch&#x2F;Flex&#x2F;Priority 等层</h3><p>厂商可能为异步批量、低优先级或高优先级服务提供不同费率与时限。选择必须匹配任务 deadline、可用性和产品支持；价格页面的当前选项不能外推为永久承诺。</p>
+<h2 id="二十七、优化策略四：检索与工具"><a href="#二十七、优化策略四：检索与工具" class="headerlink" title="二十七、优化策略四：检索与工具"></a>二十七、优化策略四：检索与工具</h2><h3 id="1-候选数和-Rerank"><a href="#1-候选数和-Rerank" class="headerlink" title="1. 候选数和 Rerank"></a>1. 候选数和 Rerank</h3><p>减少候选可降 vector DB、rerank 和输入 Token，但要用已有检索与任务评测证明质量底线。本文不以相似度阈值直接代表业务正确。</p>
+<h3 id="2-工具调用治理"><a href="#2-工具调用治理" class="headerlink" title="2. 工具调用治理"></a>2. 工具调用治理</h3><p>用确定性条件避免重复查询，缓存幂等结果，限制 Agent 循环和并行扇出。工具失败要区分可重试与业务拒绝，避免把安全&#x2F;权限失败换参数重试。</p>
+<h3 id="3-返回载荷"><a href="#3-返回载荷" class="headerlink" title="3. 返回载荷"></a>3. 返回载荷</h3><p>工具只返回完成任务所需字段，减少网络和后续输入 Token；但字段裁剪必须通过业务契约，不得丢失审计证据。</p>
+<h2 id="二十八、优化策略五：自建容量与利用率"><a href="#二十八、优化策略五：自建容量与利用率" class="headerlink" title="二十八、优化策略五：自建容量与利用率"></a>二十八、优化策略五：自建容量与利用率</h2><h3 id="1-提升利用率不等于追求-100"><a href="#1-提升利用率不等于追求-100" class="headerlink" title="1. 提升利用率不等于追求 100%"></a>1. 提升利用率不等于追求 100%</h3><p>提高批处理、共享副本和弹性可以降低单位成本，但接近饱和会抬高排队和尾延迟。使用上一篇的 Goodput 与饱和拐点确定可交付容量，再计算单位成本。</p>
+<h3 id="2-预留与按需组合"><a href="#2-预留与按需组合" class="headerlink" title="2. 预留与按需组合"></a>2. 预留与按需组合</h3><p>稳定基线用承诺容量，突发用按需；effective cost 要把未使用承诺摊入。容量策略通过故障和滚动发布实验验证。</p>
+<h3 id="3-多租户公平"><a href="#3-多租户公平" class="headerlink" title="3. 多租户公平"></a>3. 多租户公平</h3><p>一个租户的长上下文可能占据 KV 和 GPU，影响其他租户。成本分摊可以反映资源占用，但不能替代限额、优先级和隔舱。</p>
+<h2 id="二十九、优化回归：成本下降必须同时证明质量不退化"><a href="#二十九、优化回归：成本下降必须同时证明质量不退化" class="headerlink" title="二十九、优化回归：成本下降必须同时证明质量不退化"></a>二十九、优化回归：成本下降必须同时证明质量不退化</h2><p>每个优化 PR 或配置发布至少包含：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">成本假设</span><br><span class="line">受影响 usage_kind</span><br><span class="line">价格簿与工作负载版本</span><br><span class="line">质量/安全硬门槛</span><br><span class="line">延迟与容量门槛</span><br><span class="line">实验分流和样本量</span><br><span class="line">回滚条件</span><br><span class="line">预计与实际节省</span><br></pre></td></tr></table></figure>
+
+<h3 id="1-离线阶段"><a href="#1-离线阶段" class="headerlink" title="1. 离线阶段"></a>1. 离线阶段</h3><p>在固定任务集上比较 Token、检索、工具次数与目标质量。控制输出长度和停止原因，避免少生成伪造收益。</p>
+<h3 id="2-影子阶段"><a href="#2-影子阶段" class="headerlink" title="2. 影子阶段"></a>2. 影子阶段</h3><p>记录候选路径的成本与质量，不执行副作用。影子仍会产生成本，应归入实验成本池。</p>
+<h3 id="3-灰度阶段"><a href="#3-灰度阶段" class="headerlink" title="3. 灰度阶段"></a>3. 灰度阶段</h3><p>随机分流并按任务切片比较 quality-adjusted unit cost、P99 延迟、人工升级和失败浪费。价格变化与模型发布要作为协变量。</p>
+<h3 id="4-发布门禁"><a href="#4-发布门禁" class="headerlink" title="4. 发布门禁"></a>4. 发布门禁</h3><p>只有成本置信区间改善且所有硬质量&#x2F;安全门槛通过才扩量。总体成本下降但某高风险切片退化时停止。任何 Schema、HTTP 或模型自评分成功都不能覆盖业务真值失败。</p>
+<h3 id="5-失败注入：验证账本会拒绝、保留并告警"><a href="#5-失败注入：验证账本会拒绝、保留并告警" class="headerlink" title="5. 失败注入：验证账本会拒绝、保留并告警"></a>5. 失败注入：验证账本会拒绝、保留并告警</h3><p>成本系统的失败注入不能直接篡改生产账单，也不能只看接口是否报错。安全做法是在隔离账本、固定价格快照和构造任务上注入一项故障，提前声明预期的不变量、告警、证据字段与恢复动作，再验证异常不会被后续成功覆盖。至少覆盖下面几类注入：</p>
+<table>
+<thead>
+<tr>
+<th>注入点</th>
+<th>构造动作</th>
+<th>必须出现的证据</th>
+<th>自动化断言</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>事件去重</td>
+<td>将同一 <code>event_id</code> 投递两次</td>
+<td>原始事件哈希、首次入账位置、第二次拒绝原因</td>
+<td>账本总额不变，重复事件进入拒绝队列</td>
+</tr>
+<tr>
+<td>价格版本</td>
+<td>删除某 <code>usage_kind</code> 的有效价格，或制造重叠有效期</td>
+<td>价格键、发生时间、候选 <code>price_id</code> 列表</td>
+<td>不得回退到零价或最新价，结算批次停止</td>
+</tr>
+<tr>
+<td>Token 映射</td>
+<td>同时把 cached token 计入父级 input 与独立收费量</td>
+<td>原始供应商字段、适配器版本、归一化前后数量</td>
+<td>守恒规则失败，不能生成可发布账单</td>
+</tr>
+<tr>
+<td>重试链</td>
+<td>让第一次 attempt 超时、第二次成功</td>
+<td>两个 request&#x2F;attempt、同一 run&#x2F;task、各自终态</td>
+<td>两笔成本都保留，失败浪费非零，任务只去重一次</td>
+</tr>
+<tr>
+<td>共享分摊</td>
+<td>令权重和为零、出现负权重或重复分配 origin</td>
+<td><code>method_id</code>、权重、来源成本、目标列表</td>
+<td>分摊前后不守恒时整批拒绝</td>
+</tr>
+<tr>
+<td>预算并发</td>
+<td>两个分支同时读取相同剩余额度并申请预留</td>
+<td>预算版本、reservation id、原子更新结果</td>
+<td>至多一个申请越过临界点，已承诺额不超预算</td>
+</tr>
+<tr>
+<td>质量结果</td>
+<td>删除 outcome join，或把不合格任务标成成功</td>
+<td>任务验收版本、缺失原因、质量门槛结果</td>
+<td>未验收成本留在分子，不得进入合格任务分母</td>
+</tr>
+<tr>
+<td>更正与迟到</td>
+<td>在结算后送达迟到用量或价格更正</td>
+<td>原账本项、冲销项、更正项、会计期间</td>
+<td>历史原项不可改写，总账按追加记录重新对平</td>
+</tr>
+</tbody></table>
+<p>每次实验保存注入种子、fixture 版本、预期失败码、账本前后摘要和告警时间线。恢复测试不是删除异常行，而是补齐价格、重放拒绝队列，或追加冲销与更正事件，并再次验证 request、run、task、tenant 四级合计和财务总额一致。上文代码中的 <code>test_duplicate_event_is_rejected</code>、<code>test_unknown_price_is_rejected</code>、失败 attempt fixture、共享成本守恒测试以及预算&#x2F;质量门禁测试，就是不依赖真实 API Key 的最小失败注入集；生产实现还要补并发预留、迟到事件和消息重放测试。</p>
+<p>验收时同时看检测能力和隔离能力：注入租户的账本应被阻断或标记，其他租户应继续结算；异常不能静默变成零成本，也不能因为最终 HTTP 200 或 Schema 合法就自动解除。只有告警、证据、回放和对账都成立，才说明成本控制面能在真实故障下工作。</p>
+<h2 id="三十、完整失败案例一：Cached-Tokens-被重复计费"><a href="#三十、完整失败案例一：Cached-Tokens-被重复计费" class="headerlink" title="三十、完整失败案例一：Cached Tokens 被重复计费"></a>三十、完整失败案例一：Cached Tokens 被重复计费</h2><h3 id="现象"><a href="#现象" class="headerlink" title="现象"></a>现象</h3><p>内部账本比供应商明细高 18%，cache hit 越高的 tenant 差异越大。数字为构造数据。</p>
+<h3 id="证据链"><a href="#证据链" class="headerlink" title="证据链"></a>证据链</h3><ol>
+<li>适配器将 <code>input_tokens</code> 全量按普通输入计价。</li>
+<li>又把 <code>cache_read_input_tokens</code> 按缓存读取价追加一笔。</li>
+<li>官方字段语义表明 cached input 已包含在 input total。</li>
+<li>差异与 cached&#x2F;total 比例近似线性。</li>
+<li>同一 observation 生成的 normalized events 不是互斥项。</li>
+</ol>
+<h3 id="根因与修复"><a href="#根因与修复" class="headerlink" title="根因与修复"></a>根因与修复</h3><p>把普通输入事件改为 <code>uncached = total - cached_subsets</code>，并针对厂商版本写 Fixture。增加子量不大于总量、互斥计价和账单抽样对账测试。历史通过冲销与新分录更正，不直接覆盖。</p>
+<h2 id="三十一、完整失败案例二：最终成功掩盖重试浪费"><a href="#三十一、完整失败案例二：最终成功掩盖重试浪费" class="headerlink" title="三十一、完整失败案例二：最终成功掩盖重试浪费"></a>三十一、完整失败案例二：最终成功掩盖重试浪费</h2><h3 id="现象-1"><a href="#现象-1" class="headerlink" title="现象"></a>现象</h3><p>成功任务单位成本稳定，但供应商账单持续上升。数字为构造数据。</p>
+<h3 id="证据链-1"><a href="#证据链-1" class="headerlink" title="证据链"></a>证据链</h3><ol>
+<li>应用表每个 logical request 只有一行，retry 更新同一记录。</li>
+<li>provider request ID 显示一次任务实际调用三次。</li>
+<li>网关与 SDK 同时重试，Agent 又重跑整个步骤。</li>
+<li>成功任务聚合只保留最后 usage。</li>
+<li>超时 attempt 在供应商侧已经生成输出并计费。</li>
+</ol>
+<h3 id="根因与修复-1"><a href="#根因与修复-1" class="headerlink" title="根因与修复"></a>根因与修复</h3><p>建立 immutable attempt，保存父子关系和 retry owner；集中重试预算，统计 attempts&#x2F;task 和 failure waste。最终 run 可以成功，但全部 attempt 成本进入 task。</p>
+<h2 id="三十二、完整失败案例三：更便宜模型导致人工成本反超"><a href="#三十二、完整失败案例三：更便宜模型导致人工成本反超" class="headerlink" title="三十二、完整失败案例三：更便宜模型导致人工成本反超"></a>三十二、完整失败案例三：更便宜模型导致人工成本反超</h2><h3 id="现象-2"><a href="#现象-2" class="headerlink" title="现象"></a>现象</h3><p>模型 effective cost 每任务下降 45%，人工复核率从 8% 升到 31%，最终 quality-adjusted unit cost 上升 22%。数字为构造数据。</p>
+<h3 id="证据链-2"><a href="#证据链-2" class="headerlink" title="证据链"></a>证据链</h3><ol>
+<li>路由实验只看模型账单与 Schema 合法率。</li>
+<li>高风险长文和数字切片错误增加。</li>
+<li>自动结果返回 200 且字段齐全，但业务后置条件失败。</li>
+<li>人工系统的分钟数晚两周才入账，首周看板显示“显著节省”。</li>
+<li>观察窗口关闭太早，把 provisional task 当 accepted。</li>
+</ol>
+<h3 id="根因与修复-2"><a href="#根因与修复-2" class="headerlink" title="根因与修复"></a>根因与修复</h3><p>延长真值窗口，连接人工与申诉成本；以目标任务质量为硬门，按稳定 cohort 比较。Schema 合法不再作为 accepted 充分条件。</p>
+<h2 id="三十三、完整失败案例四：共享-GPU-成本被重复分摊"><a href="#三十三、完整失败案例四：共享-GPU-成本被重复分摊" class="headerlink" title="三十三、完整失败案例四：共享 GPU 成本被重复分摊"></a>三十三、完整失败案例四：共享 GPU 成本被重复分摊</h2><h3 id="现象-3"><a href="#现象-3" class="headerlink" title="现象"></a>现象</h3><p>tenant 报表合计比平台成本池高一倍，但各 tenant 内明细看起来合理。</p>
+<h3 id="证据链-3"><a href="#证据链-3" class="headerlink" title="证据链"></a>证据链</h3><ol>
+<li>GPU 原始成本作为 <code>shared-platform</code> tenant 保留在总表。</li>
+<li>同一金额又按 Token 分到业务 tenant。</li>
+<li>汇总视图同时选择来源分录和 allocation 分录。</li>
+<li>allocation 没有 <code>origin_entry_id</code> 唯一约束。</li>
+<li>团队只检查比例和为 1，没有检查最终守恒。</li>
+</ol>
+<h3 id="根因与修复-3"><a href="#根因与修复-3" class="headerlink" title="根因与修复"></a>根因与修复</h3><p>在责任视图中使用“来源或分摊”二选一语义；每个 active allocation 绑定唯一来源与版本；CI 断言 allocated + remainder &#x3D; origin，并让全层级合计回到账本 effective cost。</p>
+<h2 id="三十四、完整失败案例五：价格更新改写了历史"><a href="#三十四、完整失败案例五：价格更新改写了历史" class="headerlink" title="三十四、完整失败案例五：价格更新改写了历史"></a>三十四、完整失败案例五：价格更新改写了历史</h2><h3 id="现象-4"><a href="#现象-4" class="headerlink" title="现象"></a>现象</h3><p>没有任何流量变化，三个月前的成本报表在今天下降。数字为构造数据。</p>
+<h3 id="证据链-4"><a href="#证据链-4" class="headerlink" title="证据链"></a>证据链</h3><ol>
+<li>查询时使用当前价格表与历史 Token 重新相乘。</li>
+<li>价格表没有 valid_from&#x2F;valid_to。</li>
+<li>新模型 SKU 与旧 SKU 使用同一个展示名。</li>
+<li>账期关闭时未固化 price_id。</li>
+<li>财务发票仍按历史价格，导致对账失败。</li>
+</ol>
+<h3 id="根因与修复-4"><a href="#根因与修复-4" class="headerlink" title="根因与修复"></a>根因与修复</h3><p>价格簿版本化，每条 ledger entry 固定 <code>price_id</code> 和计算结果。重估场景另建 what-if 视图，不改写历史 actual。未知 SKU 阻止自动结算。</p>
+<h2 id="三十五、完整失败案例六：缓存命中率上升但净成本增加"><a href="#三十五、完整失败案例六：缓存命中率上升但净成本增加" class="headerlink" title="三十五、完整失败案例六：缓存命中率上升但净成本增加"></a>三十五、完整失败案例六：缓存命中率上升但净成本增加</h2><h3 id="现象-5"><a href="#现象-5" class="headerlink" title="现象"></a>现象</h3><p>请求命中率从 40% 升到 78%，总 cache 相关成本却增加，TTFT 没改善。数字为构造数据。</p>
+<h3 id="证据链-5"><a href="#证据链-5" class="headerlink" title="证据链"></a>证据链</h3><ol>
+<li>新策略为大量一次性长前缀创建显式缓存。</li>
+<li>write 与 storage 成本上升，许多缓存只读一次。</li>
+<li>命中率按请求算，未观察复用 Token 数。</li>
+<li>TTL 远长于真实复用间隔，过期前占用持续计费。</li>
+<li>部分命中只复用很短前缀，对 prefill 无明显作用。</li>
+</ol>
+<h3 id="根因与修复-5"><a href="#根因与修复-5" class="headerlink" title="根因与修复"></a>根因与修复</h3><p>按缓存群组计算写、读、存储与 avoided uncached cost，设置最低期望复用和 TTL。门禁使用 cache net saving、复用 Token 和性能&#x2F;质量，不使用请求命中率单指标。</p>
+<h2 id="三十六、完整失败案例七：预算门禁在并发-Agent-中超卖"><a href="#三十六、完整失败案例七：预算门禁在并发-Agent-中超卖" class="headerlink" title="三十六、完整失败案例七：预算门禁在并发 Agent 中超卖"></a>三十六、完整失败案例七：预算门禁在并发 Agent 中超卖</h2><h3 id="现象-6"><a href="#现象-6" class="headerlink" title="现象"></a>现象</h3><p>单任务预算 USD 1，三个并行分支各估算 USD 0.4，都在读取剩余 USD 1 后获准，最终成本超过预算。数字为构造数据。</p>
+<h3 id="证据链-6"><a href="#证据链-6" class="headerlink" title="证据链"></a>证据链</h3><ol>
+<li>门禁只查询 posted cost，未包含 active reservations。</li>
+<li>三个分支非原子读取与写入。</li>
+<li>usage 在请求完成后才到达，执行中看不到消耗。</li>
+<li>分支失败后自动重试，没有新增预留。</li>
+<li>预算超限告警在账单日才触发。</li>
+</ol>
+<h3 id="根因与修复-6"><a href="#根因与修复-6" class="headerlink" title="根因与修复"></a>根因与修复</h3><p>引入原子预留和幂等 reservation ID，计算 posted + active + new estimate；完成后结算和释放，崩溃有 TTL 回收。Agent 调度器在创建分支前就申请预算。</p>
+<h2 id="三十七、完整失败案例八：自建推理“低价”来自假设满载"><a href="#三十七、完整失败案例八：自建推理“低价”来自假设满载" class="headerlink" title="三十七、完整失败案例八：自建推理“低价”来自假设满载"></a>三十七、完整失败案例八：自建推理“低价”来自假设满载</h2><h3 id="现象-7"><a href="#现象-7" class="headerlink" title="现象"></a>现象</h3><p>方案报告称自建每百万 Token 成本只有 API 的三分之一，上线后总拥有成本反而更高。数字为构造数据。</p>
+<h3 id="证据链-7"><a href="#证据链-7" class="headerlink" title="证据链"></a>证据链</h3><ol>
+<li>分母使用理论峰值 tokens&#x2F;s × 全月秒数。</li>
+<li>实际利用率受夜间低谷、故障余量和长尾延迟限制。</li>
+<li>只计 GPU 租金，遗漏 CPU、存储、网络、平台和工程值班。</li>
+<li>模型质量较低，人工复核增加。</li>
+<li>为满足 P99 和单节点故障，必须保留更多副本。</li>
+</ol>
+<h3 id="根因与修复-7"><a href="#根因与修复-7" class="headerlink" title="根因与修复"></a>根因与修复</h3><p>使用 Goodput 约束下的实际 accepted tasks，按 effective pool cost 含闲置和运维分摊。API 与自建在相同任务、质量、可用性、区域和观察窗口比较。</p>
+<h2 id="三十八、证据排查手册：从总额异常回到单条事件"><a href="#三十八、证据排查手册：从总额异常回到单条事件" class="headerlink" title="三十八、证据排查手册：从总额异常回到单条事件"></a>三十八、证据排查手册：从总额异常回到单条事件</h2><h3 id="1-总成本突增"><a href="#1-总成本突增" class="headerlink" title="1. 总成本突增"></a>1. 总成本突增</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">先分解：任务量 × 使用强度 × 单位价 + 共享/人工</span><br><span class="line">├─ 任务量 -&gt; 重复 task、流量、攻击、回放</span><br><span class="line">├─ 使用强度 -&gt; Prompt、OSL、reasoning、Agent steps、工具</span><br><span class="line">├─ 单位价 -&gt; price_id、tier、region、context band、合同、汇率</span><br><span class="line">└─ 共享/人工 -&gt; 利用率、预留闲置、升级、积压</span><br></pre></td></tr></table></figure>
+
+<h3 id="2-账本与账单不一致"><a href="#2-账本与账单不一致" class="headerlink" title="2. 账本与账单不一致"></a>2. 账本与账单不一致</h3><p>按 currency、billing account、SKU、账期、区域逐层比较。检查迟到 usage、credit、税、最小消费、批量折扣、舍入、未知 SKU 和重复 observation。保留原始 provider request ID 以便抽样追踪。</p>
+<h3 id="3-单位成本下降但总成本上升"><a href="#3-单位成本下降但总成本上升" class="headerlink" title="3. 单位成本下降但总成本上升"></a>3. 单位成本下降但总成本上升</h3><p>可能是任务增长；检查 accepted task 数和总业务价值。也可能是分母被放大或质量下降，需审计 task 去重与终态。</p>
+<h3 id="4-成本下降但人工上升"><a href="#4-成本下降但人工上升" class="headerlink" title="4. 成本下降但人工上升"></a>4. 成本下降但人工上升</h3><p>连接人工系统的迟到事件，按任务看自动结果、升级原因、处理分钟和最终解决。不要把人工视为另一个部门的成本。</p>
+<h3 id="5-某-tenant-异常"><a href="#5-某-tenant-异常" class="headerlink" title="5. 某 tenant 异常"></a>5. 某 tenant 异常</h3><p>下钻 task&#x2F;run&#x2F;request，比较任务 mix、长度、缓存、路由、重试和工具。检查 tenant 标签是否在网关可信注入，而非来自客户端可伪造字段。</p>
+<h2 id="三十九、数据治理与安全"><a href="#三十九、数据治理与安全" class="headerlink" title="三十九、数据治理与安全"></a>三十九、数据治理与安全</h2><h3 id="1-最小化内容"><a href="#1-最小化内容" class="headerlink" title="1. 最小化内容"></a>1. 最小化内容</h3><p>成本归因通常需要 ID、用量、SKU、状态和业务结果，不需要保存完整 Prompt。内容与 usage 分表，使用摘要或安全标签，权限和保留期分开。</p>
+<h3 id="2-Tenant-防伪"><a href="#2-Tenant-防伪" class="headerlink" title="2. Tenant 防伪"></a>2. Tenant 防伪</h3><p>tenant_id、cost_center 和预算来自认证上下文或服务端映射，不能接受模型输出或未签名请求字段。否则调用者可以把成本转嫁给他人。</p>
+<h3 id="3-价格与合同权限"><a href="#3-价格与合同权限" class="headerlink" title="3. 价格与合同权限"></a>3. 价格与合同权限</h3><p>公开 list price 可以广泛查看，合同折扣、承诺量和 chargeback 属于敏感财务数据。视图按角色隐藏，但计算层保持一致。</p>
+<h3 id="4-审计"><a href="#4-审计" class="headerlink" title="4. 审计"></a>4. 审计</h3><p>记录价格审批、规则发布、手工更正、预算豁免和账期关闭。任何强制覆盖都必须有主体、原因、时间与关联工单。</p>
+<h2 id="四十、从-0-到-1-的落地顺序"><a href="#四十、从-0-到-1-的落地顺序" class="headerlink" title="四十、从 0 到 1 的落地顺序"></a>四十、从 0 到 1 的落地顺序</h2><h3 id="阶段一：建立身份与原始事件"><a href="#阶段一：建立身份与原始事件" class="headerlink" title="阶段一：建立身份与原始事件"></a>阶段一：建立身份与原始事件</h3><ol>
+<li>定义 request&#x2F;attempt、run、task、tenant。</li>
+<li>在网关和工作流传播不可伪造 ID。</li>
+<li>保留供应商原始 usage 和 request ID。</li>
+<li>记录 retry、取消、工具和人工事件。</li>
+<li>先做覆盖率，不急于 chargeback。</li>
+</ol>
+<h3 id="阶段二：价格簿与账本"><a href="#阶段二：价格簿与账本" class="headerlink" title="阶段二：价格簿与账本"></a>阶段二：价格簿与账本</h3><ol>
+<li>建立互斥 usage kind 和单位字典。</li>
+<li>接入带有效时间的价格簿。</li>
+<li>用 Decimal 生成 immutable entries。</li>
+<li>建立 unknown SKU 隔离与账单对账。</li>
+<li>区分 estimated 与 final effective cost。</li>
+</ol>
+<h3 id="阶段三：分摊与单位经济"><a href="#阶段三：分摊与单位经济" class="headerlink" title="阶段三：分摊与单位经济"></a>阶段三：分摊与单位经济</h3><ol>
+<li>直接成本优先归属。</li>
+<li>选少量可解释共享池与分摊规则。</li>
+<li>做守恒、重复和未分摊检查。</li>
+<li>接入业务 accepted task 与人工成本。</li>
+<li>运行 showback 并收集争议。</li>
+</ol>
+<h3 id="阶段四：预算与优化"><a href="#阶段四：预算与优化" class="headerlink" title="阶段四：预算与优化"></a>阶段四：预算与优化</h3><ol>
+<li>建立任务 P50&#x2F;P95 用量估算。</li>
+<li>实现原子预算预留与运行中门禁。</li>
+<li>建立成本异常贡献分解。</li>
+<li>将 quality-adjusted unit cost 接入实验。</li>
+<li>在门槛稳定后逐步 chargeback。</li>
+</ol>
+<h2 id="四十一、上线检查清单"><a href="#四十一、上线检查清单" class="headerlink" title="四十一、上线检查清单"></a>四十一、上线检查清单</h2><h3 id="身份与事件"><a href="#身份与事件" class="headerlink" title="身份与事件"></a>身份与事件</h3><ul>
+<li><input disabled="" type="checkbox"> 每个物理调用有唯一 request_id 和 attempt_no</li>
+<li><input disabled="" type="checkbox"> run、task、tenant 由服务端稳定传播</li>
+<li><input disabled="" type="checkbox"> retry 不覆盖前序 attempt</li>
+<li><input disabled="" type="checkbox"> 工具、检索、网络、人工和共享资源都有事件来源</li>
+<li><input disabled="" type="checkbox"> 原始 observation 与 normalized event 可关联</li>
+<li><input disabled="" type="checkbox"> 缺失 usage 标为未知，不自动记零</li>
+</ul>
+<h3 id="Token-与缓存"><a href="#Token-与缓存" class="headerlink" title="Token 与缓存"></a>Token 与缓存</h3><ul>
+<li><input disabled="" type="checkbox"> 输入总量和 cache 子量的包含关系按供应商版本验证</li>
+<li><input disabled="" type="checkbox"> 输出总量和 reasoning 子量不会重复计价</li>
+<li><input disabled="" type="checkbox"> cache write&#x2F;read&#x2F;storage 使用互斥 usage kind 和单位</li>
+<li><input disabled="" type="checkbox"> 工具内容 Token 与工具调用费边界明确</li>
+<li><input disabled="" type="checkbox"> 取消后计费 Token 与客户端交付 Token 分开</li>
+<li><input disabled="" type="checkbox"> tokenizer 估算与最终供应商计量分开</li>
+</ul>
+<h3 id="价格与账本"><a href="#价格与账本" class="headerlink" title="价格与账本"></a>价格与账本</h3><ul>
+<li><input disabled="" type="checkbox"> price key 包含 SKU、region、tier、context band、unit 和 currency</li>
+<li><input disabled="" type="checkbox"> valid_from&#x2F;valid_to、官方来源、合同和批准状态完整</li>
+<li><input disabled="" type="checkbox"> 历史 ledger 固定 price_id，不套当前价格重算</li>
+<li><input disabled="" type="checkbox"> 金额使用 Decimal&#x2F;定点数，舍入层级明确</li>
+<li><input disabled="" type="checkbox"> unknown&#x2F;ambiguous price 阻止自动结算</li>
+<li><input disabled="" type="checkbox"> 更正使用冲销分录，不静默改历史</li>
+</ul>
+<h3 id="分摊与对账"><a href="#分摊与对账" class="headerlink" title="分摊与对账"></a>分摊与对账</h3><ul>
+<li><input disabled="" type="checkbox"> 直接归属优先于共享分摊</li>
+<li><input disabled="" type="checkbox"> 每个共享规则有 method_id、版本、权重和解释</li>
+<li><input disabled="" type="checkbox"> allocated + remainder 等于 origin</li>
+<li><input disabled="" type="checkbox"> 来源分录与 allocation 在责任视图不重复</li>
+<li><input disabled="" type="checkbox"> unallocated 与 idle cost 显式可见</li>
+<li><input disabled="" type="checkbox"> 账本按账号、SKU、币种和账期与账单对账</li>
+</ul>
+<h3 id="预算"><a href="#预算" class="headerlink" title="预算"></a>预算</h3><ul>
+<li><input disabled="" type="checkbox"> task&#x2F;run&#x2F;tenant 的硬软预算边界明确</li>
+<li><input disabled="" type="checkbox"> 估算使用条件 P50&#x2F;P95，而非全站均值</li>
+<li><input disabled="" type="checkbox"> 并发步骤使用原子 reservation 防超卖</li>
+<li><input disabled="" type="checkbox"> posted、active reservations 和 new estimate 一起判断</li>
+<li><input disabled="" type="checkbox"> 预算不足时返回完整、可解释的停止&#x2F;审批状态</li>
+<li><input disabled="" type="checkbox"> 迟到 usage、过期预留和最终实算有 reconciliation</li>
+</ul>
+<h3 id="质量与单位经济"><a href="#质量与单位经济" class="headerlink" title="质量与单位经济"></a>质量与单位经济</h3><ul>
+<li><input disabled="" type="checkbox"> Task accepted 绑定业务后置条件、质量和安全门</li>
+<li><input disabled="" type="checkbox"> HTTP 200、Schema、相似度或模型置信度不是 accepted 保证</li>
+<li><input disabled="" type="checkbox"> 失败、重试、废弃输出和人工成本留在分子</li>
+<li><input disabled="" type="checkbox"> 分母按 task 去重且观察窗口完整</li>
+<li><input disabled="" type="checkbox"> 优化前后 cohort 或重加权方式一致</li>
+<li><input disabled="" type="checkbox"> 高风险质量&#x2F;安全门不可被成本收益抵消</li>
+</ul>
+<h3 id="运营与权限"><a href="#运营与权限" class="headerlink" title="运营与权限"></a>运营与权限</h3><ul>
+<li><input disabled="" type="checkbox"> showback 与 chargeback 状态明确</li>
+<li><input disabled="" type="checkbox"> 财务账期冻结和更正流程已演练</li>
+<li><input disabled="" type="checkbox"> 合同价、Prompt 内容和 tenant 数据按权限隔离</li>
+<li><input disabled="" type="checkbox"> 预算豁免、价格更新和分摊发布有审计</li>
+<li><input disabled="" type="checkbox"> 成本异常能下钻到 usage event 与 Trace</li>
+<li><input disabled="" type="checkbox"> 价格快照标明 2026-07-26 或实际生效日期，未声明永久有效</li>
+</ul>
+<h2 id="四十二、总结"><a href="#四十二、总结" class="headerlink" title="四十二、总结"></a>四十二、总结</h2><p>AI 应用成本治理不是把 <code>input_tokens × price + output_tokens × price</code> 写进一个函数。真实系统的成本跨越模型、缓存、检索、工具、网络、重试、人工和自建容量，并跨越 request、run、task、tenant 四个责任层级。</p>
+<p>完整做法可以归纳为十步：</p>
+<ol>
+<li>让每个物理 attempt、工作流 run、业务 task 和 tenant 都有稳定身份。</li>
+<li>原样保留供应商与内部服务的 usage observation，再映射为互斥事件。</li>
+<li>正确处理 input&#x2F;cache、output&#x2F;reasoning 的包含关系，防止重复计费。</li>
+<li>用有生效时间、单位、币种、区域和服务层的价格簿估值。</li>
+<li>区分 List、Contracted、Billed、Effective 与 Allocated Cost。</li>
+<li>用 immutable Decimal 账本保留重试、失败、取消和更正。</li>
+<li>对 GPU、索引和平台等共享成本执行有版本、可解释、守恒的分摊。</li>
+<li>将人工复核和业务最终真值连接到 Task，计算 quality-adjusted unit cost。</li>
+<li>用事前估算、原子预留、运行中扣减和事后实算实现预算门禁。</li>
+<li>所有优化在固定任务分布下同时通过成本、质量、安全、延迟和容量回归。</li>
+</ol>
+<p>最终需要证明的不是“这次调用比上次少花了多少 Token”，而是：</p>
+<p><strong>在价格会变化、调用会重试、共享资源会闲置、质量真值会迟到的现实条件下，每一笔成本都能回到使用事件和责任对象；每一个被计入分母的任务都真正通过业务验收；任何节省都没有把错误、人工和风险转移到看板之外。</strong></p>
+<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><p>以下资料核对时间为 2026-07-26。厂商价格页面仅作为该日产品与计费维度的官方入口，实际使用必须按模型、版本、区域、服务层和合同保存价格快照。</p>
+<ul>
+<li><a target="_blank" rel="noopener" href="https://focus.finops.org/focus-specification/v1-3/">FinOps Open Cost and Usage Specification：FOCUS 1.3</a></li>
+<li><a target="_blank" rel="noopener" href="https://opentelemetry.io/docs/specs/semconv/registry/attributes/gen-ai/">OpenTelemetry：GenAI Semantic Conventions Attribute Registry</a></li>
+<li><a target="_blank" rel="noopener" href="https://developers.openai.com/api/docs/pricing">OpenAI Developer Documentation：API Pricing</a></li>
+<li><a target="_blank" rel="noopener" href="https://openai.com/api/pricing/">OpenAI 官方 API Pricing 入口</a></li>
+<li><a target="_blank" rel="noopener" href="https://platform.claude.com/docs/en/about-claude/pricing">Anthropic Claude Platform Docs：Pricing</a></li>
+<li><a target="_blank" rel="noopener" href="https://ai.google.dev/gemini-api/docs/pricing">Google AI for Developers：Gemini Developer API Pricing</a></li>
+<li><a target="_blank" rel="noopener" href="https://docs.nvidia.com/nim/benchmarking/llm/latest/metrics.html">NVIDIA NIM LLM Benchmarking：Metrics</a></li>
+<li><a target="_blank" rel="noopener" href="https://arxiv.org/abs/2309.06180">Kwon 等：Efficient Memory Management for Large Language Model Serving with PagedAttention</a></li>
+</ul>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/AI%E6%B5%8B%E8%AF%95/" rel="tag"># AI测试</a>
+              <a href="/tags/%E8%B4%A8%E9%87%8F%E5%B7%A5%E7%A8%8B/" rel="tag"># 质量工程</a>
+              <a href="/tags/AI%E6%88%90%E6%9C%AC%E6%B2%BB%E7%90%86/" rel="tag"># AI成本治理</a>
+              <a href="/tags/Token%E6%88%90%E6%9C%AC/" rel="tag"># Token成本</a>
+              <a href="/tags/%E6%88%90%E6%9C%AC%E8%B4%A6%E6%9C%AC/" rel="tag"># 成本账本</a>
+              <a href="/tags/%E5%8D%95%E4%BD%8D%E7%BB%8F%E6%B5%8E/" rel="tag"># 单位经济</a>
+              <a href="/tags/FinOps/" rel="tag"># FinOps</a>
+              <a href="/tags/%E9%A2%84%E7%AE%97%E9%97%A8%E7%A6%81/" rel="tag"># 预算门禁</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2026/05/10/AI%E6%B5%8B%E8%AF%95-42-%E5%A4%A7%E6%A8%A1%E5%9E%8B%E6%8E%A8%E7%90%86%E6%80%A7%E8%83%BD%E6%80%8E%E4%B9%88%E5%88%86%E6%9E%90TTFT-TPOT%E5%90%9E%E5%90%90%E6%89%B9%E5%A4%84%E7%90%86%E5%92%8CKV-Cache/" rel="prev" title="AI测试-42-大模型推理性能怎么分析TTFT-TPOT吞吐批处理和KV Cache">
+                  <i class="fa fa-angle-left"></i> AI测试-42-大模型推理性能怎么分析TTFT-TPOT吞吐批处理和KV Cache
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2026/05/14/AI%E6%B5%8B%E8%AF%95-44-AI%E5%BA%94%E7%94%A8%E4%B8%8A%E7%BA%BF%E5%90%8E%E6%80%8E%E4%B9%88%E5%81%9A%E5%9C%A8%E7%BA%BF%E8%AF%84%E6%B5%8B%E6%8A%BD%E6%A0%B7%E5%8F%8D%E9%A6%88%E5%92%8C%E5%BD%B1%E5%AD%90%E6%B5%81%E9%87%8F%E9%AA%8C%E8%AF%81/" rel="next" title="AI测试-44-AI应用上线后怎么做在线评测抽样反馈和影子流量验证">
+                  AI测试-44-AI应用上线后怎么做在线评测抽样反馈和影子流量验证 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">2.1m</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">129:05</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

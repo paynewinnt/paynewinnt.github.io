@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="820" viewBox="0 0 1280 820" role="img" aria-labelledby="title desc">
+  <title id="title">混合 Agent 任务执行器的状态机与崩溃恢复路径</title>
+  <desc id="desc">展示任务从校验、运行、动作预写、工具调用、结果确认到成功或人工接管的状态转换，并强调提交后响应丢失时先按幂等键查询而不是盲目重试。</desc>
+  <style>
+    .bg { fill: #f8fafc; }
+    .title { font: 700 34px -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; fill: #0f172a; }
+    .sub { font: 400 18px -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; fill: #475569; }
+    .h { font: 700 18px -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; fill: #0f172a; }
+    .t { font: 400 15px -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; fill: #334155; }
+    .small { font: 600 14px -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+    .normal { fill: #eff6ff; stroke: #2563eb; stroke-width: 2; }
+    .model { fill: #f5f3ff; stroke: #7c3aed; stroke-width: 2; }
+    .effect { fill: #fff7ed; stroke: #ea580c; stroke-width: 2.5; }
+    .recover { fill: #ecfeff; stroke: #0891b2; stroke-width: 2; }
+    .pass { fill: #ecfdf5; stroke: #059669; stroke-width: 2.5; }
+    .review { fill: #fefce8; stroke: #ca8a04; stroke-width: 2.5; }
+    .fail { fill: #fff1f2; stroke: #e11d48; stroke-width: 2; }
+    .panel { fill: #ffffff; stroke: #cbd5e1; stroke-width: 2; }
+    .arrow { stroke: #64748b; stroke-width: 2.5; fill: none; marker-end: url(#arrow); }
+    .crash { stroke: #e11d48; stroke-width: 2.5; fill: none; stroke-dasharray: 8 6; marker-end: url(#red); }
+    .recoverArrow { stroke: #0891b2; stroke-width: 2.5; fill: none; stroke-dasharray: 7 5; marker-end: url(#cyan); }
+  </style>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#64748b"/></marker>
+    <marker id="red" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#e11d48"/></marker>
+    <marker id="cyan" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#0891b2"/></marker>
+  </defs>
+  <rect class="bg" width="1280" height="820"/>
+  <text class="title" x="54" y="56">恢复协议的核心：先恢复事实，再恢复流程</text>
+  <text class="sub" x="54" y="89">模型提出动作；控制器写前登记、分配稳定幂等键并验证终态。超时只表示响应未知，不表示副作用未发生。</text>
+
+  <rect class="normal" x="54" y="150" width="150" height="92" rx="8"/>
+  <text class="h" x="78" y="184">VALIDATING</text>
+  <text class="t" x="78" y="212">合同与身份校验</text>
+  <path class="arrow" d="M204 196 L238 196"/>
+
+  <rect class="normal" x="242" y="150" width="140" height="92" rx="8"/>
+  <text class="h" x="270" y="184">READY</text>
+  <text class="t" x="270" y="212">状态可执行</text>
+  <path class="arrow" d="M382 196 L416 196"/>
+
+  <rect class="model" x="420" y="136" width="202" height="120" rx="8"/>
+  <text class="h" x="448" y="172">RUNNING</text>
+  <text class="t" x="448" y="201">Agent 观察与提案</text>
+  <text class="small" x="448" y="231" fill="#6d28d9">不能直接执行副作用</text>
+  <path class="arrow" d="M622 196 L656 196"/>
+
+  <rect class="effect" x="660" y="136" width="236" height="120" rx="8"/>
+  <text class="h" x="686" y="172">ACTION_PREPARED</text>
+  <text class="t" x="686" y="201">校验权限、参数与预算</text>
+  <text class="small" x="686" y="231" fill="#c2410c">先落事件 + 幂等键</text>
+  <path class="arrow" d="M896 196 L930 196"/>
+
+  <rect class="effect" x="934" y="136" width="150" height="120" rx="8"/>
+  <text class="h" x="958" y="172">WAITING_TOOL</text>
+  <text class="t" x="958" y="201">调用并等待</text>
+  <text class="small" x="958" y="231" fill="#c2410c">可能已提交</text>
+  <path class="arrow" d="M1084 196 L1118 196"/>
+
+  <rect class="pass" x="1122" y="150" width="104" height="92" rx="8"/>
+  <text class="h" x="1139" y="184">确认</text>
+  <text class="t" x="1139" y="212">后置校验</text>
+
+  <path class="arrow" d="M1174 242 C1174 294 978 294 978 336"/>
+  <rect class="normal" x="838" y="340" width="280" height="94" rx="8"/>
+  <text class="h" x="864" y="374">CHECKPOINTING -> RUNNING</text>
+  <text class="t" x="864" y="402">回执、effect、预算和状态版本已持久化</text>
+  <path class="arrow" d="M838 387 C724 387 700 300 586 256"/>
+
+  <path class="crash" d="M1008 256 L1008 494"/>
+  <text class="small" x="1022" y="478" fill="#be123c">提交后丢响应 / 进程崩溃</text>
+
+  <rect class="recover" x="54" y="500" width="216" height="112" rx="8"/>
+  <text class="h" x="80" y="536">RECOVERING</text>
+  <text class="t" x="80" y="565">取得租约与 fencing token</text>
+  <text class="t" x="80" y="590">事件重放到最新版本</text>
+  <path class="recoverArrow" d="M1008 500 C846 470 420 470 270 540"/>
+
+  <rect class="recover" x="306" y="500" width="270" height="112" rx="8"/>
+  <text class="h" x="332" y="536">查询未决动作</text>
+  <text class="t" x="332" y="565">按原 idempotency_key</text>
+  <text class="t" x="332" y="590">读取权威提交状态</text>
+  <path class="arrow" d="M270 556 L302 556"/>
+
+  <path class="arrow" d="M576 535 L642 478"/>
+  <path class="arrow" d="M576 576 L642 576"/>
+  <path class="arrow" d="M576 599 L642 674"/>
+
+  <rect class="pass" x="646" y="442" width="270" height="94" rx="8"/>
+  <text class="h" x="672" y="476">已提交</text>
+  <text class="t" x="672" y="504">找回同一回执，不再调用工具</text>
+  <path class="recoverArrow" d="M916 489 C1050 489 1080 434 1118 408"/>
+
+  <rect class="normal" x="646" y="550" width="270" height="94" rx="8"/>
+  <text class="h" x="672" y="584">确认未提交</text>
+  <text class="t" x="672" y="612">RETRY_WAIT，复用原键受控重试</text>
+  <path class="recoverArrow" d="M916 597 C1040 597 1054 294 1008 256"/>
+
+  <rect class="review" x="646" y="658" width="270" height="94" rx="8"/>
+  <text class="h" x="672" y="692">仍然未知</text>
+  <text class="t" x="672" y="720">停止新写入，生成证据并转人工</text>
+
+  <rect class="panel" x="952" y="646" width="274" height="106" rx="8"/>
+  <text class="h" x="978" y="680">任何恢复路径都检查</text>
+  <text class="t" x="978" y="708">策略版本 · 剩余预算 · 审批期限</text>
+  <text class="t" x="978" y="734">副作用清单 · 最终 Oracle</text>
+  <path class="arrow" d="M916 705 L948 705"/>
+
+  <rect class="fail" x="54" y="664" width="522" height="88" rx="8"/>
+  <text class="h" x="80" y="698">禁止恢复方式</text>
+  <text class="t" x="80" y="726">重新问模型“是否成功” · 生成新幂等键 · 丢弃首错 · 默认重复写入</text>
+</svg>

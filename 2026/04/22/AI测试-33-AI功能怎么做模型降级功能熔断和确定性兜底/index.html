@@ -1,0 +1,1618 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="AI 服务出现超时后切换到另一个模型，看起来是一条很自然的高可用方案。 但“另一个模型返回了 HTTP 200”不等于业务已经恢复。 备用模型可能：  不支持原来的工具调用或结构化输出 使用不同的安全边界和停止原因 对同一 Prompt 有不同语义理解 缺少主模型依赖的长上下文、图片或函数能力 生成格式合法但业务含义错误的字段 成本更高，切换后迅速耗尽预算 延迟更低但核心任务成功率明显下降 返回一">
+<meta property="og:type" content="article">
+<meta property="og:title" content="AI测试-33-AI功能怎么做模型降级功能熔断和确定性兜底">
+<meta property="og:url" content="https://paynewinnt.github.io/2026/04/22/AI%E6%B5%8B%E8%AF%95-33-AI%E5%8A%9F%E8%83%BD%E6%80%8E%E4%B9%88%E5%81%9A%E6%A8%A1%E5%9E%8B%E9%99%8D%E7%BA%A7%E5%8A%9F%E8%83%BD%E7%86%94%E6%96%AD%E5%92%8C%E7%A1%AE%E5%AE%9A%E6%80%A7%E5%85%9C%E5%BA%95/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="AI 服务出现超时后切换到另一个模型，看起来是一条很自然的高可用方案。 但“另一个模型返回了 HTTP 200”不等于业务已经恢复。 备用模型可能：  不支持原来的工具调用或结构化输出 使用不同的安全边界和停止原因 对同一 Prompt 有不同语义理解 缺少主模型依赖的长上下文、图片或函数能力 生成格式合法但业务含义错误的字段 成本更高，切换后迅速耗尽预算 延迟更低但核心任务成功率明显下降 返回一">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://paynewinnt.github.io/images/ai-quality/ai-33-degradation-ladder.svg">
+<meta property="og:image" content="https://paynewinnt.github.io/images/ai-quality/ai-33-circuit-recovery.svg">
+<meta property="article:published_time" content="2026-04-22T12:30:00.000Z">
+<meta property="article:modified_time" content="2026-04-22T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="AI测试">
+<meta property="article:tag" content="容错设计">
+<meta property="article:tag" content="故障注入">
+<meta property="article:tag" content="质量工程">
+<meta property="article:tag" content="模型降级">
+<meta property="article:tag" content="Circuit Breaker">
+<meta property="article:tag" content="确定性兜底">
+<meta property="article:tag" content="错误预算">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://paynewinnt.github.io/images/ai-quality/ai-33-degradation-ladder.svg">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2026/04/22/AI%E6%B5%8B%E8%AF%95-33-AI%E5%8A%9F%E8%83%BD%E6%80%8E%E4%B9%88%E5%81%9A%E6%A8%A1%E5%9E%8B%E9%99%8D%E7%BA%A7%E5%8A%9F%E8%83%BD%E7%86%94%E6%96%AD%E5%92%8C%E7%A1%AE%E5%AE%9A%E6%80%A7%E5%85%9C%E5%BA%95/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2026/04/22/AI%E6%B5%8B%E8%AF%95-33-AI%E5%8A%9F%E8%83%BD%E6%80%8E%E4%B9%88%E5%81%9A%E6%A8%A1%E5%9E%8B%E9%99%8D%E7%BA%A7%E5%8A%9F%E8%83%BD%E7%86%94%E6%96%AD%E5%92%8C%E7%A1%AE%E5%AE%9A%E6%80%A7%E5%85%9C%E5%BA%95/","path":"2026/04/22/AI测试-33-AI功能怎么做模型降级功能熔断和确定性兜底/","title":"AI测试-33-AI功能怎么做模型降级功能熔断和确定性兜底"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>AI测试-33-AI功能怎么做模型降级功能熔断和确定性兜底 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E5%85%88%E7%BB%99%E7%BB%93%E8%AE%BA%EF%BC%9A%E9%99%8D%E7%BA%A7%E7%9A%84%E7%9B%AE%E6%A0%87%E6%98%AF%E4%BF%9D%E7%95%99%E5%8F%AF%E4%BF%A1%E8%83%BD%E5%8A%9B%EF%BC%8C%E4%B8%8D%E6%98%AF%E4%BF%9D%E4%BD%8F-HTTP-200"><span class="nav-number">1.</span> <span class="nav-text">一、先给结论：降级的目标是保留可信能力，不是保住 HTTP 200</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E8%B4%AF%E7%A9%BF%E5%9C%BA%E6%99%AF%EF%BC%9A%E5%AE%A2%E6%9C%8D%E4%B8%8E%E5%B1%A5%E7%BA%A6-Agent-%E5%88%B0%E5%BA%95%E6%89%BF%E8%AF%BA%E4%BA%86%E4%BB%80%E4%B9%88"><span class="nav-number">2.</span> <span class="nav-text">二、贯穿场景：客服与履约 Agent 到底承诺了什么</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%BB%BB%E5%8A%A1%E6%9C%80%E4%BD%8E%E5%A5%91%E7%BA%A6"><span class="nav-number">2.1.</span> <span class="nav-text">1. 任务最低契约</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%B8%8D%E5%90%8C%E8%AF%B7%E6%B1%82%E5%8F%AF%E4%BB%A5%E6%9C%89%E4%B8%8D%E5%90%8C%E6%9C%80%E4%BD%8E%E9%98%B6%E6%A2%AF"><span class="nav-number">2.2.</span> <span class="nav-text">2. 不同请求可以有不同最低阶梯</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E5%85%AD%E7%B1%BB%E4%BF%A1%E5%8F%B7%EF%BC%9A%E4%B8%8D%E8%A6%81%E5%8F%AA%E5%9C%A8%E6%A8%A1%E5%9E%8B%E6%8A%9B%E5%BC%82%E5%B8%B8%E6%97%B6%E9%99%8D%E7%BA%A7"><span class="nav-number">3.</span> <span class="nav-text">三、六类信号：不要只在模型抛异常时降级</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%B4%A8%E9%87%8F%E4%BF%A1%E5%8F%B7"><span class="nav-number">3.1.</span> <span class="nav-text">1. 质量信号</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%BB%B6%E8%BF%9F%E4%BF%A1%E5%8F%B7"><span class="nav-number">3.2.</span> <span class="nav-text">2. 延迟信号</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E9%85%8D%E9%A2%9D%E4%BF%A1%E5%8F%B7"><span class="nav-number">3.3.</span> <span class="nav-text">3. 配额信号</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%88%90%E6%9C%AC%E4%BF%A1%E5%8F%B7"><span class="nav-number">3.4.</span> <span class="nav-text">4. 成本信号</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%AE%89%E5%85%A8%E4%BF%A1%E5%8F%B7"><span class="nav-number">3.5.</span> <span class="nav-text">5. 安全信号</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E4%BE%9B%E5%BA%94%E5%95%86%E4%B8%8E%E4%BE%9D%E8%B5%96%E6%95%85%E9%9A%9C"><span class="nav-number">3.6.</span> <span class="nav-text">6. 供应商与依赖故障</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E5%85%88%E5%8C%BA%E5%88%86%E5%85%AD%E4%B8%AA%E7%BB%8F%E5%B8%B8%E6%B7%B7%E7%94%A8%E7%9A%84%E6%9C%BA%E5%88%B6"><span class="nav-number">4.</span> <span class="nav-text">四、先区分六个经常混用的机制</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E5%BB%BA%E7%AB%8B%E5%85%AD%E7%BA%A7%E5%8A%9F%E8%83%BD%E9%98%B6%E6%A2%AF"><span class="nav-number">5.</span> <span class="nav-text">五、建立六级功能阶梯</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#L0%EF%BC%9A%E5%AE%8C%E6%95%B4-Agent"><span class="nav-number">5.1.</span> <span class="nav-text">L0：完整 Agent</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#L1%EF%BC%9A%E5%8F%97%E9%99%90-Workflow"><span class="nav-number">5.2.</span> <span class="nav-text">L1：受限 Workflow</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#L2%EF%BC%9A%E5%8D%95%E6%A8%A1%E5%9E%8B%E6%88%96%E5%B0%8F%E6%A8%A1%E5%9E%8B"><span class="nav-number">5.3.</span> <span class="nav-text">L2：单模型或小模型</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#L3%EF%BC%9A%E7%BC%93%E5%AD%98%E6%88%96%E6%A3%80%E7%B4%A2%E7%BB%93%E6%9E%9C"><span class="nav-number">5.4.</span> <span class="nav-text">L3：缓存或检索结果</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#L4%EF%BC%9A%E7%A1%AE%E5%AE%9A%E6%80%A7%E8%A7%84%E5%88%99"><span class="nav-number">5.5.</span> <span class="nav-text">L4：确定性规则</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#L5%EF%BC%9A%E4%BA%BA%E5%B7%A5%E6%88%96%E6%98%8E%E7%A1%AE%E4%B8%8D%E5%8F%AF%E7%94%A8"><span class="nav-number">5.6.</span> <span class="nav-text">L5：人工或明确不可用</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E8%83%BD%E5%8A%9B%E9%98%B6%E6%A2%AF%E8%A6%81%E7%94%A8%E5%A5%91%E7%BA%A6%E6%8F%8F%E8%BF%B0%EF%BC%8C%E4%B8%8D%E9%9D%A0%E4%BB%A3%E7%A0%81%E9%A1%BA%E5%BA%8F%E7%8C%9C"><span class="nav-number">6.</span> <span class="nav-text">六、能力阶梯要用契约描述，不靠代码顺序猜</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%A6%81%E6%AD%A2%E5%90%91%E4%B8%8B%E5%85%BC%E5%AE%B9%E7%9A%84%E8%AF%B7%E6%B1%82"><span class="nav-number">6.1.</span> <span class="nav-text">1. 禁止向下兼容的请求</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E9%83%A8%E5%88%86%E7%BB%93%E6%9E%9C%E8%A6%81%E6%98%BE%E5%BC%8F%E5%BB%BA%E6%A8%A1"><span class="nav-number">6.2.</span> <span class="nav-text">2. 部分结果要显式建模</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E8%B4%A8%E9%87%8F%E9%97%A8%E6%A7%9B%EF%BC%9A%E5%A4%87%E7%94%A8%E8%B7%AF%E5%BE%84%E6%88%90%E5%8A%9F%E8%BF%94%E5%9B%9E%E4%BB%A5%E5%90%8E%E8%BF%98%E8%A6%81%E8%BF%87%E4%BB%80%E4%B9%88%E6%A3%80%E6%9F%A5"><span class="nav-number">7.</span> <span class="nav-text">七、质量门槛：备用路径成功返回以后还要过什么检查</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Schema-%E9%97%A8%E6%A7%9B"><span class="nav-number">7.1.</span> <span class="nav-text">1. Schema 门槛</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%AF%AD%E4%B9%89%E9%97%A8%E6%A7%9B"><span class="nav-number">7.2.</span> <span class="nav-text">2. 语义门槛</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%B8%9A%E5%8A%A1%E4%B8%8D%E5%8F%98%E9%87%8F"><span class="nav-number">7.3.</span> <span class="nav-text">3. 业务不变量</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%AE%89%E5%85%A8%E9%97%A8%E6%A7%9B"><span class="nav-number">7.4.</span> <span class="nav-text">4. 安全门槛</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E4%BB%BB%E5%8A%A1%E8%B4%A8%E9%87%8F%E9%97%A8%E6%A7%9B"><span class="nav-number">7.5.</span> <span class="nav-text">5. 任务质量门槛</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E9%9D%99%E9%BB%98-fallback-%E4%B8%BA%E4%BB%80%E4%B9%88%E5%8D%B1%E9%99%A9"><span class="nav-number">8.</span> <span class="nav-text">八、静默 fallback 为什么危险</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%94%A8%E6%88%B7%E5%9F%BA%E4%BA%8E%E9%94%99%E8%AF%AF%E8%83%BD%E5%8A%9B%E5%81%87%E8%AE%BE%E8%A1%8C%E5%8A%A8"><span class="nav-number">8.1.</span> <span class="nav-text">1. 用户基于错误能力假设行动</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%B8%8B%E6%B8%B8%E6%8A%8A%E9%99%8D%E7%BA%A7%E7%BB%93%E6%9E%9C%E5%BD%93%E5%AE%8C%E6%95%B4%E6%95%B0%E6%8D%AE"><span class="nav-number">8.2.</span> <span class="nav-text">2. 下游把降级结果当完整数据</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%9B%91%E6%8E%A7%E6%8A%8A%E9%94%99%E8%AF%AF%E7%BB%93%E6%9E%9C%E8%AE%A1%E4%B8%BA%E5%8F%AF%E7%94%A8"><span class="nav-number">8.3.</span> <span class="nav-text">3. 监控把错误结果计为可用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%93%AA%E4%BA%9B%E5%8F%98%E5%8C%96%E5%8F%AF%E4%BB%A5%E4%B8%8D%E6%89%93%E6%89%B0%E7%94%A8%E6%88%B7"><span class="nav-number">8.4.</span> <span class="nav-text">4. 哪些变化可以不打扰用户</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E8%B6%85%E6%97%B6%E9%A2%84%E7%AE%97%EF%BC%9A%E6%AF%8F%E6%AC%A1%E5%B0%9D%E8%AF%95%E4%B8%8D%E8%83%BD%E5%90%84%E6%8B%BF%E4%B8%80%E6%95%B4%E4%BB%BD-SLO"><span class="nav-number">9.</span> <span class="nav-text">九、超时预算：每次尝试不能各拿一整份 SLO</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%8C%BA%E5%88%86%E5%9B%9B%E7%B1%BB%E8%B6%85%E6%97%B6"><span class="nav-number">9.1.</span> <span class="nav-text">1. 区分四类超时</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E7%BB%99-fallback-%E7%95%99%E9%A2%84%E7%AE%97%EF%BC%8C%E4%BD%86%E4%B8%8D%E8%A6%81%E6%B0%B8%E4%B9%85%E9%A2%84%E7%95%99"><span class="nav-number">9.2.</span> <span class="nav-text">2. 给 fallback 留预算，但不要永久预留</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%B6%85%E6%97%B6%E5%90%8E%E5%81%9C%E6%AD%A2%E5%90%8E%E5%8F%B0%E6%B5%AA%E8%B4%B9"><span class="nav-number">9.3.</span> <span class="nav-text">3. 超时后停止后台浪费</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E7%86%94%E6%96%AD%E5%99%A8%EF%BC%9A%E6%8C%89%E4%BE%9D%E8%B5%96%E3%80%81%E8%83%BD%E5%8A%9B%E5%92%8C%E9%94%99%E8%AF%AF%E7%B1%BB%E5%9E%8B%E5%88%86%E5%8C%BA"><span class="nav-number">10.</span> <span class="nav-text">十、熔断器：按依赖、能力和错误类型分区</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Closed"><span class="nav-number">10.1.</span> <span class="nav-text">1. Closed</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Open"><span class="nav-number">10.2.</span> <span class="nav-text">2. Open</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Half-Open"><span class="nav-number">10.3.</span> <span class="nav-text">3. Half-Open</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E7%86%94%E6%96%AD%E9%94%AE%E7%9A%84%E7%B2%92%E5%BA%A6"><span class="nav-number">10.4.</span> <span class="nav-text">4. 熔断键的粒度</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E8%BF%9F%E6%BB%9E%E9%98%B2%E6%AD%A2%E7%8A%B6%E6%80%81%E6%8A%96%E5%8A%A8"><span class="nav-number">10.5.</span> <span class="nav-text">5. 迟滞防止状态抖动</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81Bulkhead%EF%BC%9A%E7%86%94%E6%96%AD%E5%89%8D%E5%85%88%E9%98%BB%E6%AD%A2%E4%B8%80%E4%B8%AA%E6%95%85%E9%9A%9C%E5%90%83%E5%85%89%E6%89%80%E6%9C%89%E8%B5%84%E6%BA%90"><span class="nav-number">11.</span> <span class="nav-text">十一、Bulkhead：熔断前先阻止一个故障吃光所有资源</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%8F%AF%E9%9A%94%E7%A6%BB%E7%9A%84%E8%B5%84%E6%BA%90"><span class="nav-number">11.1.</span> <span class="nav-text">1. 可隔离的资源</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E9%9A%94%E8%88%B1%E7%9A%84%E4%BB%A3%E4%BB%B7"><span class="nav-number">11.2.</span> <span class="nav-text">2. 隔舱的代价</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%B8%8D%E8%A6%81%E8%AE%A9-fallback-%E4%BA%89%E6%8A%A2%E4%B8%BB%E8%B7%AF%E5%BE%84%E6%9C%80%E5%90%8E%E7%9A%84%E8%B5%84%E6%BA%90"><span class="nav-number">11.3.</span> <span class="nav-text">3. 不要让 fallback 争抢主路径最后的资源</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81Retry%E3%80%81Backoff%E3%80%81Jitter-%E5%92%8C-Idempotency"><span class="nav-number">12.</span> <span class="nav-text">十二、Retry、Backoff、Jitter 和 Idempotency</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%8F%AA%E9%87%8D%E8%AF%95%E5%8F%AF%E6%81%A2%E5%A4%8D%E9%94%99%E8%AF%AF"><span class="nav-number">12.1.</span> <span class="nav-text">1. 只重试可恢复错误</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%BD%BF%E7%94%A8%E5%B8%A6%E4%B8%8A%E9%99%90%E7%9A%84%E6%8C%87%E6%95%B0%E9%80%80%E9%81%BF%E5%92%8C%E6%8A%96%E5%8A%A8"><span class="nav-number">12.2.</span> <span class="nav-text">2. 使用带上限的指数退避和抖动</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%A8%A1%E5%9E%8B%E8%B0%83%E7%94%A8%E5%B9%82%E7%AD%89%E4%B8%8D%E7%AD%89%E4%BA%8E-Agent-%E4%BB%BB%E5%8A%A1%E5%B9%82%E7%AD%89"><span class="nav-number">12.3.</span> <span class="nav-text">3. 模型调用幂等不等于 Agent 任务幂等</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%90%8C%E4%B8%80%E5%B9%82%E7%AD%89%E9%94%AE%E4%B8%8D%E8%83%BD%E6%89%BF%E8%BD%BD%E4%B8%8D%E5%90%8C%E6%84%8F%E5%9B%BE"><span class="nav-number">12.4.</span> <span class="nav-text">4. 同一幂等键不能承载不同意图</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81Fallback-%E7%9A%84%E6%95%B0%E6%8D%AE%E4%B8%8E-Schema-%E5%85%BC%E5%AE%B9"><span class="nav-number">13.</span> <span class="nav-text">十三、Fallback 的数据与 Schema 兼容</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%BB%BA%E7%AB%8B%E4%BE%9B%E5%BA%94%E5%95%86%E6%97%A0%E5%85%B3%E7%9A%84%E5%86%85%E9%83%A8%E5%A5%91%E7%BA%A6"><span class="nav-number">13.1.</span> <span class="nav-text">1. 建立供应商无关的内部契约</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E7%BC%BA%E5%A4%B1%E4%B8%8D%E8%83%BD%E4%BC%AA%E8%A3%85%E6%88%90%E7%A9%BA%E5%80%BC"><span class="nav-number">13.2.</span> <span class="nav-text">2. 缺失不能伪装成空值</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Schema-%E7%89%88%E6%9C%AC%E8%A6%81%E5%8F%8C%E5%90%91%E9%AA%8C%E8%AF%81"><span class="nav-number">13.3.</span> <span class="nav-text">3. Schema 版本要双向验证</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E8%AF%AD%E4%B9%89%E5%B7%AE%E5%BC%82%E8%A6%81%E5%8D%95%E7%8B%AC%E8%AF%84%E6%B5%8B"><span class="nav-number">13.4.</span> <span class="nav-text">4. 语义差异要单独评测</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81%E7%BC%93%E5%AD%98%E3%80%81%E6%A3%80%E7%B4%A2%E4%B8%8E%E7%A1%AE%E5%AE%9A%E6%80%A7%E8%A7%84%E5%88%99%E6%80%8E%E6%A0%B7%E5%85%9C%E5%BA%95"><span class="nav-number">14.</span> <span class="nav-text">十四、缓存、检索与确定性规则怎样兜底</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%BC%93%E5%AD%98%E9%9C%80%E8%A6%81%E7%89%88%E6%9C%AC%E3%80%81%E6%9D%83%E9%99%90%E5%92%8C%E6%96%B0%E9%B2%9C%E5%BA%A6"><span class="nav-number">14.1.</span> <span class="nav-text">1. 缓存需要版本、权限和新鲜度</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%A3%80%E7%B4%A2%E5%85%9C%E5%BA%95%E5%8F%AA%E8%BF%94%E5%9B%9E%E8%AF%81%E6%8D%AE%E8%83%BD%E6%94%AF%E6%8C%81%E7%9A%84%E5%86%85%E5%AE%B9"><span class="nav-number">14.2.</span> <span class="nav-text">2. 检索兜底只返回证据能支持的内容</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%A1%AE%E5%AE%9A%E6%80%A7%E8%A7%84%E5%88%99%E9%87%87%E7%94%A8%E5%85%81%E8%AE%B8%E6%B8%85%E5%8D%95"><span class="nav-number">14.3.</span> <span class="nav-text">3. 确定性规则采用允许清单</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%85%9C%E5%BA%95%E4%B9%9F%E8%A6%81%E6%9C%89%E6%B5%8B%E8%AF%95-Oracle"><span class="nav-number">14.4.</span> <span class="nav-text">4. 兜底也要有测试 Oracle</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%94%E3%80%81%E4%B8%80%E4%B8%AA%E5%8F%AF%E8%BF%90%E8%A1%8C%E7%9A%84%E8%B7%AF%E7%94%B1%E4%B8%8E%E7%86%94%E6%96%AD%E9%AA%A8%E6%9E%B6"><span class="nav-number">15.</span> <span class="nav-text">十五、一个可运行的路由与熔断骨架</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AD%E3%80%81%E6%B5%8B%E8%AF%95%E7%9F%A9%E9%98%B5%EF%BC%9A%E4%BB%8E%E5%8D%95%E4%B8%AA%E5%BC%82%E5%B8%B8%E6%89%A9%E5%B1%95%E5%88%B0%E4%B8%9A%E5%8A%A1%E8%83%BD%E5%8A%9B"><span class="nav-number">16.</span> <span class="nav-text">十六、测试矩阵：从单个异常扩展到业务能力</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%85%AD%E7%B1%BB%E4%BF%A1%E5%8F%B7%E4%B8%8E%E6%9C%9F%E6%9C%9B%E5%8A%A8%E4%BD%9C"><span class="nav-number">16.1.</span> <span class="nav-text">1. 六类信号与期望动作</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E7%BB%84%E5%90%88%E6%95%85%E9%9A%9C%E6%AF%94%E5%8D%95%E7%82%B9%E6%95%85%E9%9A%9C%E6%9B%B4%E6%8E%A5%E8%BF%91%E7%9C%9F%E5%AE%9E%E4%BA%8B%E6%95%85"><span class="nav-number">16.2.</span> <span class="nav-text">2. 组合故障比单点故障更接近真实事故</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%B4%9F%E8%BD%BD%E6%B5%8B%E8%AF%95%E8%A6%81%E8%A6%86%E7%9B%96%E5%88%87%E6%8D%A2%E7%9E%AC%E9%97%B4"><span class="nav-number">16.3.</span> <span class="nav-text">3. 负载测试要覆盖切换瞬间</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%A5%91%E7%BA%A6%E6%B5%8B%E8%AF%95%E8%A6%81%E4%BD%BF%E7%94%A8%E7%9C%9F%E5%AE%9E%E9%80%82%E9%85%8D%E5%99%A8%E5%BD%95%E5%88%B6%E6%A0%B7%E6%9C%AC"><span class="nav-number">16.4.</span> <span class="nav-text">4. 契约测试要使用真实适配器录制样本</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%83%E3%80%81%E4%BE%9B%E5%BA%94%E5%95%86%E9%94%99%E8%AF%AF%E8%AF%AD%E4%B9%89%E8%A6%81%E6%A0%87%E5%87%86%E5%8C%96%EF%BC%8C%E4%BD%86%E4%B8%8D%E8%A6%81%E6%8A%B9%E5%B9%B3%E5%B7%AE%E5%BC%82"><span class="nav-number">17.</span> <span class="nav-text">十七、供应商错误语义要标准化，但不要抹平差异</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%B8%BA%E4%BB%80%E4%B9%88%E4%B8%8D%E8%83%BD%E5%8F%AA%E6%8C%89-HTTP-%E7%8A%B6%E6%80%81%E7%A0%81"><span class="nav-number">17.1.</span> <span class="nav-text">1. 为什么不能只按 HTTP 状态码</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%B8%BA%E4%BB%80%E4%B9%88%E4%B8%8D%E8%83%BD%E5%8C%B9%E9%85%8D%E9%94%99%E8%AF%AF%E6%B6%88%E6%81%AF%E6%96%87%E6%9C%AC"><span class="nav-number">17.2.</span> <span class="nav-text">2. 为什么不能匹配错误消息文本</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E9%94%99%E8%AF%AF%E6%98%A0%E5%B0%84%E6%9C%AC%E8%BA%AB%E4%B9%9F%E4%BC%9A%E6%95%85%E9%9A%9C"><span class="nav-number">17.3.</span> <span class="nav-text">3. 错误映射本身也会故障</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%BE%9B%E5%BA%94%E5%95%86%E8%87%AA%E5%8A%A8%E9%87%8D%E8%AF%95%E5%BF%85%E9%A1%BB%E8%BF%9B%E5%85%A5-Trace"><span class="nav-number">17.4.</span> <span class="nav-text">4. 供应商自动重试必须进入 Trace</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AB%E3%80%81%E6%81%A2%E5%A4%8D%E6%8E%A2%E6%B5%8B%EF%BC%9A%E4%BB%8E-Open-%E5%9B%9E%E5%88%B0-Closed-%E4%B8%8D%E8%83%BD%E9%9D%A0%E4%B8%80%E4%B8%AA%E5%81%A5%E5%BA%B7%E6%A3%80%E6%9F%A5"><span class="nav-number">18.</span> <span class="nav-text">十八、恢复探测：从 Open 回到 Closed 不能靠一个健康检查</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%8E%A2%E6%B5%8B%E9%9B%86%E8%A6%86%E7%9B%96%E7%9C%9F%E5%AE%9E%E8%83%BD%E5%8A%9B"><span class="nav-number">18.1.</span> <span class="nav-text">1. 探测集覆盖真实能力</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%8E%A7%E5%88%B6-Half-Open-%E5%B9%B6%E5%8F%91"><span class="nav-number">18.2.</span> <span class="nav-text">2. 控制 Half-Open 并发</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%86%B7%E5%90%AF%E5%8A%A8%E8%A6%81%E5%8D%95%E7%8B%AC%E5%BB%BA%E6%A8%A1"><span class="nav-number">18.3.</span> <span class="nav-text">3. 冷启动要单独建模</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%81%A2%E5%A4%8D%E6%9D%A1%E4%BB%B6%E5%8C%85%E5%90%AB%E8%B4%A8%E9%87%8F%EF%BC%8C%E4%B8%8D%E5%8F%AA%E5%8C%85%E5%90%AB-2xx"><span class="nav-number">18.4.</span> <span class="nav-text">4. 恢复条件包含质量，不只包含 2xx</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B9%9D%E3%80%81%E7%81%B0%E5%BA%A6%E5%9B%9E%E5%88%87%EF%BC%9A%E6%81%A2%E5%A4%8D%E8%B7%AF%E5%BE%84%E9%9C%80%E8%A6%81%E8%87%AA%E5%B7%B1%E7%9A%84%E5%8F%91%E5%B8%83%E7%AD%96%E7%95%A5"><span class="nav-number">19.</span> <span class="nav-text">十九、灰度回切：恢复路径需要自己的发布策略</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%BB%BA%E8%AE%AE%E7%9A%84%E5%9B%9E%E5%88%87%E9%98%B6%E6%AE%B5"><span class="nav-number">19.1.</span> <span class="nav-text">1. 建议的回切阶段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%8C%89%E6%95%85%E9%9A%9C%E5%9F%9F%E5%9B%9E%E5%88%87"><span class="nav-number">19.2.</span> <span class="nav-text">2. 按故障域回切</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%9B%9E%E5%88%87%E6%9C%9F%E9%97%B4%E9%81%BF%E5%85%8D%E7%BB%93%E6%9E%9C%E6%91%87%E6%91%86"><span class="nav-number">19.3.</span> <span class="nav-text">3. 回切期间避免结果摇摆</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%9B%9E%E5%88%87%E5%A4%B1%E8%B4%A5%E8%A6%81%E8%87%AA%E5%8A%A8%E9%80%80%E5%9B%9E%E7%A8%B3%E5%AE%9A%E5%B1%82"><span class="nav-number">19.4.</span> <span class="nav-text">4. 回切失败要自动退回稳定层</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E3%80%81%E5%8F%AF%E8%A7%82%E6%B5%8B%E4%B8%8E%E5%AE%A1%E8%AE%A1%E5%AD%97%E6%AE%B5"><span class="nav-number">20.</span> <span class="nav-text">二十、可观测与审计字段</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Metric-%E7%BB%B4%E5%BA%A6%E8%A6%81%E6%8E%A7%E5%88%B6%E5%9F%BA%E6%95%B0"><span class="nav-number">20.1.</span> <span class="nav-text">1. Metric 维度要控制基数</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%90%8C%E6%97%B6%E8%AE%B0%E5%BD%95%E6%8A%80%E6%9C%AF%E7%BB%93%E6%9E%9C%E5%92%8C%E4%B8%9A%E5%8A%A1%E7%BB%93%E6%9E%9C"><span class="nav-number">20.2.</span> <span class="nav-text">2. 同时记录技术结果和业务结果</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%AE%B0%E5%BD%95%E9%A6%96%E9%94%99%E4%B8%8E%E7%BB%88%E5%9B%A0"><span class="nav-number">20.3.</span> <span class="nav-text">3. 记录首错与终因</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%86%85%E5%AE%B9%E6%97%A5%E5%BF%97%E4%BB%8D%E9%81%B5%E5%BE%AA%E6%9C%80%E5%B0%8F%E5%8C%96"><span class="nav-number">20.4.</span> <span class="nav-text">4. 内容日志仍遵循最小化</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%80%E3%80%81SLO-%E5%92%8C%E9%94%99%E8%AF%AF%E9%A2%84%E7%AE%97%E5%BF%85%E9%A1%BB%E5%8C%85%E5%90%AB%E8%B4%A8%E9%87%8F%E9%99%8D%E7%BA%A7"><span class="nav-number">21.</span> <span class="nav-text">二十一、SLO 和错误预算必须包含质量降级</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%8C%89%E8%83%BD%E5%8A%9B%E7%BA%A7%E5%88%AB%E6%8A%A5%E5%91%8A"><span class="nav-number">21.1.</span> <span class="nav-text">1. 按能力级别报告</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%B4%A8%E9%87%8F%E9%94%99%E8%AF%AF%E4%B9%9F%E6%B6%88%E8%80%97%E9%A2%84%E7%AE%97"><span class="nav-number">21.2.</span> <span class="nav-text">2. 质量错误也消耗预算</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E9%94%99%E8%AF%AF%E9%A2%84%E7%AE%97%E9%A9%B1%E5%8A%A8%E5%8F%98%E5%8C%96%E9%80%9F%E5%BA%A6"><span class="nav-number">21.3.</span> <span class="nav-text">3. 错误预算驱动变化速度</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%8C%E3%80%81%E8%B7%AF%E7%94%B1%E9%85%8D%E7%BD%AE%E4%B8%8E%E7%B4%A7%E6%80%A5%E5%BC%80%E5%85%B3%E4%B9%9F%E8%A6%81%E6%8C%89%E5%8F%91%E5%B8%83%E7%B3%BB%E7%BB%9F%E6%B2%BB%E7%90%86"><span class="nav-number">22.</span> <span class="nav-text">二十二、路由配置与紧急开关也要按发布系统治理</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E9%85%8D%E7%BD%AE%E5%BF%85%E9%A1%BB%E6%98%AF%E4%B8%8D%E5%8F%AF%E5%8F%98%E7%89%88%E6%9C%AC"><span class="nav-number">22.1.</span> <span class="nav-text">1. 配置必须是不可变版本</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%A4%9A%E9%A1%B9%E5%8F%98%E6%9B%B4%E8%A6%81%E5%8E%9F%E5%AD%90%E7%94%9F%E6%95%88"><span class="nav-number">22.2.</span> <span class="nav-text">2. 多项变更要原子生效</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E9%85%8D%E7%BD%AE%E8%AF%BB%E5%8F%96%E5%A4%B1%E8%B4%A5%E4%B8%8D%E8%83%BD%E4%BB%BB%E6%84%8F%E7%8C%9C%E9%BB%98%E8%AE%A4%E5%80%BC"><span class="nav-number">22.3.</span> <span class="nav-text">3. 配置读取失败不能任意猜默认值</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E7%B4%A7%E6%80%A5%E5%BC%80%E5%85%B3%E6%8C%89%E8%83%BD%E5%8A%9B%E5%92%8C%E6%95%85%E9%9A%9C%E5%9F%9F%E8%AE%BE%E8%AE%A1"><span class="nav-number">22.4.</span> <span class="nav-text">4. 紧急开关按能力和故障域设计</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E7%B4%A7%E6%80%A5%E8%A6%86%E7%9B%96%E5%BF%85%E9%A1%BB%E8%BF%87%E6%9C%9F"><span class="nav-number">22.5.</span> <span class="nav-text">5. 紧急覆盖必须过期</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E6%8E%A7%E5%88%B6%E9%9D%A2%E5%92%8C%E6%95%B0%E6%8D%AE%E9%9D%A2%E5%88%86%E7%A6%BB"><span class="nav-number">22.6.</span> <span class="nav-text">6. 控制面和数据面分离</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-%E9%85%8D%E7%BD%AE%E5%8F%98%E6%9B%B4%E4%B9%9F%E8%A6%81%E8%B7%91%E8%AF%84%E6%B5%8B%E5%92%8C%E7%81%B0%E5%BA%A6"><span class="nav-number">22.7.</span> <span class="nav-text">7. 配置变更也要跑评测和灰度</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%89%E3%80%81%E4%BA%94%E4%B8%AA%E5%AE%8C%E6%95%B4%E5%A4%B1%E8%B4%A5%E6%A1%88%E4%BE%8B%E4%B8%8E%E6%8E%92%E6%9F%A5"><span class="nav-number">23.</span> <span class="nav-text">二十三、五个完整失败案例与排查</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A1%88%E4%BE%8B%E4%B8%80%EF%BC%9AHTTP-%E6%88%90%E5%8A%9F%E7%8E%87%E6%81%A2%E5%A4%8D%EF%BC%8C%E9%94%99%E8%AF%AF%E7%89%A9%E6%B5%81%E7%AD%94%E6%A1%88%E4%B8%8A%E5%8D%87"><span class="nav-number">23.1.</span> <span class="nav-text">案例一：HTTP 成功率恢复，错误物流答案上升</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A1%88%E4%BE%8B%E4%BA%8C%EF%BC%9ASchema-%E5%85%BC%E5%AE%B9%E6%8A%8A%E2%80%9C%E6%9C%AA%E7%9F%A5%E2%80%9D%E5%8F%98%E6%88%90%E2%80%9C%E6%97%A0%E9%A3%8E%E9%99%A9%E2%80%9D"><span class="nav-number">23.2.</span> <span class="nav-text">案例二：Schema 兼容把“未知”变成“无风险”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A1%88%E4%BE%8B%E4%B8%89%EF%BC%9A%E5%A4%9A%E5%B1%82%E9%87%8D%E8%AF%95%E6%8A%8A%E8%BD%BB%E5%BE%AE%E8%BF%87%E8%BD%BD%E6%94%BE%E5%A4%A7%E6%88%90%E5%85%A8%E9%9D%A2%E6%95%85%E9%9A%9C"><span class="nav-number">23.3.</span> <span class="nav-text">案例三：多层重试把轻微过载放大成全面故障</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A1%88%E4%BE%8B%E5%9B%9B%EF%BC%9AHalf-Open-%E6%8E%A2%E6%B5%8B%E5%BC%95%E5%8F%91%E7%AC%AC%E4%BA%8C%E6%AC%A1%E6%95%85%E9%9A%9C"><span class="nav-number">23.4.</span> <span class="nav-text">案例四：Half-Open 探测引发第二次故障</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A1%88%E4%BE%8B%E4%BA%94%EF%BC%9A%E7%BC%93%E5%AD%98%E5%85%9C%E5%BA%95%E9%80%A0%E6%88%90%E8%B7%A8%E7%A7%9F%E6%88%B7%E6%95%B0%E6%8D%AE%E6%B3%84%E6%BC%8F"><span class="nav-number">23.5.</span> <span class="nav-text">案例五：缓存兜底造成跨租户数据泄漏</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%9B%9B%E3%80%81%E9%99%8D%E7%BA%A7%E6%BC%94%E7%BB%83%EF%BC%9A%E8%A6%81%E9%AA%8C%E8%AF%81%E5%88%87%E5%87%BA%E3%80%81%E7%A8%B3%E5%AE%9A%E8%BF%90%E8%A1%8C%E5%92%8C%E5%9B%9E%E5%88%87%E4%B8%89%E6%AE%B5"><span class="nav-number">24.</span> <span class="nav-text">二十四、降级演练：要验证切出、稳定运行和回切三段</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%BC%94%E7%BB%83%E4%B8%80%EF%BC%9A%E4%BE%9B%E5%BA%94%E5%95%86%E5%8C%BA%E5%9F%9F%E6%95%85%E9%9A%9C"><span class="nav-number">24.1.</span> <span class="nav-text">演练一：供应商区域故障</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%BC%94%E7%BB%83%E4%BA%8C%EF%BC%9A%E6%97%A0%E5%BC%82%E5%B8%B8%E7%A0%81%E7%9A%84%E8%B4%A8%E9%87%8F%E9%80%80%E5%8C%96"><span class="nav-number">24.2.</span> <span class="nav-text">演练二：无异常码的质量退化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%BC%94%E7%BB%83%E4%B8%89%EF%BC%9A%E9%85%8D%E9%A2%9D%E8%80%97%E5%B0%BD"><span class="nav-number">24.3.</span> <span class="nav-text">演练三：配额耗尽</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%BC%94%E7%BB%83%E5%9B%9B%EF%BC%9A%E5%A4%87%E7%94%A8%E8%B7%AF%E5%BE%84%E5%86%B7%E5%90%AF%E5%8A%A8"><span class="nav-number">24.4.</span> <span class="nav-text">演练四：备用路径冷启动</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%BC%94%E7%BB%83%E4%BA%94%EF%BC%9A%E5%B7%A5%E5%85%B7%E7%8A%B6%E6%80%81%E6%9C%AA%E7%9F%A5"><span class="nav-number">24.5.</span> <span class="nav-text">演练五：工具状态未知</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%BC%94%E7%BB%83%E5%85%AD%EF%BC%9A%E4%BA%BA%E5%B7%A5%E7%B3%BB%E7%BB%9F%E4%B8%8D%E5%8F%AF%E7%94%A8"><span class="nav-number">24.6.</span> <span class="nav-text">演练六：人工系统不可用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%BC%94%E7%BB%83%E4%B8%83%EF%BC%9A%E6%81%A2%E5%A4%8D%E5%90%8E%E6%A8%A1%E5%9E%8B%E8%AF%AD%E4%B9%89%E5%8F%98%E5%8C%96"><span class="nav-number">24.7.</span> <span class="nav-text">演练七：恢复后模型语义变化</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%94%E3%80%81%E9%87%8F%E5%8C%96%E7%BB%93%E6%9E%9C%EF%BC%9A%E5%90%8C%E6%97%B6%E6%8A%A5%E5%91%8A%E5%AE%8C%E6%95%B4%E8%83%BD%E5%8A%9B%E3%80%81%E6%A0%B8%E5%BF%83%E8%83%BD%E5%8A%9B%E5%92%8C%E9%94%99%E8%AF%AF%E4%B8%9A%E5%8A%A1%E7%BB%93%E6%9E%9C"><span class="nav-number">25.</span> <span class="nav-text">二十五、量化结果：同时报告完整能力、核心能力和错误业务结果</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%BB%93%E6%9E%9C%E5%88%86%E6%AF%8D%E8%A6%81%E4%B8%80%E8%87%B4"><span class="nav-number">25.1.</span> <span class="nav-text">1. 结果分母要一致</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%8A%A5%E5%91%8A%E4%B8%8D%E7%A1%AE%E5%AE%9A%E6%80%A7"><span class="nav-number">25.2.</span> <span class="nav-text">2. 报告不确定性</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%94%B6%E7%9B%8A%E5%8C%85%E5%90%AB%E4%BB%A3%E4%BB%B7"><span class="nav-number">25.3.</span> <span class="nav-text">3. 收益包含代价</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%85%AD%E3%80%81%E8%BE%B9%E7%95%8C%EF%BC%9A%E5%93%AA%E4%BA%9B%E5%9C%BA%E6%99%AF%E5%AE%81%E5%8F%AF%E5%81%9C%EF%BC%8C%E4%B9%9F%E4%B8%8D%E8%A6%81%E8%87%AA%E5%8A%A8-fallback"><span class="nav-number">26.</span> <span class="nav-text">二十六、边界：哪些场景宁可停，也不要自动 fallback</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%A4%87%E7%94%A8%E8%B7%AF%E5%BE%84%E6%94%B9%E5%8F%98%E6%B3%95%E5%BE%8B%E6%88%96%E5%90%88%E8%A7%84%E5%A4%84%E7%90%86%E4%B8%BB%E4%BD%93"><span class="nav-number">26.1.</span> <span class="nav-text">1. 备用路径改变法律或合规处理主体</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%97%A0%E6%B3%95%E9%AA%8C%E8%AF%81%E8%AF%AD%E4%B9%89%E5%85%BC%E5%AE%B9"><span class="nav-number">26.2.</span> <span class="nav-text">2. 无法验证语义兼容</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%85%B3%E9%94%AE%E6%95%B0%E6%8D%AE%E6%97%A0%E6%B3%95%E4%BF%9D%E8%AF%81%E6%96%B0%E9%B2%9C"><span class="nav-number">26.3.</span> <span class="nav-text">3. 关键数据无法保证新鲜</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%89%AF%E4%BD%9C%E7%94%A8%E7%8A%B6%E6%80%81%E6%9C%AA%E7%9F%A5"><span class="nav-number">26.4.</span> <span class="nav-text">4. 副作用状态未知</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%AE%89%E5%85%A8%E6%8E%A7%E5%88%B6%E4%B8%8D%E5%8F%AF%E7%94%A8"><span class="nav-number">26.5.</span> <span class="nav-text">5. 安全控制不可用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E4%BA%BA%E5%B7%A5%E9%98%9F%E5%88%97%E6%B2%A1%E6%9C%89%E7%9C%9F%E5%AE%9E%E5%AE%B9%E9%87%8F"><span class="nav-number">26.6.</span> <span class="nav-text">6. 人工队列没有真实容量</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%83%E3%80%81%E4%BB%8E-0-%E5%88%B0-1-%E7%9A%84%E5%AE%9E%E6%96%BD%E9%A1%BA%E5%BA%8F"><span class="nav-number">27.</span> <span class="nav-text">二十七、从 0 到 1 的实施顺序</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5%E4%B8%80%EF%BC%9A%E5%85%88%E5%AE%9A%E4%B9%89%E5%A5%91%E7%BA%A6%E5%92%8C%E9%98%B6%E6%A2%AF"><span class="nav-number">27.1.</span> <span class="nav-text">阶段一：先定义契约和阶梯</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5%E4%BA%8C%EF%BC%9A%E6%94%B6%E6%95%9B%E9%94%99%E8%AF%AF%E3%80%81%E9%A2%84%E7%AE%97%E5%92%8C%E9%87%8D%E8%AF%95"><span class="nav-number">27.2.</span> <span class="nav-text">阶段二：收敛错误、预算和重试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5%E4%B8%89%EF%BC%9A%E7%86%94%E6%96%AD%E4%B8%8E%E9%9A%94%E8%88%B1"><span class="nav-number">27.3.</span> <span class="nav-text">阶段三：熔断与隔舱</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5%E5%9B%9B%EF%BC%9A%E6%81%A2%E5%A4%8D%E5%92%8C%E6%8C%81%E7%BB%AD%E9%AA%8C%E8%AF%81"><span class="nav-number">27.4.</span> <span class="nav-text">阶段四：恢复和持续验证</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%85%AB%E3%80%81%E4%B8%8A%E7%BA%BF%E5%89%8D%E6%A3%80%E6%9F%A5%E6%B8%85%E5%8D%95"><span class="nav-number">28.</span> <span class="nav-text">二十八、上线前检查清单</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%83%BD%E5%8A%9B%E4%B8%8E%E5%A5%91%E7%BA%A6"><span class="nav-number">28.1.</span> <span class="nav-text">能力与契约</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BF%A1%E5%8F%B7%E4%B8%8E%E8%B7%AF%E7%94%B1"><span class="nav-number">28.2.</span> <span class="nav-text">信号与路由</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%B6%85%E6%97%B6%E4%B8%8E%E9%87%8D%E8%AF%95"><span class="nav-number">28.3.</span> <span class="nav-text">超时与重试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B9%82%E7%AD%89%E4%B8%8E%E5%89%AF%E4%BD%9C%E7%94%A8"><span class="nav-number">28.4.</span> <span class="nav-text">幂等与副作用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%86%94%E6%96%AD%E4%B8%8E%E9%9A%94%E8%88%B1"><span class="nav-number">28.5.</span> <span class="nav-text">熔断与隔舱</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E4%B8%8E-Schema"><span class="nav-number">28.6.</span> <span class="nav-text">数据与 Schema</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8F%AF%E8%A7%81%E6%80%A7%E4%B8%8E%E5%AE%A1%E8%AE%A1"><span class="nav-number">28.7.</span> <span class="nav-text">可见性与审计</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%81%A2%E5%A4%8D%E4%B8%8E%E6%BC%94%E7%BB%83"><span class="nav-number">28.8.</span> <span class="nav-text">恢复与演练</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8C%87%E6%A0%87%E4%B8%8E%E9%94%99%E8%AF%AF%E9%A2%84%E7%AE%97"><span class="nav-number">28.9.</span> <span class="nav-text">指标与错误预算</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B9%9D%E3%80%81%E5%B0%8F%E7%BB%93"><span class="nav-number">29.</span> <span class="nav-text">二十九、小结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8F%82%E8%80%83%E8%B5%84%E6%96%99"><span class="nav-number">30.</span> <span class="nav-text">参考资料</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">358</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">27</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">796</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2026/04/22/AI%E6%B5%8B%E8%AF%95-33-AI%E5%8A%9F%E8%83%BD%E6%80%8E%E4%B9%88%E5%81%9A%E6%A8%A1%E5%9E%8B%E9%99%8D%E7%BA%A7%E5%8A%9F%E8%83%BD%E7%86%94%E6%96%AD%E5%92%8C%E7%A1%AE%E5%AE%9A%E6%80%A7%E5%85%9C%E5%BA%95/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="AI测试-33-AI功能怎么做模型降级功能熔断和确定性兜底 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          AI测试-33-AI功能怎么做模型降级功能熔断和确定性兜底
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2026-04-22 20:30:00" itemprop="dateCreated datePublished" datetime="2026-04-22T20:30:00+08:00">2026-04-22</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/AI%E6%B5%8B%E8%AF%95/" itemprop="url" rel="index"><span itemprop="name">AI测试</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>16k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>1:01</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>AI 服务出现超时后切换到另一个模型，看起来是一条很自然的高可用方案。</p>
+<p>但“另一个模型返回了 HTTP 200”不等于业务已经恢复。</p>
+<p>备用模型可能：</p>
+<ul>
+<li>不支持原来的工具调用或结构化输出</li>
+<li>使用不同的安全边界和停止原因</li>
+<li>对同一 Prompt 有不同语义理解</li>
+<li>缺少主模型依赖的长上下文、图片或函数能力</li>
+<li>生成格式合法但业务含义错误的字段</li>
+<li>成本更高，切换后迅速耗尽预算</li>
+<li>延迟更低但核心任务成功率明显下降</li>
+<li>返回一段流畅答案，却没有完成 Agent 原本应执行的动作</li>
+</ul>
+<p>更危险的是静默 fallback。用户和下游系统仍以为自己拿到“完整 Agent”结果，实际上系统已经退化到过期缓存、规则模板或能力明显不同的小模型。请求成功率看起来恢复，错误业务结果却悄悄增加。</p>
+<p>因此，AI 韧性设计不能只做“模型报错就换供应商”。它需要同时回答：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">什么信号说明当前能力不可继续</span><br><span class="line">  -&gt; 哪一级能力仍满足当前任务的最低质量和安全要求</span><br><span class="line">  -&gt; 剩余延迟与成本预算是否允许尝试</span><br><span class="line">  -&gt; 数据、Schema、权限和副作用是否仍然一致</span><br><span class="line">  -&gt; 用户和下游是否知道能力已经变化</span><br><span class="line">  -&gt; 依赖恢复后怎样探测、预热和灰度回切</span><br></pre></td></tr></table></figure>
+
+<p>这篇文章以“客服与履约 Agent”为贯穿场景，建立从完整 Agent 到明确不可用的能力阶梯，并给出熔断、隔舱、超时预算、兼容契约、恢复探测、故障注入和确定性兜底的完整实现方法。</p>
+<p>文中的阈值和量化结果用于说明验收口径，不是跨业务通用配置。供应商错误语义以 2026-07-26 可访问的官方文档为准，接入时仍应按实际 API、SDK 版本和合同重新核对。</p>
+<h2 id="一、先给结论：降级的目标是保留可信能力，不是保住-HTTP-200"><a href="#一、先给结论：降级的目标是保留可信能力，不是保住-HTTP-200" class="headerlink" title="一、先给结论：降级的目标是保留可信能力，不是保住 HTTP 200"></a>一、先给结论：降级的目标是保留可信能力，不是保住 HTTP 200</h2><p>一套可用的 AI 降级系统至少要遵守八条原则。</p>
+<ol>
+<li><strong>先定义功能阶梯，再写 fallback。</strong> 每一级明确保留、删除和禁止的能力。</li>
+<li><strong>故障信号不只来自异常码。</strong> 质量、延迟、配额、成本、安全和供应商故障要分别处理。</li>
+<li><strong>熔断器保护依赖和本系统资源。</strong> 它不能证明备用结果语义正确。</li>
+<li><strong>每次尝试共享一个端到端预算。</strong> 备用路径不能在用户截止时间之后才返回“成功”。</li>
+<li><strong>fallback 必须通过质量和契约门槛。</strong> Schema 合法只是最低条件，权限、语义和业务不变量也要验证。</li>
+<li><strong>静默降级有明确边界。</strong> 只要能力、数据新鲜度或承诺发生实质变化，用户和下游就应收到机器可读与可理解的状态。</li>
+<li><strong>恢复比切出更难。</strong> Half-Open 探测、冷启动预热、滞回、灰度回切和自动回滚缺一不可。</li>
+<li><strong>明确不可用也是正确结果。</strong> 当剩余路径无法满足最低质量或安全要求时，停止比编造一个看似正常的答案更可靠。</li>
+</ol>
+<p>Microsoft 的 Circuit Breaker Pattern 将熔断器描述为 <code>Closed</code>、<code>Open</code>、<code>Half-Open</code> 状态机：持续故障达到阈值后快速失败，等待恢复窗口，再允许有限探测。它解决的是“是否继续调用一个可能失败的依赖”，不是“应该返回什么业务答案”。</p>
+<p>AWS 关于超时、重试、退避与抖动的官方资料强调：超时或失败不代表副作用没有发生，重试可能放大已经过载的依赖；有副作用的接口需要可靠幂等语义。把这些原则放到 Agent 工具链中，意味着模型调用、检索调用和业务写操作不能共享一条粗糙的“失败就重试”逻辑。</p>
+<h2 id="二、贯穿场景：客服与履约-Agent-到底承诺了什么"><a href="#二、贯穿场景：客服与履约-Agent-到底承诺了什么" class="headerlink" title="二、贯穿场景：客服与履约 Agent 到底承诺了什么"></a>二、贯穿场景：客服与履约 Agent 到底承诺了什么</h2><p>假设一个 Agent 对用户承诺：</p>
+<ul>
+<li>读取当前订单、物流和退款政策</li>
+<li>理解用户问题</li>
+<li>必要时查询知识库</li>
+<li>计算允许的退款或补偿方案</li>
+<li>在权限范围内调用业务工具</li>
+<li>给出带依据的结果</li>
+<li>高风险动作进入人工审批</li>
+</ul>
+<p>它依赖：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">主推理模型</span><br><span class="line">备用模型</span><br><span class="line">Embedding 与检索服务</span><br><span class="line">订单、物流、政策和支付服务</span><br><span class="line">内容安全服务</span><br><span class="line">缓存与模板服务</span><br><span class="line">人工工单系统</span><br></pre></td></tr></table></figure>
+
+<p>一次供应商故障不一定要求整套功能下线。例如主模型不可用时，已识别的“查询物流”意图仍可走确定性工作流；但“根据多份争议证据决定高额赔付”不能降级成关键词规则后自动执行。</p>
+<p>所以第一步不是给供应商排优先级，而是给业务能力写最低契约。</p>
+<h3 id="1-任务最低契约"><a href="#1-任务最低契约" class="headerlink" title="1. 任务最低契约"></a>1. 任务最低契约</h3><figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">use_case:</span> <span class="string">support_order_assistant</span></span><br><span class="line"><span class="attr">required_outcome:</span></span><br><span class="line">  <span class="attr">answer_language:</span> <span class="string">zh-CN</span></span><br><span class="line">  <span class="attr">order_scope:</span> <span class="string">current_authenticated_customer</span></span><br><span class="line">  <span class="attr">citation_required:</span> <span class="literal">true</span></span><br><span class="line">  <span class="attr">max_data_age_seconds:</span> <span class="number">60</span></span><br><span class="line">  <span class="attr">tool_side_effects_allowed:</span> <span class="literal">false</span></span><br><span class="line"><span class="attr">quality_floor:</span></span><br><span class="line">  <span class="attr">intent_accuracy_slice:</span> <span class="string">&quot;&gt;= 0.97&quot;</span></span><br><span class="line">  <span class="attr">unsupported_claim_rate:</span> <span class="string">&quot;&lt;= 0.005&quot;</span></span><br><span class="line">  <span class="attr">schema_valid_rate:</span> <span class="string">&quot;&gt;= 0.999&quot;</span></span><br><span class="line"><span class="attr">safety_floor:</span></span><br><span class="line">  <span class="attr">cross_tenant_access:</span> <span class="number">0</span></span><br><span class="line">  <span class="attr">unapproved_financial_write:</span> <span class="number">0</span></span><br><span class="line"><span class="attr">latency_slo_ms:</span> <span class="number">4500</span></span><br></pre></td></tr></table></figure>
+
+<p>这些值必须来自本业务评测和风险容忍度。它们的作用是明确：某个候选路径即使技术可用，只要不能满足任务最低契约，就不能作为该任务的自动 fallback。</p>
+<h3 id="2-不同请求可以有不同最低阶梯"><a href="#2-不同请求可以有不同最低阶梯" class="headerlink" title="2. 不同请求可以有不同最低阶梯"></a>2. 不同请求可以有不同最低阶梯</h3><table>
+<thead>
+<tr>
+<th>请求</th>
+<th>最低可接受能力</th>
+<th>不可接受降级</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>查询已知订单物流</td>
+<td>确定性 API + 模板</td>
+<td>使用过期且无时间标记的缓存</td>
+</tr>
+<tr>
+<td>总结公开帮助文档</td>
+<td>检索 + 带引用模板</td>
+<td>无来源的自由生成</td>
+</tr>
+<tr>
+<td>生成客服回复草稿</td>
+<td>小模型 + 人工发送</td>
+<td>自动外发未经复核的草稿</td>
+</tr>
+<tr>
+<td>高额退款判断</td>
+<td>受限工作流 + 人工审批</td>
+<td>关键词规则自动退款</td>
+</tr>
+<tr>
+<td>修改收货地址</td>
+<td>当前状态 API + 硬规则</td>
+<td>用缓存判断是否已出库</td>
+</tr>
+<tr>
+<td>安全事件解释</td>
+<td>受控证据 + 专门流程</td>
+<td>换供应商绕过安全阻断</td>
+</tr>
+</tbody></table>
+<p>降级策略必须与请求能力契约一起计算，而不是全站共享 <code>fallback_model=...</code>。</p>
+<h2 id="三、六类信号：不要只在模型抛异常时降级"><a href="#三、六类信号：不要只在模型抛异常时降级" class="headerlink" title="三、六类信号：不要只在模型抛异常时降级"></a>三、六类信号：不要只在模型抛异常时降级</h2><h3 id="1-质量信号"><a href="#1-质量信号" class="headerlink" title="1. 质量信号"></a>1. 质量信号</h3><p>质量故障往往返回 200：</p>
+<ul>
+<li>结构化字段合法但含义错误</li>
+<li>引用不存在或不支持结论</li>
+<li>工具选择率、任务完成率突然下降</li>
+<li>输出语言、格式或品牌约束持续偏离</li>
+<li>线上纠正率、申诉率和人工接管率升高</li>
+<li>Judge 与确定性业务事实发生分歧</li>
+</ul>
+<p>质量信号通常比基础设施信号慢。可以分层处理：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">同步硬门槛：Schema、权限、引用存在、业务不变量、安全</span><br><span class="line">近实时信号：抽样 Judge、用户纠正、工具失败、无答案率</span><br><span class="line">延迟真值：退款对账、申诉、人工裁决、任务最终完成</span><br></pre></td></tr></table></figure>
+
+<p>不能等待月度真值才停止明显错误，也不能让不稳定 Judge 独自触发全局熔断。同步硬事实优先，统计信号需要样本量、时间窗和迟滞。</p>
+<h3 id="2-延迟信号"><a href="#2-延迟信号" class="headerlink" title="2. 延迟信号"></a>2. 延迟信号</h3><p>延迟问题不仅是单次超时：</p>
+<ul>
+<li>首 Token 时间持续抬升</li>
+<li>完整响应时间超过剩余预算</li>
+<li>队列等待占据大部分端到端时延</li>
+<li>检索、工具或 Judge 的尾延迟扩大</li>
+<li>流式连接中途停顿</li>
+<li>超时后后台任务仍持续消耗资源</li>
+</ul>
+<p>应分别记录排队、连接、首字节、首 Token、生成和后处理时间。只看模型 API 总耗时，无法判断换模型是否真的有用。</p>
+<h3 id="3-配额信号"><a href="#3-配额信号" class="headerlink" title="3. 配额信号"></a>3. 配额信号</h3><p>配额包括：</p>
+<ul>
+<li>每分钟请求和 Token 限额</li>
+<li>并发连接与 Batch 容量</li>
+<li>项目、区域、模型部署和租户级额度</li>
+<li>供应商的动态加速限制</li>
+<li>自己系统的线程、队列和连接池上限</li>
+</ul>
+<p>同样是 HTTP 429，语义可能不同。OpenAI 官方错误文档区分请求速率过高与账户配额耗尽；Google Vertex AI 文档说明 429 可能来自配额或共享容量；Anthropic 文档将 429 用于速率限制，并另有 529 表示暂时过载。路由器必须解析供应商的结构化错误和响应头，不能把所有 429 都重试两次后切换。</p>
+<h3 id="4-成本信号"><a href="#4-成本信号" class="headerlink" title="4. 成本信号"></a>4. 成本信号</h3><p>成本故障可能来自：</p>
+<ul>
+<li>Prompt 异常膨胀</li>
+<li>Agent 循环和工具重试</li>
+<li>主模型切换到更昂贵备用模型</li>
+<li>缓存命中率下降</li>
+<li>长上下文或高推理配置被误用</li>
+<li>供应商价格和计费单位变化</li>
+</ul>
+<p>成本策略不能在响应生成一半时粗暴截断并把残片当结果。更合适的是在路由前计算预算，在每一步消耗后更新剩余预算，并为停止状态提供明确说明。</p>
+<h3 id="5-安全信号"><a href="#5-安全信号" class="headerlink" title="5. 安全信号"></a>5. 安全信号</h3><p>安全信号包括：</p>
+<ul>
+<li>Prompt Injection 或越权意图</li>
+<li>敏感数据即将外发</li>
+<li>内容安全策略命中</li>
+<li>工具参数超出允许范围</li>
+<li>模型输出无法通过安全后置校验</li>
+<li>安全服务本身不可用</li>
+</ul>
+<p>安全失败通常不应该触发“换一家模型再试”。如果系统因为主模型拒绝危险请求就切备用供应商，fallback 变成了安全绕过。安全信号应进入统一策略，决定拒绝、收紧功能、转人工或明确不可用。</p>
+<h3 id="6-供应商与依赖故障"><a href="#6-供应商与依赖故障" class="headerlink" title="6. 供应商与依赖故障"></a>6. 供应商与依赖故障</h3><p>包括连接错误、5xx、过载、区域故障、模型撤下、SDK 不兼容和响应协议变化。即使官方文档把某类 5xx 标为可重试，也要受当前端到端预算、幂等性和本地熔断状态约束。</p>
+<p>供应商状态页只能作为辅助证据。真实故障可能只影响某个区域、模型、租户或请求形态；状态页也可能晚于用户侧异常。</p>
+<h2 id="四、先区分六个经常混用的机制"><a href="#四、先区分六个经常混用的机制" class="headerlink" title="四、先区分六个经常混用的机制"></a>四、先区分六个经常混用的机制</h2><table>
+<thead>
+<tr>
+<th>机制</th>
+<th>解决的问题</th>
+<th>不解决的问题</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Retry</td>
+<td>短暂、随机故障可能再次成功</td>
+<td>持续故障、语义不兼容、非幂等副作用</td>
+</tr>
+<tr>
+<td>Failover</td>
+<td>同等能力实例或区域故障切换</td>
+<td>备用能力是否真的等价</td>
+</tr>
+<tr>
+<td>Fallback</td>
+<td>用另一种结果或路径完成目标</td>
+<td>结果是否满足原始质量承诺</td>
+</tr>
+<tr>
+<td>Degradation</td>
+<td>明确减少功能以保留核心能力</td>
+<td>隐藏能力缺失</td>
+</tr>
+<tr>
+<td>Circuit Breaker</td>
+<td>暂停调用持续失败的依赖</td>
+<td>选择正确业务结果</td>
+</tr>
+<tr>
+<td>Load Shedding</td>
+<td>在过载时拒绝低优先级工作</td>
+<td>让被拒绝工作自动变正确</td>
+</tr>
+</tbody></table>
+<p>这些机制需要组合，但触发条件和指标应分开。一次请求可能先在主模型做一次预算内重试，随后熔断器打开，路由器降到受限工作流；低优先级的批量摘要则直接负载丢弃，不与在线客服争抢资源。</p>
+<h2 id="五、建立六级功能阶梯"><a href="#五、建立六级功能阶梯" class="headerlink" title="五、建立六级功能阶梯"></a>五、建立六级功能阶梯</h2><p>下面这张图把候选能力从完整 Agent 排到明确不可用。</p>
+<p><img src="/images/ai-quality/ai-33-degradation-ladder.svg" alt="AI功能降级阶梯与质量门槛"></p>
+<h3 id="L0：完整-Agent"><a href="#L0：完整-Agent" class="headerlink" title="L0：完整 Agent"></a>L0：完整 Agent</h3><p>保留：</p>
+<ul>
+<li>多步规划</li>
+<li>多模型或多 Agent 协作</li>
+<li>检索、工具和结果验证</li>
+<li>允许范围内的副作用</li>
+<li>完整引用与个性化</li>
+</ul>
+<p>入口条件是所有关键依赖、预算和安全控制健康。这里的“完整”也不表示无约束，仍要经过权限、审批和质量门禁。</p>
+<h3 id="L1：受限-Workflow"><a href="#L1：受限-Workflow" class="headerlink" title="L1：受限 Workflow"></a>L1：受限 Workflow</h3><p>把开放式规划收敛成确定步骤：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">识别有限意图</span><br><span class="line">  -&gt; 读取当前订单</span><br><span class="line">  -&gt; 调用指定规则</span><br><span class="line">  -&gt; 生成结构化草稿</span><br><span class="line">  -&gt; 人工确认或只读返回</span><br></pre></td></tr></table></figure>
+
+<p>禁用动态工具发现、自由循环、外部写操作和未经验证的多跳推理。适合模型部分可用但 Agent 编排或工具可靠性下降的情况。</p>
+<h3 id="L2：单模型或小模型"><a href="#L2：单模型或小模型" class="headerlink" title="L2：单模型或小模型"></a>L2：单模型或小模型</h3><p>保留分类、抽取、改写和简单问答，删除复杂规划与高风险动作。切换前必须验证：</p>
+<ul>
+<li>上下文长度与多模态能力</li>
+<li>结构化输出和工具协议</li>
+<li>目标语言与领域质量</li>
+<li>安全行为和拒绝语义</li>
+<li>成本与延迟上限</li>
+</ul>
+<p>“更小”不等于“更差”，但也不天然等价。只有在目标切片达到最低契约时才可使用。</p>
+<h3 id="L3：缓存或检索结果"><a href="#L3：缓存或检索结果" class="headerlink" title="L3：缓存或检索结果"></a>L3：缓存或检索结果</h3><p>可以返回：</p>
+<ul>
+<li>经过权限过滤的最近稳定答案</li>
+<li>当前仍有效的政策片段</li>
+<li>只读知识检索和引用</li>
+<li>已完成异步任务的持久结果</li>
+</ul>
+<p>必须展示数据时间和能力限制。涉及订单状态、价格、库存、权限、医疗和安全事实时，过期缓存往往不可接受。</p>
+<h3 id="L4：确定性规则"><a href="#L4：确定性规则" class="headerlink" title="L4：确定性规则"></a>L4：确定性规则</h3><p>适合边界清晰的任务：</p>
+<ul>
+<li>根据订单状态映射固定说明</li>
+<li>计算明确公式</li>
+<li>校验格式和权限</li>
+<li>返回静态帮助入口</li>
+<li>创建不带 AI 判断的人工工单</li>
+</ul>
+<p>确定性规则不是“万能兜底”。它只覆盖预先定义的输入域，无法处理的请求要明确拒绝或升级，不能用默认分支猜测。</p>
+<h3 id="L5：人工或明确不可用"><a href="#L5：人工或明确不可用" class="headerlink" title="L5：人工或明确不可用"></a>L5：人工或明确不可用</h3><p>当自动路径都不满足最低契约时：</p>
+<ul>
+<li>创建带上下文的人工工单</li>
+<li>告知用户当前无法可靠完成</li>
+<li>提供预计恢复方式或替代入口</li>
+<li>保存未执行动作和已有证据</li>
+</ul>
+<p>不能承诺一定有人立刻处理，除非人工队列有真实容量和 SLO。人工系统不可用时，应返回明确不可用，而不是继续降低安全要求。</p>
+<h2 id="六、能力阶梯要用契约描述，不靠代码顺序猜"><a href="#六、能力阶梯要用契约描述，不靠代码顺序猜" class="headerlink" title="六、能力阶梯要用契约描述，不靠代码顺序猜"></a>六、能力阶梯要用契约描述，不靠代码顺序猜</h2><p>每一级建议维护机器可读能力清单：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">level:</span> <span class="string">RESTRICTED_WORKFLOW</span></span><br><span class="line"><span class="attr">version:</span> <span class="string">support-restricted-2026-04-18.2</span></span><br><span class="line"><span class="attr">capabilities:</span></span><br><span class="line">  <span class="attr">read_current_order:</span> <span class="literal">true</span></span><br><span class="line">  <span class="attr">retrieve_policy:</span> <span class="literal">true</span></span><br><span class="line">  <span class="attr">free_form_planning:</span> <span class="literal">false</span></span><br><span class="line">  <span class="attr">external_write:</span> <span class="literal">false</span></span><br><span class="line">  <span class="attr">financial_action:</span> <span class="literal">false</span></span><br><span class="line">  <span class="attr">citation:</span> <span class="string">required</span></span><br><span class="line">  <span class="attr">personalization:</span> <span class="string">limited</span></span><br><span class="line"><span class="attr">input_constraints:</span></span><br><span class="line">  <span class="attr">supported_languages:</span> [<span class="string">zh-CN</span>, <span class="string">en-US</span>]</span><br><span class="line">  <span class="attr">max_context_tokens:</span> <span class="number">12000</span></span><br><span class="line"><span class="attr">output_contract:</span> <span class="string">support.answer.v4</span></span><br><span class="line"><span class="attr">quality_floor:</span></span><br><span class="line">  <span class="attr">order_query_success:</span> <span class="number">0.99</span></span><br><span class="line">  <span class="attr">unsupported_claim_rate:</span> <span class="number">0.005</span></span><br><span class="line"><span class="attr">freshness:</span></span><br><span class="line">  <span class="attr">order_state_max_age_seconds:</span> <span class="number">30</span></span><br><span class="line"><span class="attr">visibility:</span></span><br><span class="line">  <span class="attr">user_notice_code:</span> <span class="string">LIMITED_AUTOMATION</span></span><br></pre></td></tr></table></figure>
+
+<p>路由器选择候选时比较的是“请求所需能力”和“候选提供能力”，不是简单遍历数组。</p>
+<h3 id="1-禁止向下兼容的请求"><a href="#1-禁止向下兼容的请求" class="headerlink" title="1. 禁止向下兼容的请求"></a>1. 禁止向下兼容的请求</h3><p>请求可以声明：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">required:</span></span><br><span class="line">  <span class="attr">current_order_state:</span> <span class="literal">true</span></span><br><span class="line">  <span class="attr">financial_write:</span> <span class="literal">true</span></span><br><span class="line">  <span class="attr">approval_flow:</span> <span class="string">dual</span></span><br><span class="line">  <span class="attr">citations:</span> <span class="literal">true</span></span><br><span class="line"><span class="attr">minimum_level:</span> <span class="string">RESTRICTED_WORKFLOW</span></span><br><span class="line"><span class="attr">fallback_policy:</span> <span class="string">HUMAN_ONLY</span></span><br></pre></td></tr></table></figure>
+
+<p>如果 L1 不支持财务写入，就不能继续降到 L2 小模型再尝试付款。应转人工或不可用。</p>
+<h3 id="2-部分结果要显式建模"><a href="#2-部分结果要显式建模" class="headerlink" title="2. 部分结果要显式建模"></a>2. 部分结果要显式建模</h3><p>一次任务可能只完成“查询订单”，没有完成“创建退款”。响应需要区分：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;status&quot;</span><span class="punctuation">:</span> <span class="string">&quot;PARTIAL&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;completed_steps&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;ORDER_READ&quot;</span><span class="punctuation">,</span> <span class="string">&quot;POLICY_RETRIEVED&quot;</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;omitted_steps&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;REFUND_PROPOSAL&quot;</span><span class="punctuation">,</span> <span class="string">&quot;REFUND_EXECUTION&quot;</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;degradation_level&quot;</span><span class="punctuation">:</span> <span class="string">&quot;RETRIEVAL_ONLY&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;reason_code&quot;</span><span class="punctuation">:</span> <span class="string">&quot;MODEL_QUALITY_GATE_OPEN&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;retryable_after&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">null</span></span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>不能把部分完成包装成“已处理”。</p>
+<h2 id="七、质量门槛：备用路径成功返回以后还要过什么检查"><a href="#七、质量门槛：备用路径成功返回以后还要过什么检查" class="headerlink" title="七、质量门槛：备用路径成功返回以后还要过什么检查"></a>七、质量门槛：备用路径成功返回以后还要过什么检查</h2><h3 id="1-Schema-门槛"><a href="#1-Schema-门槛" class="headerlink" title="1. Schema 门槛"></a>1. Schema 门槛</h3><ul>
+<li>JSON 可解析</li>
+<li>版本受支持</li>
+<li>必填字段存在</li>
+<li>类型、枚举、长度和数值范围正确</li>
+<li>未知字段按明确策略处理</li>
+</ul>
+<p>Schema 通过只说明形状正确。</p>
+<h3 id="2-语义门槛"><a href="#2-语义门槛" class="headerlink" title="2. 语义门槛"></a>2. 语义门槛</h3><ul>
+<li>状态码与自然语言结论一致</li>
+<li>金额、货币和单位一致</li>
+<li>引用真正支持对应断言</li>
+<li><code>partial</code> 不被写成 <code>completed</code></li>
+<li>不把“未知”默认成 <code>false</code>、<code>0</code> 或空列表</li>
+<li>备用模型没有删掉关键否定词</li>
+</ul>
+<h3 id="3-业务不变量"><a href="#3-业务不变量" class="headerlink" title="3. 业务不变量"></a>3. 业务不变量</h3><ul>
+<li>当前用户只能访问自己的订单</li>
+<li>已退款订单不能再次生成可执行退款</li>
+<li>已出库地址不能由低权限路径修改</li>
+<li>高额动作仍需要审批</li>
+<li>降级不能扩大工具和数据权限</li>
+</ul>
+<h3 id="4-安全门槛"><a href="#4-安全门槛" class="headerlink" title="4. 安全门槛"></a>4. 安全门槛</h3><ul>
+<li>输入与输出安全策略仍生效</li>
+<li>敏感字段脱敏一致</li>
+<li>供应商切换不改变数据驻留和发送范围</li>
+<li>安全服务不可用时按风险失败关闭</li>
+<li>拒绝原因不会泄露策略细节或秘密</li>
+</ul>
+<h3 id="5-任务质量门槛"><a href="#5-任务质量门槛" class="headerlink" title="5. 任务质量门槛"></a>5. 任务质量门槛</h3><p>同步可做轻量验证，离线和近实时继续观察：</p>
+<ul>
+<li>任务完成率</li>
+<li>引用支持率</li>
+<li>工具参数正确率</li>
+<li>用户纠正率</li>
+<li>人工接管率</li>
+<li>关键切片的选择性风险</li>
+</ul>
+<p>如果低级路径无法同步证明正确，至少应将它限制为草稿或人工输入，不能直接产生高风险副作用。</p>
+<h2 id="八、静默-fallback-为什么危险"><a href="#八、静默-fallback-为什么危险" class="headerlink" title="八、静默 fallback 为什么危险"></a>八、静默 fallback 为什么危险</h2><p>静默降级会造成三个层面的错误。</p>
+<h3 id="1-用户基于错误能力假设行动"><a href="#1-用户基于错误能力假设行动" class="headerlink" title="1. 用户基于错误能力假设行动"></a>1. 用户基于错误能力假设行动</h3><p>界面仍显示“智能订单助手”，用户以为系统读取了当前订单，实际回答来自昨天缓存。用户可能因此错过改址时限。</p>
+<h3 id="2-下游把降级结果当完整数据"><a href="#2-下游把降级结果当完整数据" class="headerlink" title="2. 下游把降级结果当完整数据"></a>2. 下游把降级结果当完整数据</h3><p>主模型输出 <code>risk_reason</code> 和 <code>evidence_ids</code>，备用模型适配器用空数组填充缺失字段。下游看到 Schema 合法，误以为“没有风险、没有证据”，而不是“该能力未执行”。</p>
+<h3 id="3-监控把错误结果计为可用"><a href="#3-监控把错误结果计为可用" class="headerlink" title="3. 监控把错误结果计为可用"></a>3. 监控把错误结果计为可用</h3><p>HTTP 成功率恢复到 99.9%，但用户纠正率和错误退款率上升。若可用性 SLI 只看 2xx，错误预算不会被消耗，系统会长期留在有害降级状态。</p>
+<h3 id="4-哪些变化可以不打扰用户"><a href="#4-哪些变化可以不打扰用户" class="headerlink" title="4. 哪些变化可以不打扰用户"></a>4. 哪些变化可以不打扰用户</h3><p>只有当候选路径在用户可观察契约上等价，才可以透明切换，例如：</p>
+<ul>
+<li>同模型同版本的健康区域切换</li>
+<li>无语义变化的实例级故障转移</li>
+<li>已验证等价的缓存命中</li>
+<li>不影响内容和承诺的内部重试</li>
+</ul>
+<p>只要数据新鲜度、功能范围、质量保证、处理主体或后续动作发生变化，就应提供至少一种可见性：</p>
+<ul>
+<li>用户界面提示</li>
+<li>API <code>degradation_level</code></li>
+<li>响应头或事件字段</li>
+<li>管理后台状态</li>
+<li>审计与告警</li>
+</ul>
+<p>提示不应只写“体验可能受影响”。更有用的是说明当前可完成什么、不能完成什么、数据截至何时，以及是否需要用户重新确认。</p>
+<h2 id="九、超时预算：每次尝试不能各拿一整份-SLO"><a href="#九、超时预算：每次尝试不能各拿一整份-SLO" class="headerlink" title="九、超时预算：每次尝试不能各拿一整份 SLO"></a>九、超时预算：每次尝试不能各拿一整份 SLO</h2><p>假设端到端 SLO 是 4.5 秒：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">入口与鉴权             200 ms</span><br><span class="line">检索                    600 ms</span><br><span class="line">主模型                 2200 ms</span><br><span class="line">质量校验                300 ms</span><br><span class="line">备用路径                800 ms</span><br><span class="line">序列化与网络余量        400 ms</span><br></pre></td></tr></table></figure>
+
+<p>这不是固定分配，而是预算模型。每一步开始前都读取绝对 <code>deadline</code>，计算剩余时间。主模型已经花了 4 秒后，备用模型不能再拿 4.5 秒。</p>
+<h3 id="1-区分四类超时"><a href="#1-区分四类超时" class="headerlink" title="1. 区分四类超时"></a>1. 区分四类超时</h3><ul>
+<li>连接超时：建立连接最长多久</li>
+<li>首响应超时：多久必须看到首字节或首 Token</li>
+<li>空闲超时：流式事件之间允许停顿多久</li>
+<li>总截止时间：整个业务请求最晚何时完成</li>
+</ul>
+<p>只设置 SDK 默认超时，可能无法覆盖排队、DNS、TLS、流式中断和后处理。</p>
+<h3 id="2-给-fallback-留预算，但不要永久预留"><a href="#2-给-fallback-留预算，但不要永久预留" class="headerlink" title="2. 给 fallback 留预算，但不要永久预留"></a>2. 给 fallback 留预算，但不要永久预留</h3><p>主路径可以根据历史尾延迟和任务价值设置尝试上限。若 fallback 本身无法在剩余预算内达到最低质量，应该尽早返回异步受理或不可用，而不是发起注定迟到的调用。</p>
+<h3 id="3-超时后停止后台浪费"><a href="#3-超时后停止后台浪费" class="headerlink" title="3. 超时后停止后台浪费"></a>3. 超时后停止后台浪费</h3><p>取消信号要传播到：</p>
+<ul>
+<li>模型流</li>
+<li>检索与重排</li>
+<li>并行候选</li>
+<li>Judge</li>
+<li>工具调用</li>
+<li>队列任务</li>
+</ul>
+<p>如果供应商不支持真正取消，也要停止读取、限制并发并把仍在运行的请求计入资源和成本指标。</p>
+<h2 id="十、熔断器：按依赖、能力和错误类型分区"><a href="#十、熔断器：按依赖、能力和错误类型分区" class="headerlink" title="十、熔断器：按依赖、能力和错误类型分区"></a>十、熔断器：按依赖、能力和错误类型分区</h2><p>下面这张图展示熔断、隔舱和恢复回切的关系。</p>
+<p><img src="/images/ai-quality/ai-33-circuit-recovery.svg" alt="AI调用熔断与恢复回切"></p>
+<h3 id="1-Closed"><a href="#1-Closed" class="headerlink" title="1. Closed"></a>1. Closed</h3><p>正常允许请求，使用滑动时间窗记录符合条件的失败。不要永久累加历史错误；偶发失败不应在低流量一周后才凑够阈值。</p>
+<p>触发可以组合：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">minimum_requests &gt;= 50</span><br><span class="line">and (</span><br><span class="line">  retryable_failure_rate &gt;= 30%</span><br><span class="line">  or timeout_rate &gt;= 20%</span><br><span class="line">  or p95_latency &gt; budget for 3 windows</span><br><span class="line">  or synchronous_quality_gate_fail_rate &gt;= 10%</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+
+<p>不同信号可使用不同熔断器。供应商连接故障打开“调用熔断”，质量回退打开“能力质量门”，安全事件则进入“安全停用”，避免所有原因都压成一个 <code>OPEN</code>。</p>
+<h3 id="2-Open"><a href="#2-Open" class="headerlink" title="2. Open"></a>2. Open</h3><p>请求快速失败或进入预先验证的降级阶梯，不再占用主依赖资源。Open 状态需要记录：</p>
+<ul>
+<li>打开原因</li>
+<li>触发窗口和样本量</li>
+<li>首次与最近故障时间</li>
+<li>下次探测时间</li>
+<li>当前退化级别</li>
+<li>影响的模型、区域、租户和能力</li>
+</ul>
+<p>Open 不是返回任意默认值的许可。Microsoft 文档提到某些场景可以返回有意义的默认值；对 AI 功能而言，“有意义”必须通过业务契约证明。</p>
+<h3 id="3-Half-Open"><a href="#3-Half-Open" class="headerlink" title="3. Half-Open"></a>3. Half-Open</h3><p>只允许有限探测，成功达到恢复条件才回 Closed；任何关键失败可以重新 Open。探测应：</p>
+<ul>
+<li>使用专门并发槽，防止用户流量洪峰</li>
+<li>覆盖代表性请求，而不只发一个“你好”</li>
+<li>同时验证质量、延迟、安全和 Schema</li>
+<li>预热连接、模型容器、Prompt 缓存与检索缓存</li>
+<li>保存探测版本和证据</li>
+</ul>
+<p>单次健康检查成功不能证明复杂 Agent 已恢复。</p>
+<h3 id="4-熔断键的粒度"><a href="#4-熔断键的粒度" class="headerlink" title="4. 熔断键的粒度"></a>4. 熔断键的粒度</h3><p>过粗：一个模型在某区域失败，全球所有模型都被熔断。</p>
+<p>过细：每个用户一个熔断器，永远达不到有效样本量，持续轰击故障依赖。</p>
+<p>常见键可以是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">provider + region + model_revision + operation + capability_class</span><br></pre></td></tr></table></figure>
+
+<p>再结合租户隔舱和全局紧急开关。粒度应通过故障域分析和流量验证确定。</p>
+<h3 id="5-迟滞防止状态抖动"><a href="#5-迟滞防止状态抖动" class="headerlink" title="5. 迟滞防止状态抖动"></a>5. 迟滞防止状态抖动</h3><p>打开阈值和关闭阈值不要相同。例如错误率超过 30% 打开，连续五个探测窗口错误率低于 5%、质量门槛全部通过才允许灰度回切。还可设置最短停留时间，避免几分钟内反复切换。</p>
+<h2 id="十一、Bulkhead：熔断前先阻止一个故障吃光所有资源"><a href="#十一、Bulkhead：熔断前先阻止一个故障吃光所有资源" class="headerlink" title="十一、Bulkhead：熔断前先阻止一个故障吃光所有资源"></a>十一、Bulkhead：熔断前先阻止一个故障吃光所有资源</h2><p>Microsoft Bulkhead Pattern 的核心是把资源分池，使一个元素失败时其他元素还能工作。AI 调用可以按以下边界隔离：</p>
+<ul>
+<li>在线请求与离线批任务</li>
+<li>高优先级用户与普通流量</li>
+<li>不同供应商、区域和模型部署</li>
+<li>生成、Embedding、Judge 和安全检查</li>
+<li>不同租户或风险等级</li>
+<li>工具读操作与写操作</li>
+<li>Half-Open 探测与用户请求</li>
+</ul>
+<h3 id="1-可隔离的资源"><a href="#1-可隔离的资源" class="headerlink" title="1. 可隔离的资源"></a>1. 可隔离的资源</h3><ul>
+<li>并发信号量</li>
+<li>线程或协程池</li>
+<li>HTTP 连接池</li>
+<li>队列与消费者</li>
+<li>Token、请求和成本预算</li>
+<li>缓存分区</li>
+<li>进程、容器或部署单元</li>
+</ul>
+<p>只为每个供应商建独立熔断器，却共享同一个 500 连接池，慢供应商仍可能占满连接并拖垮健康路径。</p>
+<h3 id="2-隔舱的代价"><a href="#2-隔舱的代价" class="headerlink" title="2. 隔舱的代价"></a>2. 隔舱的代价</h3><p>资源利用率会下降，配置和容量管理更复杂。分区太细会浪费容量，太粗又无法隔离。需要观察每个隔舱的队列、拒绝率、并发、等待时间和 SLO，而不是只看全局平均。</p>
+<h3 id="3-不要让-fallback-争抢主路径最后的资源"><a href="#3-不要让-fallback-争抢主路径最后的资源" class="headerlink" title="3. 不要让 fallback 争抢主路径最后的资源"></a>3. 不要让 fallback 争抢主路径最后的资源</h3><p>故障时备用流量会突然增加。如果备用模型、缓存刷新和人工工单都使用同一线程池，fallback 本身会形成第二次雪崩。每一级要有容量上限和负载丢弃策略。</p>
+<h2 id="十二、Retry、Backoff、Jitter-和-Idempotency"><a href="#十二、Retry、Backoff、Jitter-和-Idempotency" class="headerlink" title="十二、Retry、Backoff、Jitter 和 Idempotency"></a>十二、Retry、Backoff、Jitter 和 Idempotency</h2><h3 id="1-只重试可恢复错误"><a href="#1-只重试可恢复错误" class="headerlink" title="1. 只重试可恢复错误"></a>1. 只重试可恢复错误</h3><p>可考虑重试：</p>
+<ul>
+<li>短暂连接失败</li>
+<li>明确过载或临时不可用</li>
+<li>有 <code>Retry-After</code> 且预算允许的限流</li>
+<li>可证明没有副作用的读取超时</li>
+</ul>
+<p>通常不应原样重试：</p>
+<ul>
+<li>认证与权限失败</li>
+<li>无效参数、上下文超长和 Schema 错误</li>
+<li>安全拒绝</li>
+<li>余额或长期配额耗尽</li>
+<li>业务不变量失败</li>
+<li>已知不兼容的模型能力</li>
+</ul>
+<p>供应商 SDK 可能已经自动重试。自定义客户端、网关和业务层再次重试会乘法放大请求。必须盘点每一层的默认行为，尽量只在一个合适层重试。</p>
+<h3 id="2-使用带上限的指数退避和抖动"><a href="#2-使用带上限的指数退避和抖动" class="headerlink" title="2. 使用带上限的指数退避和抖动"></a>2. 使用带上限的指数退避和抖动</h3><p>固定间隔会让大量客户端同时再次冲击恢复中的服务。抖动用于打散相关重试，但仍需：</p>
+<ul>
+<li>最大尝试次数</li>
+<li>最大退避</li>
+<li>绝对截止时间</li>
+<li>本地重试预算或 Token Bucket</li>
+<li>熔断器打开后立即停止</li>
+</ul>
+<h3 id="3-模型调用幂等不等于-Agent-任务幂等"><a href="#3-模型调用幂等不等于-Agent-任务幂等" class="headerlink" title="3. 模型调用幂等不等于 Agent 任务幂等"></a>3. 模型调用幂等不等于 Agent 任务幂等</h3><p>重复生成文本可能只增加成本，但模型结果可能驱动工具。以下轨迹很危险：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">模型提出退款 -&gt; 工具已提交 -&gt; 响应超时</span><br><span class="line">Agent 重试整条运行 -&gt; 模型再次提出退款 -&gt; 第二次提交</span><br></pre></td></tr></table></figure>
+
+<p>业务副作用需要稳定幂等键和最终状态查询。AWS 的幂等 API 资料还强调“同一客户端请求 ID应返回语义等价结果”，这样调用方才能区分第一次结果丢失和真正的新意图。</p>
+<h3 id="4-同一幂等键不能承载不同意图"><a href="#4-同一幂等键不能承载不同意图" class="headerlink" title="4. 同一幂等键不能承载不同意图"></a>4. 同一幂等键不能承载不同意图</h3><p>如果参数改变，必须拒绝同键复用；如果只是网络重试，应保持同键。服务端需要把键、主体、参数摘要和结果原子关联，并定义保留窗口。</p>
+<h2 id="十三、Fallback-的数据与-Schema-兼容"><a href="#十三、Fallback-的数据与-Schema-兼容" class="headerlink" title="十三、Fallback 的数据与 Schema 兼容"></a>十三、Fallback 的数据与 Schema 兼容</h2><h3 id="1-建立供应商无关的内部契约"><a href="#1-建立供应商无关的内部契约" class="headerlink" title="1. 建立供应商无关的内部契约"></a>1. 建立供应商无关的内部契约</h3><p>业务层不要直接依赖各厂商原始响应。适配层负责：</p>
+<ul>
+<li>将停止原因映射到内部枚举</li>
+<li>统一使用量与成本字段</li>
+<li>转换工具调用参数</li>
+<li>保存供应商原始请求 ID</li>
+<li>标记未知字段和协议版本</li>
+<li>把无法无损映射的差异显式上报</li>
+</ul>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;contract_version&quot;</span><span class="punctuation">:</span> <span class="string">&quot;support.answer.v4&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;status&quot;</span><span class="punctuation">:</span> <span class="string">&quot;COMPLETE&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;answer&quot;</span><span class="punctuation">:</span> <span class="string">&quot;...&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;evidence&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="punctuation">&#123;</span><span class="attr">&quot;source_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;policy-v12&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;claim_ids&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;c1&quot;</span><span class="punctuation">]</span><span class="punctuation">&#125;</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;actions&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;degradation&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;level&quot;</span><span class="punctuation">:</span> <span class="string">&quot;FULL_AGENT&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;reason_code&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">null</span></span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;omitted_capabilities&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="punctuation">]</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;provider_trace&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;provider&quot;</span><span class="punctuation">:</span> <span class="string">&quot;provider-a&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;model_revision&quot;</span><span class="punctuation">:</span> <span class="string">&quot;revision-17&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;request_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;req_...&quot;</span></span><br><span class="line">  <span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="2-缺失不能伪装成空值"><a href="#2-缺失不能伪装成空值" class="headerlink" title="2. 缺失不能伪装成空值"></a>2. 缺失不能伪装成空值</h3><p>备用路径不支持引用时：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">&quot;evidence&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">null</span></span><span class="punctuation">,</span></span><br><span class="line"><span class="attr">&quot;omitted_capabilities&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;CITATION_GENERATION&quot;</span><span class="punctuation">]</span></span><br></pre></td></tr></table></figure>
+
+<p>比 <code>&quot;evidence&quot;: []</code> 更准确。空数组可能被下游解释为“已检查且没有证据”，而 <code>null + omitted</code> 表示该能力没有执行。</p>
+<h3 id="3-Schema-版本要双向验证"><a href="#3-Schema-版本要双向验证" class="headerlink" title="3. Schema 版本要双向验证"></a>3. Schema 版本要双向验证</h3><p>上线前测试：</p>
+<ul>
+<li>新路由器读取旧响应</li>
+<li>旧消费者读取新响应</li>
+<li>未知枚举是否安全失败</li>
+<li>可选字段缺失是否改变业务默认值</li>
+<li>数值单位和时区是否一致</li>
+<li>流式中断时是否产生半个合法对象</li>
+</ul>
+<p>在兼容窗口内可以双写或适配，但不能永久积累隐式默认值。</p>
+<h3 id="4-语义差异要单独评测"><a href="#4-语义差异要单独评测" class="headerlink" title="4. 语义差异要单独评测"></a>4. 语义差异要单独评测</h3><p>相同 Prompt 在不同模型上不保证等价。至少按任务切片比较：</p>
+<ul>
+<li>工具选择与参数</li>
+<li>拒绝和安全边界</li>
+<li>引用与事实支持</li>
+<li>长上下文信息保留</li>
+<li>多轮状态一致性</li>
+<li>语言、格式和语气</li>
+<li>停止条件与截断行为</li>
+</ul>
+<p>供应商切换是一项模型变更，应该经过离线评测和灰度，不是一个纯基础设施开关。</p>
+<h2 id="十四、缓存、检索与确定性规则怎样兜底"><a href="#十四、缓存、检索与确定性规则怎样兜底" class="headerlink" title="十四、缓存、检索与确定性规则怎样兜底"></a>十四、缓存、检索与确定性规则怎样兜底</h2><h3 id="1-缓存需要版本、权限和新鲜度"><a href="#1-缓存需要版本、权限和新鲜度" class="headerlink" title="1. 缓存需要版本、权限和新鲜度"></a>1. 缓存需要版本、权限和新鲜度</h3><p>缓存键至少覆盖租户、用户权限范围、任务类型、输入摘要、知识版本和输出契约。读取时重新校验当前权限，不能因为内容曾被某个用户合法查询就向另一用户复用。</p>
+<p>响应要带：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">generated_at</span><br><span class="line">source_versions</span><br><span class="line">fresh_until</span><br><span class="line">permission_scope_digest</span><br><span class="line">degradation_level</span><br></pre></td></tr></table></figure>
+
+<h3 id="2-检索兜底只返回证据能支持的内容"><a href="#2-检索兜底只返回证据能支持的内容" class="headerlink" title="2. 检索兜底只返回证据能支持的内容"></a>2. 检索兜底只返回证据能支持的内容</h3><p>主生成模型不可用时，可以展示检索片段、标题和链接，但不要让模板把多个冲突片段拼成确定结论。检测到冲突、来源过期或权限不明时，应升级而不是总结。</p>
+<h3 id="3-确定性规则采用允许清单"><a href="#3-确定性规则采用允许清单" class="headerlink" title="3. 确定性规则采用允许清单"></a>3. 确定性规则采用允许清单</h3><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> intent == <span class="string">&quot;ORDER_STATUS&quot;</span> <span class="keyword">and</span> authenticated_order:</span><br><span class="line">    <span class="keyword">return</span> render_order_status(current_order)</span><br><span class="line"><span class="keyword">elif</span> intent == <span class="string">&quot;REFUND_POLICY&quot;</span> <span class="keyword">and</span> active_policy:</span><br><span class="line">    <span class="keyword">return</span> render_policy_link(active_policy)</span><br><span class="line"><span class="keyword">else</span>:</span><br><span class="line">    <span class="keyword">return</span> create_handoff(reason=<span class="string">&quot;NO_SAFE_DETERMINISTIC_PATH&quot;</span>)</span><br></pre></td></tr></table></figure>
+
+<p>不要写一个庞大的 <code>else: return generic_answer()</code>。默认答案最容易掩盖未覆盖输入。</p>
+<h3 id="4-兜底也要有测试-Oracle"><a href="#4-兜底也要有测试-Oracle" class="headerlink" title="4. 兜底也要有测试 Oracle"></a>4. 兜底也要有测试 Oracle</h3><p>确定性不代表正确。规则可能使用过期政策、错误单位和不完整状态。测试要覆盖版本切换、边界值、空值、并发更新、权限和国际化。</p>
+<h2 id="十五、一个可运行的路由与熔断骨架"><a href="#十五、一个可运行的路由与熔断骨架" class="headerlink" title="十五、一个可运行的路由与熔断骨架"></a>十五、一个可运行的路由与熔断骨架</h2><p>下面的 Python 示例只依赖标准库，展示：</p>
+<ul>
+<li><code>Closed/Open/Half-Open</code> 状态</li>
+<li>失败阈值与恢复探测</li>
+<li>共享端到端 deadline</li>
+<li>供应商故障、质量失败和安全失败分流</li>
+<li>候选路径的最低质量门槛</li>
+<li>降级结果显式携带级别和原因</li>
+<li>故障注入测试</li>
+</ul>
+<p>为保持示例可读，代码使用连续失败计数而不是生产级滑动窗口，也没有实现分布式熔断状态。生产版本应使用成熟库或平台能力，并用一致的指标定义验证其配置。</p>
+<!-- resilience_example_start -->
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br><span class="line">146</span><br><span class="line">147</span><br><span class="line">148</span><br><span class="line">149</span><br><span class="line">150</span><br><span class="line">151</span><br><span class="line">152</span><br><span class="line">153</span><br><span class="line">154</span><br><span class="line">155</span><br><span class="line">156</span><br><span class="line">157</span><br><span class="line">158</span><br><span class="line">159</span><br><span class="line">160</span><br><span class="line">161</span><br><span class="line">162</span><br><span class="line">163</span><br><span class="line">164</span><br><span class="line">165</span><br><span class="line">166</span><br><span class="line">167</span><br><span class="line">168</span><br><span class="line">169</span><br><span class="line">170</span><br><span class="line">171</span><br><span class="line">172</span><br><span class="line">173</span><br><span class="line">174</span><br><span class="line">175</span><br><span class="line">176</span><br><span class="line">177</span><br><span class="line">178</span><br><span class="line">179</span><br><span class="line">180</span><br><span class="line">181</span><br><span class="line">182</span><br><span class="line">183</span><br><span class="line">184</span><br><span class="line">185</span><br><span class="line">186</span><br><span class="line">187</span><br><span class="line">188</span><br><span class="line">189</span><br><span class="line">190</span><br><span class="line">191</span><br><span class="line">192</span><br><span class="line">193</span><br><span class="line">194</span><br><span class="line">195</span><br><span class="line">196</span><br><span class="line">197</span><br><span class="line">198</span><br><span class="line">199</span><br><span class="line">200</span><br><span class="line">201</span><br><span class="line">202</span><br><span class="line">203</span><br><span class="line">204</span><br><span class="line">205</span><br><span class="line">206</span><br><span class="line">207</span><br><span class="line">208</span><br><span class="line">209</span><br><span class="line">210</span><br><span class="line">211</span><br><span class="line">212</span><br><span class="line">213</span><br><span class="line">214</span><br><span class="line">215</span><br><span class="line">216</span><br><span class="line">217</span><br><span class="line">218</span><br><span class="line">219</span><br><span class="line">220</span><br><span class="line">221</span><br><span class="line">222</span><br><span class="line">223</span><br><span class="line">224</span><br><span class="line">225</span><br><span class="line">226</span><br><span class="line">227</span><br><span class="line">228</span><br><span class="line">229</span><br><span class="line">230</span><br><span class="line">231</span><br><span class="line">232</span><br><span class="line">233</span><br><span class="line">234</span><br><span class="line">235</span><br><span class="line">236</span><br><span class="line">237</span><br><span class="line">238</span><br><span class="line">239</span><br><span class="line">240</span><br><span class="line">241</span><br><span class="line">242</span><br><span class="line">243</span><br><span class="line">244</span><br><span class="line">245</span><br><span class="line">246</span><br><span class="line">247</span><br><span class="line">248</span><br><span class="line">249</span><br><span class="line">250</span><br><span class="line">251</span><br><span class="line">252</span><br><span class="line">253</span><br><span class="line">254</span><br><span class="line">255</span><br><span class="line">256</span><br><span class="line">257</span><br><span class="line">258</span><br><span class="line">259</span><br><span class="line">260</span><br><span class="line">261</span><br><span class="line">262</span><br><span class="line">263</span><br><span class="line">264</span><br><span class="line">265</span><br><span class="line">266</span><br><span class="line">267</span><br><span class="line">268</span><br><span class="line">269</span><br><span class="line">270</span><br><span class="line">271</span><br><span class="line">272</span><br><span class="line">273</span><br><span class="line">274</span><br><span class="line">275</span><br><span class="line">276</span><br><span class="line">277</span><br><span class="line">278</span><br><span class="line">279</span><br><span class="line">280</span><br><span class="line">281</span><br><span class="line">282</span><br><span class="line">283</span><br><span class="line">284</span><br><span class="line">285</span><br><span class="line">286</span><br><span class="line">287</span><br><span class="line">288</span><br><span class="line">289</span><br><span class="line">290</span><br><span class="line">291</span><br><span class="line">292</span><br><span class="line">293</span><br><span class="line">294</span><br><span class="line">295</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> __future__ <span class="keyword">import</span> annotations</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> unittest</span><br><span class="line"><span class="keyword">from</span> dataclasses <span class="keyword">import</span> dataclass</span><br><span class="line"><span class="keyword">from</span> enum <span class="keyword">import</span> Enum</span><br><span class="line"><span class="keyword">from</span> typing <span class="keyword">import</span> <span class="type">Callable</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">CircuitState</span>(<span class="built_in">str</span>, Enum):</span><br><span class="line">    CLOSED = <span class="string">&quot;CLOSED&quot;</span></span><br><span class="line">    OPEN = <span class="string">&quot;OPEN&quot;</span></span><br><span class="line">    HALF_OPEN = <span class="string">&quot;HALF_OPEN&quot;</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Level</span>(<span class="built_in">str</span>, Enum):</span><br><span class="line">    FULL_AGENT = <span class="string">&quot;FULL_AGENT&quot;</span></span><br><span class="line">    RESTRICTED_WORKFLOW = <span class="string">&quot;RESTRICTED_WORKFLOW&quot;</span></span><br><span class="line">    SMALL_MODEL = <span class="string">&quot;SMALL_MODEL&quot;</span></span><br><span class="line">    DETERMINISTIC = <span class="string">&quot;DETERMINISTIC&quot;</span></span><br><span class="line">    UNAVAILABLE = <span class="string">&quot;UNAVAILABLE&quot;</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">FailureKind</span>(<span class="built_in">str</span>, Enum):</span><br><span class="line">    TRANSIENT = <span class="string">&quot;TRANSIENT&quot;</span></span><br><span class="line">    QUOTA = <span class="string">&quot;QUOTA&quot;</span></span><br><span class="line">    QUALITY = <span class="string">&quot;QUALITY&quot;</span></span><br><span class="line">    SAFETY = <span class="string">&quot;SAFETY&quot;</span></span><br><span class="line">    CONTRACT = <span class="string">&quot;CONTRACT&quot;</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">RouteFailure</span>(<span class="title class_ inherited__">RuntimeError</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, kind: FailureKind, message: <span class="built_in">str</span></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="built_in">super</span>().__init__(message)</span><br><span class="line">        <span class="variable language_">self</span>.kind = kind</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Clock</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.value = <span class="number">0.0</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">now</span>(<span class="params">self</span>) -&gt; <span class="built_in">float</span>:</span><br><span class="line">        <span class="keyword">return</span> <span class="variable language_">self</span>.value</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">advance</span>(<span class="params">self, seconds: <span class="built_in">float</span></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.value += seconds</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Result</span>:</span><br><span class="line">    status: <span class="built_in">str</span></span><br><span class="line">    answer: <span class="built_in">str</span></span><br><span class="line">    level: Level</span><br><span class="line">    quality: <span class="built_in">float</span></span><br><span class="line">    contract_version: <span class="built_in">str</span> = <span class="string">&quot;support.answer.v4&quot;</span></span><br><span class="line">    reason_code: <span class="built_in">str</span> | <span class="literal">None</span> = <span class="literal">None</span></span><br><span class="line">    omitted_capabilities: <span class="built_in">tuple</span>[<span class="built_in">str</span>, ...] = ()</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">CircuitBreaker</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        clock: Clock,</span></span><br><span class="line"><span class="params">        failure_threshold: <span class="built_in">int</span> = <span class="number">2</span>,</span></span><br><span class="line"><span class="params">        recovery_seconds: <span class="built_in">float</span> = <span class="number">10.0</span>,</span></span><br><span class="line"><span class="params">    </span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.clock = clock</span><br><span class="line">        <span class="variable language_">self</span>.failure_threshold = failure_threshold</span><br><span class="line">        <span class="variable language_">self</span>.recovery_seconds = recovery_seconds</span><br><span class="line">        <span class="variable language_">self</span>.state = CircuitState.CLOSED</span><br><span class="line">        <span class="variable language_">self</span>.failures = <span class="number">0</span></span><br><span class="line">        <span class="variable language_">self</span>.opened_at: <span class="built_in">float</span> | <span class="literal">None</span> = <span class="literal">None</span></span><br><span class="line">        <span class="variable language_">self</span>.probe_in_flight = <span class="literal">False</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">allow</span>(<span class="params">self</span>) -&gt; <span class="built_in">bool</span>:</span><br><span class="line">        <span class="keyword">if</span> <span class="variable language_">self</span>.state == CircuitState.OPEN:</span><br><span class="line">            <span class="keyword">assert</span> <span class="variable language_">self</span>.opened_at <span class="keyword">is</span> <span class="keyword">not</span> <span class="literal">None</span></span><br><span class="line">            <span class="keyword">if</span> <span class="variable language_">self</span>.clock.now() - <span class="variable language_">self</span>.opened_at &lt; <span class="variable language_">self</span>.recovery_seconds:</span><br><span class="line">                <span class="keyword">return</span> <span class="literal">False</span></span><br><span class="line">            <span class="variable language_">self</span>.state = CircuitState.HALF_OPEN</span><br><span class="line">        <span class="keyword">if</span> <span class="variable language_">self</span>.state == CircuitState.HALF_OPEN:</span><br><span class="line">            <span class="keyword">if</span> <span class="variable language_">self</span>.probe_in_flight:</span><br><span class="line">                <span class="keyword">return</span> <span class="literal">False</span></span><br><span class="line">            <span class="variable language_">self</span>.probe_in_flight = <span class="literal">True</span></span><br><span class="line">        <span class="keyword">return</span> <span class="literal">True</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">success</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.state = CircuitState.CLOSED</span><br><span class="line">        <span class="variable language_">self</span>.failures = <span class="number">0</span></span><br><span class="line">        <span class="variable language_">self</span>.opened_at = <span class="literal">None</span></span><br><span class="line">        <span class="variable language_">self</span>.probe_in_flight = <span class="literal">False</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">failure</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.probe_in_flight = <span class="literal">False</span></span><br><span class="line">        <span class="keyword">if</span> <span class="variable language_">self</span>.state == CircuitState.HALF_OPEN:</span><br><span class="line">            <span class="variable language_">self</span>._<span class="built_in">open</span>()</span><br><span class="line">            <span class="keyword">return</span></span><br><span class="line">        <span class="variable language_">self</span>.failures += <span class="number">1</span></span><br><span class="line">        <span class="keyword">if</span> <span class="variable language_">self</span>.failures &gt;= <span class="variable language_">self</span>.failure_threshold:</span><br><span class="line">            <span class="variable language_">self</span>._<span class="built_in">open</span>()</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">_open</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.state = CircuitState.OPEN</span><br><span class="line">        <span class="variable language_">self</span>.opened_at = <span class="variable language_">self</span>.clock.now()</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Candidate</span>:</span><br><span class="line">    name: <span class="built_in">str</span></span><br><span class="line">    level: Level</span><br><span class="line">    min_remaining_seconds: <span class="built_in">float</span></span><br><span class="line">    min_quality: <span class="built_in">float</span></span><br><span class="line">    invoke: <span class="type">Callable</span>[[<span class="built_in">float</span>], Result]</span><br><span class="line">    breaker: CircuitBreaker | <span class="literal">None</span> = <span class="literal">None</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Router</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, clock: Clock, candidates: <span class="built_in">list</span>[Candidate]</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.clock = clock</span><br><span class="line">        <span class="variable language_">self</span>.candidates = candidates</span><br><span class="line">        <span class="variable language_">self</span>.audit: <span class="built_in">list</span>[<span class="built_in">tuple</span>[<span class="built_in">str</span>, <span class="built_in">str</span>]] = []</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">run</span>(<span class="params">self, deadline: <span class="built_in">float</span></span>) -&gt; Result:</span><br><span class="line">        failures: <span class="built_in">list</span>[<span class="built_in">str</span>] = []</span><br><span class="line">        <span class="keyword">for</span> candidate <span class="keyword">in</span> <span class="variable language_">self</span>.candidates:</span><br><span class="line">            remaining = deadline - <span class="variable language_">self</span>.clock.now()</span><br><span class="line">            <span class="keyword">if</span> remaining &lt; candidate.min_remaining_seconds:</span><br><span class="line">                <span class="variable language_">self</span>.audit.append((candidate.name, <span class="string">&quot;SKIP_DEADLINE&quot;</span>))</span><br><span class="line">                failures.append(<span class="string">f&quot;<span class="subst">&#123;candidate.name&#125;</span>:DEADLINE&quot;</span>)</span><br><span class="line">                <span class="keyword">continue</span></span><br><span class="line">            <span class="keyword">if</span> candidate.breaker <span class="keyword">and</span> <span class="keyword">not</span> candidate.breaker.allow():</span><br><span class="line">                <span class="variable language_">self</span>.audit.append((candidate.name, <span class="string">&quot;SKIP_CIRCUIT_OPEN&quot;</span>))</span><br><span class="line">                failures.append(<span class="string">f&quot;<span class="subst">&#123;candidate.name&#125;</span>:CIRCUIT_OPEN&quot;</span>)</span><br><span class="line">                <span class="keyword">continue</span></span><br><span class="line">            <span class="keyword">try</span>:</span><br><span class="line">                result = candidate.invoke(remaining)</span><br><span class="line">                <span class="variable language_">self</span>._validate(result, candidate)</span><br><span class="line">                <span class="keyword">if</span> candidate.breaker:</span><br><span class="line">                    candidate.breaker.success()</span><br><span class="line">                <span class="variable language_">self</span>.audit.append((candidate.name, <span class="string">&quot;ACCEPT&quot;</span>))</span><br><span class="line">                <span class="keyword">return</span> result</span><br><span class="line">            <span class="keyword">except</span> RouteFailure <span class="keyword">as</span> error:</span><br><span class="line">                <span class="variable language_">self</span>.audit.append((candidate.name, error.kind.value))</span><br><span class="line">                failures.append(<span class="string">f&quot;<span class="subst">&#123;candidate.name&#125;</span>:<span class="subst">&#123;error.kind.value&#125;</span>&quot;</span>)</span><br><span class="line">                <span class="keyword">if</span> candidate.breaker <span class="keyword">and</span> error.kind <span class="keyword">in</span> &#123;</span><br><span class="line">                    FailureKind.TRANSIENT,</span><br><span class="line">                    FailureKind.QUOTA,</span><br><span class="line">                &#125;:</span><br><span class="line">                    candidate.breaker.failure()</span><br><span class="line">                <span class="comment"># Safety policy is global. Do not route around it by changing models.</span></span><br><span class="line">                <span class="keyword">if</span> error.kind == FailureKind.SAFETY:</span><br><span class="line">                    <span class="keyword">return</span> Result(</span><br><span class="line">                        status=<span class="string">&quot;UNAVAILABLE&quot;</span>,</span><br><span class="line">                        answer=<span class="string">&quot;当前请求无法安全处理。&quot;</span>,</span><br><span class="line">                        level=Level.UNAVAILABLE,</span><br><span class="line">                        quality=<span class="number">1.0</span>,</span><br><span class="line">                        reason_code=<span class="string">&quot;SAFETY_POLICY_BLOCK&quot;</span>,</span><br><span class="line">                        omitted_capabilities=(<span class="string">&quot;ALL_AUTOMATION&quot;</span>,),</span><br><span class="line">                    )</span><br><span class="line"></span><br><span class="line">        <span class="keyword">return</span> Result(</span><br><span class="line">            status=<span class="string">&quot;UNAVAILABLE&quot;</span>,</span><br><span class="line">            answer=<span class="string">&quot;当前无法在质量要求内完成，请稍后重试或转人工。&quot;</span>,</span><br><span class="line">            level=Level.UNAVAILABLE,</span><br><span class="line">            quality=<span class="number">1.0</span>,</span><br><span class="line">            reason_code=<span class="string">&quot;NO_CANDIDATE_MET_MINIMUM_CONTRACT&quot;</span>,</span><br><span class="line">            omitted_capabilities=(<span class="string">&quot;AUTOMATED_ANSWER&quot;</span>,),</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line"><span class="meta">    @staticmethod</span></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">_validate</span>(<span class="params">result: Result, candidate: Candidate</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="keyword">if</span> result.contract_version != <span class="string">&quot;support.answer.v4&quot;</span>:</span><br><span class="line">            <span class="keyword">raise</span> RouteFailure(FailureKind.CONTRACT, <span class="string">&quot;unsupported contract&quot;</span>)</span><br><span class="line">        <span class="keyword">if</span> result.quality &lt; candidate.min_quality:</span><br><span class="line">            <span class="keyword">raise</span> RouteFailure(FailureKind.QUALITY, <span class="string">&quot;quality floor not met&quot;</span>)</span><br><span class="line">        <span class="keyword">if</span> candidate.level != Level.FULL_AGENT <span class="keyword">and</span> <span class="keyword">not</span> result.reason_code:</span><br><span class="line">            <span class="keyword">raise</span> RouteFailure(FailureKind.CONTRACT, <span class="string">&quot;degradation must be visible&quot;</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">ScriptedProvider</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, clock: Clock, script: <span class="built_in">list</span>[Result | RouteFailure]</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.clock = clock</span><br><span class="line">        <span class="variable language_">self</span>.script = <span class="built_in">list</span>(script)</span><br><span class="line">        <span class="variable language_">self</span>.calls = <span class="number">0</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__call__</span>(<span class="params">self, remaining: <span class="built_in">float</span></span>) -&gt; Result:</span><br><span class="line">        <span class="variable language_">self</span>.calls += <span class="number">1</span></span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">not</span> <span class="variable language_">self</span>.script:</span><br><span class="line">            <span class="keyword">raise</span> RouteFailure(FailureKind.TRANSIENT, <span class="string">&quot;script exhausted&quot;</span>)</span><br><span class="line">        event = <span class="variable language_">self</span>.script.pop(<span class="number">0</span>)</span><br><span class="line">        <span class="variable language_">self</span>.clock.advance(<span class="built_in">min</span>(<span class="number">0.1</span>, remaining))</span><br><span class="line">        <span class="keyword">if</span> <span class="built_in">isinstance</span>(event, RouteFailure):</span><br><span class="line">            <span class="keyword">raise</span> event</span><br><span class="line">        <span class="keyword">return</span> event</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">good</span>(<span class="params">level: Level, reason: <span class="built_in">str</span> | <span class="literal">None</span> = <span class="literal">None</span></span>) -&gt; Result:</span><br><span class="line">    <span class="keyword">return</span> Result(</span><br><span class="line">        status=<span class="string">&quot;COMPLETE&quot;</span> <span class="keyword">if</span> level == Level.FULL_AGENT <span class="keyword">else</span> <span class="string">&quot;DEGRADED&quot;</span>,</span><br><span class="line">        answer=<span class="string">&quot;订单当前处于运输中。&quot;</span>,</span><br><span class="line">        level=level,</span><br><span class="line">        quality=<span class="number">0.99</span>,</span><br><span class="line">        reason_code=reason,</span><br><span class="line">        omitted_capabilities=() <span class="keyword">if</span> level == Level.FULL_AGENT <span class="keyword">else</span> (<span class="string">&quot;FREE_FORM_AGENT&quot;</span>,),</span><br><span class="line">    )</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">RouterTests</span>(unittest.TestCase):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">setUp</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.clock = Clock()</span><br><span class="line">        <span class="variable language_">self</span>.breaker = CircuitBreaker(<span class="variable language_">self</span>.clock, failure_threshold=<span class="number">2</span>, recovery_seconds=<span class="number">10</span>)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">router</span>(<span class="params">self, primary: ScriptedProvider, fallback: ScriptedProvider</span>) -&gt; Router:</span><br><span class="line">        <span class="keyword">return</span> Router(</span><br><span class="line">            <span class="variable language_">self</span>.clock,</span><br><span class="line">            [</span><br><span class="line">                Candidate(<span class="string">&quot;primary&quot;</span>, Level.FULL_AGENT, <span class="number">0.5</span>, <span class="number">0.95</span>, primary, <span class="variable language_">self</span>.breaker),</span><br><span class="line">                Candidate(</span><br><span class="line">                    <span class="string">&quot;restricted&quot;</span>,</span><br><span class="line">                    Level.RESTRICTED_WORKFLOW,</span><br><span class="line">                    <span class="number">0.2</span>,</span><br><span class="line">                    <span class="number">0.97</span>,</span><br><span class="line">                    fallback,</span><br><span class="line">                ),</span><br><span class="line">            ],</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_transient_failures_open_circuit_and_use_visible_fallback</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        primary = ScriptedProvider(</span><br><span class="line">            <span class="variable language_">self</span>.clock,</span><br><span class="line">            [</span><br><span class="line">                RouteFailure(FailureKind.TRANSIENT, <span class="string">&quot;503&quot;</span>),</span><br><span class="line">                RouteFailure(FailureKind.TRANSIENT, <span class="string">&quot;503&quot;</span>),</span><br><span class="line">            ],</span><br><span class="line">        )</span><br><span class="line">        fallback = ScriptedProvider(</span><br><span class="line">            <span class="variable language_">self</span>.clock,</span><br><span class="line">            [</span><br><span class="line">                good(Level.RESTRICTED_WORKFLOW, <span class="string">&quot;PRIMARY_TRANSIENT_FAILURE&quot;</span>),</span><br><span class="line">                good(Level.RESTRICTED_WORKFLOW, <span class="string">&quot;PRIMARY_TRANSIENT_FAILURE&quot;</span>),</span><br><span class="line">                good(Level.RESTRICTED_WORKFLOW, <span class="string">&quot;PRIMARY_CIRCUIT_OPEN&quot;</span>),</span><br><span class="line">            ],</span><br><span class="line">        )</span><br><span class="line">        router = <span class="variable language_">self</span>.router(primary, fallback)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(Level.RESTRICTED_WORKFLOW, router.run(<span class="number">3</span>).level)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(Level.RESTRICTED_WORKFLOW, router.run(<span class="number">3</span>).level)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(CircuitState.OPEN, <span class="variable language_">self</span>.breaker.state)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(Level.RESTRICTED_WORKFLOW, router.run(<span class="number">3</span>).level)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(<span class="number">2</span>, primary.calls)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_quality_failure_is_not_returned_as_success</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        low_quality = Result(<span class="string">&quot;COMPLETE&quot;</span>, <span class="string">&quot;流畅但错误&quot;</span>, Level.FULL_AGENT, <span class="number">0.40</span>)</span><br><span class="line">        primary = ScriptedProvider(<span class="variable language_">self</span>.clock, [low_quality])</span><br><span class="line">        fallback = ScriptedProvider(</span><br><span class="line">            <span class="variable language_">self</span>.clock,</span><br><span class="line">            [good(Level.RESTRICTED_WORKFLOW, <span class="string">&quot;PRIMARY_QUALITY_GATE_FAILED&quot;</span>)],</span><br><span class="line">        )</span><br><span class="line">        result = <span class="variable language_">self</span>.router(primary, fallback).run(<span class="number">3</span>)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(<span class="string">&quot;DEGRADED&quot;</span>, result.status)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(<span class="string">&quot;PRIMARY_QUALITY_GATE_FAILED&quot;</span>, result.reason_code)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(CircuitState.CLOSED, <span class="variable language_">self</span>.breaker.state)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_safety_failure_does_not_switch_provider</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        primary = ScriptedProvider(</span><br><span class="line">            <span class="variable language_">self</span>.clock, [RouteFailure(FailureKind.SAFETY, <span class="string">&quot;policy block&quot;</span>)]</span><br><span class="line">        )</span><br><span class="line">        fallback = ScriptedProvider(</span><br><span class="line">            <span class="variable language_">self</span>.clock, [good(Level.RESTRICTED_WORKFLOW, <span class="string">&quot;SHOULD_NOT_RUN&quot;</span>)]</span><br><span class="line">        )</span><br><span class="line">        result = <span class="variable language_">self</span>.router(primary, fallback).run(<span class="number">3</span>)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(Level.UNAVAILABLE, result.level)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(<span class="number">0</span>, fallback.calls)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_deadline_skips_candidates_that_cannot_finish</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        primary = ScriptedProvider(<span class="variable language_">self</span>.clock, [good(Level.FULL_AGENT)])</span><br><span class="line">        fallback = ScriptedProvider(</span><br><span class="line">            <span class="variable language_">self</span>.clock, [good(Level.RESTRICTED_WORKFLOW, <span class="string">&quot;DEADLINE&quot;</span>)]</span><br><span class="line">        )</span><br><span class="line">        result = <span class="variable language_">self</span>.router(primary, fallback).run(<span class="number">0.1</span>)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(Level.UNAVAILABLE, result.level)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(<span class="number">0</span>, primary.calls)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(<span class="number">0</span>, fallback.calls)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_half_open_probe_recovers_circuit</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.breaker.failure()</span><br><span class="line">        <span class="variable language_">self</span>.breaker.failure()</span><br><span class="line">        <span class="variable language_">self</span>.clock.advance(<span class="number">11</span>)</span><br><span class="line">        primary = ScriptedProvider(<span class="variable language_">self</span>.clock, [good(Level.FULL_AGENT)])</span><br><span class="line">        fallback = ScriptedProvider(<span class="variable language_">self</span>.clock, [])</span><br><span class="line">        result = <span class="variable language_">self</span>.router(primary, fallback).run(<span class="number">14</span>)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(Level.FULL_AGENT, result.level)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(CircuitState.CLOSED, <span class="variable language_">self</span>.breaker.state)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&quot;__main__&quot;</span>:</span><br><span class="line">    unittest.main()</span><br></pre></td></tr></table></figure>
+<!-- resilience_example_end -->
+
+<p>保存为 <code>resilience_demo.py</code> 后运行：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">python3 resilience_demo.py -v</span><br></pre></td></tr></table></figure>
+
+<p>预期五条测试全部通过。示例有两个刻意选择：</p>
+<ol>
+<li>质量失败不会打开供应商基础设施熔断器，因为供应商仍可能健康；生产系统可以单独打开该模型与任务切片的质量门。</li>
+<li>安全失败立即停止候选遍历，避免“主模型拒绝后换备用模型绕过”。如果安全问题只与特定供应商响应有关，应由更细的安全策略给出明确路由，而不是让通用异常处理猜测。</li>
+</ol>
+<h2 id="十六、测试矩阵：从单个异常扩展到业务能力"><a href="#十六、测试矩阵：从单个异常扩展到业务能力" class="headerlink" title="十六、测试矩阵：从单个异常扩展到业务能力"></a>十六、测试矩阵：从单个异常扩展到业务能力</h2><h3 id="1-六类信号与期望动作"><a href="#1-六类信号与期望动作" class="headerlink" title="1. 六类信号与期望动作"></a>1. 六类信号与期望动作</h3><table>
+<thead>
+<tr>
+<th>编号</th>
+<th>注入信号</th>
+<th>期望路由</th>
+<th>必须验证的负面断言</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>F01</td>
+<td>主模型一次连接重置</td>
+<td>预算内重试或 L1</td>
+<td>不重复业务副作用</td>
+</tr>
+<tr>
+<td>F02</td>
+<td>主模型持续 503</td>
+<td>熔断并进入 L1</td>
+<td>Open 后不继续轰击主模型</td>
+</tr>
+<tr>
+<td>F03</td>
+<td>请求速率 429</td>
+<td>按响应语义退避</td>
+<td>不把长期配额耗尽当短暂过载</td>
+</tr>
+<tr>
+<td>F04</td>
+<td>账户余额或月度配额耗尽</td>
+<td>路由或明确不可用</td>
+<td>不进行无意义重试</td>
+</tr>
+<tr>
+<td>F05</td>
+<td>P95 延迟超预算</td>
+<td>提前切换或异步受理</td>
+<td>不在 deadline 后返回“成功”</td>
+</tr>
+<tr>
+<td>F06</td>
+<td>输出 Schema 错误</td>
+<td>契约失败，尝试兼容路径</td>
+<td>不把解析默认值交给业务</td>
+</tr>
+<tr>
+<td>F07</td>
+<td>Schema 合法但引用不支持结论</td>
+<td>质量门失败</td>
+<td>HTTP 200 不计为可用</td>
+</tr>
+<tr>
+<td>F08</td>
+<td>安全策略命中</td>
+<td>拒绝或专门人工流程</td>
+<td>不换模型绕过安全结论</td>
+</tr>
+<tr>
+<td>F09</td>
+<td>安全服务不可用</td>
+<td>按风险失败关闭</td>
+<td>高风险动作不降级放行</td>
+</tr>
+<tr>
+<td>F10</td>
+<td>Token 成本超单请求预算</td>
+<td>限制步骤或停止</td>
+<td>不返回被截断的伪完整结果</td>
+</tr>
+<tr>
+<td>F11</td>
+<td>检索空召回</td>
+<td>L3 明确无证据或人工</td>
+<td>不让模型凭记忆补齐政策</td>
+</tr>
+<tr>
+<td>F12</td>
+<td>缓存过期</td>
+<td>回源或不可用</td>
+<td>不隐藏 <code>as_of</code> 时间</td>
+</tr>
+<tr>
+<td>F13</td>
+<td>工具提交状态未知</td>
+<td>查询幂等结果</td>
+<td>不换键重试写操作</td>
+</tr>
+<tr>
+<td>F14</td>
+<td>人工队列满</td>
+<td>明确延迟或不可用</td>
+<td>不自动放宽审批策略</td>
+</tr>
+<tr>
+<td>F15</td>
+<td>主模型恢复但冷启动很慢</td>
+<td>受控探测与预热</td>
+<td>不直接全量回切</td>
+</tr>
+</tbody></table>
+<h3 id="2-组合故障比单点故障更接近真实事故"><a href="#2-组合故障比单点故障更接近真实事故" class="headerlink" title="2. 组合故障比单点故障更接近真实事故"></a>2. 组合故障比单点故障更接近真实事故</h3><p>生产事故经常是组合：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">供应商尾延迟上升</span><br><span class="line">  -&gt; 客户端超时并重试</span><br><span class="line">  -&gt; 重试增加并发和 Token 消耗</span><br><span class="line">  -&gt; 备用模型也被突发流量打满</span><br><span class="line">  -&gt; 工单系统因集中升级积压</span><br><span class="line">  -&gt; 用户重复提交，业务工具出现重复意图</span><br></pre></td></tr></table></figure>
+
+<p>因此至少测试：</p>
+<ul>
+<li>主模型慢 + 备用模型配额低</li>
+<li>检索失败 + 缓存过期</li>
+<li>熔断打开 + 配置中心不可用</li>
+<li>Half-Open + 突发流量</li>
+<li>模型恢复 + Prompt 新版本同时发布</li>
+<li>供应商故障 + 人工队列容量下降</li>
+<li>超时 + 下游写操作提交状态未知</li>
+</ul>
+<p>组合测试要观察首个故障如何被放大，而不是只检查最终有没有 fallback。</p>
+<h3 id="3-负载测试要覆盖切换瞬间"><a href="#3-负载测试要覆盖切换瞬间" class="headerlink" title="3. 负载测试要覆盖切换瞬间"></a>3. 负载测试要覆盖切换瞬间</h3><p>稳态压测主模型和备用模型都通过，不代表切换安全。需要模拟：</p>
+<ul>
+<li>在峰值流量时打开熔断器</li>
+<li>一秒内把 80% 流量转到备用路径</li>
+<li>备用缓存同时大量未命中</li>
+<li>连接池和 DNS 刚开始建立</li>
+<li>预热 Prompt 与模型容器尚未准备</li>
+<li>人工升级事件瞬间增长</li>
+</ul>
+<p>观察队列、连接、CPU、内存、Token 速率、配额、缓存击穿和下游数据库，不只看路由器自身耗时。</p>
+<h3 id="4-契约测试要使用真实适配器录制样本"><a href="#4-契约测试要使用真实适配器录制样本" class="headerlink" title="4. 契约测试要使用真实适配器录制样本"></a>4. 契约测试要使用真实适配器录制样本</h3><p>供应商模拟器适合稳定复现，但协议兼容还应使用脱敏的真实响应样本覆盖：</p>
+<ul>
+<li>正常完成</li>
+<li>内容过滤停止</li>
+<li>最大 Token 截断</li>
+<li>流式中途错误</li>
+<li>工具调用和并行工具调用</li>
+<li>未知错误类型</li>
+<li>新增响应字段</li>
+<li>用量缺失或延迟返回</li>
+</ul>
+<p>解析器遇到未知枚举时应保留原值并安全失败，不能因为字符串匹配失败就当作普通完成。</p>
+<h2 id="十七、供应商错误语义要标准化，但不要抹平差异"><a href="#十七、供应商错误语义要标准化，但不要抹平差异" class="headerlink" title="十七、供应商错误语义要标准化，但不要抹平差异"></a>十七、供应商错误语义要标准化，但不要抹平差异</h2><p>内部可以定义：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">AUTHENTICATION</span><br><span class="line">PERMISSION</span><br><span class="line">INVALID_REQUEST</span><br><span class="line">RATE_LIMIT_TRANSIENT</span><br><span class="line">QUOTA_EXHAUSTED</span><br><span class="line">PROVIDER_OVERLOADED</span><br><span class="line">PROVIDER_INTERNAL</span><br><span class="line">DEADLINE_EXCEEDED</span><br><span class="line">CONNECTION_FAILURE</span><br><span class="line">SAFETY_BLOCK</span><br><span class="line">UNKNOWN</span><br></pre></td></tr></table></figure>
+
+<p>每个适配器负责将官方错误、SDK 异常、响应头和错误体映射到内部类型，同时保存：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">provider_error:</span></span><br><span class="line">  <span class="attr">provider:</span> <span class="string">provider-a</span></span><br><span class="line">  <span class="attr">http_status:</span> <span class="number">429</span></span><br><span class="line">  <span class="attr">provider_type:</span> <span class="string">rate_limit_error</span></span><br><span class="line">  <span class="attr">provider_request_id:</span> <span class="string">req_...</span></span><br><span class="line">  <span class="attr">retry_after_ms:</span> <span class="number">1200</span></span><br><span class="line">  <span class="attr">internal_type:</span> <span class="string">RATE_LIMIT_TRANSIENT</span></span><br><span class="line">  <span class="attr">mapping_version:</span> <span class="string">provider-a-errors-v9</span></span><br><span class="line">  <span class="attr">raw_error_artifact:</span> <span class="string">artifact://errors/err-7812</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="1-为什么不能只按-HTTP-状态码"><a href="#1-为什么不能只按-HTTP-状态码" class="headerlink" title="1. 为什么不能只按 HTTP 状态码"></a>1. 为什么不能只按 HTTP 状态码</h3><p>相同状态码可能有不同恢复动作；不同供应商也可能用不同状态码表达过载。错误映射需要版本化，并用官方样例和故障注入验证。</p>
+<h3 id="2-为什么不能匹配错误消息文本"><a href="#2-为什么不能匹配错误消息文本" class="headerlink" title="2. 为什么不能匹配错误消息文本"></a>2. 为什么不能匹配错误消息文本</h3><p>消息可能本地化、变化或包含动态内容。优先使用 SDK 类型、结构化 <code>type/code</code> 和状态码组合。未知错误保留原始请求 ID，进入保守路径。</p>
+<h3 id="3-错误映射本身也会故障"><a href="#3-错误映射本身也会故障" class="headerlink" title="3. 错误映射本身也会故障"></a>3. 错误映射本身也会故障</h3><p>若适配器把认证失败映射成临时故障，会不断重试无效凭据并触发告警噪声；若把过载映射成永久失败，会过早放弃可恢复请求。映射表变化应经过代码审查、契约测试和灰度。</p>
+<h3 id="4-供应商自动重试必须进入-Trace"><a href="#4-供应商自动重试必须进入-Trace" class="headerlink" title="4. 供应商自动重试必须进入 Trace"></a>4. 供应商自动重试必须进入 Trace</h3><p>Anthropic 官方错误文档说明其 SDK 对部分瞬时故障默认进行有限次数指数退避重试；其他 SDK 也可能有自己的默认策略。无论使用哪家供应商，Trace 都应记录逻辑调用和每个物理 attempt，避免看到一次业务调用却实际发送多次请求。</p>
+<h2 id="十八、恢复探测：从-Open-回到-Closed-不能靠一个健康检查"><a href="#十八、恢复探测：从-Open-回到-Closed-不能靠一个健康检查" class="headerlink" title="十八、恢复探测：从 Open 回到 Closed 不能靠一个健康检查"></a>十八、恢复探测：从 Open 回到 Closed 不能靠一个健康检查</h2><h3 id="1-探测集覆盖真实能力"><a href="#1-探测集覆盖真实能力" class="headerlink" title="1. 探测集覆盖真实能力"></a>1. 探测集覆盖真实能力</h3><p>可以维护轻量但有代表性的探测：</p>
+<ul>
+<li>短文本结构化输出</li>
+<li>长上下文关键信息提取</li>
+<li>中文与英文</li>
+<li>工具 Schema 生成但不执行副作用</li>
+<li>安全拒绝样本</li>
+<li>引用与证据绑定</li>
+<li>流式完整性</li>
+</ul>
+<p>每个探测使用固定输入和确定性断言，必要时辅以稳定评测器。不要把用户秘密或生产高风险动作放入健康探测。</p>
+<h3 id="2-控制-Half-Open-并发"><a href="#2-控制-Half-Open-并发" class="headerlink" title="2. 控制 Half-Open 并发"></a>2. 控制 Half-Open 并发</h3><p>集群中每个实例各放一个探测，会瞬间形成探测风暴。可以使用租约、协调存储或集中控制面，确保每个熔断键只有有限探测者。即使采用本地熔断，也要用全局流量上限保护恢复中的供应商。</p>
+<h3 id="3-冷启动要单独建模"><a href="#3-冷启动要单独建模" class="headerlink" title="3. 冷启动要单独建模"></a>3. 冷启动要单独建模</h3><p>恢复后第一次请求可能需要：</p>
+<ul>
+<li>建立连接和 TLS</li>
+<li>拉起模型容器</li>
+<li>加载适配器或 Tokenizer</li>
+<li>预热 Prompt 缓存</li>
+<li>重新填充检索和应用缓存</li>
+<li>建立限流器状态</li>
+</ul>
+<p>冷启动慢不等于服务仍故障，也不能让真实用户承担全部预热。探测策略可区分冷启动预算与稳态预算，并设置最大预热成本。</p>
+<h3 id="4-恢复条件包含质量，不只包含-2xx"><a href="#4-恢复条件包含质量，不只包含-2xx" class="headerlink" title="4. 恢复条件包含质量，不只包含 2xx"></a>4. 恢复条件包含质量，不只包含 2xx</h3><p>至少要求：</p>
+<ul>
+<li>连接和协议成功</li>
+<li>Schema 与工具契约通过</li>
+<li>核心探测质量门通过</li>
+<li>安全探测行为符合预期</li>
+<li>延迟回到恢复阈值以下</li>
+<li>连续多个窗口稳定</li>
+</ul>
+<p>如果供应商恢复后模型修订已变化，需要按模型变更处理，不能因为 API 名称相同直接恢复全量。</p>
+<h2 id="十九、灰度回切：恢复路径需要自己的发布策略"><a href="#十九、灰度回切：恢复路径需要自己的发布策略" class="headerlink" title="十九、灰度回切：恢复路径需要自己的发布策略"></a>十九、灰度回切：恢复路径需要自己的发布策略</h2><h3 id="1-建议的回切阶段"><a href="#1-建议的回切阶段" class="headerlink" title="1. 建议的回切阶段"></a>1. 建议的回切阶段</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">阶段 A：合成探测，无用户流量</span><br><span class="line">阶段 B：影子请求，只比较不交付</span><br><span class="line">阶段 C：1% 低风险用户请求</span><br><span class="line">阶段 D：5% -&gt; 25% -&gt; 50%，每级观察完整窗口</span><br><span class="line">阶段 E：100%，保留备用容量和回滚开关</span><br></pre></td></tr></table></figure>
+
+<p>比例只是示例。每级持续多久取决于流量、真值延迟和风险，不能只按固定五分钟推进。</p>
+<h3 id="2-按故障域回切"><a href="#2-按故障域回切" class="headerlink" title="2. 按故障域回切"></a>2. 按故障域回切</h3><p>如果事故只影响某区域或某模型，不必一次恢复所有租户。回切单元可以与熔断键、隔舱和发布单元对齐，使问题重新出现时影响受控。</p>
+<h3 id="3-回切期间避免结果摇摆"><a href="#3-回切期间避免结果摇摆" class="headerlink" title="3. 回切期间避免结果摇摆"></a>3. 回切期间避免结果摇摆</h3><p>同一会话或同一长任务在模型之间反复切换，可能造成语气、工具状态和事实不一致。需要明确粘性策略：</p>
+<ul>
+<li>无状态只读请求可以按次路由</li>
+<li>有状态会话绑定模型与 Prompt 修订</li>
+<li>长任务恢复时检查状态兼容</li>
+<li>高风险动作绑定原审批快照</li>
+</ul>
+<p>粘性不能阻止安全回退。原路径被紧急停用时，应结束或迁移任务，并明确告知能力变化。</p>
+<h3 id="4-回切失败要自动退回稳定层"><a href="#4-回切失败要自动退回稳定层" class="headerlink" title="4. 回切失败要自动退回稳定层"></a>4. 回切失败要自动退回稳定层</h3><p>每级配置：</p>
+<ul>
+<li>质量退化阈值</li>
+<li>延迟和错误率阈值</li>
+<li>安全硬门禁</li>
+<li>最小样本量</li>
+<li>自动回退目标</li>
+<li>决策证据和责任人</li>
+</ul>
+<p>不要在事故压力下临时讨论“要不要回去”。</p>
+<h2 id="二十、可观测与审计字段"><a href="#二十、可观测与审计字段" class="headerlink" title="二十、可观测与审计字段"></a>二十、可观测与审计字段</h2><p>一次路由至少记录以下结构化信息：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;trace_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;4fd0c6d2a0d24e33a4d6e95cb89ad128&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;request_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;support-20260422-7712&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;use_case&quot;</span><span class="punctuation">:</span> <span class="string">&quot;ORDER_STATUS&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;required_capabilities&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;CURRENT_ORDER&quot;</span><span class="punctuation">,</span> <span class="string">&quot;CITATION&quot;</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;deadline_ms&quot;</span><span class="punctuation">:</span> <span class="number">4500</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;route_policy_version&quot;</span><span class="punctuation">:</span> <span class="string">&quot;support-route-v18&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;attempts&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;candidate&quot;</span><span class="punctuation">:</span> <span class="string">&quot;provider-a/full-agent/rev-17&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;circuit_state&quot;</span><span class="punctuation">:</span> <span class="string">&quot;CLOSED&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;started_at&quot;</span><span class="punctuation">:</span> <span class="string">&quot;2026-04-22T12:30:00.120Z&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;duration_ms&quot;</span><span class="punctuation">:</span> <span class="number">2210</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;outcome&quot;</span><span class="punctuation">:</span> <span class="string">&quot;PROVIDER_OVERLOADED&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;provider_request_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;req_a_9182&quot;</span></span><br><span class="line">    <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;candidate&quot;</span><span class="punctuation">:</span> <span class="string">&quot;restricted-workflow/v9&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;circuit_state&quot;</span><span class="punctuation">:</span> <span class="string">&quot;NOT_APPLICABLE&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;duration_ms&quot;</span><span class="punctuation">:</span> <span class="number">680</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;outcome&quot;</span><span class="punctuation">:</span> <span class="string">&quot;ACCEPTED&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;quality_gates&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;SCHEMA&quot;</span><span class="punctuation">,</span> <span class="string">&quot;ORDER_SCOPE&quot;</span><span class="punctuation">,</span> <span class="string">&quot;FRESHNESS&quot;</span><span class="punctuation">]</span></span><br><span class="line">    <span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;delivered&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;status&quot;</span><span class="punctuation">:</span> <span class="string">&quot;DEGRADED&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;level&quot;</span><span class="punctuation">:</span> <span class="string">&quot;RESTRICTED_WORKFLOW&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;reason_code&quot;</span><span class="punctuation">:</span> <span class="string">&quot;PRIMARY_PROVIDER_OVERLOADED&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;omitted_capabilities&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;FREE_FORM_AGENT&quot;</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;data_as_of&quot;</span><span class="punctuation">:</span> <span class="string">&quot;2026-04-22T12:29:58Z&quot;</span></span><br><span class="line">  <span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="1-Metric-维度要控制基数"><a href="#1-Metric-维度要控制基数" class="headerlink" title="1. Metric 维度要控制基数"></a>1. Metric 维度要控制基数</h3><p><code>provider</code>、<code>model_family</code>、<code>region</code>、<code>operation</code>、<code>level</code>、<code>reason_code</code> 可以作为受控维度；<code>request_id</code>、完整错误消息和用户输入不应作为 Metric Label。高基数字段放 Trace 或受控日志。</p>
+<h3 id="2-同时记录技术结果和业务结果"><a href="#2-同时记录技术结果和业务结果" class="headerlink" title="2. 同时记录技术结果和业务结果"></a>2. 同时记录技术结果和业务结果</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">transport_outcome = HTTP_200</span><br><span class="line">contract_outcome  = VALID</span><br><span class="line">quality_outcome   = FAILED_CITATION_SUPPORT</span><br><span class="line">business_outcome  = NOT_DELIVERED</span><br><span class="line">route_outcome     = FALLBACK_ACCEPTED</span><br></pre></td></tr></table></figure>
+
+<p>这样才能避免 2xx 掩盖质量失败。</p>
+<h3 id="3-记录首错与终因"><a href="#3-记录首错与终因" class="headerlink" title="3. 记录首错与终因"></a>3. 记录首错与终因</h3><p>第一次异常可能是主模型超时，最终不可用可能是备用路径不支持当前语言。两者都要保留：</p>
+<ul>
+<li><code>first_fault</code></li>
+<li><code>terminal_cause</code></li>
+<li><code>contributing_factors</code></li>
+</ul>
+<p>否则复盘会把所有问题归咎于最后一个候选。</p>
+<h3 id="4-内容日志仍遵循最小化"><a href="#4-内容日志仍遵循最小化" class="headerlink" title="4. 内容日志仍遵循最小化"></a>4. 内容日志仍遵循最小化</h3><p>路由审计通常只需要内容摘要、契约版本、评测结果和 Artifact 引用。不要为了排查 fallback 把完整 Prompt、个人信息和模型输出无条件写入所有 Span。</p>
+<h2 id="二十一、SLO-和错误预算必须包含质量降级"><a href="#二十一、SLO-和错误预算必须包含质量降级" class="headerlink" title="二十一、SLO 和错误预算必须包含质量降级"></a>二十一、SLO 和错误预算必须包含质量降级</h2><p>传统可用性可以定义：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">good / eligible requests</span><br></pre></td></tr></table></figure>
+
+<p>AI 功能的 <code>good</code> 至少应满足：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">在 deadline 内完成</span><br><span class="line">且通过安全与权限硬门禁</span><br><span class="line">且满足对应级别的 Schema 与质量契约</span><br><span class="line">且没有把部分结果声明为完整</span><br><span class="line">且用户或下游获得必要的降级状态</span><br></pre></td></tr></table></figure>
+
+<h3 id="1-按能力级别报告"><a href="#1-按能力级别报告" class="headerlink" title="1. 按能力级别报告"></a>1. 按能力级别报告</h3><ul>
+<li>完整能力成功率</li>
+<li>受限能力成功率</li>
+<li>确定性兜底成功率</li>
+<li>人工受理率与队列 SLO</li>
+<li>明确不可用率</li>
+<li>静默降级违规率</li>
+</ul>
+<p>一个请求降到 L4 并正确告诉用户，可以算“核心服务可用”，但不能算“完整 Agent 可用”。两条 SLO 要分开。</p>
+<h3 id="2-质量错误也消耗预算"><a href="#2-质量错误也消耗预算" class="headerlink" title="2. 质量错误也消耗预算"></a>2. 质量错误也消耗预算</h3><p>如果结果后来被证明确认错误、引用不支持或动作没有完成，应回填并消耗相应质量预算。真值延迟会让预算回算，因此看板要显示已确认和待确认比例。</p>
+<h3 id="3-错误预算驱动变化速度"><a href="#3-错误预算驱动变化速度" class="headerlink" title="3. 错误预算驱动变化速度"></a>3. 错误预算驱动变化速度</h3><p>Google SRE 的错误预算策略示例把预算用于平衡可靠性与变更速度。放到 AI 路由上，可以约定：</p>
+<ul>
+<li>质量预算耗尽时暂停扩大自动范围</li>
+<li>单次事故消耗超过阈值时必须复盘</li>
+<li>fallback 长时间处于低级能力时暂停非必要模型变更</li>
+<li>预算恢复前优先修复评测、隔舱和降级能力</li>
+</ul>
+<p>错误预算不是允许伤害的额度。越权、数据泄漏和未审批财务写入仍是硬事件，不进入普通平均预算抵消。</p>
+<h2 id="二十二、路由配置与紧急开关也要按发布系统治理"><a href="#二十二、路由配置与紧急开关也要按发布系统治理" class="headerlink" title="二十二、路由配置与紧急开关也要按发布系统治理"></a>二十二、路由配置与紧急开关也要按发布系统治理</h2><p>模型、阈值、超时、候选顺序和熔断键通常由配置驱动。这样便于快速止损，也意味着一次错误配置可以绕过经过测试的代码，在几秒内改变全量流量。</p>
+<h3 id="1-配置必须是不可变版本"><a href="#1-配置必须是不可变版本" class="headerlink" title="1. 配置必须是不可变版本"></a>1. 配置必须是不可变版本</h3><p>每次路由决定保存完整版本，而不是只写“当前配置”：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">route_policy:</span></span><br><span class="line">  <span class="attr">policy_id:</span> <span class="string">support-route-v18</span></span><br><span class="line">  <span class="attr">content_digest:</span> <span class="string">sha256:8c31...</span></span><br><span class="line">  <span class="attr">schema_version:</span> <span class="string">route-policy.v5</span></span><br><span class="line">  <span class="attr">approved_by:</span> <span class="string">change-20260422-91</span></span><br><span class="line">  <span class="attr">activated_at:</span> <span class="number">2026-04-22T12:00:00Z</span></span><br><span class="line">  <span class="attr">previous_stable:</span> <span class="string">support-route-v17</span></span><br></pre></td></tr></table></figure>
+
+<p>配置中心的可变键可以指向版本，但历史版本内容不能被覆盖。事故回放必须知道某次请求实际读取了哪个版本。</p>
+<h3 id="2-多项变更要原子生效"><a href="#2-多项变更要原子生效" class="headerlink" title="2. 多项变更要原子生效"></a>2. 多项变更要原子生效</h3><p>切换备用模型时，往往需要同时更新：</p>
+<ul>
+<li>候选模型修订</li>
+<li>Prompt 与工具 Schema</li>
+<li>输出适配器</li>
+<li>质量阈值</li>
+<li>成本和 Token 上限</li>
+<li>探测集版本</li>
+</ul>
+<p>如果节点先看到新模型、后看到旧适配器，会出现短暂但真实的协议错误。应发布一个包含全部引用的路由清单，节点只有在下载并验证所有依赖后才原子切换到新版本。</p>
+<h3 id="3-配置读取失败不能任意猜默认值"><a href="#3-配置读取失败不能任意猜默认值" class="headerlink" title="3. 配置读取失败不能任意猜默认值"></a>3. 配置读取失败不能任意猜默认值</h3><p>节点启动或配置中心中断时，可以使用最近一次经过验证的本地稳定快照，但要满足：</p>
+<ul>
+<li>快照签名或摘要有效</li>
+<li>仍在允许有效期内</li>
+<li>紧急撤销列表可以独立送达</li>
+<li>当前软件版本兼容该配置</li>
+<li>使用旧快照被明确记录和告警</li>
+</ul>
+<p>若没有可信快照，高风险能力应关闭。代码内的“默认主模型 + 无熔断”通常不是安全默认值。</p>
+<h3 id="4-紧急开关按能力和故障域设计"><a href="#4-紧急开关按能力和故障域设计" class="headerlink" title="4. 紧急开关按能力和故障域设计"></a>4. 紧急开关按能力和故障域设计</h3><p>只提供一个全站 AI 总开关会迫使值班人员在“全部关闭”和“继续冒险”之间选择。更实用的开关包括：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">禁用某供应商 / 区域 / 模型修订</span><br><span class="line">禁用自由 Agent，仅保留受限工作流</span><br><span class="line">禁用写工具，仅保留只读</span><br><span class="line">强制所有高风险请求转人工</span><br><span class="line">禁止读取某类数据</span><br><span class="line">固定到上一稳定路由版本</span><br><span class="line">暂停自动回切</span><br></pre></td></tr></table></figure>
+
+<p>开关语义要正向、清晰，避免 <code>disable_fallback=false</code> 这类双重否定。高影响开关需要权限控制、强认证、原因、作用范围和审计。</p>
+<h3 id="5-紧急覆盖必须过期"><a href="#5-紧急覆盖必须过期" class="headerlink" title="5. 紧急覆盖必须过期"></a>5. 紧急覆盖必须过期</h3><p>事故中临时把超时从两秒改成十秒，可能缓解错误率，却长期占满线程；临时提高备用配额，也可能形成持续成本风险。覆盖项应包含：</p>
+<ul>
+<li><code>owner</code></li>
+<li><code>reason</code></li>
+<li><code>incident_id</code></li>
+<li><code>scope</code></li>
+<li><code>created_at</code></li>
+<li><code>expires_at</code></li>
+<li><code>rollback_target</code></li>
+</ul>
+<p>过期后回到明确版本，不是继续沿用“直到有人想起来”。若仍需保留，应重新评估并创建新变更。</p>
+<h3 id="6-控制面和数据面分离"><a href="#6-控制面和数据面分离" class="headerlink" title="6. 控制面和数据面分离"></a>6. 控制面和数据面分离</h3><p>配置中心、实验平台或管理后台故障不应阻塞每个在线请求。数据面使用本地已验证快照做判定；控制面负责发布新版本、收集状态和紧急撤销。</p>
+<p>但分离会带来传播延迟。需要监控：</p>
+<ul>
+<li>期望配置版本</li>
+<li>每个实例观测版本</li>
+<li>落后实例数和最长落后时间</li>
+<li>校验失败原因</li>
+<li>紧急撤销传播完成率</li>
+</ul>
+<p>发布完成条件不是“配置中心写入成功”，而是目标故障域内足够实例已经加载并报告新版本，未加载实例被摘流或保持受控旧路径。</p>
+<h3 id="7-配置变更也要跑评测和灰度"><a href="#7-配置变更也要跑评测和灰度" class="headerlink" title="7. 配置变更也要跑评测和灰度"></a>7. 配置变更也要跑评测和灰度</h3><p>候选顺序、质量阈值和 fallback 能力都可能改变业务结果。提交配置时至少执行：</p>
+<ul>
+<li>Schema 与引用完整性检查</li>
+<li>禁止环路和不可达路径检查</li>
+<li>最低能力契约静态检查</li>
+<li>历史故障 Trace 重放</li>
+<li>代表性离线评测</li>
+<li>容量与最坏成本估算</li>
+<li>小故障域灰度和自动回滚</li>
+</ul>
+<p>事故紧急变更可以缩短流程，但不能跳过硬安全校验和版本记录。事后要将临时操作转成经过测试的正式策略或彻底撤销。</p>
+<p>路由系统本身也需要稳定降级：当实验服务不可用、指标延迟或控制面分区时，应停留在已知稳定状态，而不是根据不完整信号频繁切换。</p>
+<h2 id="二十三、五个完整失败案例与排查"><a href="#二十三、五个完整失败案例与排查" class="headerlink" title="二十三、五个完整失败案例与排查"></a>二十三、五个完整失败案例与排查</h2><h3 id="案例一：HTTP-成功率恢复，错误物流答案上升"><a href="#案例一：HTTP-成功率恢复，错误物流答案上升" class="headerlink" title="案例一：HTTP 成功率恢复，错误物流答案上升"></a>案例一：HTTP 成功率恢复，错误物流答案上升</h3><p><strong>场景：</strong> 主模型持续 503，路由器切到通用小模型。小模型不调用订单 API，而是根据用户文本猜测物流状态。</p>
+<p><strong>现象：</strong> 2xx 从 82% 回到 99.8%，延迟下降；两小时后用户纠正率和人工投诉上升。</p>
+<p><strong>排查：</strong></p>
+<ol>
+<li>按 <code>degradation_level</code> 切分业务结果。</li>
+<li>检查备用路径是否满足 <code>CURRENT_ORDER</code> 能力。</li>
+<li>比较主备模型工具调用轨迹。</li>
+<li>检查适配器是否用默认值填充 <code>order_source</code>。</li>
+<li>对齐熔断打开、路由切换和投诉开始时间。</li>
+</ol>
+<p><strong>根因：</strong> 路由策略按技术可用排序，没有做能力匹配；监控只看 HTTP。</p>
+<p><strong>修复：</strong> 订单问题只允许 L1 确定性工作流或 L4 当前状态模板；没有实时订单数据时明确不可用；SLO 加入来源和新鲜度门槛。</p>
+<p><strong>回归：</strong> 注入模型成功但不调用工具、工具返回空、订单 API 过期和跨租户缓存，均不得输出确定物流结论。</p>
+<h3 id="案例二：Schema-兼容把“未知”变成“无风险”"><a href="#案例二：Schema-兼容把“未知”变成“无风险”" class="headerlink" title="案例二：Schema 兼容把“未知”变成“无风险”"></a>案例二：Schema 兼容把“未知”变成“无风险”</h3><p><strong>场景：</strong> 主模型输出 <code>risk_flags</code>，备用模型不支持该字段。适配器为了通过 Schema 填充空数组。</p>
+<p><strong>现象：</strong> 下游自动发送结果，因为 <code>risk_flags.length == 0</code>；实际备用路径根本没有执行风险检测。</p>
+<p><strong>排查：</strong></p>
+<ol>
+<li>查看原始供应商响应和规范化结果。</li>
+<li>检查字段默认值与迁移脚本。</li>
+<li>比较 <code>omitted_capabilities</code> 是否存在。</li>
+<li>复查消费者对空、未知和未执行的语义。</li>
+</ol>
+<p><strong>根因：</strong> 结构兼容覆盖了能力缺失，三态被压成二态。</p>
+<p><strong>修复：</strong> 使用 <code>null + capability_status=NOT_RUN</code>；消费者遇到未执行时停止自动外发；契约测试加入缺字段和未知枚举。</p>
+<h3 id="案例三：多层重试把轻微过载放大成全面故障"><a href="#案例三：多层重试把轻微过载放大成全面故障" class="headerlink" title="案例三：多层重试把轻微过载放大成全面故障"></a>案例三：多层重试把轻微过载放大成全面故障</h3><p><strong>场景：</strong> SDK 默认重试两次，服务网关重试两次，Agent 节点再重试整个步骤两次。</p>
+<p><strong>现象：</strong> 单次用户请求最多触发 27 个物理调用；供应商错误率从 8% 迅速升到 70%，备用路径也被打满。</p>
+<p><strong>排查：</strong></p>
+<ol>
+<li>从一个 Trace 展开所有物理 attempt。</li>
+<li>检查 SDK、代理、服务和 Agent 的重试配置。</li>
+<li>比较原始请求速率与供应商实际请求速率。</li>
+<li>查看退避是否有抖动、是否尊重 deadline。</li>
+</ol>
+<p><strong>根因：</strong> 每层都把重试当作局部优化，没有全链路预算。</p>
+<p><strong>修复：</strong> 只在客户端适配层保留一次受控重试；禁用其他默认重试；加入 Retry Token Bucket、熔断和统一 deadline；记录每个 attempt。</p>
+<h3 id="案例四：Half-Open-探测引发第二次故障"><a href="#案例四：Half-Open-探测引发第二次故障" class="headerlink" title="案例四：Half-Open 探测引发第二次故障"></a>案例四：Half-Open 探测引发第二次故障</h3><p><strong>场景：</strong> 200 个路由实例在同一时间到达恢复窗口，各自允许十个探测请求。</p>
+<p><strong>现象：</strong> 供应商刚恢复就收到 2000 个突发调用，再次过载；熔断器在 Open 和 Half-Open 之间振荡。</p>
+<p><strong>排查：</strong></p>
+<ol>
+<li>检查状态迁移是否只在本地保存。</li>
+<li>统计同一熔断键的并发探测量。</li>
+<li>对齐恢复时间与突发流量。</li>
+<li>检查是否有最短停留和关闭迟滞。</li>
+</ol>
+<p><strong>根因：</strong> Half-Open 没有全局探测预算，也没有灰度回切。</p>
+<p><strong>修复：</strong> 集中租约限制探测者；独立探测隔舱；连续多窗口成功后仅恢复 1% 流量；失败立即退回稳定路径。</p>
+<h3 id="案例五：缓存兜底造成跨租户数据泄漏"><a href="#案例五：缓存兜底造成跨租户数据泄漏" class="headerlink" title="案例五：缓存兜底造成跨租户数据泄漏"></a>案例五：缓存兜底造成跨租户数据泄漏</h3><p><strong>场景：</strong> 为提高降级命中率，缓存键只使用规范化问题文本“我的订单到哪了”。</p>
+<p><strong>现象：</strong> 供应商故障期间，一个用户看到另一个租户的订单摘要。</p>
+<p><strong>排查：</strong></p>
+<ol>
+<li>用响应中的订单 ID 反查缓存写入者。</li>
+<li>检查缓存键是否包含租户、主体和权限摘要。</li>
+<li>检查读取时是否重新授权。</li>
+<li>查看同一缓存对象的访问日志和传播范围。</li>
+</ol>
+<p><strong>根因：</strong> 把语义缓存当作公共内容缓存，没有安全分区。</p>
+<p><strong>修复：</strong> 私有结果默认不做跨主体语义复用；键绑定租户和权限范围；读取时重新校验；清理所有派生缓存与索引；将泄漏样本加入故障演练。</p>
+<h2 id="二十四、降级演练：要验证切出、稳定运行和回切三段"><a href="#二十四、降级演练：要验证切出、稳定运行和回切三段" class="headerlink" title="二十四、降级演练：要验证切出、稳定运行和回切三段"></a>二十四、降级演练：要验证切出、稳定运行和回切三段</h2><h3 id="演练一：供应商区域故障"><a href="#演练一：供应商区域故障" class="headerlink" title="演练一：供应商区域故障"></a>演练一：供应商区域故障</h3><p><strong>注入：</strong> 对主模型某区域返回持续 503，其他区域正常。</p>
+<p><strong>期望：</strong> 只打开对应区域和模型熔断；低风险请求切到已验证同等区域；高风险有状态任务不跨不兼容区域恢复；其他模型不受影响。</p>
+<p><strong>观察：</strong> 熔断命中率、备用容量、数据驻留、端到端时延、质量切片和回切时间。</p>
+<h3 id="演练二：无异常码的质量退化"><a href="#演练二：无异常码的质量退化" class="headerlink" title="演练二：无异常码的质量退化"></a>演练二：无异常码的质量退化</h3><p><strong>注入：</strong> 模型返回合法 JSON，但把 10% 的 <code>order_status</code> 从 <code>SHIPPED</code> 改成 <code>DELIVERED</code>。</p>
+<p><strong>期望：</strong> 同步业务事实校验阻断；质量门打开而供应商基础设施熔断保持独立；错误不交付用户。</p>
+<h3 id="演练三：配额耗尽"><a href="#演练三：配额耗尽" class="headerlink" title="演练三：配额耗尽"></a>演练三：配额耗尽</h3><p><strong>注入：</strong> 模拟账户配额耗尽与短时速率限制两种 429。</p>
+<p><strong>期望：</strong> 前者不做指数重试并触发容量告警；后者在 <code>Retry-After</code> 和 deadline 允许时有限退避；两者审计原因不同。</p>
+<h3 id="演练四：备用路径冷启动"><a href="#演练四：备用路径冷启动" class="headerlink" title="演练四：备用路径冷启动"></a>演练四：备用路径冷启动</h3><p><strong>注入：</strong> 主路径 Open，备用模型第一次调用需要八秒预热。</p>
+<p><strong>期望：</strong> 在线请求不无限等待；预热使用独立隔舱；可安全回答的请求走确定性层；预热完成后先灰度而非全量切换。</p>
+<h3 id="演练五：工具状态未知"><a href="#演练五：工具状态未知" class="headerlink" title="演练五：工具状态未知"></a>演练五：工具状态未知</h3><p><strong>注入：</strong> 支付工具完成提交后丢失响应。</p>
+<p><strong>期望：</strong> 路由器不能通过换模型重新生成一次写操作；使用原幂等键查询；状态未知时转对账或人工；最终只产生一个退款对象。</p>
+<h3 id="演练六：人工系统不可用"><a href="#演练六：人工系统不可用" class="headerlink" title="演练六：人工系统不可用"></a>演练六：人工系统不可用</h3><p><strong>注入：</strong> 所有自动路径都不达质量底线，同时工单 API 超时。</p>
+<p><strong>期望：</strong> 返回明确不可用和可重试标识；不把危险请求放入无界本地内存队列；若使用可靠队列，记录接受语义、容量和过期时间。</p>
+<h3 id="演练七：恢复后模型语义变化"><a href="#演练七：恢复后模型语义变化" class="headerlink" title="演练七：恢复后模型语义变化"></a>演练七：恢复后模型语义变化</h3><p><strong>注入：</strong> 同一公开模型名恢复，但工具参数枚举行为变化。</p>
+<p><strong>期望：</strong> 合成探测和影子流量发现契约差异；保持 Open 或质量门阻断；固定修订或更新适配器后重新灰度。</p>
+<p>演练结束条件不能只写“服务恢复”。要验证：</p>
+<ul>
+<li>错误流量已经停止</li>
+<li>所有积压任务有明确状态</li>
+<li>重复副作用完成对账</li>
+<li>熔断与路由配置回到预期版本</li>
+<li>备用容量释放但仍可再次启用</li>
+<li>用户可见状态恢复</li>
+<li>事件样本进入回归集</li>
+</ul>
+<h2 id="二十五、量化结果：同时报告完整能力、核心能力和错误业务结果"><a href="#二十五、量化结果：同时报告完整能力、核心能力和错误业务结果" class="headerlink" title="二十五、量化结果：同时报告完整能力、核心能力和错误业务结果"></a>二十五、量化结果：同时报告完整能力、核心能力和错误业务结果</h2><p>下面是一组用于说明验收方法的示例灰度数据。假设先运行两周影子流量，再对低风险订单查询进行四周灰度；它不是供应商性能基准。</p>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th align="right">原始简单切换</th>
+<th align="right">分层降级方案</th>
+<th>解释</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>主供应商故障时 HTTP 成功率</td>
+<td align="right">98.9%</td>
+<td align="right">97.6%</td>
+<td>新方案会拒绝不满足质量的结果</td>
+</tr>
+<tr>
+<td>核心能力有效成功率</td>
+<td align="right">86.4%</td>
+<td align="right">96.8%</td>
+<td>包含时限、来源、Schema 和业务事实</td>
+</tr>
+<tr>
+<td>完整 Agent 能力成功率</td>
+<td align="right">61.2%</td>
+<td align="right">62.1%</td>
+<td>不用核心可用掩盖完整能力缺失</td>
+</tr>
+<tr>
+<td>错误业务结果率</td>
+<td align="right">3.7%</td>
+<td align="right">0.42%</td>
+<td>静默错误显著下降</td>
+</tr>
+<tr>
+<td>静默降级率</td>
+<td align="right">100%</td>
+<td align="right">0%</td>
+<td>所有实质降级带状态</td>
+</tr>
+<tr>
+<td>故障窗口 P95</td>
+<td align="right">7.8 秒</td>
+<td align="right">3.9 秒</td>
+<td>熔断和预算减少无效等待</td>
+</tr>
+<tr>
+<td>每用户请求物理调用 P99</td>
+<td align="right">9</td>
+<td align="right">3</td>
+<td>收敛多层重试</td>
+</tr>
+<tr>
+<td>备用路径峰值并发</td>
+<td align="right">4.6 倍基线</td>
+<td align="right">1.7 倍基线</td>
+<td>隔舱和负载丢弃生效</td>
+</tr>
+<tr>
+<td>重复副作用事件</td>
+<td align="right">5</td>
+<td align="right">0</td>
+<td>幂等查询路径生效</td>
+</tr>
+<tr>
+<td>恢复后再次打开次数</td>
+<td align="right">6</td>
+<td align="right">1</td>
+<td>迟滞和灰度减少振荡</td>
+</tr>
+<tr>
+<td>人工队列 P95 等待</td>
+<td align="right">52 分钟</td>
+<td align="right">14 分钟</td>
+<td>仅真正无法自动处理的请求进入</td>
+</tr>
+</tbody></table>
+<p>HTTP 成功率略降并不一定是退步。原方案把错误答案算成功，新方案选择明确不可用。需要把“技术响应”“核心能力”“完整能力”和“业务正确”并列展示。</p>
+<h3 id="1-结果分母要一致"><a href="#1-结果分母要一致" class="headerlink" title="1. 结果分母要一致"></a>1. 结果分母要一致</h3><p>对比前后版本时固定：</p>
+<ul>
+<li>业务和风险切片</li>
+<li>流量时间窗</li>
+<li>真值成熟度</li>
+<li>排除条件</li>
+<li>路由策略版本</li>
+<li>用户重试去重规则</li>
+</ul>
+<p>否则故障期间大量用户重试会让请求级成功率和用户级成功率得出不同结论。</p>
+<h3 id="2-报告不确定性"><a href="#2-报告不确定性" class="headerlink" title="2. 报告不确定性"></a>2. 报告不确定性</h3><p>低频高风险事件样本少，应报告计数和区间，不能把 <code>0/20</code> 写成“零风险”。延迟真值未回填的请求单列，不默认成功。</p>
+<h3 id="3-收益包含代价"><a href="#3-收益包含代价" class="headerlink" title="3. 收益包含代价"></a>3. 收益包含代价</h3><p>分层降级增加：</p>
+<ul>
+<li>备用容量和隔舱成本</li>
+<li>合约与适配器维护</li>
+<li>评测和探测流量</li>
+<li>状态机与审计复杂度</li>
+<li>用户提示与客服培训</li>
+</ul>
+<p>只有错误损失、恢复时间和业务连续性收益超过这些成本，方案才有价值。</p>
+<h2 id="二十六、边界：哪些场景宁可停，也不要自动-fallback"><a href="#二十六、边界：哪些场景宁可停，也不要自动-fallback" class="headerlink" title="二十六、边界：哪些场景宁可停，也不要自动 fallback"></a>二十六、边界：哪些场景宁可停，也不要自动 fallback</h2><h3 id="1-备用路径改变法律或合规处理主体"><a href="#1-备用路径改变法律或合规处理主体" class="headerlink" title="1. 备用路径改变法律或合规处理主体"></a>1. 备用路径改变法律或合规处理主体</h3><p>跨供应商、跨区域或跨数据域可能改变数据处理和保留条件。未经预先批准不能在事故中临时切换。</p>
+<h3 id="2-无法验证语义兼容"><a href="#2-无法验证语义兼容" class="headerlink" title="2. 无法验证语义兼容"></a>2. 无法验证语义兼容</h3><p>高风险工具、医疗建议、信贷决策、安全处置和法律结论若没有足够评测与领域审核，不应把通用小模型作为自动兜底。</p>
+<h3 id="3-关键数据无法保证新鲜"><a href="#3-关键数据无法保证新鲜" class="headerlink" title="3. 关键数据无法保证新鲜"></a>3. 关键数据无法保证新鲜</h3><p>订单状态、价格、库存、权限、账户余额和风险名单若过期会改变动作，缓存只可用于说明服务状态，不能驱动写操作。</p>
+<h3 id="4-副作用状态未知"><a href="#4-副作用状态未知" class="headerlink" title="4. 副作用状态未知"></a>4. 副作用状态未知</h3><p>付款、退款、删除和外发在超时后无法确认时，先查询、对账或人工处理。切换模型重新规划会扩大重复风险。</p>
+<h3 id="5-安全控制不可用"><a href="#5-安全控制不可用" class="headerlink" title="5. 安全控制不可用"></a>5. 安全控制不可用</h3><p>高风险场景不能通过关闭安全检查恢复“可用性”。可以收敛到只读、静态帮助或明确不可用。</p>
+<h3 id="6-人工队列没有真实容量"><a href="#6-人工队列没有真实容量" class="headerlink" title="6. 人工队列没有真实容量"></a>6. 人工队列没有真实容量</h3><p>“转人工”不是无限容量 fallback。队列满时要有优先级、接受上限、过期和用户承诺，不能悄悄丢工单。</p>
+<h2 id="二十七、从-0-到-1-的实施顺序"><a href="#二十七、从-0-到-1-的实施顺序" class="headerlink" title="二十七、从 0 到 1 的实施顺序"></a>二十七、从 0 到 1 的实施顺序</h2><h3 id="阶段一：先定义契约和阶梯"><a href="#阶段一：先定义契约和阶梯" class="headerlink" title="阶段一：先定义契约和阶梯"></a>阶段一：先定义契约和阶梯</h3><ol>
+<li>列出所有 AI 能力、依赖和副作用。</li>
+<li>为每种请求定义最低能力、质量、安全和时限。</li>
+<li>设计 L0 到 L5 的保留与删除能力。</li>
+<li>给降级响应增加机器可读状态。</li>
+<li>禁止没有验证的通用 fallback。</li>
+</ol>
+<h3 id="阶段二：收敛错误、预算和重试"><a href="#阶段二：收敛错误、预算和重试" class="headerlink" title="阶段二：收敛错误、预算和重试"></a>阶段二：收敛错误、预算和重试</h3><ol>
+<li>标准化供应商错误并保留原始请求 ID。</li>
+<li>盘点 SDK、代理和业务层重试。</li>
+<li>建立绝对 deadline、退避、抖动和重试预算。</li>
+<li>为业务副作用补幂等键和结果查询。</li>
+<li>将逻辑调用与物理 attempt 全部写入 Trace。</li>
+</ol>
+<h3 id="阶段三：熔断与隔舱"><a href="#阶段三：熔断与隔舱" class="headerlink" title="阶段三：熔断与隔舱"></a>阶段三：熔断与隔舱</h3><ol>
+<li>按真实故障域设计熔断键。</li>
+<li>分离基础设施、质量和安全门。</li>
+<li>隔离供应商、任务、优先级和探测资源。</li>
+<li>配置 Half-Open 并发、迟滞和最短停留。</li>
+<li>压测故障切换瞬间与备用容量。</li>
+</ol>
+<h3 id="阶段四：恢复和持续验证"><a href="#阶段四：恢复和持续验证" class="headerlink" title="阶段四：恢复和持续验证"></a>阶段四：恢复和持续验证</h3><ol>
+<li>建立代表性合成探测和影子请求。</li>
+<li>预热冷启动依赖。</li>
+<li>按故障域做 1% 到全量的受控回切。</li>
+<li>将质量降级纳入 SLO 和错误预算。</li>
+<li>定期执行组合故障和恢复演练。</li>
+</ol>
+<h2 id="二十八、上线前检查清单"><a href="#二十八、上线前检查清单" class="headerlink" title="二十八、上线前检查清单"></a>二十八、上线前检查清单</h2><h3 id="能力与契约"><a href="#能力与契约" class="headerlink" title="能力与契约"></a>能力与契约</h3><ul>
+<li><input disabled="" type="checkbox"> 每种请求都有最低能力、质量、安全、时限和数据新鲜度要求</li>
+<li><input disabled="" type="checkbox"> L0 到 L5 明确保留、删除和禁止的能力</li>
+<li><input disabled="" type="checkbox"> 备用模型经过目标任务和风险切片评测</li>
+<li><input disabled="" type="checkbox"> 部分完成不会声明为完整完成</li>
+<li><input disabled="" type="checkbox"> 不满足最低契约时能够明确不可用</li>
+</ul>
+<h3 id="信号与路由"><a href="#信号与路由" class="headerlink" title="信号与路由"></a>信号与路由</h3><ul>
+<li><input disabled="" type="checkbox"> 质量、延迟、配额、成本、安全和供应商信号分别建模</li>
+<li><input disabled="" type="checkbox"> 不只依赖 HTTP 状态和供应商状态页</li>
+<li><input disabled="" type="checkbox"> 路由策略按请求能力匹配候选</li>
+<li><input disabled="" type="checkbox"> 安全拒绝不会触发换模型绕过</li>
+<li><input disabled="" type="checkbox"> 成本和配额策略不会扩大高风险权限</li>
+</ul>
+<h3 id="超时与重试"><a href="#超时与重试" class="headerlink" title="超时与重试"></a>超时与重试</h3><ul>
+<li><input disabled="" type="checkbox"> 使用绝对端到端 deadline，而不是每级完整超时</li>
+<li><input disabled="" type="checkbox"> 连接、首响应、空闲和总超时边界明确</li>
+<li><input disabled="" type="checkbox"> SDK、代理、网关和业务层重试已盘点</li>
+<li><input disabled="" type="checkbox"> 重试有上限、退避、抖动和本地预算</li>
+<li><input disabled="" type="checkbox"> 超时后取消传播并统计后台残余消耗</li>
+</ul>
+<h3 id="幂等与副作用"><a href="#幂等与副作用" class="headerlink" title="幂等与副作用"></a>幂等与副作用</h3><ul>
+<li><input disabled="" type="checkbox"> 写操作使用稳定幂等键并绑定主体和参数摘要</li>
+<li><input disabled="" type="checkbox"> 同键不同意图会被拒绝</li>
+<li><input disabled="" type="checkbox"> 提交状态未知时先查询或对账</li>
+<li><input disabled="" type="checkbox"> Agent 整体重试不会重复工具副作用</li>
+<li><input disabled="" type="checkbox"> 后置条件验证进入业务结果</li>
+</ul>
+<h3 id="熔断与隔舱"><a href="#熔断与隔舱" class="headerlink" title="熔断与隔舱"></a>熔断与隔舱</h3><ul>
+<li><input disabled="" type="checkbox"> 熔断键与真实供应商、区域、模型和能力故障域一致</li>
+<li><input disabled="" type="checkbox"> Closed、Open、Half-Open 状态和事件可观测</li>
+<li><input disabled="" type="checkbox"> 基础设施熔断、质量门和安全停用没有混成一个状态</li>
+<li><input disabled="" type="checkbox"> 在线、批量、备用、探测和不同优先级资源隔离</li>
+<li><input disabled="" type="checkbox"> 备用路径有容量上限和负载丢弃策略</li>
+</ul>
+<h3 id="数据与-Schema"><a href="#数据与-Schema" class="headerlink" title="数据与 Schema"></a>数据与 Schema</h3><ul>
+<li><input disabled="" type="checkbox"> 内部标准契约与供应商原始响应分离</li>
+<li><input disabled="" type="checkbox"> 停止原因、工具参数、用量和错误映射版本化</li>
+<li><input disabled="" type="checkbox"> 未执行能力使用未知或缺失状态，不伪装成空值</li>
+<li><input disabled="" type="checkbox"> 缓存键包含租户、权限、版本和新鲜度</li>
+<li><input disabled="" type="checkbox"> 跨模型语义差异经过契约与离线评测</li>
+</ul>
+<h3 id="可见性与审计"><a href="#可见性与审计" class="headerlink" title="可见性与审计"></a>可见性与审计</h3><ul>
+<li><input disabled="" type="checkbox"> 实质降级向用户和 API 下游显式表达</li>
+<li><input disabled="" type="checkbox"> 响应说明省略能力、数据时间和下一步</li>
+<li><input disabled="" type="checkbox"> 每个候选 attempt、质量门和最终路由可以关联</li>
+<li><input disabled="" type="checkbox"> 首错、终因和贡献因素分别记录</li>
+<li><input disabled="" type="checkbox"> 内容日志遵循脱敏、权限和保留策略</li>
+</ul>
+<h3 id="恢复与演练"><a href="#恢复与演练" class="headerlink" title="恢复与演练"></a>恢复与演练</h3><ul>
+<li><input disabled="" type="checkbox"> Half-Open 探测有全局并发控制和独立隔舱</li>
+<li><input disabled="" type="checkbox"> 探测覆盖质量、安全、Schema、延迟和真实能力</li>
+<li><input disabled="" type="checkbox"> 冷启动、缓存预热和连接预热有预算</li>
+<li><input disabled="" type="checkbox"> 回切使用影子、灰度、迟滞和自动回退</li>
+<li><input disabled="" type="checkbox"> 定期演练组合故障、备用过载、状态未知和人工不可用</li>
+</ul>
+<h3 id="指标与错误预算"><a href="#指标与错误预算" class="headerlink" title="指标与错误预算"></a>指标与错误预算</h3><ul>
+<li><input disabled="" type="checkbox"> 完整能力、核心能力、降级能力和不可用分别报告</li>
+<li><input disabled="" type="checkbox"> SLI 同时包含时限、安全、质量和降级可见性</li>
+<li><input disabled="" type="checkbox"> 延迟业务真值能够回填原始路由</li>
+<li><input disabled="" type="checkbox"> 高风险安全事件不被普通错误预算抵消</li>
+<li><input disabled="" type="checkbox"> 预算耗尽会触发暂停扩量和可靠性改进</li>
+</ul>
+<h2 id="二十九、小结"><a href="#二十九、小结" class="headerlink" title="二十九、小结"></a>二十九、小结</h2><p>AI 功能降级不是在异常处理里多写几个 <code>except</code>，也不是维护一串模型名称。它是业务能力、分布式系统和质量工程共同组成的控制面。</p>
+<p>完整链路应做到：</p>
+<ol>
+<li>从质量、延迟、配额、成本、安全和供应商六类信号判断故障。</li>
+<li>用请求最低契约选择完整 Agent、受限工作流、小模型、缓存检索、确定性规则或人工不可用。</li>
+<li>让所有候选共享端到端 deadline、成本和重试预算。</li>
+<li>用 Circuit Breaker 减少对持续故障依赖的无效调用，用 Bulkhead 限制故障扩散。</li>
+<li>用幂等键和最终状态查询保护 Agent 工具副作用。</li>
+<li>用内部标准契约、能力标记和语义评测控制模型差异。</li>
+<li>对任何实质能力变化提供用户可见和机器可读的降级状态。</li>
+<li>恢复时经过有限探测、冷启动预热、影子比较和灰度回切。</li>
+<li>把质量错误、静默降级和错误业务结果纳入 SLO 与错误预算。</li>
+<li>通过组合故障演练证明切出、稳定降级和恢复三段都可控。</li>
+</ol>
+<p>最终需要证明的不是“主模型挂了还能返回内容”，而是：</p>
+<p><strong>无论依赖怎样失败，系统只会交付当前证据和能力真正支持的结果；能力不足时会明确收敛，而不会用一个流畅、成功但错误的 fallback 掩盖风险。</strong></p>
+<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><p>以下资料核对时间为 2026-07-26。关键事实优先引用官方架构文档、供应商官方错误语义和一手工程资料。</p>
+<ul>
+<li><a target="_blank" rel="noopener" href="https://learn.microsoft.com/en-us/azure/architecture/patterns/circuit-breaker">Microsoft Azure Architecture Center：Circuit Breaker Pattern</a></li>
+<li><a target="_blank" rel="noopener" href="https://learn.microsoft.com/en-us/azure/architecture/patterns/bulkhead">Microsoft Azure Architecture Center：Bulkhead Pattern</a></li>
+<li><a target="_blank" rel="noopener" href="https://aws.amazon.com/builders-library/timeouts-retries-and-backoff-with-jitter/">AWS Builders’ Library：Timeouts, Retries, and Backoff with Jitter</a></li>
+<li><a target="_blank" rel="noopener" href="https://aws.amazon.com/builders-library/making-retries-safe-with-idempotent-APIs/">AWS Builders’ Library：Making Retries Safe with Idempotent APIs</a></li>
+<li><a target="_blank" rel="noopener" href="https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/retry-backoff.html">AWS Prescriptive Guidance：Retry with Backoff Pattern</a></li>
+<li><a target="_blank" rel="noopener" href="https://developers.openai.com/api/docs/guides/error-codes">OpenAI API：Error Codes</a></li>
+<li><a target="_blank" rel="noopener" href="https://platform.claude.com/docs/en/api/errors">Anthropic：Claude API Errors</a></li>
+<li><a target="_blank" rel="noopener" href="https://cloud.google.com/vertex-ai/generative-ai/docs/model-reference/api-errors">Google Cloud：Generative AI on Vertex AI Inference API Errors</a></li>
+<li><a target="_blank" rel="noopener" href="https://openai.com/business/guides-and-resources/a-practical-guide-to-building-ai-agents/">OpenAI：A Practical Guide to Building AI Agents</a></li>
+<li><a target="_blank" rel="noopener" href="https://airc.nist.gov/airmf-resources/airmf/5-sec-core/">NIST AI RMF Core</a></li>
+<li><a target="_blank" rel="noopener" href="https://sre.google/workbook/error-budget-policy/">Google SRE Workbook：Example Error Budget Policy</a></li>
+</ul>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/AI%E6%B5%8B%E8%AF%95/" rel="tag"># AI测试</a>
+              <a href="/tags/%E5%AE%B9%E9%94%99%E8%AE%BE%E8%AE%A1/" rel="tag"># 容错设计</a>
+              <a href="/tags/%E6%95%85%E9%9A%9C%E6%B3%A8%E5%85%A5/" rel="tag"># 故障注入</a>
+              <a href="/tags/%E8%B4%A8%E9%87%8F%E5%B7%A5%E7%A8%8B/" rel="tag"># 质量工程</a>
+              <a href="/tags/%E6%A8%A1%E5%9E%8B%E9%99%8D%E7%BA%A7/" rel="tag"># 模型降级</a>
+              <a href="/tags/Circuit-Breaker/" rel="tag"># Circuit Breaker</a>
+              <a href="/tags/%E7%A1%AE%E5%AE%9A%E6%80%A7%E5%85%9C%E5%BA%95/" rel="tag"># 确定性兜底</a>
+              <a href="/tags/%E9%94%99%E8%AF%AF%E9%A2%84%E7%AE%97/" rel="tag"># 错误预算</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2026/04/20/AI%E6%B5%8B%E8%AF%95-32-Human-in-the-loop%E6%80%8E%E4%B9%88%E8%AE%BE%E8%AE%A1%E5%AE%A1%E6%89%B9%E7%82%B9%E7%BD%AE%E4%BF%A1%E5%BA%A6%E9%98%88%E5%80%BC%E5%92%8C%E5%AE%A1%E8%AE%A1%E8%AF%81%E6%8D%AE/" rel="prev" title="AI测试-32-Human-in-the-loop怎么设计审批点置信度阈值和审计证据">
+                  <i class="fa fa-angle-left"></i> AI测试-32-Human-in-the-loop怎么设计审批点置信度阈值和审计证据
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2026/04/24/AI%E6%B5%8B%E8%AF%95-34-Embedding%E5%92%8C%E5%90%91%E9%87%8F%E6%A3%80%E7%B4%A2%E6%80%8E%E4%B9%88%E7%90%86%E8%A7%A3%E7%9B%B8%E4%BC%BC%E5%BA%A6%E5%88%87%E7%89%87%E7%B4%A2%E5%BC%95%E5%92%8C%E5%85%83%E6%95%B0%E6%8D%AE%E8%BF%87%E6%BB%A4/" rel="next" title="AI测试-34-Embedding和向量检索怎么理解相似度切片索引和元数据过滤">
+                  AI测试-34-Embedding和向量检索怎么理解相似度切片索引和元数据过滤 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">2.1m</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">129:05</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

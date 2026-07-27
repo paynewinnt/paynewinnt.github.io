@@ -1,0 +1,1123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="让大模型“只输出 JSON”，第一版通常会这样写： 1请返回 JSON，不要输出 Markdown，也不要补充解释。  顺利时，模型确实会返回： 1&#123;&quot;decision&quot;:&quot;review&quot;,&quot;reason&quot;:&quot;证据不足&quot;&#125;  接入生产链路以后，问题很快会从“有没有 JSON”扩展成另一组问题：  J">
+<meta property="og:type" content="article">
+<meta property="og:title" content="AI测试-25-大模型结构化输出怎么用JSON Schema做约束校验和失败恢复">
+<meta property="og:url" content="https://paynewinnt.github.io/2026/04/04/AI%E6%B5%8B%E8%AF%95-25-%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%BB%93%E6%9E%84%E5%8C%96%E8%BE%93%E5%87%BA%E6%80%8E%E4%B9%88%E7%94%A8JSON-Schema%E5%81%9A%E7%BA%A6%E6%9D%9F%E6%A0%A1%E9%AA%8C%E5%92%8C%E5%A4%B1%E8%B4%A5%E6%81%A2%E5%A4%8D/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="让大模型“只输出 JSON”，第一版通常会这样写： 1请返回 JSON，不要输出 Markdown，也不要补充解释。  顺利时，模型确实会返回： 1&#123;&quot;decision&quot;:&quot;review&quot;,&quot;reason&quot;:&quot;证据不足&quot;&#125;  接入生产链路以后，问题很快会从“有没有 JSON”扩展成另一组问题：  J">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://paynewinnt.github.io/images/ai-quality/ai-25-structured-output-pipeline.svg">
+<meta property="og:image" content="https://paynewinnt.github.io/images/ai-quality/ai-25-failure-recovery.svg">
+<meta property="article:published_time" content="2026-04-04T12:30:00.000Z">
+<meta property="article:modified_time" content="2026-04-04T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="AI测试">
+<meta property="article:tag" content="失败恢复">
+<meta property="article:tag" content="LLMOps">
+<meta property="article:tag" content="工具调用">
+<meta property="article:tag" content="结构化输出">
+<meta property="article:tag" content="JSON Schema">
+<meta property="article:tag" content="Schema校验">
+<meta property="article:tag" content="契约测试">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://paynewinnt.github.io/images/ai-quality/ai-25-structured-output-pipeline.svg">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2026/04/04/AI%E6%B5%8B%E8%AF%95-25-%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%BB%93%E6%9E%84%E5%8C%96%E8%BE%93%E5%87%BA%E6%80%8E%E4%B9%88%E7%94%A8JSON-Schema%E5%81%9A%E7%BA%A6%E6%9D%9F%E6%A0%A1%E9%AA%8C%E5%92%8C%E5%A4%B1%E8%B4%A5%E6%81%A2%E5%A4%8D/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2026/04/04/AI%E6%B5%8B%E8%AF%95-25-%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%BB%93%E6%9E%84%E5%8C%96%E8%BE%93%E5%87%BA%E6%80%8E%E4%B9%88%E7%94%A8JSON-Schema%E5%81%9A%E7%BA%A6%E6%9D%9F%E6%A0%A1%E9%AA%8C%E5%92%8C%E5%A4%B1%E8%B4%A5%E6%81%A2%E5%A4%8D/","path":"2026/04/04/AI测试-25-大模型结构化输出怎么用JSON-Schema做约束校验和失败恢复/","title":"AI测试-25-大模型结构化输出怎么用JSON Schema做约束校验和失败恢复"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>AI测试-25-大模型结构化输出怎么用JSON Schema做约束校验和失败恢复 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E5%85%88%E7%BB%99%E7%BB%93%E8%AE%BA%EF%BC%9A%E6%8A%8A%E7%BB%93%E6%9E%84%E5%8C%96%E8%BE%93%E5%87%BA%E5%BD%93%E4%BD%9C%E4%B8%8D%E5%8F%AF%E4%BF%A1%E5%A4%96%E9%83%A8%E8%BE%93%E5%85%A5"><span class="nav-number">1.</span> <span class="nav-text">一、先给结论：把结构化输出当作不可信外部输入</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E5%85%88%E6%8B%86%E6%B8%85%E5%9B%9B%E4%B8%AA%E7%BB%8F%E5%B8%B8%E6%B7%B7%E7%94%A8%E7%9A%84%E5%B1%82%E6%AC%A1"><span class="nav-number">2.</span> <span class="nav-text">二、先拆清四个经常混用的层次</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-JSON-%E8%AF%AD%E6%B3%95%E6%9C%89%E6%95%88"><span class="nav-number">2.1.</span> <span class="nav-text">1. JSON 语法有效</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-JSON-Schema-%E6%9C%89%E6%95%88"><span class="nav-number">2.2.</span> <span class="nav-text">2. JSON Schema 有效</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%8F%90%E4%BE%9B%E5%95%86%E7%BA%A6%E6%9D%9F%E6%9C%89%E6%95%88"><span class="nav-number">2.3.</span> <span class="nav-text">3. 提供商约束有效</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%B8%9A%E5%8A%A1%E6%9C%89%E6%95%88"><span class="nav-number">2.4.</span> <span class="nav-text">4. 业务有效</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81JSON-Schema-%E6%98%AF-dialect%EF%BC%8C%E4%B8%8D%E6%98%AF%E4%B8%80%E4%B8%AA%E6%A8%A1%E7%B3%8A%E7%9A%84%E2%80%9CJSON-%E8%A7%84%E5%88%99%E2%80%9D"><span class="nav-number">3.</span> <span class="nav-text">三、JSON Schema 是 dialect，不是一个模糊的“JSON 规则”</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E8%AE%BE%E8%AE%A1-Schema-%E5%89%8D%E5%85%88%E5%AE%9A%E4%B9%89%E8%BE%93%E5%87%BA%E7%8A%B6%E6%80%81%E6%9C%BA"><span class="nav-number">4.</span> <span class="nav-text">四、设计 Schema 前先定义输出状态机</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E4%B8%80%E4%B8%AA%E5%AE%8C%E6%95%B4%E7%9A%84-Draft-2020-12-Schema"><span class="nav-number">5.</span> <span class="nav-text">五、一个完整的 Draft 2020-12 Schema</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E9%87%91%E9%A2%9D%E4%BD%BF%E7%94%A8%E5%AD%97%E7%AC%A6%E4%B8%B2"><span class="nav-number">5.1.</span> <span class="nav-text">1. 金额使用字符串</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%89%80%E6%9C%89%E5%AD%97%E6%AE%B5%E9%83%BD-required%EF%BC%8C%E5%8F%AF%E7%A9%BA%E5%80%BC%E6%98%BE%E5%BC%8F%E4%BD%BF%E7%94%A8-null"><span class="nav-number">5.2.</span> <span class="nav-text">2. 所有字段都 required，可空值显式使用 null</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%A0%B9%E5%AF%B9%E8%B1%A1%E5%85%B3%E9%97%AD-additionalProperties"><span class="nav-number">5.3.</span> <span class="nav-text">3. 根对象关闭 additionalProperties</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E8%AF%81%E6%8D%AE%E5%8F%AA%E4%BC%A0%E5%BC%95%E7%94%A8"><span class="nav-number">5.4.</span> <span class="nav-text">4. 证据只传引用</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81required-%E4%B8%8E-additionalProperties-%E8%A6%81%E6%88%90%E5%AF%B9%E6%80%9D%E8%80%83"><span class="nav-number">6.</span> <span class="nav-text">六、required 与 additionalProperties 要成对思考</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E6%9E%9A%E4%B8%BE%E8%83%BD%E9%99%90%E5%88%B6%E6%8B%BC%E5%86%99%EF%BC%8C%E4%B8%8D%E8%83%BD%E4%BB%A3%E6%9B%BF%E7%8A%B6%E6%80%81%E6%9C%BA"><span class="nav-number">7.</span> <span class="nav-text">七、枚举能限制拼写，不能代替状态机</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E8%81%94%E5%90%88%E7%B1%BB%E5%9E%8B%E6%9C%80%E5%AE%B9%E6%98%93%E5%88%B6%E9%80%A0%E2%80%9C%E7%9C%8B%E8%B5%B7%E6%9D%A5%E7%81%B5%E6%B4%BB%E2%80%9D%E7%9A%84%E6%AD%A7%E4%B9%89"><span class="nav-number">8.</span> <span class="nav-text">八、联合类型最容易制造“看起来灵活”的歧义</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81format-%E9%BB%98%E8%AE%A4%E4%B8%8D%E7%AD%89%E4%BA%8E%E5%BC%BA%E6%A0%A1%E9%AA%8C"><span class="nav-number">9.</span> <span class="nav-text">九、format 默认不等于强校验</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E4%B8%8D%E8%A6%81%E5%BF%BD%E7%95%A5%E9%87%8D%E5%A4%8D%E9%94%AE%E5%92%8C%E6%95%B0%E5%AD%97%E7%B2%BE%E5%BA%A6"><span class="nav-number">10.</span> <span class="nav-text">十、不要忽略重复键和数字精度</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E6%8F%90%E4%BE%9B%E5%95%86%E7%BA%A6%E6%9D%9F%E8%A7%A3%E7%A0%81%E5%8F%AA%E6%98%AF%E7%AC%AC%E4%B8%80%E9%81%93%E7%BB%93%E6%9E%84%E9%98%B2%E7%BA%BF"><span class="nav-number">11.</span> <span class="nav-text">十一、提供商约束解码只是第一道结构防线</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-OpenAI-Structured-Outputs-%E7%9A%84%E9%80%82%E7%94%A8%E8%8C%83%E5%9B%B4"><span class="nav-number">11.1.</span> <span class="nav-text">1. OpenAI Structured Outputs 的适用范围</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Anthropic-%E5%B7%A5%E5%85%B7%E8%B0%83%E7%94%A8%E7%9A%84%E9%80%82%E7%94%A8%E8%8C%83%E5%9B%B4"><span class="nav-number">11.2.</span> <span class="nav-text">2. Anthropic 工具调用的适用范围</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%BB%B4%E6%8A%A4%E4%B8%A4%E4%BB%BD-Schema%EF%BC%8C%E8%80%8C%E4%B8%8D%E6%98%AF%E5%81%87%E8%A3%85%E4%B8%80%E4%BB%BD%E5%88%B0%E5%A4%84%E9%80%9A%E7%94%A8"><span class="nav-number">11.3.</span> <span class="nav-text">3. 维护两份 Schema，而不是假装一份到处通用</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E5%93%8D%E5%BA%94%E5%A4%84%E7%90%86%E9%A1%BA%E5%BA%8F%E4%B8%8D%E8%83%BD%E4%BB%8E-json-loads-%E5%BC%80%E5%A7%8B"><span class="nav-number">12.</span> <span class="nav-text">十二、响应处理顺序不能从 json.loads 开始</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81%E6%9C%80%E5%B0%8F%E5%8F%AF%E8%BF%90%E8%A1%8C%E5%AE%9E%E7%8E%B0%EF%BC%9A%E4%B8%A5%E6%A0%BC%E8%A7%A3%E6%9E%90%E3%80%81Schema-%E4%B8%8E%E4%B8%9A%E5%8A%A1%E4%BA%8C%E6%AC%A1%E6%A0%A1%E9%AA%8C"><span class="nav-number">13.</span> <span class="nav-text">十三、最小可运行实现：严格解析、Schema 与业务二次校验</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81%E6%B5%8B%E8%AF%95-Schema-%E6%9C%AC%E8%BA%AB%EF%BC%8C%E8%80%8C%E4%B8%8D%E5%8F%AA%E6%98%AF%E6%B5%8B%E8%AF%95%E5%AE%9E%E4%BE%8B"><span class="nav-number">14.</span> <span class="nav-text">十四、测试 Schema 本身，而不只是测试实例</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Meta-schema-%E6%B5%8B%E8%AF%95"><span class="nav-number">14.1.</span> <span class="nav-text">1. Meta-schema 测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%AD%A3%E5%8F%8D%E5%AE%9E%E4%BE%8B%E6%B5%8B%E8%AF%95"><span class="nav-number">14.2.</span> <span class="nav-text">2. 正反实例测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%8F%90%E4%BE%9B%E5%95%86-profile-%E5%90%88%E7%BA%A6%E6%B5%8B%E8%AF%95"><span class="nav-number">14.3.</span> <span class="nav-text">3. 提供商 profile 合约测试</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%94%E3%80%81%E4%B8%80%E5%BC%A0%E8%A6%86%E7%9B%96%E6%AD%A3%E5%B8%B8%E4%B8%8E%E5%A4%B1%E8%B4%A5%E4%BF%A1%E5%8F%B7%E7%9A%84%E6%B5%8B%E8%AF%95%E7%9F%A9%E9%98%B5"><span class="nav-number">15.</span> <span class="nav-text">十五、一张覆盖正常与失败信号的测试矩阵</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AD%E3%80%81%E6%8B%92%E7%AD%94%E4%B8%8D%E6%98%AF-Schema-%E5%A4%B1%E8%B4%A5"><span class="nav-number">16.</span> <span class="nav-text">十六、拒答不是 Schema 失败</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%83%E3%80%81%E6%88%AA%E6%96%AD%E5%92%8C%E6%B5%81%E5%BC%8F%E8%BE%93%E5%87%BA%E8%A6%81%E7%AD%89%E5%AE%8C%E6%95%B4%E7%BB%88%E6%80%81%E5%86%8D%E6%89%A7%E8%A1%8C"><span class="nav-number">17.</span> <span class="nav-text">十七、截断和流式输出要等完整终态再执行</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AB%E3%80%81%E5%B9%B6%E8%A1%8C%E5%B7%A5%E5%85%B7%E8%B0%83%E7%94%A8%E4%B8%8D%E8%83%BD%E5%BD%93%E6%88%90%E4%B8%80%E4%B8%AA-JSON-%E5%AF%B9%E8%B1%A1"><span class="nav-number">18.</span> <span class="nav-text">十八、并行工具调用不能当成一个 JSON 对象</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B9%9D%E3%80%81%E5%A4%B1%E8%B4%A5%E6%81%A2%E5%A4%8D%E4%B8%8D%E6%98%AF%E7%BB%9F%E4%B8%80-retry-3"><span class="nav-number">19.</span> <span class="nav-text">十九、失败恢复不是统一 retry(3)</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E9%85%8D%E7%BD%AE%E9%94%99%E8%AF%AF"><span class="nav-number">19.1.</span> <span class="nav-text">1. 配置错误</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E7%9E%AC%E6%97%B6%E4%BC%A0%E8%BE%93%E9%94%99%E8%AF%AF"><span class="nav-number">19.2.</span> <span class="nav-text">2. 瞬时传输错误</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-JSON-%E6%88%96-Schema-%E9%94%99%E8%AF%AF"><span class="nav-number">19.3.</span> <span class="nav-text">3. JSON 或 Schema 错误</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%B8%9A%E5%8A%A1%E9%94%99%E8%AF%AF"><span class="nav-number">19.4.</span> <span class="nav-text">4. 业务错误</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%8B%92%E7%AD%94"><span class="nav-number">19.5.</span> <span class="nav-text">5. 拒答</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E6%88%AA%E6%96%AD"><span class="nav-number">19.6.</span> <span class="nav-text">6. 截断</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E3%80%81%E9%87%8D%E8%AF%95%E5%BF%85%E9%A1%BB%E6%9C%89%E5%B9%82%E7%AD%89%E3%80%81%E9%A2%84%E7%AE%97%E5%92%8C%E8%AF%81%E6%8D%AE"><span class="nav-number">20.</span> <span class="nav-text">二十、重试必须有幂等、预算和证据</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%80%E3%80%81%E4%B8%80%E4%B8%AA%E5%AE%8C%E6%95%B4%E5%A4%B1%E8%B4%A5%E6%A1%88%E4%BE%8B%EF%BC%9ASchema-%E5%85%A8%E7%BB%BF%EF%BC%8C%E9%80%80%E6%AC%BE%E9%87%91%E9%A2%9D%E4%BB%8D%E7%84%B6%E9%94%99%E8%AF%AF"><span class="nav-number">21.</span> <span class="nav-text">二十一、一个完整失败案例：Schema 全绿，退款金额仍然错误</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%9C%BA%E6%99%AF"><span class="nav-number">21.1.</span> <span class="nav-text">1. 场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E7%8E%B0%E8%B1%A1"><span class="nav-number">21.2.</span> <span class="nav-text">2. 现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E9%94%99%E8%AF%AF%E6%96%B9%E5%90%91"><span class="nav-number">21.3.</span> <span class="nav-text">3. 错误方向</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E8%AF%81%E6%8D%AE%E6%8E%92%E6%9F%A5"><span class="nav-number">21.4.</span> <span class="nav-text">4. 证据排查</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%A0%B9%E5%9B%A0"><span class="nav-number">21.5.</span> <span class="nav-text">5. 根因</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E4%BF%AE%E5%A4%8D"><span class="nav-number">21.6.</span> <span class="nav-text">6. 修复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%8C%E3%80%81%E6%8E%92%E6%9F%A5%E9%A1%BA%E5%BA%8F%EF%BC%9A%E5%85%88%E6%89%BE%E9%A6%96%E4%B8%AA%E5%A4%B1%E6%95%88%E8%BE%B9%E7%95%8C"><span class="nav-number">22.</span> <span class="nav-text">二十二、排查顺序：先找首个失效边界</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%89%E3%80%81%E8%A7%82%E6%B5%8B%E6%8C%87%E6%A0%87%E8%A6%81%E6%8C%89%E5%A4%B1%E8%B4%A5%E5%B1%82%E5%88%86%E5%BC%80"><span class="nav-number">23.</span> <span class="nav-text">二十三、观测指标要按失败层分开</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%9B%9B%E3%80%81%E7%BB%93%E6%9E%9C%E9%AA%8C%E6%94%B6%E6%80%8E%E4%B9%88%E5%86%99%E6%89%8D%E4%B8%8D%E5%8F%98%E6%88%90%E5%AE%A3%E4%BC%A0%E6%95%B0%E6%8D%AE"><span class="nav-number">24.</span> <span class="nav-text">二十四、结果验收怎么写才不变成宣传数据</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%94%E3%80%81%E5%B8%B8%E8%A7%81%E7%9A%84%E5%8D%81%E4%BA%8C%E4%B8%AA%E9%94%99%E8%AF%AF"><span class="nav-number">25.</span> <span class="nav-text">二十五、常见的十二个错误</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%8A%8A%E2%80%9C%E8%AF%B7%E8%BE%93%E5%87%BA-JSON%E2%80%9D%E5%BD%93%E4%BD%9C%E7%BB%93%E6%9E%84%E7%BA%A6%E6%9D%9F"><span class="nav-number">25.1.</span> <span class="nav-text">1. 把“请输出 JSON”当作结构约束</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%8A%8A-JSON-mode-%E5%BD%93%E6%88%90-Schema-strict"><span class="nav-number">25.2.</span> <span class="nav-text">2. 把 JSON mode 当成 Schema strict</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%8A%8A%E5%AE%8C%E6%95%B4-Draft-2020-12-%E7%9B%B4%E6%8E%A5%E6%8F%90%E4%BA%A4%E7%BB%99%E6%89%80%E6%9C%89%E6%8F%90%E4%BE%9B%E5%95%86"><span class="nav-number">25.3.</span> <span class="nav-text">3. 把完整 Draft 2020-12 直接提交给所有提供商</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%BF%98%E8%AE%B0-required"><span class="nav-number">25.4.</span> <span class="nav-text">4. 忘记 required</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%8F%AA%E5%9C%A8%E6%A0%B9%E5%85%B3%E9%97%AD-additionalProperties"><span class="nav-number">25.5.</span> <span class="nav-text">5. 只在根关闭 additionalProperties</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E9%BB%98%E8%AE%A4-format-%E4%BC%9A%E8%A2%AB%E5%BC%BA%E5%88%B6%E9%AA%8C%E8%AF%81"><span class="nav-number">25.6.</span> <span class="nav-text">6. 默认 format 会被强制验证</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-%E7%94%A8%E6%B5%AE%E7%82%B9%E6%95%B0%E5%A4%84%E7%90%86%E9%87%91%E9%A2%9D%E5%92%8C%E9%95%BF-ID"><span class="nav-number">25.7.</span> <span class="nav-text">7. 用浮点数处理金额和长 ID</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-%E5%85%88%E8%A7%A3%E6%9E%90%E6%96%87%E6%9C%AC%EF%BC%8C%E5%86%8D%E7%9C%8B-refusal-%E5%92%8C-incomplete"><span class="nav-number">25.8.</span> <span class="nav-text">8. 先解析文本，再看 refusal 和 incomplete</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-%E8%87%AA%E5%8A%A8%E4%BF%AE%E8%A1%A5%E5%8D%8A%E6%88%AA-JSON-%E5%90%8E%E6%89%A7%E8%A1%8C"><span class="nav-number">25.9.</span> <span class="nav-text">9. 自动修补半截 JSON 后执行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-Schema-%E9%80%9A%E8%BF%87%E5%B0%B1%E7%9B%B4%E6%8E%A5%E8%B0%83%E7%94%A8%E9%AB%98%E9%A3%8E%E9%99%A9%E5%B7%A5%E5%85%B7"><span class="nav-number">25.10.</span> <span class="nav-text">10. Schema 通过就直接调用高风险工具</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-%E5%B9%B6%E8%A1%8C%E5%B7%A5%E5%85%B7%E8%B0%83%E7%94%A8%E5%8F%AA%E5%A4%84%E7%90%86%E7%AC%AC%E4%B8%80%E4%B8%AA"><span class="nav-number">25.11.</span> <span class="nav-text">11. 并行工具调用只处理第一个</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-%E6%89%80%E6%9C%89%E5%A4%B1%E8%B4%A5%E7%BB%9F%E4%B8%80%E9%87%8D%E8%AF%95%E4%B8%89%E6%AC%A1"><span class="nav-number">25.12.</span> <span class="nav-text">12. 所有失败统一重试三次</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%85%AD%E3%80%81%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E4%BD%BF%E7%94%A8%E7%BA%A6%E6%9D%9F%E8%BE%93%E5%87%BA%EF%BC%8C%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E6%8D%A2%E4%B8%80%E7%A7%8D%E8%AE%BE%E8%AE%A1"><span class="nav-number">26.</span> <span class="nav-text">二十六、什么时候使用约束输出，什么时候换一种设计</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%83%E3%80%81%E4%B8%8A%E7%BA%BF%E6%A3%80%E6%9F%A5%E8%A1%A8"><span class="nav-number">27.</span> <span class="nav-text">二十七、上线检查表</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Schema-%E8%AE%BE%E8%AE%A1"><span class="nav-number">27.1.</span> <span class="nav-text">Schema 设计</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8F%90%E4%BE%9B%E5%95%86%E9%80%82%E9%85%8D"><span class="nav-number">27.2.</span> <span class="nav-text">提供商适配</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%A5%E6%94%B6%E5%92%8C%E6%A0%A1%E9%AA%8C"><span class="nav-number">27.3.</span> <span class="nav-text">接收和校验</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B7%A5%E5%85%B7%E5%92%8C%E5%89%AF%E4%BD%9C%E7%94%A8"><span class="nav-number">27.4.</span> <span class="nav-text">工具和副作用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%81%A2%E5%A4%8D%E5%92%8C%E8%A7%82%E6%B5%8B"><span class="nav-number">27.5.</span> <span class="nav-text">恢复和观测</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%85%AB%E3%80%81%E5%B0%8F%E7%BB%93"><span class="nav-number">28.</span> <span class="nav-text">二十八、小结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8F%82%E8%80%83%E8%B5%84%E6%96%99"><span class="nav-number">29.</span> <span class="nav-text">参考资料</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">358</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">27</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">796</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2026/04/04/AI%E6%B5%8B%E8%AF%95-25-%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%BB%93%E6%9E%84%E5%8C%96%E8%BE%93%E5%87%BA%E6%80%8E%E4%B9%88%E7%94%A8JSON-Schema%E5%81%9A%E7%BA%A6%E6%9D%9F%E6%A0%A1%E9%AA%8C%E5%92%8C%E5%A4%B1%E8%B4%A5%E6%81%A2%E5%A4%8D/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="AI测试-25-大模型结构化输出怎么用JSON Schema做约束校验和失败恢复 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          AI测试-25-大模型结构化输出怎么用JSON Schema做约束校验和失败恢复
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2026-04-04 20:30:00" itemprop="dateCreated datePublished" datetime="2026-04-04T20:30:00+08:00">2026-04-04</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/AI%E6%B5%8B%E8%AF%95/" itemprop="url" rel="index"><span itemprop="name">AI测试</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>9.4k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>34 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>让大模型“只输出 JSON”，第一版通常会这样写：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">请返回 JSON，不要输出 Markdown，也不要补充解释。</span><br></pre></td></tr></table></figure>
+
+<p>顺利时，模型确实会返回：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span><span class="attr">&quot;decision&quot;</span><span class="punctuation">:</span><span class="string">&quot;review&quot;</span><span class="punctuation">,</span><span class="attr">&quot;reason&quot;</span><span class="punctuation">:</span><span class="string">&quot;证据不足&quot;</span><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>接入生产链路以后，问题很快会从“有没有 JSON”扩展成另一组问题：</p>
+<ul>
+<li>JSON 能解析，但缺少下游必填字段</li>
+<li>字段存在，但类型从数字变成字符串</li>
+<li>枚举值拼写正确，却不是当前业务状态机允许的值</li>
+<li>时间看起来像 ISO 8601，实际不存在或没有时区</li>
+<li>Schema 校验全部通过，但退款金额超过可退余额</li>
+<li>模型安全拒答，返回的是提供商定义的 refusal，而不是业务 Schema</li>
+<li>输出因为 Token 上限被截断，前半段恰好像一个可解析对象</li>
+<li>一轮返回多个并行工具调用，应用只处理了第一个</li>
+<li>严格模式在某个提供商和模型上可用，迁移后却使用了不支持的 Schema 关键字</li>
+<li>校验失败后无条件重试，最终造成重复扣款、重复发信或成本放大</li>
+</ul>
+<p>结构化输出的工程目标不是“看起来像 JSON”，而是建立一条分层验证和恢复链路：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">提供商响应终态</span><br><span class="line">  -&gt; 传输与完整性</span><br><span class="line">  -&gt; JSON 解析</span><br><span class="line">  -&gt; JSON Schema 校验</span><br><span class="line">  -&gt; 业务规则校验</span><br><span class="line">  -&gt; 权限与副作用校验</span><br><span class="line">  -&gt; 接受、重试、降级或人工升级</span><br></pre></td></tr></table></figure>
+
+<p>这篇文章围绕一个关键判断展开：</p>
+<blockquote>
+<p><strong>语法有效 !&#x3D; Schema 有效 !&#x3D; 业务有效。</strong></p>
+</blockquote>
+<p>提供商的约束解码可以降低某些格式错误，但不能替代本地校验、业务校验、权限控制和失败恢复。</p>
+<h2 id="一、先给结论：把结构化输出当作不可信外部输入"><a href="#一、先给结论：把结构化输出当作不可信外部输入" class="headerlink" title="一、先给结论：把结构化输出当作不可信外部输入"></a>一、先给结论：把结构化输出当作不可信外部输入</h2><p>即使输出来自启用了 strict 的模型接口，应用仍然应该把它放在外部输入边界处理。</p>
+<p>原因有五个：</p>
+<ol>
+<li>strict 是具体提供商、接口、模型和 Schema 子集上的能力，不是 JSON Schema 标准的通用运行模式。</li>
+<li>拒答、截断、内容过滤、网络错误和超时可能绕开正常结构化结果。</li>
+<li>Schema 描述结构约束，不知道订单余额、用户权限和当前数据库状态。</li>
+<li>工具调用参数即使结构正确，也可能请求未授权或不可逆动作。</li>
+<li>下游代码、SDK 和代理层可能在反序列化、精度、重复键或字符编码上产生新的差异。</li>
+</ol>
+<p>因此，接收端至少保留下面九种互斥结果，而不是一个 <code>valid: true/false</code>：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">ACCEPTED              完整、可解析、Schema 与业务校验均通过</span><br><span class="line">CONFIG_ERROR          Schema profile、模型或接口能力配置不兼容</span><br><span class="line">PROVIDER_REFUSAL      提供商明确返回安全拒答</span><br><span class="line">INCOMPLETE            Token 上限、流中断或响应未完整结束</span><br><span class="line">TRANSPORT_ERROR       超时、断连、限流或提供商错误</span><br><span class="line">JSON_SYNTAX_ERROR     不能按约定解析为单个 JSON 值</span><br><span class="line">SCHEMA_ERROR          JSON 可解析，但违反目标 Schema</span><br><span class="line">BUSINESS_ERROR        Schema 通过，但违反业务、权限或状态约束</span><br><span class="line">TOOL_PROTOCOL_ERROR   工具调用 ID、数量、结果映射或批次协议不完整</span><br></pre></td></tr></table></figure>
+
+<p>不同结果对应不同恢复动作。把它们全部捕获成 <code>parse failed</code>，会让重试、告警和根因分析失去方向。</p>
+<h2 id="二、先拆清四个经常混用的层次"><a href="#二、先拆清四个经常混用的层次" class="headerlink" title="二、先拆清四个经常混用的层次"></a>二、先拆清四个经常混用的层次</h2><h3 id="1-JSON-语法有效"><a href="#1-JSON-语法有效" class="headerlink" title="1. JSON 语法有效"></a>1. JSON 语法有效</h3><p>输出能被 JSON 解析器接受。例如：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span><span class="attr">&quot;status&quot;</span><span class="punctuation">:</span><span class="string">&quot;approved&quot;</span><span class="punctuation">,</span><span class="attr">&quot;amount&quot;</span><span class="punctuation">:</span><span class="string">&quot;9999.00&quot;</span><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>这里只证明括号、引号、转义和字面量符合解析器规则。不证明字段完整、类型正确或金额合理。</p>
+<h3 id="2-JSON-Schema-有效"><a href="#2-JSON-Schema-有效" class="headerlink" title="2. JSON Schema 有效"></a>2. JSON Schema 有效</h3><p>解析后的实例满足指定 dialect 的 Schema，例如 Draft 2020-12：</p>
+<ul>
+<li>根节点类型正确</li>
+<li>必填字段存在</li>
+<li>没有未声明字段</li>
+<li>字符串符合 pattern 或 format 的既定校验策略</li>
+<li>枚举、数组长度和数值范围符合约束</li>
+</ul>
+<h3 id="3-提供商约束有效"><a href="#3-提供商约束有效" class="headerlink" title="3. 提供商约束有效"></a>3. 提供商约束有效</h3><p>提交给模型接口的 Schema 落在该提供商、接口和模型支持的子集中，响应也处于文档承诺的正常终态。</p>
+<p>完整 JSON Schema Draft 2020-12 合法，不代表某个约束解码器接受它。反过来，提供商接受一个 Schema，也不代表它实现了 Draft 2020-12 的全部 vocabulary。</p>
+<h3 id="4-业务有效"><a href="#4-业务有效" class="headerlink" title="4. 业务有效"></a>4. 业务有效</h3><p>输出满足实时业务事实：</p>
+<ul>
+<li><code>amount &lt;= refundable_balance</code></li>
+<li>币种与订单一致</li>
+<li>当前操作者有权处理该租户</li>
+<li>状态迁移从 <code>paid</code> 到 <code>refund_review</code> 合法</li>
+<li>证据引用属于当前请求且没有过期</li>
+<li>幂等键没有执行过</li>
+</ul>
+<p>这一层不能只靠模型和静态 Schema 判断。</p>
+<h2 id="三、JSON-Schema-是-dialect，不是一个模糊的“JSON-规则”"><a href="#三、JSON-Schema-是-dialect，不是一个模糊的“JSON-规则”" class="headerlink" title="三、JSON Schema 是 dialect，不是一个模糊的“JSON 规则”"></a>三、JSON Schema 是 dialect，不是一个模糊的“JSON 规则”</h2><p>Schema 文档应该显式声明 dialect：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;$schema&quot;</span><span class="punctuation">:</span> <span class="string">&quot;https://json-schema.org/draft/2020-12/schema&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;$id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;https://example.internal/schemas/refund-decision-1.0.0.json&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;object&quot;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>不声明版本时，不同验证器可能按不同 draft 解释关键字。Draft 2020-12 对数组元组、动态引用、<code>unevaluatedItems</code> 和 <code>format</code> vocabulary 等内容有明确设计，不能把旧 draft 的用法直接混入。</p>
+<p>生产契约至少记录：</p>
+<ul>
+<li>Schema dialect URI</li>
+<li>Schema 自身版本与内容摘要</li>
+<li>本地验证器名称和版本</li>
+<li>是否启用 format assertion</li>
+<li>提供商适配后的 Schema profile 与摘要</li>
+<li>业务规则版本</li>
+</ul>
+<p>一次结果真正对应的是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">instance</span><br><span class="line">  + schema dialect/revision</span><br><span class="line">  + validator/configuration</span><br><span class="line">  + business rule revision</span><br><span class="line">  + provider/model/API profile</span><br></pre></td></tr></table></figure>
+
+<p>只记录一个 <code>schema_version=1</code> 不足以重放。</p>
+<h2 id="四、设计-Schema-前先定义输出状态机"><a href="#四、设计-Schema-前先定义输出状态机" class="headerlink" title="四、设计 Schema 前先定义输出状态机"></a>四、设计 Schema 前先定义输出状态机</h2><p>以退款资格判断为例，先不要急着列字段。先定义允许结果：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">approved   证据充分，可进入后端审批流程</span><br><span class="line">review     证据冲突或缺失，转人工</span><br><span class="line">rejected   明确不满足规则</span><br></pre></td></tr></table></figure>
+
+<p>再定义每个状态的最小证据：</p>
+<table>
+<thead>
+<tr>
+<th>状态</th>
+<th>必须有</th>
+<th>不应表达</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>approved</code></td>
+<td>订单、币种、建议金额、规则证据</td>
+<td>“可能”“不确定”</td>
+</tr>
+<tr>
+<td><code>review</code></td>
+<td>升级原因、缺失证据</td>
+<td>自动执行批准</td>
+</tr>
+<tr>
+<td><code>rejected</code></td>
+<td>拒绝原因、命中规则</td>
+<td>正数退款金额</td>
+</tr>
+</tbody></table>
+<p>Schema 可以约束共同结构，跨字段和实时状态由业务验证器收口。不要为了把所有业务规则都塞进 JSON Schema，而构造一个提供商无法支持、维护者也难以理解的巨大条件表达式。</p>
+<h2 id="五、一个完整的-Draft-2020-12-Schema"><a href="#五、一个完整的-Draft-2020-12-Schema" class="headerlink" title="五、一个完整的 Draft 2020-12 Schema"></a>五、一个完整的 Draft 2020-12 Schema</h2><p>下面的 Schema 用于应用本地验证。它不等于任何提供商约束解码器必然支持的输入。</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;$schema&quot;</span><span class="punctuation">:</span> <span class="string">&quot;https://json-schema.org/draft/2020-12/schema&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;$id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;https://example.internal/schemas/refund-decision-1.0.0.json&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;title&quot;</span><span class="punctuation">:</span> <span class="string">&quot;RefundDecision&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;object&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;required&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">    <span class="string">&quot;request_id&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="string">&quot;decision&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="string">&quot;order_id&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="string">&quot;currency&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="string">&quot;amount&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="string">&quot;reason_codes&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="string">&quot;evidence&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="string">&quot;escalation_reason&quot;</span></span><br><span class="line">  <span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;properties&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;request_id&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;string&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;format&quot;</span><span class="punctuation">:</span> <span class="string">&quot;uuid&quot;</span></span><br><span class="line">    <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;decision&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;string&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;enum&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;approved&quot;</span><span class="punctuation">,</span> <span class="string">&quot;review&quot;</span><span class="punctuation">,</span> <span class="string">&quot;rejected&quot;</span><span class="punctuation">]</span></span><br><span class="line">    <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;order_id&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;string&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;pattern&quot;</span><span class="punctuation">:</span> <span class="string">&quot;^ORD-[0-9]&#123;8&#125;$&quot;</span></span><br><span class="line">    <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;currency&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;string&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;enum&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;CNY&quot;</span><span class="punctuation">,</span> <span class="string">&quot;USD&quot;</span><span class="punctuation">]</span></span><br><span class="line">    <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;amount&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;string&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;pattern&quot;</span><span class="punctuation">:</span> <span class="string">&quot;^(0|[1-9][0-9]*)(\\.[0-9]&#123;2&#125;)$&quot;</span></span><br><span class="line">    <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;reason_codes&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;array&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;minItems&quot;</span><span class="punctuation">:</span> <span class="number">1</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;maxItems&quot;</span><span class="punctuation">:</span> <span class="number">5</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;uniqueItems&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;items&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">        <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;string&quot;</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;enum&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">          <span class="string">&quot;DUPLICATE_CHARGE&quot;</span><span class="punctuation">,</span></span><br><span class="line">          <span class="string">&quot;SERVICE_NOT_DELIVERED&quot;</span><span class="punctuation">,</span></span><br><span class="line">          <span class="string">&quot;OUTSIDE_WINDOW&quot;</span><span class="punctuation">,</span></span><br><span class="line">          <span class="string">&quot;INSUFFICIENT_EVIDENCE&quot;</span><span class="punctuation">,</span></span><br><span class="line">          <span class="string">&quot;POLICY_CONFLICT&quot;</span></span><br><span class="line">        <span class="punctuation">]</span></span><br><span class="line">      <span class="punctuation">&#125;</span></span><br><span class="line">    <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;evidence&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;array&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;minItems&quot;</span><span class="punctuation">:</span> <span class="number">1</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;maxItems&quot;</span><span class="punctuation">:</span> <span class="number">10</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;items&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">        <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;object&quot;</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;required&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;source&quot;</span><span class="punctuation">,</span> <span class="string">&quot;record_id&quot;</span><span class="punctuation">,</span> <span class="string">&quot;observed_at&quot;</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;properties&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">          <span class="attr">&quot;source&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">            <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;string&quot;</span><span class="punctuation">,</span></span><br><span class="line">            <span class="attr">&quot;enum&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;order&quot;</span><span class="punctuation">,</span> <span class="string">&quot;payment&quot;</span><span class="punctuation">,</span> <span class="string">&quot;delivery&quot;</span><span class="punctuation">,</span> <span class="string">&quot;policy&quot;</span><span class="punctuation">]</span></span><br><span class="line">          <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">          <span class="attr">&quot;record_id&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">            <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;string&quot;</span><span class="punctuation">,</span></span><br><span class="line">            <span class="attr">&quot;minLength&quot;</span><span class="punctuation">:</span> <span class="number">1</span><span class="punctuation">,</span></span><br><span class="line">            <span class="attr">&quot;maxLength&quot;</span><span class="punctuation">:</span> <span class="number">128</span></span><br><span class="line">          <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">          <span class="attr">&quot;observed_at&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">            <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;string&quot;</span><span class="punctuation">,</span></span><br><span class="line">            <span class="attr">&quot;format&quot;</span><span class="punctuation">:</span> <span class="string">&quot;date-time&quot;</span></span><br><span class="line">          <span class="punctuation">&#125;</span></span><br><span class="line">        <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;additionalProperties&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">false</span></span></span><br><span class="line">      <span class="punctuation">&#125;</span></span><br><span class="line">    <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;escalation_reason&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;string&quot;</span><span class="punctuation">,</span> <span class="string">&quot;null&quot;</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;minLength&quot;</span><span class="punctuation">:</span> <span class="number">1</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;maxLength&quot;</span><span class="punctuation">:</span> <span class="number">500</span></span><br><span class="line">    <span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;additionalProperties&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">false</span></span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>这里有几个有意的选择。</p>
+<h3 id="1-金额使用字符串"><a href="#1-金额使用字符串" class="headerlink" title="1. 金额使用字符串"></a>1. 金额使用字符串</h3><p>JSON number 在不同语言和序列化链中可能进入二进制浮点。财务金额更适合使用固定小数字符串，再在业务层解析成 <code>Decimal</code>。Schema 的 pattern 只控制表现形式，不负责币种小数位和余额比较。</p>
+<h3 id="2-所有字段都-required，可空值显式使用-null"><a href="#2-所有字段都-required，可空值显式使用-null" class="headerlink" title="2. 所有字段都 required，可空值显式使用 null"></a>2. 所有字段都 required，可空值显式使用 null</h3><p>“字段缺失”和“字段存在但当前无值”是两种状态。显式 <code>null</code> 能让调用方稳定反序列化，也能避免模型随意省略字段。但这不是所有 API 的唯一正确设计；是否采用取决于兼容策略。</p>
+<h3 id="3-根对象关闭-additionalProperties"><a href="#3-根对象关闭-additionalProperties" class="headerlink" title="3. 根对象关闭 additionalProperties"></a>3. 根对象关闭 additionalProperties</h3><p>模型多生成一个 <code>approved_by</code> 或 <code>execute_now</code> 不应被静默接收。对动作型输出，额外字段可能代表未建模意图。</p>
+<h3 id="4-证据只传引用"><a href="#4-证据只传引用" class="headerlink" title="4. 证据只传引用"></a>4. 证据只传引用</h3><p>输出保存 <code>record_id</code>，后端按当前租户重新读取可信事实。不要让模型生成整份“证据对象”后直接当成数据库事实。</p>
+<h2 id="六、required-与-additionalProperties-要成对思考"><a href="#六、required-与-additionalProperties-要成对思考" class="headerlink" title="六、required 与 additionalProperties 要成对思考"></a>六、required 与 additionalProperties 要成对思考</h2><p>下面的 Schema 看似定义了两个字段：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;object&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;properties&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;decision&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span><span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;string&quot;</span><span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;amount&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span><span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;string&quot;</span><span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>但它同时接受：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>也接受：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span><span class="attr">&quot;decision&quot;</span><span class="punctuation">:</span><span class="string">&quot;approved&quot;</span><span class="punctuation">,</span><span class="attr">&quot;execute_immediately&quot;</span><span class="punctuation">:</span><span class="literal"><span class="keyword">true</span></span><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>原因是 <code>properties</code> 只描述同名属性出现时应满足什么，不自动表示必填；未声明属性默认也没有被关闭。</p>
+<p>动作型 Schema 通常需要：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;required&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;decision&quot;</span><span class="punctuation">,</span> <span class="string">&quot;amount&quot;</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;additionalProperties&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">false</span></span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>嵌套对象也要逐层关闭额外字段。只在根节点设置一次，不能约束 <code>evidence[i]</code> 内部。</p>
+<p>但对长期演进的公共事件契约，彻底关闭额外字段也有兼容代价：新生产者添加字段，旧消费者会拒绝。解决方式不是放弃约束，而是明确版本策略、消费者容忍策略和发布窗口。模型到执行器的内部动作契约与跨组织公共事件，不必采用同一规则。</p>
+<h2 id="七、枚举能限制拼写，不能代替状态机"><a href="#七、枚举能限制拼写，不能代替状态机" class="headerlink" title="七、枚举能限制拼写，不能代替状态机"></a>七、枚举能限制拼写，不能代替状态机</h2><p>枚举适合限制有限集合：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span><span class="attr">&quot;enum&quot;</span><span class="punctuation">:</span><span class="punctuation">[</span><span class="string">&quot;approved&quot;</span><span class="punctuation">,</span><span class="string">&quot;review&quot;</span><span class="punctuation">,</span><span class="string">&quot;rejected&quot;</span><span class="punctuation">]</span><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>它能拒绝 <code>approve</code>、<code>APPROVED</code> 和 <code>unknown_status</code>，但不能判断当前订单是否允许从 <code>shipped</code> 进入 <code>approved</code>。</p>
+<p>枚举设计需要处理三个演进问题：</p>
+<ol>
+<li>新增枚举值对旧消费者可能是破坏性变化。</li>
+<li>使用 <code>OTHER</code> 可以提高前向兼容，却可能掩盖真实未知状态。</li>
+<li>把业务描述直接作为枚举会造成文本和机器状态耦合。</li>
+</ol>
+<p>更稳的做法是使用稳定机器码，并把显示文案放在应用层。遇到未知枚举时进入显式人工升级或版本协商，不要自动映射成最接近的值。</p>
+<h2 id="八、联合类型最容易制造“看起来灵活”的歧义"><a href="#八、联合类型最容易制造“看起来灵活”的歧义" class="headerlink" title="八、联合类型最容易制造“看起来灵活”的歧义"></a>八、联合类型最容易制造“看起来灵活”的歧义</h2><p>联合可以用 <code>anyOf</code>、<code>oneOf</code>，也可以对简单类型使用数组：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span><span class="attr">&quot;type&quot;</span><span class="punctuation">:</span><span class="punctuation">[</span><span class="string">&quot;string&quot;</span><span class="punctuation">,</span><span class="string">&quot;null&quot;</span><span class="punctuation">]</span><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>三者语义不同：</p>
+<ul>
+<li><code>anyOf</code>：至少一个分支通过。</li>
+<li><code>oneOf</code>：恰好一个分支通过。</li>
+<li>类型数组：实例类型属于列出的类型之一。</li>
+</ul>
+<p><code>oneOf</code> 的分支如果重叠，实例可能同时匹配两个分支，反而失败。例如一个整数同时满足“number”和“integer”分支。测试中要准备每个分支的正例、负例和交叉样本。</p>
+<p>对模型输出，推荐优先使用清晰的判别字段：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;object&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;required&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;kind&quot;</span><span class="punctuation">,</span> <span class="string">&quot;payload&quot;</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;properties&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;kind&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span><span class="attr">&quot;enum&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;success&quot;</span><span class="punctuation">,</span> <span class="string">&quot;review&quot;</span><span class="punctuation">,</span> <span class="string">&quot;error&quot;</span><span class="punctuation">]</span><span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;payload&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span><span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;object&quot;</span><span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>再由本地业务层按 <code>kind</code> 验证对应 payload。这样往往比深层嵌套联合更容易映射到提供商子集，也更容易输出可定位错误。</p>
+<h2 id="九、format-默认不等于强校验"><a href="#九、format-默认不等于强校验" class="headerlink" title="九、format 默认不等于强校验"></a>九、format 默认不等于强校验</h2><p>Draft 2020-12 将 format 拆分为 annotation 和 assertion vocabulary。验证器是否把 <code>format: &quot;date-time&quot;</code> 当成失败条件，取决于 dialect、实现和配置。</p>
+<p>因此下面的 Schema：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span><span class="attr">&quot;type&quot;</span><span class="punctuation">:</span><span class="string">&quot;string&quot;</span><span class="punctuation">,</span><span class="attr">&quot;format&quot;</span><span class="punctuation">:</span><span class="string">&quot;date-time&quot;</span><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>不能脱离验证器配置宣称“一定会拒绝非法时间”。本地测试要显式启用 format checker，并验证这些边界：</p>
+<ul>
+<li><code>2026-02-29T10:00:00Z</code>：2026 不是闰年</li>
+<li><code>2026-04-04 10:00:00</code>：缺少标准分隔和时区</li>
+<li><code>2026-04-04T10:00:00+08:00</code>：合法偏移</li>
+<li>空字符串、超长字符串和未知格式名</li>
+</ul>
+<p>即使 format 通过，业务仍要判断时间是否在允许窗口、是否晚于订单创建时间，以及未来时间是否合理。</p>
+<h2 id="十、不要忽略重复键和数字精度"><a href="#十、不要忽略重复键和数字精度" class="headerlink" title="十、不要忽略重复键和数字精度"></a>十、不要忽略重复键和数字精度</h2><p>下面文本在某些解析器里会得到最后一个值：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span><span class="attr">&quot;decision&quot;</span><span class="punctuation">:</span><span class="string">&quot;review&quot;</span><span class="punctuation">,</span><span class="attr">&quot;decision&quot;</span><span class="punctuation">:</span><span class="string">&quot;approved&quot;</span><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>RFC 8259 指出对象名称应唯一，但不同实现对重复键的可观察行为可能不同。安全边界上应使用能拒绝重复键的解析配置，否则日志、签名端和执行端可能看到不同含义。</p>
+<p>数字也有类似问题：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span><span class="attr">&quot;order_id&quot;</span><span class="punctuation">:</span><span class="number">9007199254740993</span><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>进入只精确表示 IEEE 754 双精度整数范围的环境后，值可能失真。订单号、长 ID、金额和高精度小数适合使用字符串，并由业务类型解析。</p>
+<h2 id="十一、提供商约束解码只是第一道结构防线"><a href="#十一、提供商约束解码只是第一道结构防线" class="headerlink" title="十一、提供商约束解码只是第一道结构防线"></a>十一、提供商约束解码只是第一道结构防线</h2><p>约束解码通常在生成阶段限制下一 Token，使结果落入某个 Schema 描述的语言。它比“在 Prompt 里要求 JSON”更可靠，但工程边界必须写清。</p>
+<h3 id="1-OpenAI-Structured-Outputs-的适用范围"><a href="#1-OpenAI-Structured-Outputs-的适用范围" class="headerlink" title="1. OpenAI Structured Outputs 的适用范围"></a>1. OpenAI Structured Outputs 的适用范围</h3><p>按 <code>2026-07-26</code> 检索的 OpenAI 官方指南，Structured Outputs 支持 JSON Schema 的一个子集，并区分结构化文本输出与 function calling。指南同时列出以下接口约束：</p>
+<ul>
+<li>根必须是 object，根级不能是 <code>anyOf</code></li>
+<li>字段或函数参数需要全部列入 <code>required</code>，可用与 <code>null</code> 的联合表达可空</li>
+<li>object 需要设置 <code>additionalProperties: false</code></li>
+<li>部分组合关键字不受支持，特定模型类型还有额外限制</li>
+<li>JSON mode 只保证 JSON 语法，不保证 Schema adherence</li>
+<li>安全拒答通过单独 refusal 信号表达，可能不符合业务 Schema</li>
+<li>输出达到 <code>max_output_tokens</code> 时可能以 incomplete 终态结束</li>
+</ul>
+<p>这些是 OpenAI 对相应 API、支持模型和检索日文档的说明，不是 JSON Schema 2020-12 的通用要求。接入时应根据目标模型和 API 重新读取 supported schemas 页面，不能把文章里的列表长期固化成平台能力表。</p>
+<h3 id="2-Anthropic-工具调用的适用范围"><a href="#2-Anthropic-工具调用的适用范围" class="headerlink" title="2. Anthropic 工具调用的适用范围"></a>2. Anthropic 工具调用的适用范围</h3><p>按同一检索日期，Anthropic 官方工具文档使用 <code>input_schema</code> 描述客户端工具参数，并提供 <code>strict: true</code> 的严格工具使用能力。工具调用返回 <code>tool_use</code> 内容块，应用执行后以对应 <code>tool_result</code> 继续对话。</p>
+<p>这描述的是 Claude 工具输入，不应直接等同于任意文本响应都受同一 Schema 约束。具体 Schema 子集、支持模型、工具选择与 strict 组合需要以目标接口文档为准。</p>
+<h3 id="3-维护两份-Schema，而不是假装一份到处通用"><a href="#3-维护两份-Schema，而不是假装一份到处通用" class="headerlink" title="3. 维护两份 Schema，而不是假装一份到处通用"></a>3. 维护两份 Schema，而不是假装一份到处通用</h3><p>推荐保留：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">domain.schema.json            完整业务契约，按明确 dialect 本地校验</span><br><span class="line">provider/openai.schema.json   OpenAI 支持子集的生成约束</span><br><span class="line">provider/anthropic-tool.json  Anthropic 工具输入定义</span><br></pre></td></tr></table></figure>
+
+<p>适配器可以从领域模型生成提供商 profile，但生成结果必须做快照、差异和兼容测试。提供商 Schema 负责提高生成成功率，领域 Schema 才是接收端最终结构合同。</p>
+<p><img src="/images/ai-quality/ai-25-structured-output-pipeline.svg" alt="大模型结构化输出的五层校验流水线"></p>
+<h2 id="十二、响应处理顺序不能从-json-loads-开始"><a href="#十二、响应处理顺序不能从-json-loads-开始" class="headerlink" title="十二、响应处理顺序不能从 json.loads 开始"></a>十二、响应处理顺序不能从 <code>json.loads</code> 开始</h2><p>正确顺序先看外层响应终态：</p>
+<ol>
+<li>HTTP、SDK 或流是否完整结束。</li>
+<li>提供商是否返回 error、rate limit、content filter 或 refusal。</li>
+<li>是否因输出 Token 上限、连接中断而 incomplete。</li>
+<li>响应中有文本、单个工具调用还是多个工具调用。</li>
+<li>只有正常结构化候选，才进入 JSON 解析和 Schema 校验。</li>
+</ol>
+<p>如果先从返回对象里找一段文本执行 <code>json.loads</code>，拒答可能被误判为语法错误；截断可能触发盲目重试；包含多个工具调用时还可能只取到第一个参数块。</p>
+<h2 id="十三、最小可运行实现：严格解析、Schema-与业务二次校验"><a href="#十三、最小可运行实现：严格解析、Schema-与业务二次校验" class="headerlink" title="十三、最小可运行实现：严格解析、Schema 与业务二次校验"></a>十三、最小可运行实现：严格解析、Schema 与业务二次校验</h2><p>下面示例不访问任何模型 API，也不需要密钥。它使用 Python 的 <code>jsonschema</code> 库实现 Draft 2020-12 校验，并显式启用 format checker。</p>
+<p>准备环境：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">python3 -m venv .venv</span><br><span class="line"><span class="built_in">source</span> .venv/bin/activate</span><br><span class="line">python3 -m pip install <span class="string">&quot;jsonschema[format]&gt;=4.21,&lt;5&quot;</span></span><br></pre></td></tr></table></figure>
+
+<p>保存为 <code>structured_output_demo.py</code>：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br><span class="line">146</span><br><span class="line">147</span><br><span class="line">148</span><br><span class="line">149</span><br><span class="line">150</span><br><span class="line">151</span><br><span class="line">152</span><br><span class="line">153</span><br><span class="line">154</span><br><span class="line">155</span><br><span class="line">156</span><br><span class="line">157</span><br><span class="line">158</span><br><span class="line">159</span><br><span class="line">160</span><br><span class="line">161</span><br><span class="line">162</span><br><span class="line">163</span><br><span class="line">164</span><br><span class="line">165</span><br><span class="line">166</span><br><span class="line">167</span><br><span class="line">168</span><br><span class="line">169</span><br><span class="line">170</span><br><span class="line">171</span><br><span class="line">172</span><br><span class="line">173</span><br><span class="line">174</span><br><span class="line">175</span><br><span class="line">176</span><br><span class="line">177</span><br><span class="line">178</span><br><span class="line">179</span><br><span class="line">180</span><br><span class="line">181</span><br><span class="line">182</span><br><span class="line">183</span><br><span class="line">184</span><br><span class="line">185</span><br><span class="line">186</span><br><span class="line">187</span><br><span class="line">188</span><br><span class="line">189</span><br><span class="line">190</span><br><span class="line">191</span><br><span class="line">192</span><br><span class="line">193</span><br><span class="line">194</span><br><span class="line">195</span><br><span class="line">196</span><br><span class="line">197</span><br><span class="line">198</span><br><span class="line">199</span><br><span class="line">200</span><br><span class="line">201</span><br><span class="line">202</span><br><span class="line">203</span><br><span class="line">204</span><br><span class="line">205</span><br><span class="line">206</span><br><span class="line">207</span><br><span class="line">208</span><br><span class="line">209</span><br><span class="line">210</span><br><span class="line">211</span><br><span class="line">212</span><br><span class="line">213</span><br><span class="line">214</span><br><span class="line">215</span><br><span class="line">216</span><br><span class="line">217</span><br><span class="line">218</span><br><span class="line">219</span><br><span class="line">220</span><br><span class="line">221</span><br><span class="line">222</span><br><span class="line">223</span><br><span class="line">224</span><br><span class="line">225</span><br><span class="line">226</span><br><span class="line">227</span><br><span class="line">228</span><br><span class="line">229</span><br><span class="line">230</span><br><span class="line">231</span><br><span class="line">232</span><br><span class="line">233</span><br><span class="line">234</span><br><span class="line">235</span><br><span class="line">236</span><br><span class="line">237</span><br><span class="line">238</span><br><span class="line">239</span><br><span class="line">240</span><br><span class="line">241</span><br><span class="line">242</span><br><span class="line">243</span><br><span class="line">244</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> __future__ <span class="keyword">import</span> annotations</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> json</span><br><span class="line"><span class="keyword">from</span> dataclasses <span class="keyword">import</span> dataclass</span><br><span class="line"><span class="keyword">from</span> decimal <span class="keyword">import</span> Decimal, InvalidOperation</span><br><span class="line"><span class="keyword">from</span> enum <span class="keyword">import</span> Enum</span><br><span class="line"><span class="keyword">from</span> typing <span class="keyword">import</span> <span class="type">Any</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">from</span> jsonschema <span class="keyword">import</span> Draft202012Validator, FormatChecker</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">SCHEMA = &#123;</span><br><span class="line">    <span class="string">&quot;$schema&quot;</span>: <span class="string">&quot;https://json-schema.org/draft/2020-12/schema&quot;</span>,</span><br><span class="line">    <span class="string">&quot;type&quot;</span>: <span class="string">&quot;object&quot;</span>,</span><br><span class="line">    <span class="string">&quot;required&quot;</span>: [</span><br><span class="line">        <span class="string">&quot;request_id&quot;</span>,</span><br><span class="line">        <span class="string">&quot;decision&quot;</span>,</span><br><span class="line">        <span class="string">&quot;order_id&quot;</span>,</span><br><span class="line">        <span class="string">&quot;currency&quot;</span>,</span><br><span class="line">        <span class="string">&quot;amount&quot;</span>,</span><br><span class="line">        <span class="string">&quot;reason_codes&quot;</span>,</span><br><span class="line">        <span class="string">&quot;evidence&quot;</span>,</span><br><span class="line">        <span class="string">&quot;escalation_reason&quot;</span>,</span><br><span class="line">    ],</span><br><span class="line">    <span class="string">&quot;properties&quot;</span>: &#123;</span><br><span class="line">        <span class="string">&quot;request_id&quot;</span>: &#123;<span class="string">&quot;type&quot;</span>: <span class="string">&quot;string&quot;</span>, <span class="string">&quot;format&quot;</span>: <span class="string">&quot;uuid&quot;</span>&#125;,</span><br><span class="line">        <span class="string">&quot;decision&quot;</span>: &#123;</span><br><span class="line">            <span class="string">&quot;type&quot;</span>: <span class="string">&quot;string&quot;</span>,</span><br><span class="line">            <span class="string">&quot;enum&quot;</span>: [<span class="string">&quot;approved&quot;</span>, <span class="string">&quot;review&quot;</span>, <span class="string">&quot;rejected&quot;</span>],</span><br><span class="line">        &#125;,</span><br><span class="line">        <span class="string">&quot;order_id&quot;</span>: &#123;<span class="string">&quot;type&quot;</span>: <span class="string">&quot;string&quot;</span>, <span class="string">&quot;pattern&quot;</span>: <span class="string">r&quot;^ORD-[0-9]&#123;8&#125;$&quot;</span>&#125;,</span><br><span class="line">        <span class="string">&quot;currency&quot;</span>: &#123;<span class="string">&quot;type&quot;</span>: <span class="string">&quot;string&quot;</span>, <span class="string">&quot;enum&quot;</span>: [<span class="string">&quot;CNY&quot;</span>, <span class="string">&quot;USD&quot;</span>]&#125;,</span><br><span class="line">        <span class="string">&quot;amount&quot;</span>: &#123;</span><br><span class="line">            <span class="string">&quot;type&quot;</span>: <span class="string">&quot;string&quot;</span>,</span><br><span class="line">            <span class="string">&quot;pattern&quot;</span>: <span class="string">r&quot;^(0|[1-9][0-9]*)(\.[0-9]&#123;2&#125;)$&quot;</span>,</span><br><span class="line">        &#125;,</span><br><span class="line">        <span class="string">&quot;reason_codes&quot;</span>: &#123;</span><br><span class="line">            <span class="string">&quot;type&quot;</span>: <span class="string">&quot;array&quot;</span>,</span><br><span class="line">            <span class="string">&quot;minItems&quot;</span>: <span class="number">1</span>,</span><br><span class="line">            <span class="string">&quot;maxItems&quot;</span>: <span class="number">5</span>,</span><br><span class="line">            <span class="string">&quot;uniqueItems&quot;</span>: <span class="literal">True</span>,</span><br><span class="line">            <span class="string">&quot;items&quot;</span>: &#123;</span><br><span class="line">                <span class="string">&quot;enum&quot;</span>: [</span><br><span class="line">                    <span class="string">&quot;DUPLICATE_CHARGE&quot;</span>,</span><br><span class="line">                    <span class="string">&quot;SERVICE_NOT_DELIVERED&quot;</span>,</span><br><span class="line">                    <span class="string">&quot;OUTSIDE_WINDOW&quot;</span>,</span><br><span class="line">                    <span class="string">&quot;INSUFFICIENT_EVIDENCE&quot;</span>,</span><br><span class="line">                    <span class="string">&quot;POLICY_CONFLICT&quot;</span>,</span><br><span class="line">                ]</span><br><span class="line">            &#125;,</span><br><span class="line">        &#125;,</span><br><span class="line">        <span class="string">&quot;evidence&quot;</span>: &#123;</span><br><span class="line">            <span class="string">&quot;type&quot;</span>: <span class="string">&quot;array&quot;</span>,</span><br><span class="line">            <span class="string">&quot;minItems&quot;</span>: <span class="number">1</span>,</span><br><span class="line">            <span class="string">&quot;items&quot;</span>: &#123;</span><br><span class="line">                <span class="string">&quot;type&quot;</span>: <span class="string">&quot;object&quot;</span>,</span><br><span class="line">                <span class="string">&quot;required&quot;</span>: [<span class="string">&quot;source&quot;</span>, <span class="string">&quot;record_id&quot;</span>, <span class="string">&quot;observed_at&quot;</span>],</span><br><span class="line">                <span class="string">&quot;properties&quot;</span>: &#123;</span><br><span class="line">                    <span class="string">&quot;source&quot;</span>: &#123;</span><br><span class="line">                        <span class="string">&quot;enum&quot;</span>: [<span class="string">&quot;order&quot;</span>, <span class="string">&quot;payment&quot;</span>, <span class="string">&quot;delivery&quot;</span>, <span class="string">&quot;policy&quot;</span>]</span><br><span class="line">                    &#125;,</span><br><span class="line">                    <span class="string">&quot;record_id&quot;</span>: &#123;<span class="string">&quot;type&quot;</span>: <span class="string">&quot;string&quot;</span>, <span class="string">&quot;minLength&quot;</span>: <span class="number">1</span>&#125;,</span><br><span class="line">                    <span class="string">&quot;observed_at&quot;</span>: &#123;<span class="string">&quot;type&quot;</span>: <span class="string">&quot;string&quot;</span>, <span class="string">&quot;format&quot;</span>: <span class="string">&quot;date-time&quot;</span>&#125;,</span><br><span class="line">                &#125;,</span><br><span class="line">                <span class="string">&quot;additionalProperties&quot;</span>: <span class="literal">False</span>,</span><br><span class="line">            &#125;,</span><br><span class="line">        &#125;,</span><br><span class="line">        <span class="string">&quot;escalation_reason&quot;</span>: &#123;<span class="string">&quot;type&quot;</span>: [<span class="string">&quot;string&quot;</span>, <span class="string">&quot;null&quot;</span>]&#125;,</span><br><span class="line">    &#125;,</span><br><span class="line">    <span class="string">&quot;additionalProperties&quot;</span>: <span class="literal">False</span>,</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Outcome</span>(<span class="built_in">str</span>, Enum):</span><br><span class="line">    ACCEPTED = <span class="string">&quot;ACCEPTED&quot;</span></span><br><span class="line">    CONFIG_ERROR = <span class="string">&quot;CONFIG_ERROR&quot;</span></span><br><span class="line">    PROVIDER_REFUSAL = <span class="string">&quot;PROVIDER_REFUSAL&quot;</span></span><br><span class="line">    INCOMPLETE = <span class="string">&quot;INCOMPLETE&quot;</span></span><br><span class="line">    TRANSPORT_ERROR = <span class="string">&quot;TRANSPORT_ERROR&quot;</span></span><br><span class="line">    JSON_SYNTAX_ERROR = <span class="string">&quot;JSON_SYNTAX_ERROR&quot;</span></span><br><span class="line">    SCHEMA_ERROR = <span class="string">&quot;SCHEMA_ERROR&quot;</span></span><br><span class="line">    BUSINESS_ERROR = <span class="string">&quot;BUSINESS_ERROR&quot;</span></span><br><span class="line">    TOOL_PROTOCOL_ERROR = <span class="string">&quot;TOOL_PROTOCOL_ERROR&quot;</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Envelope</span>:</span><br><span class="line">    status: <span class="built_in">str</span></span><br><span class="line">    text: <span class="built_in">str</span> | <span class="literal">None</span> = <span class="literal">None</span></span><br><span class="line">    refusal: <span class="built_in">str</span> | <span class="literal">None</span> = <span class="literal">None</span></span><br><span class="line">    incomplete_reason: <span class="built_in">str</span> | <span class="literal">None</span> = <span class="literal">None</span></span><br><span class="line">    error_code: <span class="built_in">str</span> | <span class="literal">None</span> = <span class="literal">None</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">ValidationResult</span>:</span><br><span class="line">    outcome: Outcome</span><br><span class="line">    reason: <span class="built_in">str</span></span><br><span class="line">    value: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>] | <span class="literal">None</span> = <span class="literal">None</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">reject_duplicate_keys</span>(<span class="params">pairs: <span class="built_in">list</span>[<span class="built_in">tuple</span>[<span class="built_in">str</span>, <span class="type">Any</span>]]</span>) -&gt; <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>]:</span><br><span class="line">    result: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>] = &#123;&#125;</span><br><span class="line">    <span class="keyword">for</span> key, value <span class="keyword">in</span> pairs:</span><br><span class="line">        <span class="keyword">if</span> key <span class="keyword">in</span> result:</span><br><span class="line">            <span class="keyword">raise</span> ValueError(<span class="string">f&quot;duplicate key: <span class="subst">&#123;key&#125;</span>&quot;</span>)</span><br><span class="line">        result[key] = value</span><br><span class="line">    <span class="keyword">return</span> result</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">parse_one_object</span>(<span class="params">raw: <span class="built_in">str</span></span>) -&gt; <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>]:</span><br><span class="line">    value = json.loads(raw, object_pairs_hook=reject_duplicate_keys)</span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> <span class="built_in">isinstance</span>(value, <span class="built_in">dict</span>):</span><br><span class="line">        <span class="keyword">raise</span> ValueError(<span class="string">&quot;root JSON value must be an object&quot;</span>)</span><br><span class="line">    <span class="keyword">return</span> value</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">first_schema_error</span>(<span class="params">value: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>]</span>) -&gt; <span class="built_in">str</span> | <span class="literal">None</span>:</span><br><span class="line">    validator = Draft202012Validator(SCHEMA, format_checker=FormatChecker())</span><br><span class="line">    errors = <span class="built_in">sorted</span>(validator.iter_errors(value), key=<span class="keyword">lambda</span> e: <span class="built_in">list</span>(e.path))</span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> errors:</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">None</span></span><br><span class="line">    error = errors[<span class="number">0</span>]</span><br><span class="line">    path = <span class="string">&quot;/&quot;</span> + <span class="string">&quot;/&quot;</span>.join(<span class="built_in">str</span>(item) <span class="keyword">for</span> item <span class="keyword">in</span> error.absolute_path)</span><br><span class="line">    <span class="keyword">return</span> <span class="string">f&quot;<span class="subst">&#123;path <span class="keyword">or</span> <span class="string">&#x27;/&#x27;</span>&#125;</span>: <span class="subst">&#123;error.message&#125;</span>&quot;</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">validate_business</span>(<span class="params"></span></span><br><span class="line"><span class="params">    value: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>],</span></span><br><span class="line"><span class="params">    *,</span></span><br><span class="line"><span class="params">    expected_request_id: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">    expected_order_id: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">    order_currency: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">    refundable_balance: Decimal,</span></span><br><span class="line"><span class="params">    allowed_evidence_ids: <span class="built_in">set</span>[<span class="built_in">str</span>],</span></span><br><span class="line"><span class="params"></span>) -&gt; <span class="built_in">str</span> | <span class="literal">None</span>:</span><br><span class="line">    <span class="keyword">if</span> value[<span class="string">&quot;request_id&quot;</span>] != expected_request_id:</span><br><span class="line">        <span class="keyword">return</span> <span class="string">&quot;request_id does not bind to current request&quot;</span></span><br><span class="line">    <span class="keyword">if</span> value[<span class="string">&quot;order_id&quot;</span>] != expected_order_id:</span><br><span class="line">        <span class="keyword">return</span> <span class="string">&quot;order_id does not bind to current order&quot;</span></span><br><span class="line">    <span class="keyword">if</span> value[<span class="string">&quot;currency&quot;</span>] != order_currency:</span><br><span class="line">        <span class="keyword">return</span> <span class="string">&quot;currency differs from trusted order currency&quot;</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">try</span>:</span><br><span class="line">        amount = Decimal(value[<span class="string">&quot;amount&quot;</span>])</span><br><span class="line">    <span class="keyword">except</span> InvalidOperation:</span><br><span class="line">        <span class="keyword">return</span> <span class="string">&quot;amount cannot be represented as Decimal&quot;</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> amount &lt; Decimal(<span class="string">&quot;0.00&quot;</span>) <span class="keyword">or</span> amount &gt; refundable_balance:</span><br><span class="line">        <span class="keyword">return</span> <span class="string">&quot;amount exceeds current refundable balance&quot;</span></span><br><span class="line">    <span class="keyword">if</span> value[<span class="string">&quot;decision&quot;</span>] != <span class="string">&quot;approved&quot;</span> <span class="keyword">and</span> amount != Decimal(<span class="string">&quot;0.00&quot;</span>):</span><br><span class="line">        <span class="keyword">return</span> <span class="string">&quot;non-approved decision must have zero amount&quot;</span></span><br><span class="line">    <span class="keyword">if</span> value[<span class="string">&quot;decision&quot;</span>] == <span class="string">&quot;review&quot;</span> <span class="keyword">and</span> <span class="keyword">not</span> value[<span class="string">&quot;escalation_reason&quot;</span>]:</span><br><span class="line">        <span class="keyword">return</span> <span class="string">&quot;review decision requires escalation_reason&quot;</span></span><br><span class="line">    <span class="keyword">if</span> value[<span class="string">&quot;decision&quot;</span>] != <span class="string">&quot;review&quot;</span> <span class="keyword">and</span> value[<span class="string">&quot;escalation_reason&quot;</span>] <span class="keyword">is</span> <span class="keyword">not</span> <span class="literal">None</span>:</span><br><span class="line">        <span class="keyword">return</span> <span class="string">&quot;only review may carry escalation_reason&quot;</span></span><br><span class="line"></span><br><span class="line">    actual_ids = &#123;item[<span class="string">&quot;record_id&quot;</span>] <span class="keyword">for</span> item <span class="keyword">in</span> value[<span class="string">&quot;evidence&quot;</span>]&#125;</span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> actual_ids &lt;= allowed_evidence_ids:</span><br><span class="line">        <span class="keyword">return</span> <span class="string">&quot;evidence contains records outside the current request&quot;</span></span><br><span class="line">    <span class="keyword">return</span> <span class="literal">None</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">validate_response</span>(<span class="params">envelope: Envelope, context: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>]</span>) -&gt; ValidationResult:</span><br><span class="line">    <span class="keyword">if</span> envelope.error_code:</span><br><span class="line">        <span class="keyword">return</span> ValidationResult(Outcome.TRANSPORT_ERROR, envelope.error_code)</span><br><span class="line">    <span class="keyword">if</span> envelope.refusal <span class="keyword">is</span> <span class="keyword">not</span> <span class="literal">None</span>:</span><br><span class="line">        <span class="keyword">return</span> ValidationResult(Outcome.PROVIDER_REFUSAL, envelope.refusal)</span><br><span class="line">    <span class="keyword">if</span> envelope.status != <span class="string">&quot;completed&quot;</span>:</span><br><span class="line">        <span class="keyword">return</span> ValidationResult(</span><br><span class="line">            Outcome.INCOMPLETE,</span><br><span class="line">            envelope.incomplete_reason <span class="keyword">or</span> <span class="string">f&quot;status=<span class="subst">&#123;envelope.status&#125;</span>&quot;</span>,</span><br><span class="line">        )</span><br><span class="line">    <span class="keyword">if</span> envelope.text <span class="keyword">is</span> <span class="literal">None</span>:</span><br><span class="line">        <span class="keyword">return</span> ValidationResult(Outcome.JSON_SYNTAX_ERROR, <span class="string">&quot;missing output text&quot;</span>)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">try</span>:</span><br><span class="line">        value = parse_one_object(envelope.text)</span><br><span class="line">    <span class="keyword">except</span> (json.JSONDecodeError, ValueError) <span class="keyword">as</span> exc:</span><br><span class="line">        <span class="keyword">return</span> ValidationResult(Outcome.JSON_SYNTAX_ERROR, <span class="built_in">str</span>(exc))</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> error := first_schema_error(value):</span><br><span class="line">        <span class="keyword">return</span> ValidationResult(Outcome.SCHEMA_ERROR, error, value)</span><br><span class="line">    <span class="keyword">if</span> error := validate_business(value, **context):</span><br><span class="line">        <span class="keyword">return</span> ValidationResult(Outcome.BUSINESS_ERROR, error, value)</span><br><span class="line">    <span class="keyword">return</span> ValidationResult(Outcome.ACCEPTED, <span class="string">&quot;all validation layers passed&quot;</span>, value)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">GOOD = &#123;</span><br><span class="line">    <span class="string">&quot;request_id&quot;</span>: <span class="string">&quot;2c1d7608-4547-4e23-9c74-8c33d1c63b21&quot;</span>,</span><br><span class="line">    <span class="string">&quot;decision&quot;</span>: <span class="string">&quot;approved&quot;</span>,</span><br><span class="line">    <span class="string">&quot;order_id&quot;</span>: <span class="string">&quot;ORD-20260404&quot;</span>,</span><br><span class="line">    <span class="string">&quot;currency&quot;</span>: <span class="string">&quot;CNY&quot;</span>,</span><br><span class="line">    <span class="string">&quot;amount&quot;</span>: <span class="string">&quot;100.00&quot;</span>,</span><br><span class="line">    <span class="string">&quot;reason_codes&quot;</span>: [<span class="string">&quot;DUPLICATE_CHARGE&quot;</span>],</span><br><span class="line">    <span class="string">&quot;evidence&quot;</span>: [</span><br><span class="line">        &#123;</span><br><span class="line">            <span class="string">&quot;source&quot;</span>: <span class="string">&quot;payment&quot;</span>,</span><br><span class="line">            <span class="string">&quot;record_id&quot;</span>: <span class="string">&quot;PAY-001&quot;</span>,</span><br><span class="line">            <span class="string">&quot;observed_at&quot;</span>: <span class="string">&quot;2026-04-04T19:20:00+08:00&quot;</span>,</span><br><span class="line">        &#125;</span><br><span class="line">    ],</span><br><span class="line">    <span class="string">&quot;escalation_reason&quot;</span>: <span class="literal">None</span>,</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">CONTEXT = &#123;</span><br><span class="line">    <span class="string">&quot;expected_request_id&quot;</span>: GOOD[<span class="string">&quot;request_id&quot;</span>],</span><br><span class="line">    <span class="string">&quot;expected_order_id&quot;</span>: GOOD[<span class="string">&quot;order_id&quot;</span>],</span><br><span class="line">    <span class="string">&quot;order_currency&quot;</span>: <span class="string">&quot;CNY&quot;</span>,</span><br><span class="line">    <span class="string">&quot;refundable_balance&quot;</span>: Decimal(<span class="string">&quot;120.00&quot;</span>),</span><br><span class="line">    <span class="string">&quot;allowed_evidence_ids&quot;</span>: &#123;<span class="string">&quot;PAY-001&quot;</span>, <span class="string">&quot;ORD-001&quot;</span>&#125;,</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">encoded</span>(<span class="params">value: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>]</span>) -&gt; <span class="built_in">str</span>:</span><br><span class="line">    <span class="keyword">return</span> json.dumps(value, ensure_ascii=<span class="literal">False</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">run_demo</span>() -&gt; <span class="literal">None</span>:</span><br><span class="line">    missing = &#123;key: value <span class="keyword">for</span> key, value <span class="keyword">in</span> GOOD.items() <span class="keyword">if</span> key != <span class="string">&quot;decision&quot;</span>&#125;</span><br><span class="line">    extra = &#123;**GOOD, <span class="string">&quot;execute_now&quot;</span>: <span class="literal">True</span>&#125;</span><br><span class="line">    excessive = &#123;**GOOD, <span class="string">&quot;amount&quot;</span>: <span class="string">&quot;999.00&quot;</span>&#125;</span><br><span class="line"></span><br><span class="line">    cases = &#123;</span><br><span class="line">        <span class="string">&quot;accepted&quot;</span>: Envelope(<span class="string">&quot;completed&quot;</span>, text=encoded(GOOD)),</span><br><span class="line">        <span class="string">&quot;refusal&quot;</span>: Envelope(<span class="string">&quot;completed&quot;</span>, refusal=<span class="string">&quot;safety refusal&quot;</span>),</span><br><span class="line">        <span class="string">&quot;truncated&quot;</span>: Envelope(<span class="string">&quot;incomplete&quot;</span>, text=<span class="string">&#x27;&#123;&quot;decision&quot;:&#x27;</span>,</span><br><span class="line">                              incomplete_reason=<span class="string">&quot;max_output_tokens&quot;</span>),</span><br><span class="line">        <span class="string">&quot;duplicate&quot;</span>: Envelope(</span><br><span class="line">            <span class="string">&quot;completed&quot;</span>, text=<span class="string">&#x27;&#123;&quot;decision&quot;:&quot;review&quot;,&quot;decision&quot;:&quot;approved&quot;&#125;&#x27;</span></span><br><span class="line">        ),</span><br><span class="line">        <span class="string">&quot;missing_required&quot;</span>: Envelope(<span class="string">&quot;completed&quot;</span>, text=encoded(missing)),</span><br><span class="line">        <span class="string">&quot;extra_field&quot;</span>: Envelope(<span class="string">&quot;completed&quot;</span>, text=encoded(extra)),</span><br><span class="line">        <span class="string">&quot;business_limit&quot;</span>: Envelope(<span class="string">&quot;completed&quot;</span>, text=encoded(excessive)),</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> name, envelope <span class="keyword">in</span> cases.items():</span><br><span class="line">        result = validate_response(envelope, CONTEXT)</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">f&quot;<span class="subst">&#123;name:<span class="number">16</span>&#125;</span> <span class="subst">&#123;result.outcome.value:<span class="number">20</span>&#125;</span> <span class="subst">&#123;result.reason&#125;</span>&quot;</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&quot;__main__&quot;</span>:</span><br><span class="line">    Draft202012Validator.check_schema(SCHEMA)</span><br><span class="line">    run_demo()</span><br></pre></td></tr></table></figure>
+
+<p>运行：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">python3 structured_output_demo.py</span><br></pre></td></tr></table></figure>
+
+<p>预期结果的关键分类如下，具体错误文案可能随 <code>jsonschema</code> 小版本变化：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">accepted         ACCEPTED             all validation layers passed</span><br><span class="line">refusal          PROVIDER_REFUSAL      safety refusal</span><br><span class="line">truncated        INCOMPLETE            max_output_tokens</span><br><span class="line">duplicate        JSON_SYNTAX_ERROR      duplicate key: decision</span><br><span class="line">missing_required SCHEMA_ERROR           /: &#x27;decision&#x27; is a required property</span><br><span class="line">extra_field      SCHEMA_ERROR           /: Additional properties are not allowed ...</span><br><span class="line">business_limit   BUSINESS_ERROR         amount exceeds current refundable balance</span><br></pre></td></tr></table></figure>
+
+<p>这个示例刻意把 Schema 校验和业务校验分开。否则所有失败最后都会变成一个很难运营的 <code>ValidationError</code>。</p>
+<h2 id="十四、测试-Schema-本身，而不只是测试实例"><a href="#十四、测试-Schema-本身，而不只是测试实例" class="headerlink" title="十四、测试 Schema 本身，而不只是测试实例"></a>十四、测试 Schema 本身，而不只是测试实例</h2><p>测试可以分成三组。</p>
+<h3 id="1-Meta-schema-测试"><a href="#1-Meta-schema-测试" class="headerlink" title="1. Meta-schema 测试"></a>1. Meta-schema 测试</h3><p>验证 Schema 文档对声明 dialect 本身是否合法：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Draft202012Validator.check_schema(SCHEMA)</span><br></pre></td></tr></table></figure>
+
+<p>它能发现错误关键字值、非法结构等问题，但不能保证提供商接受这个 Schema。</p>
+<h3 id="2-正反实例测试"><a href="#2-正反实例测试" class="headerlink" title="2. 正反实例测试"></a>2. 正反实例测试</h3><p>每个关键字至少有通过和失败样本：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">required:</span></span><br><span class="line">  <span class="attr">pass:</span> <span class="string">所有字段存在</span></span><br><span class="line">  <span class="attr">fail:</span> <span class="string">缺</span> <span class="string">decision</span></span><br><span class="line"><span class="attr">additionalProperties:</span></span><br><span class="line">  <span class="attr">pass:</span> <span class="string">仅声明字段</span></span><br><span class="line">  <span class="attr">fail:</span> <span class="string">多</span> <span class="string">execute_now</span></span><br><span class="line"><span class="attr">enum:</span></span><br><span class="line">  <span class="attr">pass:</span> <span class="string">review</span></span><br><span class="line">  <span class="attr">fail:</span> <span class="string">pending</span></span><br><span class="line"><span class="attr">format:</span></span><br><span class="line">  <span class="attr">pass:</span> <span class="number">2026-04-04T19:20:00+08:00</span></span><br><span class="line">  <span class="attr">fail:</span> <span class="number">2026-02-29T10:00:00Z</span></span><br><span class="line"><span class="attr">union:</span></span><br><span class="line">  <span class="attr">pass:</span> <span class="string">escalation_reason</span> <span class="string">为字符串或</span> <span class="literal">null</span></span><br><span class="line">  <span class="attr">fail:</span> <span class="string">escalation_reason</span> <span class="string">为数组</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="3-提供商-profile-合约测试"><a href="#3-提供商-profile-合约测试" class="headerlink" title="3. 提供商 profile 合约测试"></a>3. 提供商 profile 合约测试</h3><p>不发送业务数据，只验证目标 Schema 能否在目标模型和接口注册、正常生成最小对象，并记录：</p>
+<ul>
+<li>provider、API 和 model ID</li>
+<li>SDK 版本</li>
+<li>Schema 摘要</li>
+<li>strict 配置</li>
+<li>返回终态和原始类型</li>
+<li>检索&#x2F;执行日期</li>
+</ul>
+<p>这类测试需要实际 API 环境，不能由本文的无密钥示例替代。它应在隔离测试账号中运行，避免把密钥放入文章或 fixture。</p>
+<h2 id="十五、一张覆盖正常与失败信号的测试矩阵"><a href="#十五、一张覆盖正常与失败信号的测试矩阵" class="headerlink" title="十五、一张覆盖正常与失败信号的测试矩阵"></a>十五、一张覆盖正常与失败信号的测试矩阵</h2><table>
+<thead>
+<tr>
+<th>层</th>
+<th>用例</th>
+<th>期望分类</th>
+<th>是否重试</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>提供商</td>
+<td>明确 refusal</td>
+<td><code>PROVIDER_REFUSAL</code></td>
+<td>通常否，按产品策略展示或升级</td>
+</tr>
+<tr>
+<td>提供商</td>
+<td>Schema 不受支持，HTTP 400</td>
+<td><code>CONFIG_ERROR</code></td>
+<td>同请求否，修正 Schema profile</td>
+</tr>
+<tr>
+<td>完整性</td>
+<td><code>max_output_tokens</code></td>
+<td><code>INCOMPLETE</code></td>
+<td>可调整预算后有界重试</td>
+</tr>
+<tr>
+<td>完整性</td>
+<td>流中断</td>
+<td><code>INCOMPLETE/TRANSPORT_ERROR</code></td>
+<td>只读任务可重试，副作用需查幂等状态</td>
+</tr>
+<tr>
+<td>JSON</td>
+<td>缺引号、尾逗号、Markdown 包裹</td>
+<td><code>JSON_SYNTAX_ERROR</code></td>
+<td>可做一次受控再生成，不直接正则修补</td>
+</tr>
+<tr>
+<td>JSON</td>
+<td>重复键</td>
+<td><code>JSON_SYNTAX_ERROR</code></td>
+<td>记录原文，拒绝进入执行层</td>
+</tr>
+<tr>
+<td>Schema</td>
+<td>缺 required</td>
+<td><code>SCHEMA_ERROR</code></td>
+<td>可带机器错误做一次修正</td>
+</tr>
+<tr>
+<td>Schema</td>
+<td>出现额外动作字段</td>
+<td><code>SCHEMA_ERROR</code></td>
+<td>高风险时不自动放宽 Schema</td>
+</tr>
+<tr>
+<td>Schema</td>
+<td>枚举越界</td>
+<td><code>SCHEMA_ERROR</code></td>
+<td>不做模糊映射</td>
+</tr>
+<tr>
+<td>Schema</td>
+<td>联合分支歧义</td>
+<td><code>SCHEMA_ERROR</code></td>
+<td>修复 Schema 设计</td>
+</tr>
+<tr>
+<td>Schema</td>
+<td>format 失败</td>
+<td><code>SCHEMA_ERROR</code></td>
+<td>明确验证器配置后处理</td>
+</tr>
+<tr>
+<td>业务</td>
+<td>金额超余额</td>
+<td><code>BUSINESS_ERROR</code></td>
+<td>重新读取事实后最多重算一次</td>
+</tr>
+<tr>
+<td>业务</td>
+<td>跨租户证据</td>
+<td><code>BUSINESS_ERROR/SECURITY</code></td>
+<td>不重试，阻断并告警</td>
+</tr>
+<tr>
+<td>工具</td>
+<td>一轮多个并行调用</td>
+<td>逐调用进入对应验证链</td>
+<td>每个调用独立校验与执行决策</td>
+</tr>
+<tr>
+<td>工具</td>
+<td>call ID 重复或结果缺失</td>
+<td><code>TOOL_PROTOCOL_ERROR</code></td>
+<td>不猜测对应关系</td>
+</tr>
+</tbody></table>
+<p>测试报告要保存失败所在层、JSON Pointer 路径、Schema revision、提供商终态和重试决策。只保存异常字符串，无法统计哪一类契约最不稳定。</p>
+<h2 id="十六、拒答不是-Schema-失败"><a href="#十六、拒答不是-Schema-失败" class="headerlink" title="十六、拒答不是 Schema 失败"></a>十六、拒答不是 Schema 失败</h2><p>用户输入触发安全策略时，提供商可能返回显式拒答。这个结果通常不会符合业务定义的 <code>RefundDecision</code>，但它也不是模型“忘了输出 JSON”。</p>
+<p>错误处理：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">try</span>:</span><br><span class="line">    value = json.loads(response.output_text)</span><br><span class="line"><span class="keyword">except</span> Exception:</span><br><span class="line">    retry()</span><br></pre></td></tr></table></figure>
+
+<p>这会把一个稳定拒答变成重复请求，增加成本且不改变结果。</p>
+<p>正确顺序先识别 refusal，再按产品策略：</p>
+<ul>
+<li>对终端用户展示安全说明</li>
+<li>对可能的误拒答进入人工复核</li>
+<li>保存安全类别和产物版本，不保存不必要的敏感全文</li>
+<li>不把 refusal 计入普通 JSON 语法失败率</li>
+</ul>
+<p>业务层自己的“无法判断”也不应伪装成提供商拒答。前者可以用 <code>decision=review</code> 表达，后者来自外层响应协议。</p>
+<h2 id="十七、截断和流式输出要等完整终态再执行"><a href="#十七、截断和流式输出要等完整终态再执行" class="headerlink" title="十七、截断和流式输出要等完整终态再执行"></a>十七、截断和流式输出要等完整终态再执行</h2><p>流式结构化输出会持续产生片段。中间片段即使暂时能解析，也不应触发业务动作。</p>
+<p>例如流先到达：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span><span class="attr">&quot;decision&quot;</span><span class="punctuation">:</span><span class="string">&quot;approved&quot;</span><span class="punctuation">,</span><span class="attr">&quot;amount&quot;</span><span class="punctuation">:</span><span class="string">&quot;100.00&quot;</span><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>随后还可能继续输出其他字段，或者最终状态变成 incomplete。执行器必须等提供商的完成事件，收齐所有片段并验证最终对象。</p>
+<p>针对截断：</p>
+<ol>
+<li>检查外层状态和 <code>incomplete_reason</code>。</li>
+<li>不把部分对象送入业务层。</li>
+<li>判断输出预算是否合理，Schema 是否过度冗长。</li>
+<li>只读、无副作用任务可以提高预算后有限重试。</li>
+<li>已经开始副作用的 Agent 必须先查询幂等结果，不能直接重放整轮。</li>
+</ol>
+<p>“把最后一个 <code>&#125;</code> 补上”不是恢复方案。缺失的可能正是风险字段、证据或拒绝原因。</p>
+<h2 id="十八、并行工具调用不能当成一个-JSON-对象"><a href="#十八、并行工具调用不能当成一个-JSON-对象" class="headerlink" title="十八、并行工具调用不能当成一个 JSON 对象"></a>十八、并行工具调用不能当成一个 JSON 对象</h2><p>一个 assistant turn 可能包含多个工具调用块。每个块都有自己的 call ID、工具名和参数对象。</p>
+<p>接收端需要：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">遍历全部调用</span><br><span class="line">  -&gt; 校验 call ID 唯一且可追踪</span><br><span class="line">  -&gt; 根据工具名选择对应 Schema</span><br><span class="line">  -&gt; 对每个参数做 Schema、租户、权限和业务校验</span><br><span class="line">  -&gt; 判断调用之间是否独立</span><br><span class="line">  -&gt; 只并行执行无顺序依赖且副作用可控的调用</span><br><span class="line">  -&gt; 为每个调用返回对应结果或明确错误</span><br></pre></td></tr></table></figure>
+
+<p>风险场景包括：</p>
+<ul>
+<li>第一个调用只读，第二个调用写入，代码只检查第一个</li>
+<li>两个调用使用同一幂等键</li>
+<li>一个调用创建资源，另一个依赖其 ID，却被并行执行</li>
+<li>一个参数合法，另一个跨租户，批处理仍整体放行</li>
+<li>返回工具结果时漏掉一个 call ID，下一轮上下文错位</li>
+</ul>
+<p>Anthropic 官方文档在检索日说明，同一响应可包含多个 <code>tool_use</code> 块，执行顺序由应用决定；有依赖或副作用的工具不适合无条件并行。不同提供商的块结构和控制参数不同，适配器必须分别实现协议测试。</p>
+<h2 id="十九、失败恢复不是统一-retry-3"><a href="#十九、失败恢复不是统一-retry-3" class="headerlink" title="十九、失败恢复不是统一 retry(3)"></a>十九、失败恢复不是统一 <code>retry(3)</code></h2><p>重试策略应由错误类别、幂等性和事实新鲜度决定。</p>
+<p><img src="/images/ai-quality/ai-25-failure-recovery.svg" alt="结构化输出失败分类、重试与人工升级状态机"></p>
+<h3 id="1-配置错误"><a href="#1-配置错误" class="headerlink" title="1. 配置错误"></a>1. 配置错误</h3><p>提供商拒绝 Schema、模型不支持 strict、关键字超出子集。这是确定性配置问题，同样请求重试三次没有价值。应阻断发布并修正 profile。</p>
+<h3 id="2-瞬时传输错误"><a href="#2-瞬时传输错误" class="headerlink" title="2. 瞬时传输错误"></a>2. 瞬时传输错误</h3><p>限流、连接重置和服务暂时不可用可以退避重试，但要设置总时间预算、抖动和熔断。对动作型任务，先用幂等键查询是否已经执行。</p>
+<h3 id="3-JSON-或-Schema-错误"><a href="#3-JSON-或-Schema-错误" class="headerlink" title="3. JSON 或 Schema 错误"></a>3. JSON 或 Schema 错误</h3><p>非 strict 或降级模式下，可以把结构化、裁剪后的验证错误反馈给模型做一次修正：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;error&quot;</span><span class="punctuation">:</span> <span class="string">&quot;SCHEMA_ERROR&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;path&quot;</span><span class="punctuation">:</span> <span class="string">&quot;/decision&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;keyword&quot;</span><span class="punctuation">:</span> <span class="string">&quot;enum&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;allowed&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;approved&quot;</span><span class="punctuation">,</span> <span class="string">&quot;review&quot;</span><span class="punctuation">,</span> <span class="string">&quot;rejected&quot;</span><span class="punctuation">]</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>不要把完整内部 Schema、堆栈和敏感实例原样拼回 Prompt。若第二次仍失败，进入降级或人工处理，而不是无限自我修复。</p>
+<h3 id="4-业务错误"><a href="#4-业务错误" class="headerlink" title="4. 业务错误"></a>4. 业务错误</h3><p>先判断事实是否可能变化。余额刚被其他请求更新时，可以重新读取可信状态并重新决策；跨租户、越权、非法状态迁移则应直接阻断和审计。</p>
+<h3 id="5-拒答"><a href="#5-拒答" class="headerlink" title="5. 拒答"></a>5. 拒答</h3><p>拒答通常不靠原样重试恢复。需要修改请求范围、移除不必要敏感内容，或进入人工渠道。</p>
+<h3 id="6-截断"><a href="#6-截断" class="headerlink" title="6. 截断"></a>6. 截断</h3><p>可以提高输出预算、简化 Schema 描述或拆分任务，但必须使用原始输入和新的 attempt ID，不能把不完整 JSON 当作可信前缀继续补写后直接执行。</p>
+<h2 id="二十、重试必须有幂等、预算和证据"><a href="#二十、重试必须有幂等、预算和证据" class="headerlink" title="二十、重试必须有幂等、预算和证据"></a>二十、重试必须有幂等、预算和证据</h2><p>每一次 attempt 至少记录：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">request_id:</span> <span class="string">req-20260404-001</span></span><br><span class="line"><span class="attr">attempt:</span> <span class="number">2</span></span><br><span class="line"><span class="attr">idempotency_key:</span> <span class="string">refund:ORD-20260404:v1</span></span><br><span class="line"><span class="attr">provider:</span> <span class="string">provider-a</span></span><br><span class="line"><span class="attr">model:</span> <span class="string">immutable-model-id</span></span><br><span class="line"><span class="attr">schema_revision:</span> <span class="string">sha256:...</span></span><br><span class="line"><span class="attr">business_rules_revision:</span> <span class="string">refund-rules-17</span></span><br><span class="line"><span class="attr">previous_outcome:</span> <span class="string">SCHEMA_ERROR</span></span><br><span class="line"><span class="attr">retry_reason:</span> <span class="string">missing_required</span></span><br><span class="line"><span class="attr">input_hash:</span> <span class="string">sha256:...</span></span><br><span class="line"><span class="attr">side_effect_state:</span> <span class="string">not_started</span></span><br></pre></td></tr></table></figure>
+
+<p>停止条件要预先定义：</p>
+<ul>
+<li>最大 attempt 数</li>
+<li>最大累计 Token、费用和墙钟时间</li>
+<li>不可重试错误集合</li>
+<li>副作用状态未知时的人工接管</li>
+<li>连续同类失败触发熔断</li>
+</ul>
+<p>为了提高成功率而“重试到有一个通过”会造成选择偏差，也可能把真实兼容问题掩盖成偶发噪声。报告应保留每次物理 attempt，不只保存最后一次成功。</p>
+<h2 id="二十一、一个完整失败案例：Schema-全绿，退款金额仍然错误"><a href="#二十一、一个完整失败案例：Schema-全绿，退款金额仍然错误" class="headerlink" title="二十一、一个完整失败案例：Schema 全绿，退款金额仍然错误"></a>二十一、一个完整失败案例：Schema 全绿，退款金额仍然错误</h2><h3 id="1-场景"><a href="#1-场景" class="headerlink" title="1. 场景"></a>1. 场景</h3><p>系统根据订单、支付和客服证据生成退款建议。候选输出是：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;request_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;2c1d7608-4547-4e23-9c74-8c33d1c63b21&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;decision&quot;</span><span class="punctuation">:</span> <span class="string">&quot;approved&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;order_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;ORD-20260404&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;currency&quot;</span><span class="punctuation">:</span> <span class="string">&quot;CNY&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;amount&quot;</span><span class="punctuation">:</span> <span class="string">&quot;299.00&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;reason_codes&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;DUPLICATE_CHARGE&quot;</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;evidence&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;source&quot;</span><span class="punctuation">:</span> <span class="string">&quot;payment&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;record_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;PAY-OLD-9&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;observed_at&quot;</span><span class="punctuation">:</span> <span class="string">&quot;2026-04-04T19:20:00+08:00&quot;</span></span><br><span class="line">    <span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;escalation_reason&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">null</span></span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>JSON 可解析，Draft 2020-12 校验也通过。</p>
+<h3 id="2-现象"><a href="#2-现象" class="headerlink" title="2. 现象"></a>2. 现象</h3><p>执行器准备创建 299 元退款，但订单实时可退余额只有 99 元。<code>PAY-OLD-9</code> 来自同一用户的上一笔订单，不属于当前请求允许证据集。</p>
+<h3 id="3-错误方向"><a href="#3-错误方向" class="headerlink" title="3. 错误方向"></a>3. 错误方向</h3><p>如果只排查 Schema，会尝试给 <code>amount</code> 增加一个静态 <code>maximum</code>。但不同订单余额不同，写死上限既不能解决当前问题，也可能阻断合法高金额订单。</p>
+<h3 id="4-证据排查"><a href="#4-证据排查" class="headerlink" title="4. 证据排查"></a>4. 证据排查</h3><p>按照验证层追踪：</p>
+<ol>
+<li>提供商响应 completed，无 refusal 和截断。</li>
+<li>JSON 严格解析通过，无重复键。</li>
+<li>Schema revision 正确，所有结构约束通过。</li>
+<li>业务验证读取当前订单，发现 <code>299.00 &gt; 99.00</code>。</li>
+<li>证据绑定检查发现 <code>PAY-OLD-9</code> 不在当前请求允许 ID 集合。</li>
+<li>工具执行日志显示动作尚未开始，幂等键未消费。</li>
+</ol>
+<p>首错层明确落在 <code>BUSINESS_ERROR</code>，而不是模型传输或 Schema。</p>
+<h3 id="5-根因"><a href="#5-根因" class="headerlink" title="5. 根因"></a>5. 根因</h3><p>RAG 查询按用户 ID 检索支付记录，没有同时限定订单 ID；模型引用了格式完全正确、业务归属错误的记录。Schema 只能证明 <code>record_id</code> 是字符串，不能证明它属于当前订单。</p>
+<h3 id="6-修复"><a href="#6-修复" class="headerlink" title="6. 修复"></a>6. 修复</h3><ul>
+<li>检索层增加租户和订单过滤，并记录召回证据 ID。</li>
+<li>输出只允许引用本轮上下文中下发的证据 ID。</li>
+<li>业务层重新查询余额、币种和订单状态，不信任模型复制的事实。</li>
+<li>执行器使用幂等键，并在落库前再次比较可退余额。</li>
+<li>新增跨订单、过期证据、并发退款和余额变化测试。</li>
+<li>将“Schema 通过但证据越界”单独计入安全和数据质量指标。</li>
+</ul>
+<p>这个案例说明，结构化输出能把错误变得更容易定位，却不会自动让内容成为事实。</p>
+<h2 id="二十二、排查顺序：先找首个失效边界"><a href="#二十二、排查顺序：先找首个失效边界" class="headerlink" title="二十二、排查顺序：先找首个失效边界"></a>二十二、排查顺序：先找首个失效边界</h2><p>线上出现“结构化输出失败”时，可以按以下顺序缩小范围：</p>
+<ol>
+<li>对齐请求时间、request ID、attempt 和产物版本。</li>
+<li>检查 HTTP&#x2F;SDK&#x2F;流终态，不先看拼接后的文本。</li>
+<li>确认是否 refusal、content filter、rate limit 或 incomplete。</li>
+<li>确认实际使用的 provider profile、strict 参数和模型 ID。</li>
+<li>使用原始字节做严格 JSON 解析，检查 BOM、编码、重复键和尾随内容。</li>
+<li>用记录的 dialect、Schema revision 和验证器配置重放。</li>
+<li>根据 JSON Pointer 定位第一个 Schema 失败关键字。</li>
+<li>Schema 通过后，重放业务事实、权限、租户和状态机。</li>
+<li>工具场景检查全部 call ID、参数、执行顺序、幂等与结果映射。</li>
+<li>修复后同时补正常对照和历史失败样本。</li>
+</ol>
+<p>不要先用正则提取大括号、删除 Markdown 或自动补字段。这些“修复”会改变证据，甚至把拒答和越权意图包装成一个可执行对象。原始输出必须不可变保存，任何修复结果使用新的 attempt 标识。</p>
+<h2 id="二十三、观测指标要按失败层分开"><a href="#二十三、观测指标要按失败层分开" class="headerlink" title="二十三、观测指标要按失败层分开"></a>二十三、观测指标要按失败层分开</h2><p>建议至少监控：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">provider_refusal_rate</span><br><span class="line">incomplete_rate&#123;reason&#125;</span><br><span class="line">transport_error_rate&#123;code&#125;</span><br><span class="line">json_syntax_error_rate</span><br><span class="line">schema_error_rate&#123;schema_revision,keyword,path&#125;</span><br><span class="line">business_error_rate&#123;rule_id&#125;</span><br><span class="line">tool_protocol_error_rate&#123;provider&#125;</span><br><span class="line">first_attempt_accept_rate</span><br><span class="line">retry_recovery_rate&#123;original_outcome&#125;</span><br><span class="line">human_escalation_rate&#123;reason&#125;</span><br><span class="line">side_effect_duplicate_prevented_count</span><br></pre></td></tr></table></figure>
+
+<p>只看最终成功率会隐藏两个风险：</p>
+<ul>
+<li>首次失败率持续升高，只是被重试掩盖，成本和时延已经恶化。</li>
+<li>业务错误被人工修正后算成功，但上游检索或模型质量正在退化。</li>
+</ul>
+<p>指标还要按模型、Schema revision、Prompt 指纹、业务域、语言和输入长度切片。平均数无法解释某个新枚举值只在旧移动端消费者上失败。</p>
+<h2 id="二十四、结果验收怎么写才不变成宣传数据"><a href="#二十四、结果验收怎么写才不变成宣传数据" class="headerlink" title="二十四、结果验收怎么写才不变成宣传数据"></a>二十四、结果验收怎么写才不变成宣传数据</h2><p>可以先用固定失败注入集建立工程验收表，而不是编造一个通用“准确率提升”：</p>
+<table>
+<thead>
+<tr>
+<th>验收项</th>
+<th align="right">目标</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>正常完成且业务有效</td>
+<td align="right">100% 进入 <code>ACCEPTED</code></td>
+</tr>
+<tr>
+<td>refusal</td>
+<td align="right">100% 进入 <code>PROVIDER_REFUSAL</code>，不触发 JSON 重试</td>
+</tr>
+<tr>
+<td>截断</td>
+<td align="right">100% 在完整性层阻断，不执行部分对象</td>
+</tr>
+<tr>
+<td>缺必填&#x2F;额外字段&#x2F;枚举越界</td>
+<td align="right">100% 给出 Schema 路径和关键字</td>
+</tr>
+<tr>
+<td>超额、跨租户、非法状态</td>
+<td align="right">100% 在业务&#x2F;安全层阻断</td>
+</tr>
+<tr>
+<td>多工具调用</td>
+<td align="right">100% 逐调用校验并保持 call ID 映射</td>
+</tr>
+<tr>
+<td>相同幂等键重放</td>
+<td align="right">0 次重复副作用</td>
+</tr>
+</tbody></table>
+<p>本文示例脚本的结果是七个 fixture 被稳定分成一个接受和六种预期失败路径。它证明分类器骨架可执行，不证明某个真实模型的业务准确率。真实收益需要在目标提供商、模型、数据和业务环境中另行评测。</p>
+<h2 id="二十五、常见的十二个错误"><a href="#二十五、常见的十二个错误" class="headerlink" title="二十五、常见的十二个错误"></a>二十五、常见的十二个错误</h2><h3 id="1-把“请输出-JSON”当作结构约束"><a href="#1-把“请输出-JSON”当作结构约束" class="headerlink" title="1. 把“请输出 JSON”当作结构约束"></a>1. 把“请输出 JSON”当作结构约束</h3><p>Prompt 指令不能替代解析器和 Schema。</p>
+<h3 id="2-把-JSON-mode-当成-Schema-strict"><a href="#2-把-JSON-mode-当成-Schema-strict" class="headerlink" title="2. 把 JSON mode 当成 Schema strict"></a>2. 把 JSON mode 当成 Schema strict</h3><p>语法保证与字段、类型、枚举保证是不同能力。</p>
+<h3 id="3-把完整-Draft-2020-12-直接提交给所有提供商"><a href="#3-把完整-Draft-2020-12-直接提交给所有提供商" class="headerlink" title="3. 把完整 Draft 2020-12 直接提交给所有提供商"></a>3. 把完整 Draft 2020-12 直接提交给所有提供商</h3><p>约束解码通常只支持子集，且会随接口和模型变化。</p>
+<h3 id="4-忘记-required"><a href="#4-忘记-required" class="headerlink" title="4. 忘记 required"></a>4. 忘记 required</h3><p>定义 <code>properties</code> 不会自动让字段必填。</p>
+<h3 id="5-只在根关闭-additionalProperties"><a href="#5-只在根关闭-additionalProperties" class="headerlink" title="5. 只在根关闭 additionalProperties"></a>5. 只在根关闭 additionalProperties</h3><p>嵌套对象仍可能接收未声明字段。</p>
+<h3 id="6-默认-format-会被强制验证"><a href="#6-默认-format-会被强制验证" class="headerlink" title="6. 默认 format 会被强制验证"></a>6. 默认 format 会被强制验证</h3><p>Draft、vocabulary 和验证器配置会影响结果。</p>
+<h3 id="7-用浮点数处理金额和长-ID"><a href="#7-用浮点数处理金额和长-ID" class="headerlink" title="7. 用浮点数处理金额和长 ID"></a>7. 用浮点数处理金额和长 ID</h3><p>跨语言链路可能出现精度和序列化差异。</p>
+<h3 id="8-先解析文本，再看-refusal-和-incomplete"><a href="#8-先解析文本，再看-refusal-和-incomplete" class="headerlink" title="8. 先解析文本，再看 refusal 和 incomplete"></a>8. 先解析文本，再看 refusal 和 incomplete</h3><p>外层协议错误被错误归类成 JSON 失败。</p>
+<h3 id="9-自动修补半截-JSON-后执行"><a href="#9-自动修补半截-JSON-后执行" class="headerlink" title="9. 自动修补半截 JSON 后执行"></a>9. 自动修补半截 JSON 后执行</h3><p>补出来的结构不代表模型完成的意图。</p>
+<h3 id="10-Schema-通过就直接调用高风险工具"><a href="#10-Schema-通过就直接调用高风险工具" class="headerlink" title="10. Schema 通过就直接调用高风险工具"></a>10. Schema 通过就直接调用高风险工具</h3><p>还缺租户、权限、状态、额度、幂等和审批检查。</p>
+<h3 id="11-并行工具调用只处理第一个"><a href="#11-并行工具调用只处理第一个" class="headerlink" title="11. 并行工具调用只处理第一个"></a>11. 并行工具调用只处理第一个</h3><p>未校验调用可能仍被执行，结果映射也会错位。</p>
+<h3 id="12-所有失败统一重试三次"><a href="#12-所有失败统一重试三次" class="headerlink" title="12. 所有失败统一重试三次"></a>12. 所有失败统一重试三次</h3><p>配置错误、拒答、安全错误和副作用未知状态需要不同策略。</p>
+<h2 id="二十六、什么时候使用约束输出，什么时候换一种设计"><a href="#二十六、什么时候使用约束输出，什么时候换一种设计" class="headerlink" title="二十六、什么时候使用约束输出，什么时候换一种设计"></a>二十六、什么时候使用约束输出，什么时候换一种设计</h2><p>结构化输出适合：</p>
+<ul>
+<li>信息抽取、分类、路由和规则建议</li>
+<li>生成工具调用参数</li>
+<li>下游需要稳定机器接口</li>
+<li>输出字段和状态集合可以明确建模</li>
+<li>接收端能够执行本地与业务二次校验</li>
+</ul>
+<p>不适合直接承担：</p>
+<ul>
+<li>最终权限判断</li>
+<li>高精度财务计算</li>
+<li>数据库事实查询</li>
+<li>无 Schema 上限的开放式长文</li>
+<li>不可逆动作的唯一审批依据</li>
+</ul>
+<p>如果 Schema 为了容纳自然语言任务而出现几十层联合、动态字段和大量自由对象，可能说明任务边界没有拆清。可以把流程分成“模型提取候选事实 -&gt; 确定性代码计算 -&gt; 模型解释结果”，让每一层做擅长的工作。</p>
+<h2 id="二十七、上线检查表"><a href="#二十七、上线检查表" class="headerlink" title="二十七、上线检查表"></a>二十七、上线检查表</h2><h3 id="Schema-设计"><a href="#Schema-设计" class="headerlink" title="Schema 设计"></a>Schema 设计</h3><ul>
+<li><input disabled="" type="checkbox"> 是否显式声明 dialect、<code>$id</code>、版本和内容摘要</li>
+<li><input disabled="" type="checkbox"> required、nullable 和字段缺失语义是否明确</li>
+<li><input disabled="" type="checkbox"> 根及嵌套对象的 additionalProperties 策略是否明确</li>
+<li><input disabled="" type="checkbox"> 枚举是否使用稳定机器码并有演进策略</li>
+<li><input disabled="" type="checkbox"> 联合分支是否互斥、可测试且不依赖模糊匹配</li>
+<li><input disabled="" type="checkbox"> format assertion 是否在验证器中显式配置</li>
+<li><input disabled="" type="checkbox"> 金额、长 ID 和高精度值是否避免浮点歧义</li>
+</ul>
+<h3 id="提供商适配"><a href="#提供商适配" class="headerlink" title="提供商适配"></a>提供商适配</h3><ul>
+<li><input disabled="" type="checkbox"> 是否为每个提供商维护独立 Schema profile</li>
+<li><input disabled="" type="checkbox"> strict、支持子集、模型和 API 范围是否按当前官方文档核对</li>
+<li><input disabled="" type="checkbox"> Schema 注册错误是否在发布前合约测试中发现</li>
+<li><input disabled="" type="checkbox"> refusal、content filter、incomplete 和 error 是否有独立分支</li>
+<li><input disabled="" type="checkbox"> 文本结构化输出和工具参数是否没有混为同一协议</li>
+</ul>
+<h3 id="接收和校验"><a href="#接收和校验" class="headerlink" title="接收和校验"></a>接收和校验</h3><ul>
+<li><input disabled="" type="checkbox"> 是否先检查外层终态，再解析 JSON</li>
+<li><input disabled="" type="checkbox"> 是否拒绝重复键、尾随内容和非对象根值</li>
+<li><input disabled="" type="checkbox"> 是否使用记录版本的 Draft 2020-12 验证器</li>
+<li><input disabled="" type="checkbox"> Schema 通过后是否执行跨字段、实时事实、租户和权限校验</li>
+<li><input disabled="" type="checkbox"> 错误是否包含层级、JSON Pointer、关键字和规则 ID</li>
+</ul>
+<h3 id="工具和副作用"><a href="#工具和副作用" class="headerlink" title="工具和副作用"></a>工具和副作用</h3><ul>
+<li><input disabled="" type="checkbox"> 多个工具调用是否全部遍历并分别校验</li>
+<li><input disabled="" type="checkbox"> call ID、工具名、参数和结果是否一一对应</li>
+<li><input disabled="" type="checkbox"> 有依赖或副作用的调用是否避免无条件并行</li>
+<li><input disabled="" type="checkbox"> 执行前是否重新校验权限、状态、额度和审批</li>
+<li><input disabled="" type="checkbox"> 是否使用幂等键并能查询未知执行状态</li>
+</ul>
+<h3 id="恢复和观测"><a href="#恢复和观测" class="headerlink" title="恢复和观测"></a>恢复和观测</h3><ul>
+<li><input disabled="" type="checkbox"> 不同错误类别是否映射到不同恢复动作</li>
+<li><input disabled="" type="checkbox"> 重试是否有次数、时间、Token 和费用预算</li>
+<li><input disabled="" type="checkbox"> 原始响应是否不可变保留，修复尝试是否使用新 attempt</li>
+<li><input disabled="" type="checkbox"> 首次接受率和重试后接受率是否分开统计</li>
+<li><input disabled="" type="checkbox"> 安全与业务错误是否不会被自动放宽 Schema 掩盖</li>
+<li><input disabled="" type="checkbox"> 无法安全恢复时是否有人工升级入口和完整证据</li>
+</ul>
+<h2 id="二十八、小结"><a href="#二十八、小结" class="headerlink" title="二十八、小结"></a>二十八、小结</h2><p>大模型结构化输出要从“格式提示”升级成“分层契约”。完整方案至少做到：</p>
+<ol>
+<li>区分 JSON 语法、JSON Schema、提供商约束和业务有效性。</li>
+<li>明确 JSON Schema dialect、验证器配置、Schema revision 和 format 策略。</li>
+<li>正确使用 required、additionalProperties、枚举、联合、格式和精度边界。</li>
+<li>把提供商 strict 限定在具体接口、模型和支持子集，不写成行业标准。</li>
+<li>先识别 refusal、截断和传输终态，再进入 JSON 解析。</li>
+<li>即使约束解码成功，也在接收端运行完整 Schema 与业务二次校验。</li>
+<li>对并行工具调用逐个校验、保留 ID 映射，并在执行前重查权限和状态。</li>
+<li>按失败类别决定重试、降级、阻断和人工升级，使用幂等与预算控制副作用。</li>
+<li>保存原始证据和每次 attempt，让失败可以重放而不是被最后一次成功覆盖。</li>
+</ol>
+<p>最终可信的结论不是：</p>
+<blockquote>
+<p>模型已经返回 JSON。</p>
+</blockquote>
+<p>而是：</p>
+<blockquote>
+<p>响应完整且协议终态正常；实例通过明确版本的 Schema；内容与当前业务事实、权限和状态一致；任何失败都被正确分类，并能在不扩大副作用的前提下恢复。</p>
+</blockquote>
+<p>只有到这一层，JSON 才从输出样式变成可以进入生产系统的接口契约。</p>
+<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><p>JSON Schema 与 RFC 链接属于标准或规范入口。提供商文档均按 <code>2026-07-26</code> 检索，仅描述相应提供商在检索日公开的 API、模型和 Schema 子集；实现前应再次核对目标模型、区域、SDK 与最新文档。</p>
+<ul>
+<li><a target="_blank" rel="noopener" href="https://json-schema.org/draft/2020-12">JSON Schema Draft 2020-12</a></li>
+<li><a target="_blank" rel="noopener" href="https://json-schema.org/learn/getting-started-step-by-step">JSON Schema：Getting started step by step</a></li>
+<li><a target="_blank" rel="noopener" href="https://json-schema.org/draft/2020-12/json-schema-validation">JSON Schema Draft 2020-12：Validation vocabulary</a></li>
+<li><a target="_blank" rel="noopener" href="https://www.rfc-editor.org/rfc/rfc8259.html">RFC 8259：The JavaScript Object Notation Data Interchange Format</a></li>
+<li><a target="_blank" rel="noopener" href="https://www.rfc-editor.org/rfc/rfc8785.html">RFC 8785：JSON Canonicalization Scheme</a></li>
+<li><a target="_blank" rel="noopener" href="https://developers.openai.com/api/docs/guides/structured-outputs">OpenAI API Documentation：Structured model outputs</a></li>
+<li><a target="_blank" rel="noopener" href="https://developers.openai.com/api/reference/responses">OpenAI API Reference：Responses</a></li>
+<li><a target="_blank" rel="noopener" href="https://developers.openai.com/api/docs/guides/function-calling">OpenAI API Documentation：Function calling</a></li>
+<li><a target="_blank" rel="noopener" href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools">Anthropic Documentation：Define tools</a></li>
+<li><a target="_blank" rel="noopener" href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use">Anthropic Documentation：Strict tool use</a></li>
+<li><a target="_blank" rel="noopener" href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/parallel-tool-use">Anthropic Documentation：Parallel tool use</a></li>
+<li><a target="_blank" rel="noopener" href="https://python-jsonschema.readthedocs.io/en/stable/">Python jsonschema Documentation</a></li>
+</ul>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/AI%E6%B5%8B%E8%AF%95/" rel="tag"># AI测试</a>
+              <a href="/tags/%E5%A4%B1%E8%B4%A5%E6%81%A2%E5%A4%8D/" rel="tag"># 失败恢复</a>
+              <a href="/tags/LLMOps/" rel="tag"># LLMOps</a>
+              <a href="/tags/%E5%B7%A5%E5%85%B7%E8%B0%83%E7%94%A8/" rel="tag"># 工具调用</a>
+              <a href="/tags/%E7%BB%93%E6%9E%84%E5%8C%96%E8%BE%93%E5%87%BA/" rel="tag"># 结构化输出</a>
+              <a href="/tags/JSON-Schema/" rel="tag"># JSON Schema</a>
+              <a href="/tags/Schema%E6%A0%A1%E9%AA%8C/" rel="tag"># Schema校验</a>
+              <a href="/tags/%E5%A5%91%E7%BA%A6%E6%B5%8B%E8%AF%95/" rel="tag"># 契约测试</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2026/04/02/AI%E6%B5%8B%E8%AF%95-24-Prompt%E6%80%8E%E4%B9%88%E5%83%8F%E4%BB%A3%E7%A0%81%E4%B8%80%E6%A0%B7%E5%81%9A%E6%A8%A1%E6%9D%BF%E5%8C%96%E7%89%88%E6%9C%AC%E5%8C%96%E8%AF%84%E5%AE%A1%E5%92%8C%E5%9B%9E%E5%BD%92%E6%B5%8B%E8%AF%95/" rel="prev" title="AI测试-24-Prompt怎么像代码一样做模板化版本化评审和回归测试">
+                  <i class="fa fa-angle-left"></i> AI测试-24-Prompt怎么像代码一样做模板化版本化评审和回归测试
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2026/04/06/AI%E6%B5%8B%E8%AF%95-26-%E6%A8%A1%E5%9E%8BAPI%E6%80%8E%E4%B9%88%E5%A4%84%E7%90%86%E8%B6%85%E6%97%B6%E9%99%90%E6%B5%81%E9%87%8D%E8%AF%95%E5%B9%82%E7%AD%89%E5%92%8C%E4%BE%9B%E5%BA%94%E5%95%86%E6%95%85%E9%9A%9C/" rel="next" title="AI测试-26-模型API怎么处理超时限流重试幂等和供应商故障">
+                  AI测试-26-模型API怎么处理超时限流重试幂等和供应商故障 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">2.1m</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">129:05</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

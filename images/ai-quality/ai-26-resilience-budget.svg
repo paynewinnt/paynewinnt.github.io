@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">模型 API 端到端韧性预算图</title>
+  <desc id="desc">展示一次模型调用的总截止时间如何分配给准入、连接、读取、退避、重试和故障切换，并由并发、请求速率、Token 速率、熔断与隔离共同约束。</desc>
+  <defs>
+    <style>
+      .bg { fill: #f8fafc; }
+      .title { fill: #172033; font: 700 30px Inter, "PingFang SC", "Microsoft YaHei", sans-serif; }
+      .subtitle { fill: #526079; font: 400 17px Inter, "PingFang SC", "Microsoft YaHei", sans-serif; }
+      .h2 { fill: #172033; font: 700 20px Inter, "PingFang SC", "Microsoft YaHei", sans-serif; }
+      .label { fill: #172033; font: 650 17px Inter, "PingFang SC", "Microsoft YaHei", sans-serif; }
+      .small { fill: #526079; font: 400 15px Inter, "PingFang SC", "Microsoft YaHei", sans-serif; }
+      .mono { fill: #24304a; font: 600 15px ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .panel { fill: #ffffff; stroke: #d9e1ec; stroke-width: 2; }
+      .line { stroke: #718096; stroke-width: 2; fill: none; }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#718096"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1280" height="720"/>
+  <text class="title" x="64" y="58">模型调用不是一次 HTTP：先分总预算，再决定是否重试</text>
+  <text class="subtitle" x="64" y="88">示意值只用于说明预算关系；生产阈值应由业务 SLO、真实分位数和供应商行为校准</text>
+
+  <rect class="panel" x="54" y="116" width="1172" height="278" rx="8"/>
+  <text class="h2" x="82" y="151">端到端 overall deadline 示例：12 秒</text>
+  <text class="small" x="954" y="151">剩余时间随单调时钟递减</text>
+
+  <g transform="translate(82,178)">
+    <rect x="0" y="0" width="82" height="92" rx="6" fill="#dff4ee" stroke="#77bfa9" stroke-width="2"/>
+    <text class="label" x="41" y="34" text-anchor="middle">准入</text>
+    <text class="small" x="41" y="61" text-anchor="middle">0.4s</text>
+
+    <rect x="88" y="0" width="100" height="92" rx="6" fill="#e7efff" stroke="#7fa4df" stroke-width="2"/>
+    <text class="label" x="138" y="34" text-anchor="middle">排队</text>
+    <text class="small" x="138" y="61" text-anchor="middle">0.6s</text>
+
+    <rect x="194" y="0" width="252" height="92" rx="6" fill="#fff0d9" stroke="#e8ab55" stroke-width="2"/>
+    <text class="label" x="320" y="30" text-anchor="middle">Attempt 1 · 2.4s</text>
+    <text class="small" x="320" y="58" text-anchor="middle">connect ≤ 0.5s · read ≤ 1.9s</text>
+    <text class="small" x="320" y="80" text-anchor="middle">429 / 5xx / read timeout</text>
+
+    <rect x="452" y="0" width="98" height="92" rx="6" fill="#f4e9ff" stroke="#aa82d4" stroke-width="2"/>
+    <text class="label" x="501" y="34" text-anchor="middle">退避</text>
+    <text class="small" x="501" y="61" text-anchor="middle">0.8s</text>
+
+    <rect x="556" y="0" width="276" height="92" rx="6" fill="#ffe7e7" stroke="#df8888" stroke-width="2"/>
+    <text class="label" x="694" y="30" text-anchor="middle">Attempt 2 · 3.0s</text>
+    <text class="small" x="694" y="58" text-anchor="middle">沿用逻辑请求 ID / 幂等意图</text>
+    <text class="small" x="694" y="80" text-anchor="middle">不能突破剩余总预算</text>
+
+    <rect x="838" y="0" width="174" height="92" rx="6" fill="#e4f4ff" stroke="#6daed6" stroke-width="2"/>
+    <text class="label" x="925" y="30" text-anchor="middle">切换预留</text>
+    <text class="small" x="925" y="58" text-anchor="middle">2.2s</text>
+    <text class="small" x="925" y="80" text-anchor="middle">语义适配后再切换</text>
+
+    <rect x="1018" y="0" width="92" height="92" rx="6" fill="#eef1f5" stroke="#9aa7b8" stroke-width="2"/>
+    <text class="label" x="1064" y="34" text-anchor="middle">收口</text>
+    <text class="small" x="1064" y="61" text-anchor="middle">2.6s</text>
+
+    <line x1="0" y1="118" x2="1110" y2="118" stroke="#34445f" stroke-width="3"/>
+    <line x1="0" y1="108" x2="0" y2="128" stroke="#34445f" stroke-width="3"/>
+    <line x1="1110" y1="108" x2="1110" y2="128" stroke="#34445f" stroke-width="3"/>
+    <text class="mono" x="0" y="151">t=0</text>
+    <text class="mono" x="1110" y="151" text-anchor="end">deadline=12s</text>
+    <text class="small" x="555" y="151" text-anchor="middle">任何 sleep、DNS/TLS、读取与切换都计入同一总预算</text>
+  </g>
+
+  <text class="h2" x="64" y="438">发送 Attempt 前的五道资源闸门</text>
+  <g transform="translate(64,462)">
+    <rect x="0" y="0" width="204" height="136" rx="8" fill="#e7efff" stroke="#7fa4df" stroke-width="2"/>
+    <text class="label" x="102" y="35" text-anchor="middle">Concurrency</text>
+    <text class="small" x="102" y="65" text-anchor="middle">限制同时在途请求</text>
+    <text class="small" x="102" y="91" text-anchor="middle">按供应商 / 模型隔离</text>
+    <text class="mono" x="102" y="117" text-anchor="middle">bulkhead</text>
+
+    <path class="line" d="M214 68 H246" marker-end="url(#arrow)"/>
+    <rect x="256" y="0" width="204" height="136" rx="8" fill="#dff4ee" stroke="#77bfa9" stroke-width="2"/>
+    <text class="label" x="358" y="35" text-anchor="middle">Request Rate</text>
+    <text class="small" x="358" y="65" text-anchor="middle">控制 RPM 类消耗</text>
+    <text class="small" x="358" y="91" text-anchor="middle">失败尝试也可能计数</text>
+    <text class="mono" x="358" y="117" text-anchor="middle">request bucket</text>
+
+    <path class="line" d="M470 68 H502" marker-end="url(#arrow)"/>
+    <rect x="512" y="0" width="204" height="136" rx="8" fill="#fff0d9" stroke="#e8ab55" stroke-width="2"/>
+    <text class="label" x="614" y="35" text-anchor="middle">Token Rate</text>
+    <text class="small" x="614" y="65" text-anchor="middle">输入估算 + 输出预留</text>
+    <text class="small" x="614" y="91" text-anchor="middle">响应后按 usage 校正</text>
+    <text class="mono" x="614" y="117" text-anchor="middle">token bucket</text>
+
+    <path class="line" d="M726 68 H758" marker-end="url(#arrow)"/>
+    <rect x="768" y="0" width="204" height="136" rx="8" fill="#f4e9ff" stroke="#aa82d4" stroke-width="2"/>
+    <text class="label" x="870" y="35" text-anchor="middle">Circuit</text>
+    <text class="small" x="870" y="65" text-anchor="middle">连续故障时快速失败</text>
+    <text class="small" x="870" y="91" text-anchor="middle">半开只放少量探针</text>
+    <text class="mono" x="870" y="117" text-anchor="middle">closed / open / probe</text>
+
+    <path class="line" d="M982 68 H1014" marker-end="url(#arrow)"/>
+    <rect x="1024" y="0" width="192" height="136" rx="8" fill="#ffe7e7" stroke="#df8888" stroke-width="2"/>
+    <text class="label" x="1120" y="35" text-anchor="middle">Deadline</text>
+    <text class="small" x="1120" y="65" text-anchor="middle">够一次有效尝试才发</text>
+    <text class="small" x="1120" y="91" text-anchor="middle">不足则降级或失败</text>
+    <text class="mono" x="1120" y="117" text-anchor="middle">remaining &gt; floor</text>
+  </g>
+
+  <rect x="64" y="626" width="1152" height="58" rx="8" fill="#24304a"/>
+  <text x="640" y="662" text-anchor="middle" fill="#ffffff" font="600 18px Inter, 'PingFang SC', 'Microsoft YaHei', sans-serif">最大尝试次数只是一道上限；总截止时间、速率、Token、并发和幂等语义必须同时允许，重试才可以发生</text>
+</svg>

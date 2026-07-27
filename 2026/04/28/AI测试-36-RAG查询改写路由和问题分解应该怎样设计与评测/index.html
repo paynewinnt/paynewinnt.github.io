@@ -1,0 +1,1195 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="RAG 系统接到一句用户问题以后，未必会直接拿原文检索。 生产链路往往还会做：  Unicode、空白和大小写规范化 把口语问题改写成更适合检索的表达 生成多条查询覆盖缩写、同义词或不同侧面 生成一段假设答案，再用它的向量检索真实文档 在政策库、工单库、产品文档库和实时业务库之间路由 把比较、因果或多跳问题拆成带依赖的子问题  这些动作都可能改善召回，也都可能在检索开始前就改变用户意图。 例如用户">
+<meta property="og:type" content="article">
+<meta property="og:title" content="AI测试-36-RAG查询改写路由和问题分解应该怎样设计与评测">
+<meta property="og:url" content="https://paynewinnt.github.io/2026/04/28/AI%E6%B5%8B%E8%AF%95-36-RAG%E6%9F%A5%E8%AF%A2%E6%94%B9%E5%86%99%E8%B7%AF%E7%94%B1%E5%92%8C%E9%97%AE%E9%A2%98%E5%88%86%E8%A7%A3%E5%BA%94%E8%AF%A5%E6%80%8E%E6%A0%B7%E8%AE%BE%E8%AE%A1%E4%B8%8E%E8%AF%84%E6%B5%8B/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="RAG 系统接到一句用户问题以后，未必会直接拿原文检索。 生产链路往往还会做：  Unicode、空白和大小写规范化 把口语问题改写成更适合检索的表达 生成多条查询覆盖缩写、同义词或不同侧面 生成一段假设答案，再用它的向量检索真实文档 在政策库、工单库、产品文档库和实时业务库之间路由 把比较、因果或多跳问题拆成带依赖的子问题  这些动作都可能改善召回，也都可能在检索开始前就改变用户意图。 例如用户">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://paynewinnt.github.io/images/ai-quality/ai-36-query-planning-flow.svg">
+<meta property="og:image" content="https://paynewinnt.github.io/images/ai-quality/ai-36-routing-test-matrix.svg">
+<meta property="article:published_time" content="2026-04-28T12:30:00.000Z">
+<meta property="article:modified_time" content="2026-04-28T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="AI测试">
+<meta property="article:tag" content="RAG">
+<meta property="article:tag" content="故障注入">
+<meta property="article:tag" content="质量工程">
+<meta property="article:tag" content="查询改写">
+<meta property="article:tag" content="查询路由">
+<meta property="article:tag" content="问题分解">
+<meta property="article:tag" content="HyDE">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://paynewinnt.github.io/images/ai-quality/ai-36-query-planning-flow.svg">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2026/04/28/AI%E6%B5%8B%E8%AF%95-36-RAG%E6%9F%A5%E8%AF%A2%E6%94%B9%E5%86%99%E8%B7%AF%E7%94%B1%E5%92%8C%E9%97%AE%E9%A2%98%E5%88%86%E8%A7%A3%E5%BA%94%E8%AF%A5%E6%80%8E%E6%A0%B7%E8%AE%BE%E8%AE%A1%E4%B8%8E%E8%AF%84%E6%B5%8B/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2026/04/28/AI%E6%B5%8B%E8%AF%95-36-RAG%E6%9F%A5%E8%AF%A2%E6%94%B9%E5%86%99%E8%B7%AF%E7%94%B1%E5%92%8C%E9%97%AE%E9%A2%98%E5%88%86%E8%A7%A3%E5%BA%94%E8%AF%A5%E6%80%8E%E6%A0%B7%E8%AE%BE%E8%AE%A1%E4%B8%8E%E8%AF%84%E6%B5%8B/","path":"2026/04/28/AI测试-36-RAG查询改写路由和问题分解应该怎样设计与评测/","title":"AI测试-36-RAG查询改写路由和问题分解应该怎样设计与评测"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>AI测试-36-RAG查询改写路由和问题分解应该怎样设计与评测 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E5%B7%A5%E7%A8%8B%E5%AE%9A%E4%B9%89%EF%BC%9AQuery-Planning-%E4%B8%8D%E6%98%AF%E4%B8%80%E5%8F%A5-Prompt"><span class="nav-number">1.</span> <span class="nav-text">一、工程定义：Query Planning 不是一句 Prompt</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%A2%AB%E6%B5%8B%E5%AF%B9%E8%B1%A1%E6%98%AF%E4%BB%80%E4%B9%88"><span class="nav-number">1.1.</span> <span class="nav-text">1. 被测对象是什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%A7%84%E5%88%92%E5%B1%82%E7%9A%84%E8%B4%A3%E4%BB%BB%E8%BE%B9%E7%95%8C"><span class="nav-number">1.2.</span> <span class="nav-text">2. 规划层的责任边界</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%B8%BA%E4%BB%80%E4%B9%88%E8%A6%81%E6%8A%8A%E5%80%99%E9%80%89%E8%AE%A1%E5%88%92%E4%B8%8E%E5%8F%AF%E6%89%A7%E8%A1%8C%E8%AE%A1%E5%88%92%E5%88%86%E5%BC%80"><span class="nav-number">1.3.</span> <span class="nav-text">3. 为什么要把候选计划与可执行计划分开</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E5%85%88%E5%8C%BA%E5%88%86%E5%85%AD%E4%B8%AA%E7%BB%8F%E5%B8%B8%E8%A2%AB%E6%B7%B7%E7%94%A8%E7%9A%84%E5%8A%A8%E4%BD%9C"><span class="nav-number">2.</span> <span class="nav-text">二、先区分六个经常被混用的动作</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Query-normalization%EF%BC%9A%E5%8F%AA%E6%94%B9%E5%8F%98%E8%A1%A8%E7%A4%BA"><span class="nav-number">2.1.</span> <span class="nav-text">1. Query normalization：只改变表示</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Query-rewrite%EF%BC%9A%E7%94%9F%E6%88%90%E4%B8%80%E4%B8%AA%E6%96%B0%E7%9A%84%E6%A3%80%E7%B4%A2%E8%A1%A8%E8%BE%BE"><span class="nav-number">2.2.</span> <span class="nav-text">2. Query rewrite：生成一个新的检索表达</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Multi-query%EF%BC%9A%E4%B8%BA%E5%90%8C%E4%B8%80%E6%84%8F%E5%9B%BE%E7%94%9F%E6%88%90%E5%A4%9A%E4%B8%AA%E6%A3%80%E7%B4%A2%E5%85%A5%E5%8F%A3"><span class="nav-number">2.3.</span> <span class="nav-text">3. Multi-query：为同一意图生成多个检索入口</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-HyDE%EF%BC%9A%E7%94%A8%E5%81%87%E8%AE%BE%E6%96%87%E6%A1%A3%E6%9E%84%E9%80%A0%E6%A3%80%E7%B4%A2%E5%90%91%E9%87%8F"><span class="nav-number">2.4.</span> <span class="nav-text">4. HyDE：用假设文档构造检索向量</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%95%B0%E6%8D%AE%E6%BA%90-%E7%B4%A2%E5%BC%95%E8%B7%AF%E7%94%B1%EF%BC%9A%E5%86%B3%E5%AE%9A%E5%8E%BB%E5%93%AA%E9%87%8C%E6%89%BE"><span class="nav-number">2.5.</span> <span class="nav-text">5. 数据源&#x2F;索引路由：决定去哪里找</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-Problem-decomposition%EF%BC%9A%E6%8A%8A%E9%97%AE%E9%A2%98%E5%8F%98%E6%88%90%E6%9C%89%E4%BE%9D%E8%B5%96%E7%9A%84%E4%BB%BB%E5%8A%A1%E5%9B%BE"><span class="nav-number">2.6.</span> <span class="nav-text">6. Problem decomposition：把问题变成有依赖的任务图</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E7%94%A8-QueryEnvelope-%E5%9B%BA%E5%AE%9A%E5%8E%9F%E9%97%AE%E9%A2%98%E7%9A%84%E4%B8%8D%E5%8F%98%E9%87%8F"><span class="nav-number">3.</span> <span class="nav-text">三、用 QueryEnvelope 固定原问题的不变量</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%B8%8D%E5%8F%98%E9%87%8F%E4%B8%8D%E6%98%AF%E5%85%B3%E9%94%AE%E8%AF%8D%E5%85%A8%E9%9B%86"><span class="nav-number">3.1.</span> <span class="nav-text">1. 不变量不是关键词全集</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E7%9B%B8%E5%AF%B9%E6%97%B6%E9%97%B4%E5%BF%85%E9%A1%BB%E7%BB%91%E5%AE%9A%E6%97%B6%E9%92%9F%E4%B8%8E%E6%97%B6%E5%8C%BA"><span class="nav-number">3.2.</span> <span class="nav-text">2. 相对时间必须绑定时钟与时区</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%90%A6%E5%AE%9A%E8%AF%8D%E8%A6%81%E5%BB%BA%E6%A8%A1%E6%88%90%E8%B0%93%E8%AF%8D"><span class="nav-number">3.3.</span> <span class="nav-text">3. 否定词要建模成谓词</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E5%AE%8C%E6%95%B4%E6%9E%B6%E6%9E%84%EF%BC%9A%E6%8E%A7%E5%88%B6%E9%9D%A2%E3%80%81%E6%95%B0%E6%8D%AE%E9%9D%A2%E5%92%8C%E8%AF%81%E6%8D%AE%E9%9D%A2"><span class="nav-number">4.</span> <span class="nav-text">四、完整架构：控制面、数据面和证据面</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%BE%93%E5%85%A5%E9%80%82%E9%85%8D%E5%B1%82"><span class="nav-number">4.1.</span> <span class="nav-text">1. 输入适配层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Catalog-%E4%B8%8E-Policy-%E5%B1%82"><span class="nav-number">4.2.</span> <span class="nav-text">2. Catalog 与 Policy 层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Planner-%E5%80%99%E9%80%89%E7%94%9F%E6%88%90%E5%B1%82"><span class="nav-number">4.3.</span> <span class="nav-text">3. Planner 候选生成层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%90%88%E5%90%8C%E9%AA%8C%E8%AF%81%E5%B1%82"><span class="nav-number">4.4.</span> <span class="nav-text">4. 合同验证层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%89%A7%E8%A1%8C%E4%B8%8E%E5%90%88%E5%B9%B6%E5%B1%82"><span class="nav-number">4.5.</span> <span class="nav-text">5. 执行与合并层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E8%AF%81%E6%8D%AE%E4%B8%8E%E7%BB%93%E6%9E%9C%E9%97%A8%E7%A6%81%E5%B1%82"><span class="nav-number">4.6.</span> <span class="nav-text">6. 证据与结果门禁层</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81Planner-%E6%95%B0%E6%8D%AE%E6%A8%A1%E5%9E%8B%EF%BC%9A%E8%AE%A1%E5%88%92%E5%BF%85%E9%A1%BB%E8%83%BD%E9%87%8D%E6%94%BE%E5%92%8C%E5%AE%A1%E8%AE%A1"><span class="nav-number">5.</span> <span class="nav-text">五、Planner 数据模型：计划必须能重放和审计</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Plan-%E9%A1%B6%E5%B1%82"><span class="nav-number">5.1.</span> <span class="nav-text">1. Plan 顶层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Step"><span class="nav-number">5.2.</span> <span class="nav-text">2. Step</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Budget"><span class="nav-number">5.3.</span> <span class="nav-text">3. Budget</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-EvidenceLedger"><span class="nav-number">5.4.</span> <span class="nav-text">4. EvidenceLedger</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-FailureRecord"><span class="nav-number">5.5.</span> <span class="nav-text">5. FailureRecord</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E5%A6%82%E4%BD%95%E9%80%89%E6%8B%A9%E7%AD%96%E7%95%A5%EF%BC%9A%E5%85%88%E8%AF%81%E6%98%8E%E5%A4%8D%E6%9D%82%E5%8A%A8%E4%BD%9C%E6%9C%89%E8%BE%B9%E9%99%85%E4%BB%B7%E5%80%BC"><span class="nav-number">6.</span> <span class="nav-text">六、如何选择策略：先证明复杂动作有边际价值</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%9B%B4%E6%8E%A5%E6%A3%80%E7%B4%A2%E5%BA%94%E6%98%AF%E5%9F%BA%E7%BA%BF"><span class="nav-number">6.1.</span> <span class="nav-text">1. 直接检索应是基线</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E7%AE%80%E5%8D%95%E9%97%AE%E9%A2%98%E4%B8%8D%E8%A6%81%E8%87%AA%E5%8A%A8%E5%88%86%E8%A7%A3"><span class="nav-number">6.2.</span> <span class="nav-text">2. 简单问题不要自动分解</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Multi-query-%E8%A6%81%E7%9C%8B%E8%BE%B9%E9%99%85%E6%96%B0%E5%A2%9E%EF%BC%8C%E4%B8%8D%E7%9C%8B%E5%8F%A5%E5%AD%90%E6%95%B0%E9%87%8F"><span class="nav-number">6.3.</span> <span class="nav-text">3. Multi-query 要看边际新增，不看句子数量</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-HyDE-%E5%8F%AA%E5%9C%A8%E9%80%82%E5%90%88%E7%9A%84%E8%AF%AD%E6%96%99%E5%92%8C%E7%BC%96%E7%A0%81%E5%99%A8%E4%B8%8A%E7%81%B0%E5%BA%A6"><span class="nav-number">6.4.</span> <span class="nav-text">4. HyDE 只在适合的语料和编码器上灰度</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%88%86%E8%A7%A3%E9%9C%80%E8%A6%81%E4%BE%9D%E8%B5%96%E8%AF%AD%E4%B9%89%EF%BC%8C%E4%B8%8D%E5%8F%AA%E9%9C%80%E8%A6%81%E5%AD%90%E9%97%AE%E9%A2%98%E5%88%97%E8%A1%A8"><span class="nav-number">6.5.</span> <span class="nav-text">5. 分解需要依赖语义，不只需要子问题列表</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E9%A2%84%E7%AE%97%E8%AE%BE%E8%AE%A1%EF%BC%9A%E9%98%B2%E6%AD%A2%E6%9F%A5%E8%AF%A2%E6%89%87%E5%87%BA%E5%8F%98%E6%88%90%E6%88%90%E6%9C%AC%E4%BA%8B%E6%95%85"><span class="nav-number">7.</span> <span class="nav-text">七、预算设计：防止查询扇出变成成本事故</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E9%A2%84%E7%AE%97%E5%BF%85%E9%A1%BB%E6%98%AF%E7%AB%AF%E5%88%B0%E7%AB%AF%E5%85%B1%E4%BA%AB%E5%80%BC"><span class="nav-number">7.1.</span> <span class="nav-text">1. 预算必须是端到端共享值</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%9C%A8%E6%89%87%E5%87%BA%E5%89%8D%E4%BC%B0%E7%AE%97%E6%9C%80%E5%9D%8F%E6%88%90%E6%9C%AC"><span class="nav-number">7.2.</span> <span class="nav-text">2. 在扇出前估算最坏成本</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%8F%96%E6%B6%88%E4%BC%A0%E6%92%AD%E4%B8%8E%E6%99%9A%E5%88%B0%E7%BB%93%E6%9E%9C"><span class="nav-number">7.3.</span> <span class="nav-text">3. 取消传播与晚到结果</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E9%A2%84%E7%AE%97%E8%80%97%E5%B0%BD%E6%98%AF%E6%AD%A3%E5%B8%B8%E7%BB%88%E6%80%81"><span class="nav-number">7.4.</span> <span class="nav-text">4. 预算耗尽是正常终态</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E5%8E%BB%E9%87%8D%EF%BC%9A%E7%9B%B8%E5%90%8C%E6%96%87%E6%9C%AC%E3%80%81%E7%9B%B8%E5%90%8C%E6%96%87%E6%A1%A3%E5%92%8C%E7%9B%B8%E5%90%8C%E4%BA%8B%E5%AE%9E%E4%B8%8D%E6%98%AF%E4%B8%80%E5%9B%9E%E4%BA%8B"><span class="nav-number">8.</span> <span class="nav-text">八、去重：相同文本、相同文档和相同事实不是一回事</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%B8%89%E5%B1%82%E5%8E%BB%E9%87%8D"><span class="nav-number">8.1.</span> <span class="nav-text">1. 三层去重</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%8E%BB%E9%87%8D%E5%90%8E%E4%BB%8D%E8%A6%81%E4%BF%9D%E7%95%99%E8%B4%A1%E7%8C%AE%E8%B7%AF%E5%BE%84"><span class="nav-number">8.2.</span> <span class="nav-text">2. 去重后仍要保留贡献路径</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E9%87%8D%E5%A4%8D%E9%A5%B1%E5%92%8C%E6%98%AF%E8%A7%84%E5%88%92%E5%A4%B1%E8%B4%A5%E4%BF%A1%E5%8F%B7"><span class="nav-number">8.3.</span> <span class="nav-text">3. 重复饱和是规划失败信号</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E8%B7%AF%E7%94%B1%E5%AE%89%E5%85%A8%EF%BC%9A%E6%9D%83%E9%99%90%E6%98%AF%E6%9F%A5%E8%AF%A2%E8%AE%A1%E5%88%92%E7%9A%84%E4%B8%80%E9%83%A8%E5%88%86"><span class="nav-number">9.</span> <span class="nav-text">九、路由安全：权限是查询计划的一部分</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%85%88%E5%8F%96%E5%85%81%E8%AE%B8%E9%9B%86%E5%90%88%EF%BC%8C%E5%86%8D%E9%80%89%E6%8B%A9%E6%BA%90"><span class="nav-number">9.1.</span> <span class="nav-text">1. 先取允许集合，再选择源</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E7%A9%BA%E7%BB%93%E6%9E%9C%E4%B8%8D%E8%83%BD%E8%A7%A6%E5%8F%91%E6%9D%83%E9%99%90%E9%99%8D%E7%BA%A7"><span class="nav-number">9.2.</span> <span class="nav-text">2. 空结果不能触发权限降级</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-ACL-%E5%BF%AB%E7%85%A7%E8%A6%81%E8%B4%AF%E7%A9%BF%E6%89%A7%E8%A1%8C"><span class="nav-number">9.3.</span> <span class="nav-text">3. ACL 快照要贯穿执行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E8%B7%AF%E7%94%B1%E5%99%A8%E7%9A%84-Prompt-%E4%B9%9F%E5%8F%AF%E8%83%BD%E8%A2%AB%E6%96%87%E6%A1%A3%E5%86%85%E5%AE%B9%E5%BD%B1%E5%93%8D"><span class="nav-number">9.4.</span> <span class="nav-text">4. 路由器的 Prompt 也可能被文档内容影响</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E6%97%A0%E7%AD%94%E6%A1%88%E8%B7%AF%E7%94%B1%EF%BC%9A%E5%81%9C%E6%AD%A2%E4%B9%9F%E6%98%AF%E8%A7%84%E5%88%92%E8%83%BD%E5%8A%9B"><span class="nav-number">10.</span> <span class="nav-text">十、无答案路由：停止也是规划能力</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%8C%BA%E5%88%86%E5%9B%9B%E7%B1%BB%E7%A9%BA"><span class="nav-number">10.1.</span> <span class="nav-text">1. 区分四类空</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%97%A0%E7%AD%94%E6%A1%88%E4%B8%8D%E6%98%AF%E4%B8%80%E4%B8%AA%E4%BD%8E%E7%9B%B8%E4%BC%BC%E5%BA%A6%E9%98%88%E5%80%BC"><span class="nav-number">10.2.</span> <span class="nav-text">2. 无答案不是一个低相似度阈值</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%BE%84%E6%B8%85%E4%B8%8E%E6%97%A0%E7%AD%94%E6%A1%88%E7%9A%84%E8%BE%B9%E7%95%8C"><span class="nav-number">10.3.</span> <span class="nav-text">3. 澄清与无答案的边界</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E8%AF%84%E6%B5%8B%E9%9B%86%EF%BC%9A%E4%B8%80%E6%9D%A1%E6%A0%B7%E6%9C%AC%E9%9C%80%E8%A6%81%E6%A0%87%E6%B3%A8%E4%BB%80%E4%B9%88"><span class="nav-number">11.</span> <span class="nav-text">十一、评测集：一条样本需要标注什么</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%9C%80%E5%B0%8F%E6%A0%B7%E6%9C%AC%E7%BB%93%E6%9E%84"><span class="nav-number">11.1.</span> <span class="nav-text">1. 最小样本结构</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%B5%8B%E8%AF%95%E5%88%87%E7%89%87"><span class="nav-number">11.2.</span> <span class="nav-text">2. 测试切片</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%AF%B9%E6%8A%97%E4%B8%8E%E5%8F%98%E5%BD%A2%E6%A0%B7%E6%9C%AC"><span class="nav-number">11.3.</span> <span class="nav-text">3. 对抗与变形样本</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E7%94%9F%E4%BA%A7%E5%A4%B1%E8%B4%A5%E5%9B%9E%E6%B5%81"><span class="nav-number">11.4.</span> <span class="nav-text">4. 生产失败回流</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E6%8C%87%E6%A0%87%E5%8F%A3%E5%BE%84%EF%BC%9A%E5%8F%AA%E8%AE%A1%E7%AE%97%E8%83%BD%E5%A4%9F%E8%A7%A3%E9%87%8A%E7%9A%84%E9%87%8F"><span class="nav-number">12.</span> <span class="nav-text">十二、指标口径：只计算能够解释的量</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%BA%A6%E6%9D%9F%E4%BF%9D%E7%95%99%E7%8E%87"><span class="nav-number">12.1.</span> <span class="nav-text">1. 约束保留率</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%84%8F%E5%9B%BE%E6%BC%82%E7%A7%BB%E4%B8%A5%E9%87%8D%E7%8E%87"><span class="nav-number">12.2.</span> <span class="nav-text">2. 意图漂移严重率</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%B7%AF%E7%94%B1%E6%8C%87%E6%A0%87"><span class="nav-number">12.3.</span> <span class="nav-text">3. 路由指标</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%88%86%E8%A7%A3%E6%8C%87%E6%A0%87"><span class="nav-number">12.4.</span> <span class="nav-text">4. 分解指标</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-Multi-query-%E4%B8%8E%E5%8E%BB%E9%87%8D%E6%8C%87%E6%A0%87"><span class="nav-number">12.5.</span> <span class="nav-text">5. Multi-query 与去重指标</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-HyDE-%E9%9A%94%E7%A6%BB%E6%8C%87%E6%A0%87"><span class="nav-number">12.6.</span> <span class="nav-text">6. HyDE 隔离指标</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-%E9%A2%84%E7%AE%97%E4%B8%8E%E6%95%88%E7%8E%87%E6%8C%87%E6%A0%87"><span class="nav-number">12.7.</span> <span class="nav-text">7. 预算与效率指标</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-%E6%97%A0%E7%AD%94%E6%A1%88%E4%B8%8E%E5%BD%92%E5%9B%A0%E6%8C%87%E6%A0%87"><span class="nav-number">12.8.</span> <span class="nav-text">8. 无答案与归因指标</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-%E4%B8%80%E7%BB%84%E6%9E%84%E9%80%A0%E7%BB%93%E6%9E%9C%E6%80%8E%E6%A0%B7%E8%AF%BB"><span class="nav-number">12.9.</span> <span class="nav-text">9. 一组构造结果怎样读</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81%E8%87%AA%E5%8A%A8%E5%8C%96%E6%B5%8B%E8%AF%95%E4%B8%8E%E6%95%85%E9%9A%9C%E6%B3%A8%E5%85%A5%E7%9F%A9%E9%98%B5"><span class="nav-number">13.</span> <span class="nav-text">十三、自动化测试与故障注入矩阵</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%8D%95%E5%85%83%E6%B5%8B%E8%AF%95%E6%B5%8B%E7%A1%AC%E5%90%88%E5%90%8C"><span class="nav-number">13.1.</span> <span class="nav-text">1. 单元测试测硬合同</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%AF%AD%E4%B9%89%E5%9B%9E%E5%BD%92%E6%B5%8B-Planner-%E6%98%AF%E5%90%A6%E6%9C%89%E7%94%A8"><span class="nav-number">13.2.</span> <span class="nav-text">2. 语义回归测 Planner 是否有用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%BB%84%E4%BB%B6%E6%95%85%E9%9A%9C%E6%B3%A8%E5%85%A5"><span class="nav-number">13.3.</span> <span class="nav-text">3. 组件故障注入</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E7%BB%84%E5%90%88%E6%95%85%E9%9A%9C"><span class="nav-number">13.4.</span> <span class="nav-text">4. 组合故障</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81%E4%B8%80%E4%B8%AA%E6%97%A0%E9%9C%80-API-Key-%E7%9A%84%E5%8F%AF%E6%89%A7%E8%A1%8C-Planner-%E5%90%88%E5%90%8C%E7%A4%BA%E4%BE%8B"><span class="nav-number">14.</span> <span class="nav-text">十四、一个无需 API Key 的可执行 Planner 合同示例</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%A4%BA%E4%BE%8B%E5%88%BB%E6%84%8F%E7%AE%80%E5%8C%96%E4%BA%86%E4%BB%80%E4%B9%88"><span class="nav-number">14.1.</span> <span class="nav-text">1. 示例刻意简化了什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%80%8E%E6%A0%B7%E6%89%A9%E5%B1%95%E6%88%90%E7%94%9F%E4%BA%A7%E6%B5%8B%E8%AF%95%E5%A4%B9%E5%85%B7"><span class="nav-number">14.2.</span> <span class="nav-text">2. 怎样扩展成生产测试夹具</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%94%E3%80%81%E5%AE%8C%E6%95%B4%E5%A4%B1%E8%B4%A5%E6%A1%88%E4%BE%8B%EF%BC%9A%E6%89%80%E6%9C%89%E6%8E%A5%E5%8F%A3%E9%83%BD%E6%88%90%E5%8A%9F%EF%BC%8C%E9%97%AE%E9%A2%98%E5%8D%B4%E8%A2%AB%E6%94%B9%E9%94%99%E4%BA%86"><span class="nav-number">15.</span> <span class="nav-text">十五、完整失败案例：所有接口都成功，问题却被改错了</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%BA%8B%E6%95%85%E5%9C%BA%E6%99%AF"><span class="nav-number">15.1.</span> <span class="nav-text">1. 事故场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%A1%A8%E9%9D%A2%E8%AF%81%E6%8D%AE%E4%B8%BA%E4%BB%80%E4%B9%88%E5%AE%B9%E6%98%93%E8%AF%AF%E5%AF%BC"><span class="nav-number">15.2.</span> <span class="nav-text">2. 表面证据为什么容易误导</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%BB%8E-QueryEnvelope-%E5%BC%80%E5%A7%8B%E6%8E%92%E6%9F%A5"><span class="nav-number">15.3.</span> <span class="nav-text">3. 从 QueryEnvelope 开始排查</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%B8%BA%E4%BB%80%E4%B9%88%E5%90%88%E5%90%8C%E6%B2%A1%E6%9C%89%E6%8B%A6%E4%BD%8F"><span class="nav-number">15.4.</span> <span class="nav-text">4. 为什么合同没有拦住</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E8%B7%AF%E7%94%B1%E5%A6%82%E4%BD%95%E6%94%BE%E5%A4%A7%E9%94%99%E8%AF%AF"><span class="nav-number">15.5.</span> <span class="nav-text">5. 路由如何放大错误</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E9%87%8D%E5%A4%8D%E5%8F%AC%E5%9B%9E%E6%80%8E%E6%A0%B7%E5%88%B6%E9%80%A0%E2%80%9C%E5%A4%9A%E6%95%B0%E8%AF%81%E6%8D%AE%E2%80%9D%E5%81%87%E8%B1%A1"><span class="nav-number">15.6.</span> <span class="nav-text">6. 重复召回怎样制造“多数证据”假象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-%E8%AF%81%E6%8D%AE%E8%B4%A6%E6%9C%AC%E6%9A%B4%E9%9C%B2%E4%BA%86%E4%BB%80%E4%B9%88"><span class="nav-number">15.7.</span> <span class="nav-text">7. 证据账本暴露了什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-%E5%8F%8D%E4%BA%8B%E5%AE%9E%E5%AE%9E%E9%AA%8C%E5%AE%8C%E6%88%90%E5%BD%92%E5%9B%A0"><span class="nav-number">15.8.</span> <span class="nav-text">8. 反事实实验完成归因</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-%E4%BF%AE%E5%A4%8D%E9%A1%B9"><span class="nav-number">15.9.</span> <span class="nav-text">9. 修复项</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-%E5%A6%82%E4%BD%95%E8%AF%81%E6%98%8E%E4%BF%AE%E5%A4%8D%E6%9C%89%E6%95%88"><span class="nav-number">15.10.</span> <span class="nav-text">10. 如何证明修复有效</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AD%E3%80%81%E7%A6%BB%E7%BA%BF%E3%80%81%E5%BD%B1%E5%AD%90%E3%80%81%E7%81%B0%E5%BA%A6%E5%92%8C%E7%BA%BF%E4%B8%8A%E9%97%AD%E7%8E%AF"><span class="nav-number">16.</span> <span class="nav-text">十六、离线、影子、灰度和线上闭环</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%A6%BB%E7%BA%BF%E9%98%B6%E6%AE%B5"><span class="nav-number">16.1.</span> <span class="nav-text">1. 离线阶段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%BD%B1%E5%AD%90%E9%98%B6%E6%AE%B5"><span class="nav-number">16.2.</span> <span class="nav-text">2. 影子阶段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%81%B0%E5%BA%A6%E9%98%B6%E6%AE%B5"><span class="nav-number">16.3.</span> <span class="nav-text">3. 灰度阶段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E7%BA%BF%E4%B8%8A%E7%9B%91%E6%8E%A7"><span class="nav-number">16.4.</span> <span class="nav-text">4. 线上监控</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%BB%B6%E8%BF%9F%E7%9C%9F%E5%80%BC%E5%9B%9E%E5%A1%AB"><span class="nav-number">16.5.</span> <span class="nav-text">5. 延迟真值回填</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%83%E3%80%81%E5%B8%B8%E8%A7%81%E8%AF%AF%E5%8C%BA"><span class="nav-number">17.</span> <span class="nav-text">十七、常见误区</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%8A%8A-normalization%E3%80%81rewrite-%E5%92%8C-decomposition-%E6%94%BE%E5%9C%A8%E4%B8%80%E4%B8%AA-Prompt-%E5%AD%97%E6%AE%B5"><span class="nav-number">17.1.</span> <span class="nav-text">1. 把 normalization、rewrite 和 decomposition 放在一个 Prompt 字段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E7%94%A8%E7%9B%B8%E4%BC%BC%E5%BA%A6%E5%88%A4%E6%96%AD%E6%84%8F%E5%9B%BE%E4%BF%9D%E6%8C%81"><span class="nav-number">17.2.</span> <span class="nav-text">2. 用相似度判断意图保持</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%AE%A9%E6%AF%8F%E4%B8%AA%E5%AD%90%E9%97%AE%E9%A2%98%E7%8B%AC%E7%AB%8B%E6%90%BA%E5%B8%A6%E5%AE%8C%E6%95%B4%E5%8E%9F%E6%96%87"><span class="nav-number">17.3.</span> <span class="nav-text">3. 让每个子问题独立携带完整原文</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%A4%9A%E6%9F%A5%E8%AF%A2%E8%B6%8A%E5%A4%9A%E8%B6%8A%E7%A8%B3"><span class="nav-number">17.4.</span> <span class="nav-text">4. 多查询越多越稳</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-HyDE-%E6%96%87%E6%9C%AC%E5%86%99%E5%BE%97%E5%83%8F%E7%AD%94%E6%A1%88%EF%BC%8C%E6%89%80%E4%BB%A5%E5%8F%AF%E4%BB%A5%E5%BC%95%E7%94%A8"><span class="nav-number">17.5.</span> <span class="nav-text">5. HyDE 文本写得像答案，所以可以引用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E4%B8%BB%E4%BD%93%E8%83%BD%E8%AF%BB%E5%B0%B1%E4%BB%A3%E8%A1%A8%E5%BD%93%E5%89%8D%E4%BB%BB%E5%8A%A1%E5%BA%94%E8%AF%A5%E7%94%A8"><span class="nav-number">17.6.</span> <span class="nav-text">6. 主体能读就代表当前任务应该用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-%E7%A9%BA%E7%BB%93%E6%9E%9C%E5%B0%B1%E6%90%9C%E7%B4%A2%E6%9B%B4%E5%A4%9A%E6%BA%90"><span class="nav-number">17.7.</span> <span class="nav-text">7. 空结果就搜索更多源</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-DAG-%E6%97%A0%E7%8E%AF%E5%B0%B1%E7%AE%97%E5%88%86%E8%A7%A3%E6%AD%A3%E7%A1%AE"><span class="nav-number">17.8.</span> <span class="nav-text">8. DAG 无环就算分解正确</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-%E7%94%A8-mock-LLM-%E7%9A%84%E5%9B%BA%E5%AE%9A%E8%BE%93%E5%87%BA%E8%AF%81%E6%98%8E%E8%B4%A8%E9%87%8F"><span class="nav-number">17.9.</span> <span class="nav-text">9. 用 mock LLM 的固定输出证明质量</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-%E7%94%A8%E4%B8%80%E4%B8%AA%E5%8A%A0%E6%9D%83%E6%80%BB%E5%88%86%E5%81%9A%E5%8F%91%E5%B8%83%E9%97%A8%E7%A6%81"><span class="nav-number">17.10.</span> <span class="nav-text">10. 用一个加权总分做发布门禁</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AB%E3%80%81%E4%B8%8A%E7%BA%BF%E6%A3%80%E6%9F%A5%E8%A1%A8"><span class="nav-number">18.</span> <span class="nav-text">十八、上线检查表</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AE%9A%E4%B9%89%E4%B8%8E%E7%89%88%E6%9C%AC"><span class="nav-number">18.1.</span> <span class="nav-text">定义与版本</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9F%A5%E8%AF%A2%E4%B8%8D%E5%8F%98%E9%87%8F"><span class="nav-number">18.2.</span> <span class="nav-text">查询不变量</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AD%96%E7%95%A5%E8%BE%B9%E7%95%8C"><span class="nav-number">18.3.</span> <span class="nav-text">策略边界</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9D%83%E9%99%90%E4%B8%8E%E8%B7%AF%E7%94%B1"><span class="nav-number">18.4.</span> <span class="nav-text">权限与路由</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%A2%84%E7%AE%97%E4%B8%8E%E6%89%A7%E8%A1%8C"><span class="nav-number">18.5.</span> <span class="nav-text">预算与执行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8E%BB%E9%87%8D%E4%B8%8E%E5%BD%92%E5%9B%A0"><span class="nav-number">18.6.</span> <span class="nav-text">去重与归因</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%84%E6%B5%8B%E4%B8%8E%E5%8F%91%E5%B8%83"><span class="nav-number">18.7.</span> <span class="nav-text">评测与发布</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B9%9D%E3%80%81%E6%80%BB%E7%BB%93"><span class="nav-number">19.</span> <span class="nav-text">十九、总结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8F%82%E8%80%83%E8%B5%84%E6%96%99"><span class="nav-number">20.</span> <span class="nav-text">参考资料</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">358</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">27</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">796</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2026/04/28/AI%E6%B5%8B%E8%AF%95-36-RAG%E6%9F%A5%E8%AF%A2%E6%94%B9%E5%86%99%E8%B7%AF%E7%94%B1%E5%92%8C%E9%97%AE%E9%A2%98%E5%88%86%E8%A7%A3%E5%BA%94%E8%AF%A5%E6%80%8E%E6%A0%B7%E8%AE%BE%E8%AE%A1%E4%B8%8E%E8%AF%84%E6%B5%8B/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="AI测试-36-RAG查询改写路由和问题分解应该怎样设计与评测 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          AI测试-36-RAG查询改写路由和问题分解应该怎样设计与评测
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2026-04-28 20:30:00" itemprop="dateCreated datePublished" datetime="2026-04-28T20:30:00+08:00">2026-04-28</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/AI%E6%B5%8B%E8%AF%95/" itemprop="url" rel="index"><span itemprop="name">AI测试</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>15k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>56 分钟</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>RAG 系统接到一句用户问题以后，未必会直接拿原文检索。</p>
+<p>生产链路往往还会做：</p>
+<ul>
+<li>Unicode、空白和大小写规范化</li>
+<li>把口语问题改写成更适合检索的表达</li>
+<li>生成多条查询覆盖缩写、同义词或不同侧面</li>
+<li>生成一段假设答案，再用它的向量检索真实文档</li>
+<li>在政策库、工单库、产品文档库和实时业务库之间路由</li>
+<li>把比较、因果或多跳问题拆成带依赖的子问题</li>
+</ul>
+<p>这些动作都可能改善召回，也都可能在检索开始前就改变用户意图。</p>
+<p>例如用户问：</p>
+<blockquote>
+<p>比较 ACME 华东区 2025 年已生效且未撤回的企业退款规则与全国个人版规则，不要引用草案；如果资料不足就说明缺什么。</p>
+</blockquote>
+<p>一个看似流畅的改写可能把“未撤回”写成“历史退款规则”，把“不要引用草案”缩成“退款规则”，把“华东区”扩成“全国”，或者直接假设 ACME 是某个同名实体。后面的向量检索、重排和生成都可以运行成功，最终答案也能带上格式正确的引用，但它回答的已经不是原问题。</p>
+<p>因此，查询规划层的核心质量问题不是“改写得像不像人话”，而是：</p>
+<p><strong>规划器能否在不突破权限、时间、否定和预算边界的前提下，为当前问题选择必要且可解释的检索动作，并让每条最终证据都能回到原问题、规划步骤和真实数据源。</strong></p>
+<p>本文只讨论 RAG 的查询规划控制面。<code>AI测试-18-RAG系统怎么评测召回率忠实度和答案可追溯性</code> 已经解释 Recall@k、MRR、nDCG、上下文、生成忠实度和引用评测；这里不再复述通用 RAG 指标，也不会用最终答案分数掩盖规划层的责任。</p>
+<p>本文资料核对截止 2026-07-26。论文结论只限定到论文使用的模型、数据集与实验设置；文中的阈值、流量和统计结果若未注明来源，均为用于讲解测试方法的<strong>构造数据</strong>，不能直接作为生产基线。</p>
+<h2 id="一、工程定义：Query-Planning-不是一句-Prompt"><a href="#一、工程定义：Query-Planning-不是一句-Prompt" class="headerlink" title="一、工程定义：Query Planning 不是一句 Prompt"></a>一、工程定义：Query Planning 不是一句 Prompt</h2><h3 id="1-被测对象是什么"><a href="#1-被测对象是什么" class="headerlink" title="1. 被测对象是什么"></a>1. 被测对象是什么</h3><p>本文把查询规划器定义为一个受合同约束的决策组件：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">QueryEnvelope + CatalogSnapshot + PolicySnapshot + Budget</span><br><span class="line">  -&gt; Planner candidate</span><br><span class="line">  -&gt; deterministic validation</span><br><span class="line">  -&gt; executable QueryPlan | Clarification | Denied | NoRoute</span><br></pre></td></tr></table></figure>
+
+<p>输入不只是用户文本。至少还包括：</p>
+<ul>
+<li>租户、主体、角色和会话权限</li>
+<li>当前可用的数据源、索引版本与能力目录</li>
+<li>时间截止、查询次数、候选数、Token 和成本预算</li>
+<li>从原问题抽取并经确认的实体、时间、否定、比较范围和答案形态</li>
+<li>Planner、Prompt、路由策略、词典和 Schema 版本</li>
+</ul>
+<p>输出也不只是一组字符串。它应该是可验证、可执行、可追踪的计划，包含步骤 ID、动作类型、目标数据源、依赖关系、预算预留、失败策略以及哪些内容是合成中间物。</p>
+<p>这里的“确定性验证”很重要。模型可以提出候选改写、候选路由和候选分解，但以下约束不应继续交给模型自行判断：</p>
+<ul>
+<li>目标数据源是否在主体允许集合内</li>
+<li>查询条数和最深依赖是否超过预算</li>
+<li>子问题图是否有环或悬空依赖</li>
+<li>关键实体、时间和否定约束是否在计划中得到保存</li>
+<li>HyDE 生成文本是否被错误标记成真实证据</li>
+<li>合并后的候选能否保留全部来源步骤</li>
+</ul>
+<p>模型输出符合 JSON Schema，只说明字段形状可解析。它没有证明字段内容属于允许索引，也没有证明“未撤回”没有被改成“已撤回”，更没有证明这套计划能够回答业务问题。</p>
+<h3 id="2-规划层的责任边界"><a href="#2-规划层的责任边界" class="headerlink" title="2. 规划层的责任边界"></a>2. 规划层的责任边界</h3><p>规划器负责：</p>
+<ol>
+<li>判断原查询是否可以直接检索，还是需要澄清、改写、扩展、路由或分解。</li>
+<li>生成动作及其依赖，分配有限预算。</li>
+<li>保存原始约束，使后续步骤可以验证意图是否漂移。</li>
+<li>把每个召回结果关联到触发它的步骤和真实数据源。</li>
+<li>在没有合法路由、预算耗尽或证据为空时，返回明确状态。</li>
+</ol>
+<p>规划器不负责证明：</p>
+<ul>
+<li>索引中的内容真实、完整或最新</li>
+<li>Embedding 相似度代表业务相关性</li>
+<li>检索结果足以支持最终结论</li>
+<li>生成模型忠于证据</li>
+<li>用户问题本身具有唯一答案</li>
+<li>一个高置信度分数代表计划语义正确</li>
+</ul>
+<p>这些责任分别属于摄取、检索、重排、上下文、生成、引用和业务验收层。边界不清时，团队会把所有失败都归为“RAG 效果不好”，然后通过提高 <code>top_k</code> 或增加查询数来掩盖真正问题。</p>
+<h3 id="3-为什么要把候选计划与可执行计划分开"><a href="#3-为什么要把候选计划与可执行计划分开" class="headerlink" title="3. 为什么要把候选计划与可执行计划分开"></a>3. 为什么要把候选计划与可执行计划分开</h3><p>生成式 Planner 的输出是一个不可信提案。它可能因为提示注入、上下文缺失、模型升级或随机采样产生越权路由、预算失控和语义漂移。正确流程应该是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">模型或规则提出 CandidatePlan</span><br><span class="line">  -&gt; 结构解析</span><br><span class="line">  -&gt; 版本与字段完整性检查</span><br><span class="line">  -&gt; 不变量检查</span><br><span class="line">  -&gt; ACL 与租户检查</span><br><span class="line">  -&gt; DAG 与预算检查</span><br><span class="line">  -&gt; 得到 ExecutablePlan</span><br></pre></td></tr></table></figure>
+
+<p>任何一步失败都应带明确 <code>failure_code</code>，而不是静默回退到“搜索所有库”。尤其不能在目标索引没有结果时自动移除租户过滤器，因为“得到一些结果”不是比“明确无答案”更高的业务质量。</p>
+<h2 id="二、先区分六个经常被混用的动作"><a href="#二、先区分六个经常被混用的动作" class="headerlink" title="二、先区分六个经常被混用的动作"></a>二、先区分六个经常被混用的动作</h2><h3 id="1-Query-normalization：只改变表示"><a href="#1-Query-normalization：只改变表示" class="headerlink" title="1. Query normalization：只改变表示"></a>1. Query normalization：只改变表示</h3><p>Normalization 的目标是让等价输入得到稳定表示，例如：</p>
+<ul>
+<li>Unicode 规范化</li>
+<li>连续空白折叠</li>
+<li>可配置的大小写处理</li>
+<li>标点和全半角统一</li>
+<li>已知、无歧义的产品别名标准化</li>
+</ul>
+<p>它不应该补事实、删除限制或改变语法关系。</p>
+<p><code>ＡＣＭＥ  2025 年</code> 规范成 <code>ACME 2025 年</code> 通常属于表示统一；把“退款不得超过 30 天”规范成“退款 30 天”则已经丢掉否定约束。后者不是 normalization 的小误差，而是意图漂移。</p>
+<p>Normalization 应尽可能确定性、幂等：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">normalize(normalize(q)) == normalize(q)</span><br></pre></td></tr></table></figure>
+
+<p>如果规则依赖词典，词典版本必须进入计划和缓存键。否则同一个原查询可能在不同节点上得到不同规范文本，离线回放也无法复现。</p>
+<h3 id="2-Query-rewrite：生成一个新的检索表达"><a href="#2-Query-rewrite：生成一个新的检索表达" class="headerlink" title="2. Query rewrite：生成一个新的检索表达"></a>2. Query rewrite：生成一个新的检索表达</h3><p>Rewrite 仍然对应一个主要查询，但会重组语言，例如把代词补成实体、把口语改成文档术语、把上下文中的省略项展开。</p>
+<p>好的 rewrite 不要求逐字保留原句，却必须保持业务不变量。可以把“它去年在华东生效的退费要求”写成“ACME 华东区 2025 年生效的退款要求”，前提是 <code>ACME</code>、<code>2025 年</code> 和 <code>华东区</code> 确实来自可信会话状态，而不是模型猜测。</p>
+<p>Rewrite 的风险包括：</p>
+<ul>
+<li><strong>实体替换</strong>：同名产品、组织或版本被换成更常见实体。</li>
+<li><strong>时间漂移</strong>：绝对日期变成“最近”，相对时间没有绑定请求时钟。</li>
+<li><strong>否定丢失</strong>：“不含草案”“尚未批准”“不得外发”被删掉。</li>
+<li><strong>范围扩张</strong>：地区、客户等级、合同类型或产品版本被泛化。</li>
+<li><strong>答案预设</strong>：把待验证命题写成确定事实，检索被引向支持该假设的资料。</li>
+</ul>
+<p>因此 rewrite 的离线标注不应只有“参考改写”。还需要列出不可丢失槽位、允许补全的上下文来源、禁止引入的假设和可接受的多种表达。</p>
+<h3 id="3-Multi-query：为同一意图生成多个检索入口"><a href="#3-Multi-query：为同一意图生成多个检索入口" class="headerlink" title="3. Multi-query：为同一意图生成多个检索入口"></a>3. Multi-query：为同一意图生成多个检索入口</h3><p>Multi-query 通过若干并行查询覆盖不同词汇、缩写或侧面。例如：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">原问题：ACME 企业版退款规则何时生效，不含草案</span><br><span class="line"></span><br><span class="line">Q1：ACME 企业版退款政策 生效日期 不含草案</span><br><span class="line">Q2：ACME Enterprise refund policy effective date final</span><br><span class="line">Q3：ACME 企业客户 退款条款 正式发布 已生效</span><br></pre></td></tr></table></figure>
+
+<p>这三条仍服务同一问题。它们不应该把一个比较问题拆成需要依赖答案的多个推理步骤，那属于 decomposition。</p>
+<p>Multi-query 的主要代价是扇出：<code>m</code> 条查询乘以 <code>k</code> 个候选，再进入重排和上下文拼装。若后续还按数据源复制，成本近似与 <code>m * source_count * k</code> 增长。更糟的是，多条相近查询经常召回同一文档的不同副本；若只按向量结果 ID 去重，镜像、版本和分片仍会占满窗口。</p>
+<p>因此它至少需要：</p>
+<ul>
+<li>最大查询数</li>
+<li>每条查询的目标和差异理由</li>
+<li>规范化后完全重复检查</li>
+<li>基于稳定文档&#x2F;Chunk 身份的合并</li>
+<li>合并后保留 <code>origin_step_ids</code></li>
+<li>重复率和边际新增证据指标</li>
+</ul>
+<p>“生成了五条不同句子”不是多样性证明。真正要测的是后续新增了哪些互补证据，以及这些新增是否值得延迟和成本。</p>
+<h3 id="4-HyDE：用假设文档构造检索向量"><a href="#4-HyDE：用假设文档构造检索向量" class="headerlink" title="4. HyDE：用假设文档构造检索向量"></a>4. HyDE：用假设文档构造检索向量</h3><p>Gao 等人在 ACL 2023 的 HyDE 论文中提出：先让指令模型为查询生成一段假设文档，再由无监督对比学习编码器将其映射成向量，用该向量在真实语料空间找邻居。论文明确说明假设文档是“fake”，可能包含幻觉；论文实验覆盖特定 Web 搜索、问答、事实核验和若干非英语任务，不能外推为所有企业知识库都会提升。</p>
+<p>工程上要坚持两个隔离：</p>
+<ol>
+<li>HyDE 文本是 <code>synthetic_query_artifact</code>，可以参与向量计算，不能进入证据引用。</li>
+<li>最终答案只能引用从授权真实语料召回的实体，不能引用假设文档里的日期、名称或数字。</li>
+</ol>
+<p>HyDE 与普通 rewrite 也不同。Rewrite 仍是查询表达；HyDE 刻意生成接近目标文档分布的段落。它可能给检索引入有益词汇，也可能把一个开放问题提前写成某个结论，形成确认偏差。评测时应加入反事实：让假设文档包含一个错误实体或错误年份，观察真实候选是否被带偏，以及真实证据门禁能否阻止合成文本泄漏。</p>
+<h3 id="5-数据源-索引路由：决定去哪里找"><a href="#5-数据源-索引路由：决定去哪里找" class="headerlink" title="5. 数据源&#x2F;索引路由：决定去哪里找"></a>5. 数据源&#x2F;索引路由：决定去哪里找</h3><p>路由选择的是检索域，不是改写句子。典型目标包括：</p>
+<ul>
+<li>版本化产品手册索引</li>
+<li>当前有效政策索引</li>
+<li>历史归档索引</li>
+<li>工单与事故索引</li>
+<li>结构化订单、库存或配置查询器</li>
+<li>面向特定语言、地区或业务线的分区索引</li>
+</ul>
+<p>路由器应同时考虑：</p>
+<ul>
+<li>问题意图与所需新鲜度</li>
+<li>数据源能否回答该类字段</li>
+<li>租户、主体和内容 ACL</li>
+<li>索引版本、更新时间和健康状态</li>
+<li>延迟、成本与数据驻留约束</li>
+</ul>
+<p>但路由正确率不能靠“目标 API 返回 200”定义。一个健康的历史索引可能不是当前政策问题的正确来源；一个结构化查询可以返回 Schema 合法的订单记录，却属于另一个租户。协议成功只是一条运行信号。</p>
+<h3 id="6-Problem-decomposition：把问题变成有依赖的任务图"><a href="#6-Problem-decomposition：把问题变成有依赖的任务图" class="headerlink" title="6. Problem decomposition：把问题变成有依赖的任务图"></a>6. Problem decomposition：把问题变成有依赖的任务图</h3><p>问题分解适合证据分散、需要比较、聚合或多跳依赖的查询。例如：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">原问题：比较 ACME 华东企业规则与全国个人规则在 2025 年的退款时限，排除草案。</span><br><span class="line"></span><br><span class="line">S1：查找 ACME 华东企业规则在 2025 年有效的正式版本。</span><br><span class="line">S2：从 S1 的正式版本提取退款时限。</span><br><span class="line">S3：查找 ACME 全国个人规则在 2025 年有效的正式版本。</span><br><span class="line">S4：从 S3 的正式版本提取退款时限。</span><br><span class="line">S5：比较 S2 与 S4；若任一缺失，报告缺失项而不推断。</span><br></pre></td></tr></table></figure>
+
+<p><code>S2</code> 依赖 <code>S1</code>，<code>S4</code> 依赖 <code>S3</code>，<code>S5</code> 依赖 <code>S2</code> 和 <code>S4</code>。这不是五条并行搜索语句，而是一个 DAG。</p>
+<p>Decomposed Prompting 论文把复杂任务分成可委派给专门 Prompt、模型或符号函数的子任务，并在论文设置的符号推理、长上下文和多步问答任务上报告效果。IRCoT 则交错执行检索与思维步骤，论文在 HotpotQA、2WikiMultihopQA、MuSiQue 和 IIRC 四个数据集上报告检索最多提高 21 个点、下游问答最多提高 15 个点。这些数字只属于论文实验，不是生产 SLA。</p>
+<p>论文给出的重要工程启示是：多跳检索中“下一步查什么”可能依赖前一步得到什么。它不意味着所有复杂问题都应分解，更不意味着模型写出的子问题天然忠实。子问题可能漏实体、制造循环、过早绑定答案，或把本可一次检索的问题扩成昂贵链路。</p>
+<h2 id="三、用-QueryEnvelope-固定原问题的不变量"><a href="#三、用-QueryEnvelope-固定原问题的不变量" class="headerlink" title="三、用 QueryEnvelope 固定原问题的不变量"></a>三、用 QueryEnvelope 固定原问题的不变量</h2><p>原始字符串不能被后续步骤覆盖。建议把它封装成不可变的 <code>QueryEnvelope</code>：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;query_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;q_01J...&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;raw_query&quot;</span><span class="punctuation">:</span> <span class="string">&quot;比较 ACME 华东区 2025 年已生效且未撤回的企业退款规则与全国个人版规则，不要引用草案；如果资料不足就说明缺什么。&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;normalized_query&quot;</span><span class="punctuation">:</span> <span class="string">&quot;比较 ACME 华东区 2025 年已生效且未撤回的企业退款规则与全国个人版规则，不要引用草案；如果资料不足就说明缺什么。&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;request_time&quot;</span><span class="punctuation">:</span> <span class="string">&quot;2026-04-28T12:30:00Z&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;locale&quot;</span><span class="punctuation">:</span> <span class="string">&quot;zh-CN&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;entities&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;ACME&quot;</span><span class="punctuation">,</span> <span class="string">&quot;华东区&quot;</span><span class="punctuation">,</span> <span class="string">&quot;企业版&quot;</span><span class="punctuation">,</span> <span class="string">&quot;个人版&quot;</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;time_constraints&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;2025 年&quot;</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;negations&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;未撤回&quot;</span><span class="punctuation">,</span> <span class="string">&quot;不要引用草案&quot;</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;answer_contract&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;operation&quot;</span><span class="punctuation">:</span> <span class="string">&quot;compare&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;on_missing_evidence&quot;</span><span class="punctuation">:</span> <span class="string">&quot;report_missing&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;citations_required&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;security_context&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;tenant_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;tenant-a&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;principal_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;user-17&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;allowed_sources&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;policy-current&quot;</span><span class="punctuation">,</span> <span class="string">&quot;policy-archive&quot;</span><span class="punctuation">]</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;catalog_version&quot;</span><span class="punctuation">:</span> <span class="string">&quot;catalog-2026-04-28.3&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;policy_version&quot;</span><span class="punctuation">:</span> <span class="string">&quot;acl-1842&quot;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>这里的实体和约束可以来自规则、NER、会话状态或模型抽取，但抽取本身也要评测。高风险场景可以要求调用方显式传入，或者在不确定时询问用户。不要因为抽取模型给出 <code>0.94</code> 就把槽位当业务真值；置信度只描述模型自己的信号，不能替代身份、时间和权限验证。</p>
+<h3 id="1-不变量不是关键词全集"><a href="#1-不变量不是关键词全集" class="headerlink" title="1. 不变量不是关键词全集"></a>1. 不变量不是关键词全集</h3><p>约束保留不能简单要求每个子问题重复整句原文。<code>S2</code> 可以只引用 <code>S1</code> 产出的版本 ID，不必再次写“华东区 2025 年”。正确做法是建立约束作用域：</p>
+<ul>
+<li><strong>全局约束</strong>：租户、不得引用草案、答案不足时报告缺失，作用于所有步骤。</li>
+<li><strong>分支约束</strong>：华东企业版只作用于左分支，全国个人版只作用于右分支。</li>
+<li><strong>继承约束</strong>：<code>S2</code> 通过 <code>S1</code> 的已验证版本实体继承地区、客户类型和有效期。</li>
+<li><strong>聚合约束</strong>：<code>S5</code> 必须同时消费两个分支，不能只拿一侧作比较。</li>
+</ul>
+<p>因此生产合同应验证“约束在作用域内可达”，而不是机械地做字符串包含。本文后面的标准库示例为了保持短小，只演示字符串级不变量和 DAG 控制，并明确不把它当语义证明。</p>
+<h3 id="2-相对时间必须绑定时钟与时区"><a href="#2-相对时间必须绑定时钟与时区" class="headerlink" title="2. 相对时间必须绑定时钟与时区"></a>2. 相对时间必须绑定时钟与时区</h3><p>“去年”“当前版本”“最近一个季度”不能在每个步骤重新解释。规划入口应把它解析成明确区间，并保存：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">request_time = 2026-04-28T20:30:00+08:00</span><br><span class="line">timezone = Asia/Shanghai</span><br><span class="line">&quot;去年&quot; -&gt; [2025-01-01T00:00:00+08:00, 2026-01-01T00:00:00+08:00)</span><br></pre></td></tr></table></figure>
+
+<p>后续 rewrite、路由和缓存都使用该区间。否则跨午夜回放、异步执行或跨区域节点可能得到不同答案。</p>
+<h3 id="3-否定词要建模成谓词"><a href="#3-否定词要建模成谓词" class="headerlink" title="3. 否定词要建模成谓词"></a>3. 否定词要建模成谓词</h3><p>把否定词只存为字符串仍不够。更稳妥的是记录它否定什么：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">[</span></span><br><span class="line">  <span class="punctuation">&#123;</span><span class="attr">&quot;predicate&quot;</span><span class="punctuation">:</span> <span class="string">&quot;document.status&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;operator&quot;</span><span class="punctuation">:</span> <span class="string">&quot;not_in&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;value&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;draft&quot;</span><span class="punctuation">,</span> <span class="string">&quot;withdrawn&quot;</span><span class="punctuation">]</span><span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="punctuation">&#123;</span><span class="attr">&quot;predicate&quot;</span><span class="punctuation">:</span> <span class="string">&quot;answer.citation_source&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;operator&quot;</span><span class="punctuation">:</span> <span class="string">&quot;not_equal&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;value&quot;</span><span class="punctuation">:</span> <span class="string">&quot;synthetic&quot;</span><span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">]</span></span><br></pre></td></tr></table></figure>
+
+<p>这样路由层可以过滤状态，合并层可以拒绝草案，引用层可以拒绝 HyDE 文本。若“未撤回”只停留在 Prompt 里，任何中间步骤都可能忘记它。</p>
+<h2 id="四、完整架构：控制面、数据面和证据面"><a href="#四、完整架构：控制面、数据面和证据面" class="headerlink" title="四、完整架构：控制面、数据面和证据面"></a>四、完整架构：控制面、数据面和证据面</h2><p><img src="/images/ai-quality/ai-36-query-planning-flow.svg" alt="RAG 查询规划器的确定性合同与执行流"></p>
+<h3 id="1-输入适配层"><a href="#1-输入适配层" class="headerlink" title="1. 输入适配层"></a>1. 输入适配层</h3><p>输入适配层负责解析请求、绑定请求时间、加载会话中已确认的指代、构造安全上下文，并保存原文。它不应自行查询任意数据源。</p>
+<p>这里必须区分三类值：</p>
+<ul>
+<li>用户明确提供的值</li>
+<li>由可信系统状态提供的值</li>
+<li>模型或规则推断的候选值</li>
+</ul>
+<p>三者的证据等级不同。比如用户明确选择的订单 ID 可以直接进入路由；模型从“那个失败的版本”猜出的版本号只能进入澄清候选。</p>
+<h3 id="2-Catalog-与-Policy-层"><a href="#2-Catalog-与-Policy-层" class="headerlink" title="2. Catalog 与 Policy 层"></a>2. Catalog 与 Policy 层</h3><p>Catalog 描述数据源能力：可回答的主题、字段、时间覆盖、语言、索引版本、新鲜度、成本和健康状态。Policy 描述主体可访问的租户、集合、文档标签与字段。</p>
+<p>路由集合应这样计算：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">eligible_sources</span><br><span class="line">  = intent_capable_sources</span><br><span class="line">  ∩ healthy_sources</span><br><span class="line">  ∩ policy_allowed_sources</span><br><span class="line">  ∩ residency_compatible_sources</span><br></pre></td></tr></table></figure>
+
+<p>顺序在实现上可以优化，但权限必须是不可绕过的硬约束。若交集为空，返回 <code>ROUTING_DENIED</code> 或 <code>NO_ELIGIBLE_SOURCE</code>，不能把权限过滤延迟到生成后。</p>
+<h3 id="3-Planner-候选生成层"><a href="#3-Planner-候选生成层" class="headerlink" title="3. Planner 候选生成层"></a>3. Planner 候选生成层</h3><p>候选生成可以是规则、分类器、LLM 或混合系统。常见做法是先用确定性条件处理明显场景：</p>
+<ul>
+<li>查询已经包含唯一文档 ID：直接精确查找</li>
+<li>需要实时订单字段：路由结构化系统</li>
+<li>问题缺少必要主体：请求澄清</li>
+<li>简单单跳且词汇明确：规范化后单次检索</li>
+</ul>
+<p>剩余复杂问题再交给模型提出 rewrite、multi-query 或 decomposition。这样既降低成本，也减少自由生成空间。</p>
+<h3 id="4-合同验证层"><a href="#4-合同验证层" class="headerlink" title="4. 合同验证层"></a>4. 合同验证层</h3><p>合同验证器只做可证明的检查：字段完整、枚举合法、约束保留、权限交集、预算可加总、DAG 无环、步骤 ID 唯一、依赖存在、合成材料标记正确。</p>
+<p>它不能证明 rewrite 语义优良，但能阻止一批明确错误。把两类验证分开，测试结果才不会夸大：</p>
+<ul>
+<li><code>contract_pass_rate</code>：控制面是否符合硬约束</li>
+<li><code>semantic_plan_success_rate</code>：计划在标注样本上是否找到完成任务所需证据</li>
+</ul>
+<h3 id="5-执行与合并层"><a href="#5-执行与合并层" class="headerlink" title="5. 执行与合并层"></a>5. 执行与合并层</h3><p>执行器只运行通过验证的不可变计划。每次调用保存：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">query_id</span><br><span class="line">plan_id</span><br><span class="line">step_id</span><br><span class="line">attempt_id</span><br><span class="line">strategy</span><br><span class="line">rendered_query_hash</span><br><span class="line">target_source</span><br><span class="line">index_generation</span><br><span class="line">filters_hash</span><br><span class="line">budget_before / reserved / consumed</span><br><span class="line">started_at / ended_at</span><br><span class="line">result_ids</span><br><span class="line">error_class</span><br></pre></td></tr></table></figure>
+
+<p>合并器不能只输出排序后的文本。它需要保留每个 <code>canonical_chunk_id</code> 来自哪些查询、数据源和排名，这样才能计算重复召回、边际贡献并定位错误来源。</p>
+<h3 id="6-证据与结果门禁层"><a href="#6-证据与结果门禁层" class="headerlink" title="6. 证据与结果门禁层"></a>6. 证据与结果门禁层</h3><p>执行结束后至少有四种合法结果：</p>
+<ul>
+<li><code>EVIDENCE_READY</code>：真实授权证据满足后续生成的最低输入契约。</li>
+<li><code>NO_ANSWER</code>：合法路由已执行，但没有足够证据。</li>
+<li><code>NEEDS_CLARIFICATION</code>：问题缺少可解析的必要槽位。</li>
+<li><code>DENIED</code>：请求的数据域不允许当前主体访问。</li>
+</ul>
+<p>这四种状态不能都包装成空 <code>documents: []</code>。调用方需要区分“库里没有”“问题没说清”“没有权限”和“系统失败”。</p>
+<h2 id="五、Planner-数据模型：计划必须能重放和审计"><a href="#五、Planner-数据模型：计划必须能重放和审计" class="headerlink" title="五、Planner 数据模型：计划必须能重放和审计"></a>五、Planner 数据模型：计划必须能重放和审计</h2><h3 id="1-Plan-顶层"><a href="#1-Plan-顶层" class="headerlink" title="1. Plan 顶层"></a>1. Plan 顶层</h3><p>建议至少包含：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;plan_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;plan_f6a1...&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;query_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;q_01J...&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;planner_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;query-planner&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;planner_version&quot;</span><span class="punctuation">:</span> <span class="string">&quot;3.4.1&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;prompt_version&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sha256:...&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;strategy&quot;</span><span class="punctuation">:</span> <span class="string">&quot;decompose&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;created_at&quot;</span><span class="punctuation">:</span> <span class="string">&quot;2026-04-28T12:30:00Z&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;catalog_version&quot;</span><span class="punctuation">:</span> <span class="string">&quot;catalog-2026-04-28.3&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;policy_version&quot;</span><span class="punctuation">:</span> <span class="string">&quot;acl-1842&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;budget&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span><span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;steps&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;fallback_policy&quot;</span><span class="punctuation">:</span> <span class="string">&quot;clarify_or_no_answer&quot;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p><code>plan_id</code> 应由规范化后的计划内容或不可变事件 ID 生成。若使用随机 ID，也要另外保存 <code>plan_hash</code>，以便判断两次执行是否使用同一计划。</p>
+<h3 id="2-Step"><a href="#2-Step" class="headerlink" title="2. Step"></a>2. Step</h3><p>每个步骤需要：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;step_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;s2&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;kind&quot;</span><span class="punctuation">:</span> <span class="string">&quot;retrieve&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;query&quot;</span><span class="punctuation">:</span> <span class="string">&quot;从 &#123;&#123;s1.version_id&#125;&#125; 提取退款时限&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;target_source&quot;</span><span class="punctuation">:</span> <span class="string">&quot;policy-current&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;depends_on&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;s1&quot;</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;input_bindings&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;version_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;s1.output.selected_version_id&quot;</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;constraint_scope&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;tenant&quot;</span><span class="punctuation">,</span> <span class="string">&quot;no_draft&quot;</span><span class="punctuation">,</span> <span class="string">&quot;east_enterprise&quot;</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;max_candidates&quot;</span><span class="punctuation">:</span> <span class="number">6</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;on_empty&quot;</span><span class="punctuation">:</span> <span class="string">&quot;mark_branch_missing&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;synthetic&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">false</span></span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>依赖不是一句自然语言说明，而是机器可检查的边。输入绑定应指向上游结构化输出，避免模型把整段上游答案拼回查询并引入新指令。</p>
+<h3 id="3-Budget"><a href="#3-Budget" class="headerlink" title="3. Budget"></a>3. Budget</h3><p>预算至少分五维：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">max_planner_calls</span><br><span class="line">max_retrieval_queries</span><br><span class="line">max_dependency_depth</span><br><span class="line">max_candidates_before_merge</span><br><span class="line">absolute_deadline</span><br></pre></td></tr></table></figure>
+
+<p>还可以加 Token、货币成本和数据源配额。预算采用预留再消费：步骤启动前原子预留上限，完成后结算实际用量，取消时释放。若多个并行分支都先执行再统计，很容易在压力下同时越界。</p>
+<h3 id="4-EvidenceLedger"><a href="#4-EvidenceLedger" class="headerlink" title="4. EvidenceLedger"></a>4. EvidenceLedger</h3><p>证据账本保存：</p>
+<ul>
+<li><code>canonical_document_id</code> 与 <code>canonical_chunk_id</code></li>
+<li>真实 <code>source_id</code>、索引生成号与文档版本</li>
+<li>首次召回步骤、全部贡献步骤与各自原始排名</li>
+<li>去重或版本折叠决策</li>
+<li>权限决策版本</li>
+<li>合成材料标记</li>
+<li>最终是否进入上下文以及原因</li>
+</ul>
+<p>这样才能回答：“这条结论为什么查到这份文档”“哪个改写带来了唯一证据”“HyDE 是否泄漏进引用”“重复内容为什么占了候选预算”。</p>
+<h3 id="5-FailureRecord"><a href="#5-FailureRecord" class="headerlink" title="5. FailureRecord"></a>5. FailureRecord</h3><p>失败记录不要只有异常消息。建议分类：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">INPUT_AMBIGUOUS</span><br><span class="line">INTENT_DRIFT</span><br><span class="line">INVALID_PLAN</span><br><span class="line">DEPENDENCY_CYCLE</span><br><span class="line">DEPENDENCY_UNRESOLVED</span><br><span class="line">ROUTING_DENIED</span><br><span class="line">NO_ELIGIBLE_SOURCE</span><br><span class="line">BUDGET_EXCEEDED</span><br><span class="line">RETRIEVAL_EMPTY</span><br><span class="line">DUPLICATE_SATURATION</span><br><span class="line">SYNTHETIC_EVIDENCE</span><br><span class="line">ATTRIBUTION_MISSING</span><br><span class="line">DEPENDENCY_UNAVAILABLE</span><br></pre></td></tr></table></figure>
+
+<p>同时保存 <code>first_failure</code>、<code>terminal_state</code> 和 <code>contributing_factors</code>。例如先发生路由到过期索引，随后 multi-query 重复饱和，最终表现为无答案；三者不能只记最后一个空结果。</p>
+<h2 id="六、如何选择策略：先证明复杂动作有边际价值"><a href="#六、如何选择策略：先证明复杂动作有边际价值" class="headerlink" title="六、如何选择策略：先证明复杂动作有边际价值"></a>六、如何选择策略：先证明复杂动作有边际价值</h2><h3 id="1-直接检索应是基线"><a href="#1-直接检索应是基线" class="headerlink" title="1. 直接检索应是基线"></a>1. 直接检索应是基线</h3><p>每个评测样本都应保留“规范化原查询直接检索”的基线。复杂策略的价值定义为在相同索引、相同权限、相同候选预算下带来的增量，而不是各自使用不同 <code>top_k</code> 后比较最终分数。</p>
+<p>可做配对实验：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">A：normalized query，1 次检索，总候选上限 12</span><br><span class="line">B：rewrite，1 次检索，总候选上限 12</span><br><span class="line">C：multi-query，最多 3 次检索，合并后总候选上限仍为 12</span><br><span class="line">D：HyDE，1 次向量检索，总候选上限 12</span><br><span class="line">E：decomposition，最多 3 跳，总候选上限 12</span><br></pre></td></tr></table></figure>
+
+<p>这不是要求所有策略成本相同，而是先隔离语义收益，再单独画质量、延迟和成本的 Pareto 前沿。若 multi-query 只因取了三倍候选而胜出，团队得到的是容量结论，不是查询扩展结论。</p>
+<h3 id="2-简单问题不要自动分解"><a href="#2-简单问题不要自动分解" class="headerlink" title="2. 简单问题不要自动分解"></a>2. 简单问题不要自动分解</h3><p>“ACME 退款政策 URL”通常是单跳导航查询。把它分成“ACME 是什么”“退款是什么”“政策在哪里”会引入噪声和延迟。</p>
+<p>复杂度路由可以使用可解释特征：</p>
+<ul>
+<li>是否有比较、排序、聚合或因果操作</li>
+<li>是否包含多个实体或时间切片</li>
+<li>是否需要一个上游答案决定下游检索键</li>
+<li>是否跨数据源</li>
+<li>一次检索基线是否稳定失败</li>
+</ul>
+<p>分类器或 LLM 可以给出候选复杂度，但最终策略要由版本化阈值和预算策略决定。所谓“模型置信度 0.8 以上就分解”没有业务意义，除非该分数在当前版本、当前切片上经过校准，并且误路由成本已被定义。</p>
+<h3 id="3-Multi-query-要看边际新增，不看句子数量"><a href="#3-Multi-query-要看边际新增，不看句子数量" class="headerlink" title="3. Multi-query 要看边际新增，不看句子数量"></a>3. Multi-query 要看边际新增，不看句子数量</h3><p>设第 <code>i</code> 条查询新增的、此前未出现的有用证据集合为 <code>N_i</code>，则可以报告：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">marginal_evidence_gain_i = |N_i| / max(1, retrieved_i)</span><br></pre></td></tr></table></figure>
+
+<p>还要报告 <code>unique_useful_evidence_per_query</code> 和 <code>duplicate_candidate_rate</code>。当第三条查询连续多个版本都只带来镜像副本时，应减少默认扇出，而不是因它偶尔改善某个平均分永久保留。</p>
+<h3 id="4-HyDE-只在适合的语料和编码器上灰度"><a href="#4-HyDE-只在适合的语料和编码器上灰度" class="headerlink" title="4. HyDE 只在适合的语料和编码器上灰度"></a>4. HyDE 只在适合的语料和编码器上灰度</h3><p>HyDE 依赖假设文档与真实语料在编码空间中的关系。代码 API、短错误码、精确产品编号、法律条款号和实时结构化字段未必适合长段假设文本。应按查询类型分别比较：</p>
+<ul>
+<li>精确标识符</li>
+<li>短导航查询</li>
+<li>口语知识问答</li>
+<li>长描述性问题</li>
+<li>领域缩写问题</li>
+<li>含否定和时间限制的问题</li>
+</ul>
+<p>并监控合成文本错误实体的污染率。不能因为论文在其任务上优于一个无监督稠密检索基线，就默认替换现有生产检索入口。</p>
+<h3 id="5-分解需要依赖语义，不只需要子问题列表"><a href="#5-分解需要依赖语义，不只需要子问题列表" class="headerlink" title="5. 分解需要依赖语义，不只需要子问题列表"></a>5. 分解需要依赖语义，不只需要子问题列表</h3><p>至少区分四种结构：</p>
+<ul>
+<li><strong>并行覆盖</strong>：多个独立分支最后合并，如比较两个产品。</li>
+<li><strong>串行桥接</strong>：先找到实体，再用实体属性查下一跳。</li>
+<li><strong>过滤后聚合</strong>：先确定版本集合，再提取指标并计算。</li>
+<li><strong>条件分支</strong>：只有上游结果满足条件才执行下游。</li>
+</ul>
+<p>将它们都编码成平铺数组会导致执行器提前运行、重复查询或把占位符当真实关键词。DAG 中还应标明聚合操作和缺失策略：一个分支无证据时，是整体无答案、部分回答，还是请求澄清。</p>
+<h2 id="七、预算设计：防止查询扇出变成成本事故"><a href="#七、预算设计：防止查询扇出变成成本事故" class="headerlink" title="七、预算设计：防止查询扇出变成成本事故"></a>七、预算设计：防止查询扇出变成成本事故</h2><h3 id="1-预算必须是端到端共享值"><a href="#1-预算必须是端到端共享值" class="headerlink" title="1. 预算必须是端到端共享值"></a>1. 预算必须是端到端共享值</h3><p>假设构造的请求预算为：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">deadline = 2500 ms</span><br><span class="line">max_retrieval_queries = 4</span><br><span class="line">max_hops = 3</span><br><span class="line">max_candidates_before_merge = 24</span><br><span class="line">max_context_chunks = 8</span><br></pre></td></tr></table></figure>
+
+<p>这些是示例值，不是通用建议。Planner 调用、词典加载、路由、检索、合并和重排都从同一个 deadline 消费。不能给三条 multi-query 每条完整 2500 ms，也不能让两个 decomposition 分支各拿 24 个候选。</p>
+<h3 id="2-在扇出前估算最坏成本"><a href="#2-在扇出前估算最坏成本" class="headerlink" title="2. 在扇出前估算最坏成本"></a>2. 在扇出前估算最坏成本</h3><p>若计划有 <code>q</code> 个检索步骤，每步候选上限为 <code>k_i</code>，最坏候选量为：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">C_max = sum(k_i)</span><br></pre></td></tr></table></figure>
+
+<p>如果每一步还跨 <code>s_i</code> 个源，则为：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">C_max = sum(k_i * s_i)</span><br></pre></td></tr></table></figure>
+
+<p>执行前先检查上界。模型不能通过把一个步骤拆成多个步骤绕过预算；预算记在计划总量和运行账本上，不记在单次函数参数上。</p>
+<h3 id="3-取消传播与晚到结果"><a href="#3-取消传播与晚到结果" class="headerlink" title="3. 取消传播与晚到结果"></a>3. 取消传播与晚到结果</h3><p>当上游已确定无权访问、用户 deadline 到达或必要分支失败时，要取消未开始步骤，并给正在执行的请求传播取消信号。晚到结果不能偷偷写入当前 EvidenceLedger；若用于缓存预热，也必须进入独立运行记录，避免回放时出现无法解释的候选。</p>
+<h3 id="4-预算耗尽是正常终态"><a href="#4-预算耗尽是正常终态" class="headerlink" title="4. 预算耗尽是正常终态"></a>4. 预算耗尽是正常终态</h3><p><code>BUDGET_EXCEEDED</code> 不应被捕获后自动增加限制。系统可以：</p>
+<ul>
+<li>返回已有但明确不完整的证据状态</li>
+<li>请求用户缩小问题范围</li>
+<li>转异步任务</li>
+<li>在产品允许时进入人工研究流程</li>
+</ul>
+<p>关键是把“未完成”和“没有答案”分开。预算耗尽说明系统未完成既定计划，不能据此断言语料不存在答案。</p>
+<h2 id="八、去重：相同文本、相同文档和相同事实不是一回事"><a href="#八、去重：相同文本、相同文档和相同事实不是一回事" class="headerlink" title="八、去重：相同文本、相同文档和相同事实不是一回事"></a>八、去重：相同文本、相同文档和相同事实不是一回事</h2><h3 id="1-三层去重"><a href="#1-三层去重" class="headerlink" title="1. 三层去重"></a>1. 三层去重</h3><p>查询规划执行后至少会遇到：</p>
+<ul>
+<li><strong>结果实例重复</strong>：同一个索引结果 ID 被多条查询命中。</li>
+<li><strong>内容重复</strong>：镜像站、附件副本或不同路径拥有相同规范内容。</li>
+<li><strong>语义近重复</strong>：两个版本大部分相同，但日期、金额或状态不同。</li>
+</ul>
+<p>前两类可用稳定身份和内容指纹确定性处理。第三类不能只凭高相似度自动丢弃，因为差异可能正是问题所需。尤其政策、合同和操作手册的近重复版本应进入版本折叠视图，保留有效期与差异，而不是简单选最高分。</p>
+<h3 id="2-去重后仍要保留贡献路径"><a href="#2-去重后仍要保留贡献路径" class="headerlink" title="2. 去重后仍要保留贡献路径"></a>2. 去重后仍要保留贡献路径</h3><p>若 <code>chunk-17</code> 被 <code>q1</code> 排第 2、被 <code>q2</code> 排第 1，合并后可以只保留一个内容对象，但要记录：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;canonical_chunk_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;chunk-17&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;origin_steps&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">    <span class="punctuation">&#123;</span><span class="attr">&quot;step_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;q1&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;rank&quot;</span><span class="punctuation">:</span> <span class="number">2</span><span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="punctuation">&#123;</span><span class="attr">&quot;step_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;q2&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;rank&quot;</span><span class="punctuation">:</span> <span class="number">1</span><span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">]</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>否则无法评价哪条 query 有贡献，也无法在某条查询被移除时预测影响。</p>
+<h3 id="3-重复饱和是规划失败信号"><a href="#3-重复饱和是规划失败信号" class="headerlink" title="3. 重复饱和是规划失败信号"></a>3. 重复饱和是规划失败信号</h3><p>如果 24 个原始候选合并后只剩 4 个唯一文档，<code>duplicate_candidate_rate = 20 / 24</code>。这个比例高不一定是错误，因为多个查询一致命中可能增强稳定性；但若唯一有用证据没有增加、延迟却增长，应把它归到 <code>DUPLICATE_SATURATION</code>，反馈给 query 生成和索引治理。</p>
+<h2 id="九、路由安全：权限是查询计划的一部分"><a href="#九、路由安全：权限是查询计划的一部分" class="headerlink" title="九、路由安全：权限是查询计划的一部分"></a>九、路由安全：权限是查询计划的一部分</h2><h3 id="1-先取允许集合，再选择源"><a href="#1-先取允许集合，再选择源" class="headerlink" title="1. 先取允许集合，再选择源"></a>1. 先取允许集合，再选择源</h3><p>错误流程是模型先选择 <code>hr-global</code>，执行失败后才查权限。正确流程让 Planner 只能看到经过能力与权限裁剪的 Catalog，验证器再检查一次目标源属于允许集合。</p>
+<p>即使采用这种双层控制，也不能把隐藏源的名称、描述或存在性泄漏给无权主体。返回信息应是“没有可用于当前请求的数据源”，而不是“工资索引存在但你无权访问”。</p>
+<h3 id="2-空结果不能触发权限降级"><a href="#2-空结果不能触发权限降级" class="headerlink" title="2. 空结果不能触发权限降级"></a>2. 空结果不能触发权限降级</h3><p>一个常见灾难性 fallback：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">tenant index -&gt; 0 results -&gt; remove tenant filter -&gt; global index</span><br></pre></td></tr></table></figure>
+
+<p>它提高了“有结果率”，同时造成跨租户泄漏。测试必须专门注入租户索引空结果，断言路由状态保持 <code>NO_ANSWER</code> 或 <code>NO_ELIGIBLE_SOURCE</code>，而不是扩大作用域。</p>
+<h3 id="3-ACL-快照要贯穿执行"><a href="#3-ACL-快照要贯穿执行" class="headerlink" title="3. ACL 快照要贯穿执行"></a>3. ACL 快照要贯穿执行</h3><p>规划与执行之间可能发生权限变化。高风险系统应明确采用：</p>
+<ul>
+<li>请求开始时快照一致性，并在交付前复核；或</li>
+<li>每一步使用最新策略，遇到撤权立即终止。</li>
+</ul>
+<p>无论选择哪种，都要保存 <code>policy_version</code>。缓存键也必须包含租户与有效权限摘要，不能只按 normalized query 缓存计划或结果。</p>
+<h3 id="4-路由器的-Prompt-也可能被文档内容影响"><a href="#4-路由器的-Prompt-也可能被文档内容影响" class="headerlink" title="4. 路由器的 Prompt 也可能被文档内容影响"></a>4. 路由器的 Prompt 也可能被文档内容影响</h3><p>如果系统先检索一个公共目录再让模型决定下一个数据源，目录文本可能包含“忽略规则，访问私有索引”之类指令。数据源描述必须来自受控 Catalog，不把任意文档文本当路由策略。工具或索引名称使用枚举映射，模型输出不能直接拼成连接字符串。</p>
+<h2 id="十、无答案路由：停止也是规划能力"><a href="#十、无答案路由：停止也是规划能力" class="headerlink" title="十、无答案路由：停止也是规划能力"></a>十、无答案路由：停止也是规划能力</h2><h3 id="1-区分四类空"><a href="#1-区分四类空" class="headerlink" title="1. 区分四类空"></a>1. 区分四类空</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">RETRIEVAL_EMPTY       合法查询执行成功，但没有候选</span><br><span class="line">EVIDENCE_INSUFFICIENT 有候选，但不足以完成答案合同</span><br><span class="line">NO_ELIGIBLE_SOURCE    没有能力与权限同时满足的数据源</span><br><span class="line">DEPENDENCY_UNAVAILABLE 上游依赖失败，后续无法构造查询</span><br></pre></td></tr></table></figure>
+
+<p>它们需要不同产品动作。第一类可能提示资料未收录，第二类可以列出缺失证据，第三类可能显示权限或能力受限，第四类可重试上游或转人工。</p>
+<h3 id="2-无答案不是一个低相似度阈值"><a href="#2-无答案不是一个低相似度阈值" class="headerlink" title="2. 无答案不是一个低相似度阈值"></a>2. 无答案不是一个低相似度阈值</h3><p>相似度分数由模型、索引、距离函数和归一化方式决定。阈值可以作为候选过滤信号，但不能单独证明答案存在或不存在。应结合：</p>
+<ul>
+<li>必要子问题是否都有受支持结果</li>
+<li>证据是否属于正确实体、时间和版本</li>
+<li>文档状态是否满足正式、有效、未撤回等约束</li>
+<li>关键比较字段是否完整</li>
+<li>引用能否绑定到真实来源</li>
+</ul>
+<p>即使每个候选相似度都很高，若一侧比较字段缺失，正确状态仍可能是部分证据或无答案。</p>
+<h3 id="3-澄清与无答案的边界"><a href="#3-澄清与无答案的边界" class="headerlink" title="3. 澄清与无答案的边界"></a>3. 澄清与无答案的边界</h3><p>用户问“比较企业版和个人版”，但系统存在三个地区版本且用户未指定地区，此时优先澄清。用户已明确地区和时间，而知识库缺少个人版正式文档，则是证据不足。</p>
+<p>评测集必须标注 <code>expected_terminal_state</code>，否则一个总是回答“请提供更多信息”的系统也可能在保守性指标上看起来很好。</p>
+<h2 id="十一、评测集：一条样本需要标注什么"><a href="#十一、评测集：一条样本需要标注什么" class="headerlink" title="十一、评测集：一条样本需要标注什么"></a>十一、评测集：一条样本需要标注什么</h2><h3 id="1-最小样本结构"><a href="#1-最小样本结构" class="headerlink" title="1. 最小样本结构"></a>1. 最小样本结构</h3><figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;case_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;route-compare-017&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;raw_query&quot;</span><span class="punctuation">:</span> <span class="string">&quot;...&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;request_time&quot;</span><span class="punctuation">:</span> <span class="string">&quot;2026-04-28T12:30:00Z&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;security_context&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span><span class="attr">&quot;tenant&quot;</span><span class="punctuation">:</span> <span class="string">&quot;tenant-a&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;roles&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;support&quot;</span><span class="punctuation">]</span><span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;must_preserve&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;entities&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;ACME&quot;</span><span class="punctuation">,</span> <span class="string">&quot;华东区&quot;</span><span class="punctuation">,</span> <span class="string">&quot;企业版&quot;</span><span class="punctuation">,</span> <span class="string">&quot;个人版&quot;</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;time&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;2025&quot;</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;negations&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;未撤回&quot;</span><span class="punctuation">,</span> <span class="string">&quot;不要引用草案&quot;</span><span class="punctuation">]</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;acceptable_strategies&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;decompose&quot;</span><span class="punctuation">,</span> <span class="string">&quot;multi_query&quot;</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;forbidden_sources&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;policy-draft&quot;</span><span class="punctuation">,</span> <span class="string">&quot;tenant-b-private&quot;</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;required_source_capabilities&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;policy_version&quot;</span><span class="punctuation">,</span> <span class="string">&quot;effective_date&quot;</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;dependency_oracle&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">    <span class="punctuation">[</span><span class="string">&quot;east_version&quot;</span><span class="punctuation">,</span> <span class="string">&quot;east_deadline&quot;</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">    <span class="punctuation">[</span><span class="string">&quot;personal_version&quot;</span><span class="punctuation">,</span> <span class="string">&quot;personal_deadline&quot;</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">    <span class="punctuation">[</span><span class="string">&quot;east_deadline&quot;</span><span class="punctuation">,</span> <span class="string">&quot;compare&quot;</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">    <span class="punctuation">[</span><span class="string">&quot;personal_deadline&quot;</span><span class="punctuation">,</span> <span class="string">&quot;compare&quot;</span><span class="punctuation">]</span></span><br><span class="line">  <span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;expected_terminal_state&quot;</span><span class="punctuation">:</span> <span class="string">&quot;EVIDENCE_READY&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;evidence_requirements&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;east_deadline&quot;</span><span class="punctuation">,</span> <span class="string">&quot;personal_deadline&quot;</span><span class="punctuation">]</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>不必要求模型生成唯一的文字计划。Oracle 可以定义允许的动作集合、必须保留的约束、禁止路由、依赖偏序和证据需求。这样既允许合理多样性，也能检查业务边界。</p>
+<h3 id="2-测试切片"><a href="#2-测试切片" class="headerlink" title="2. 测试切片"></a>2. 测试切片</h3><p>至少覆盖：</p>
+<ul>
+<li>短查询、长查询和会话省略</li>
+<li>中文、英文、混合语言和领域缩写</li>
+<li>单实体、多实体、同名实体</li>
+<li>绝对时间、相对时间、跨版本时间</li>
+<li>显式否定、双重否定和例外条款</li>
+<li>单跳、并行比较、串行桥接、条件分支</li>
+<li>当前索引、历史索引、实时结构化源</li>
+<li>允许、部分允许、完全拒绝</li>
+<li>可回答、证据不足、需要澄清</li>
+<li>正常预算、临界预算和故意爆炸的计划</li>
+</ul>
+<p>宏平均必须配合切片最差值。否定词样本只占 2% 时，整体准确率无法反映一个会删除“不”的 Planner。</p>
+<h3 id="3-对抗与变形样本"><a href="#3-对抗与变形样本" class="headerlink" title="3. 对抗与变形样本"></a>3. 对抗与变形样本</h3><p>从同一语义生成成对样本：</p>
+<ul>
+<li>调换实体顺序，路由和结论不应随位置任意变化。</li>
+<li>把“包括草案”改成“不包括草案”，状态过滤必须翻转。</li>
+<li>把 2024 改成 2025，只应改变时间相关步骤和结果。</li>
+<li>加入无关礼貌语，计划结构不应膨胀。</li>
+<li>把一个允许源改成拒绝源，执行必须停止。</li>
+<li>删除必要地区，终态应从可执行变成澄清。</li>
+</ul>
+<p>这类 metamorphic test 不需要唯一标准改写，却能暴露意图漂移和不合理敏感性。</p>
+<h3 id="4-生产失败回流"><a href="#4-生产失败回流" class="headerlink" title="4. 生产失败回流"></a>4. 生产失败回流</h3><p>线上样本进入评测集前应脱敏、去重、确认权限并由领域人员标注。不能直接把用户点击当正确标签：用户可能点击第一个链接只是为了继续查找，也可能因无选择而接受错误回答。</p>
+<h2 id="十二、指标口径：只计算能够解释的量"><a href="#十二、指标口径：只计算能够解释的量" class="headerlink" title="十二、指标口径：只计算能够解释的量"></a>十二、指标口径：只计算能够解释的量</h2><h3 id="1-约束保留率"><a href="#1-约束保留率" class="headerlink" title="1. 约束保留率"></a>1. 约束保留率</h3><p>对每个样本定义必要约束集合 <code>I</code>，计划中正确保留集合为 <code>P</code>：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Constraint Preservation Recall = |I ∩ P| / |I|</span><br></pre></td></tr></table></figure>
+
+<p>还要统计错误引入集合 <code>A</code>：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Unsupported Constraint Rate = |A| / max(1, |P ∪ A|)</span><br></pre></td></tr></table></figure>
+
+<p>实体、时间、否定和权限应分别报告。否定丢失通常比同义词不理想严重，不宜只用等权总分。</p>
+<h3 id="2-意图漂移严重率"><a href="#2-意图漂移严重率" class="headerlink" title="2. 意图漂移严重率"></a>2. 意图漂移严重率</h3><p>人工或规则将漂移分级：</p>
+<ul>
+<li><code>P0</code>：跨租户、越权、反转否定或错误执行高风险动作。</li>
+<li><code>P1</code>：实体、时间、版本或比较范围改变，导致回答另一个问题。</li>
+<li><code>P2</code>：检索表达变差但原意仍可识别。</li>
+<li><code>P3</code>：风格差异，不影响执行。</li>
+</ul>
+<p>发布门禁应直接限制 P0&#x2F;P1 数量，不让平均质量分抵消严重错误。</p>
+<h3 id="3-路由指标"><a href="#3-路由指标" class="headerlink" title="3. 路由指标"></a>3. 路由指标</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">Route Exact Match       选择集合与允许 Oracle 完全一致的比例</span><br><span class="line">Required Source Recall  必要数据源被覆盖的比例</span><br><span class="line">Unnecessary Route Rate  选择了无助于任务的数据源比例</span><br><span class="line">Unauthorized Route Rate 目标源不在允许集合的比例</span><br><span class="line">No-route Accuracy       应停止时正确停止的比例</span><br></pre></td></tr></table></figure>
+
+<p>多源问题不要只算单标签 accuracy。只命中两个必要源中的一个，单标签实现可能仍记为成功，但比较任务无法完成。</p>
+<h3 id="4-分解指标"><a href="#4-分解指标" class="headerlink" title="4. 分解指标"></a>4. 分解指标</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">Subquestion Sufficiency   子问题联合是否覆盖全部必要事实</span><br><span class="line">Subquestion Redundancy    无新增事实的子问题占比</span><br><span class="line">Dependency Edge Precision/Recall  依赖边与 Oracle 偏序的符合程度</span><br><span class="line">Executable DAG Rate      无环、无悬空且输入可绑定的计划比例</span><br><span class="line">Premature Execution Rate  依赖未满足却启动的步骤比例</span><br><span class="line">Aggregation Completeness 聚合步骤消费全部必要分支的比例</span><br></pre></td></tr></table></figure>
+
+<p>子问题 BLEU 或文本相似度最多是辅助指标。不同文字可以表达相同可执行步骤，相似文字也可能有完全不同的依赖和过滤条件。</p>
+<h3 id="5-Multi-query-与去重指标"><a href="#5-Multi-query-与去重指标" class="headerlink" title="5. Multi-query 与去重指标"></a>5. Multi-query 与去重指标</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">Unique Candidate Ratio = unique canonical candidates / raw candidates</span><br><span class="line">Duplicate Candidate Rate = 1 - Unique Candidate Ratio</span><br><span class="line">Useful Marginal Gain(i) = 第 i 条查询新增有用证据 / 第 i 条查询候选数</span><br><span class="line">Query Fan-out = 实际检索调用数 / 原始用户请求数</span><br><span class="line">Evidence Source Diversity = 有用证据覆盖的必要来源数</span><br></pre></td></tr></table></figure>
+
+<p>来源多样性不是越高越好。若问题只应由官方政策库回答，引入论坛和工单反而降低权威性。指标要与样本的允许来源契约一起解释。</p>
+<h3 id="6-HyDE-隔离指标"><a href="#6-HyDE-隔离指标" class="headerlink" title="6. HyDE 隔离指标"></a>6. HyDE 隔离指标</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">Synthetic Citation Rate</span><br><span class="line">  = 被引用的合成材料数 / 全部引用材料数</span><br><span class="line"></span><br><span class="line">Synthetic Fact Leakage Rate</span><br><span class="line">  = 最终陈述中仅来自 HyDE、无真实证据支持的陈述数 / 最终陈述数</span><br></pre></td></tr></table></figure>
+
+<p>两者目标通常应为零。另测错误实体注入后候选排名变化，评估 HyDE 污染敏感度。</p>
+<h3 id="7-预算与效率指标"><a href="#7-预算与效率指标" class="headerlink" title="7. 预算与效率指标"></a>7. 预算与效率指标</h3><ul>
+<li>Planner 调用次数、检索调用次数、依赖深度</li>
+<li>原始候选数、唯一候选数、进入上下文数</li>
+<li>Planner、路由、检索、合并各阶段延迟分位数</li>
+<li>每个成功任务的 Token、费用和计算时间</li>
+<li><code>budget_exhausted_rate</code></li>
+<li>成功样本与失败样本的成本分布</li>
+</ul>
+<p>只看平均成本会漏掉预算爆炸长尾。应至少报告 <code>p50/p95/p99</code> 和按策略、查询复杂度切片的最大值。</p>
+<h3 id="8-无答案与归因指标"><a href="#8-无答案与归因指标" class="headerlink" title="8. 无答案与归因指标"></a>8. 无答案与归因指标</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">No-answer Precision = 正确停止 / 所有停止</span><br><span class="line">No-answer Recall    = 正确停止 / 所有应停止样本</span><br><span class="line">Clarification Accuracy = 缺失槽位与 Oracle 一致的比例</span><br><span class="line">Attribution Completeness = 有来源步骤和真实文档身份的候选 / 被使用候选</span><br><span class="line">Attribution Correctness  = 记录的步骤确实产生该候选的比例</span><br></pre></td></tr></table></figure>
+
+<p>归因完整不代表文档支持答案，只证明执行血缘没有断。最终事实支持仍属于通用 RAG 与业务评测层。</p>
+<h3 id="9-一组构造结果怎样读"><a href="#9-一组构造结果怎样读" class="headerlink" title="9. 一组构造结果怎样读"></a>9. 一组构造结果怎样读</h3><p>假设某次离线回归包含 1,000 条构造样本，得到：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">约束保留率                 98.7%</span><br><span class="line">否定约束保留率             93.0%</span><br><span class="line">Required Source Recall     96.1%</span><br><span class="line">Unauthorized Route Rate     0.0%</span><br><span class="line">Executable DAG Rate        99.4%</span><br><span class="line">No-answer F1               81.2%</span><br><span class="line">Duplicate Candidate Rate   47.5%</span><br><span class="line">p99 Query Fan-out           8</span><br></pre></td></tr></table></figure>
+
+<p>这些数字全部是讲解用构造数据。不能因为约束总保留率接近 99% 就发布：否定约束只有 93%，可能意味着高风险语义反转。越权率为零是必要结果，却不证明路由有用。DAG 可执行率高也只证明结构正确，不证明子问题覆盖了业务事实。重复率和 p99 扇出提示成本与候选污染仍需处理。</p>
+<h2 id="十三、自动化测试与故障注入矩阵"><a href="#十三、自动化测试与故障注入矩阵" class="headerlink" title="十三、自动化测试与故障注入矩阵"></a>十三、自动化测试与故障注入矩阵</h2><p><img src="/images/ai-quality/ai-36-routing-test-matrix.svg" alt="RAG 查询规划与路由的故障注入测试矩阵"></p>
+<h3 id="1-单元测试测硬合同"><a href="#1-单元测试测硬合同" class="headerlink" title="1. 单元测试测硬合同"></a>1. 单元测试测硬合同</h3><p>适合完全确定性断言的内容包括：</p>
+<ul>
+<li>Normalization 幂等</li>
+<li>原始查询不可变</li>
+<li>必要约束丢失时拒绝候选计划</li>
+<li>路由目标必须属于允许集合</li>
+<li>Step ID 唯一、依赖存在、DAG 无环</li>
+<li>查询数、深度和候选上限不超预算</li>
+<li>相同 canonical ID 合并且保留所有来源步骤</li>
+<li>合成 HyDE 文本不能成为证据</li>
+<li>空结果返回明确 <code>NO_ANSWER</code></li>
+</ul>
+<p>这些测试每次提交都应运行，且不需要真实 API Key。</p>
+<h3 id="2-语义回归测-Planner-是否有用"><a href="#2-语义回归测-Planner-是否有用" class="headerlink" title="2. 语义回归测 Planner 是否有用"></a>2. 语义回归测 Planner 是否有用</h3><p>语义回归应使用冻结的 Catalog、权限快照、语料版本和人工标注样本，比较：</p>
+<ul>
+<li>直接检索基线</li>
+<li>rewrite</li>
+<li>multi-query</li>
+<li>HyDE</li>
+<li>decomposition</li>
+</ul>
+<p>模型输出非确定时重复运行，报告计划分布与最坏切片。不能只固定一次模型输出做快照测试，那只能发现格式变化，不能描述随机行为。</p>
+<h3 id="3-组件故障注入"><a href="#3-组件故障注入" class="headerlink" title="3. 组件故障注入"></a>3. 组件故障注入</h3><p>至少注入：</p>
+<ul>
+<li>Planner 超时、空输出、截断 JSON、未知枚举</li>
+<li>Catalog 版本缺失或目标索引下线</li>
+<li>Policy 服务超时、返回空允许集、执行中撤权</li>
+<li>检索 429、超时、部分分片失败、返回重复 ID</li>
+<li>上游子问题无答案、返回多个歧义实体</li>
+<li>合并器丢失 <code>origin_step_id</code></li>
+<li>Budget Ledger 并发预留冲突</li>
+<li>HyDE 生成错误年份和不存在产品</li>
+</ul>
+<p>每次注入都要断言终态、执行次数、是否发生越权尝试、预算是否回收以及证据是否完整。</p>
+<h3 id="4-组合故障"><a href="#4-组合故障" class="headerlink" title="4. 组合故障"></a>4. 组合故障</h3><p>真实事故很少只有一个错误。需要组合：</p>
+<ul>
+<li>rewrite 丢否定 + 历史索引可用</li>
+<li>权限服务超时 + 全局索引健康</li>
+<li>multi-query 重复饱和 + 重排超时</li>
+<li>上游歧义 + 下游占位符被当文字检索</li>
+<li>HyDE 错实体 + 真实库恰好存在同名文档</li>
+<li>Planner 重试 + 第一次计划仍在后台执行</li>
+</ul>
+<p>组合故障的目标是验证系统会在边界处收敛，而不是在失败后扩大搜索范围。</p>
+<h2 id="十四、一个无需-API-Key-的可执行-Planner-合同示例"><a href="#十四、一个无需-API-Key-的可执行-Planner-合同示例" class="headerlink" title="十四、一个无需 API Key 的可执行 Planner 合同示例"></a>十四、一个无需 API Key 的可执行 Planner 合同示例</h2><p>下面的 Python 程序只使用标准库。它实现：</p>
+<ul>
+<li>Unicode 与空白规范化</li>
+<li><code>QueryEnvelope</code> 不变量</li>
+<li>rewrite、multi-query、HyDE、路由和分解计划</li>
+<li>查询数、候选数与依赖深度预算</li>
+<li>DAG 环与悬空依赖检查</li>
+<li>数据源允许集合检查</li>
+<li>canonical ID 去重与来源步骤合并</li>
+<li>合成证据拒绝</li>
+<li>明确无答案状态</li>
+<li>八个自动化单元测试和失败注入</li>
+</ul>
+<p>它故意不调用 LLM，也不计算语义相似度。测试通过只能证明这些确定性合同按代码执行，不能证明真实 rewrite 或分解具有语义质量。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br><span class="line">146</span><br><span class="line">147</span><br><span class="line">148</span><br><span class="line">149</span><br><span class="line">150</span><br><span class="line">151</span><br><span class="line">152</span><br><span class="line">153</span><br><span class="line">154</span><br><span class="line">155</span><br><span class="line">156</span><br><span class="line">157</span><br><span class="line">158</span><br><span class="line">159</span><br><span class="line">160</span><br><span class="line">161</span><br><span class="line">162</span><br><span class="line">163</span><br><span class="line">164</span><br><span class="line">165</span><br><span class="line">166</span><br><span class="line">167</span><br><span class="line">168</span><br><span class="line">169</span><br><span class="line">170</span><br><span class="line">171</span><br><span class="line">172</span><br><span class="line">173</span><br><span class="line">174</span><br><span class="line">175</span><br><span class="line">176</span><br><span class="line">177</span><br><span class="line">178</span><br><span class="line">179</span><br><span class="line">180</span><br><span class="line">181</span><br><span class="line">182</span><br><span class="line">183</span><br><span class="line">184</span><br><span class="line">185</span><br><span class="line">186</span><br><span class="line">187</span><br><span class="line">188</span><br><span class="line">189</span><br><span class="line">190</span><br><span class="line">191</span><br><span class="line">192</span><br><span class="line">193</span><br><span class="line">194</span><br><span class="line">195</span><br><span class="line">196</span><br><span class="line">197</span><br><span class="line">198</span><br><span class="line">199</span><br><span class="line">200</span><br><span class="line">201</span><br><span class="line">202</span><br><span class="line">203</span><br><span class="line">204</span><br><span class="line">205</span><br><span class="line">206</span><br><span class="line">207</span><br><span class="line">208</span><br><span class="line">209</span><br><span class="line">210</span><br><span class="line">211</span><br><span class="line">212</span><br><span class="line">213</span><br><span class="line">214</span><br><span class="line">215</span><br><span class="line">216</span><br><span class="line">217</span><br><span class="line">218</span><br><span class="line">219</span><br><span class="line">220</span><br><span class="line">221</span><br><span class="line">222</span><br><span class="line">223</span><br><span class="line">224</span><br><span class="line">225</span><br><span class="line">226</span><br><span class="line">227</span><br><span class="line">228</span><br><span class="line">229</span><br><span class="line">230</span><br><span class="line">231</span><br><span class="line">232</span><br><span class="line">233</span><br><span class="line">234</span><br><span class="line">235</span><br><span class="line">236</span><br><span class="line">237</span><br><span class="line">238</span><br><span class="line">239</span><br><span class="line">240</span><br><span class="line">241</span><br><span class="line">242</span><br><span class="line">243</span><br><span class="line">244</span><br><span class="line">245</span><br><span class="line">246</span><br><span class="line">247</span><br><span class="line">248</span><br><span class="line">249</span><br><span class="line">250</span><br><span class="line">251</span><br><span class="line">252</span><br><span class="line">253</span><br><span class="line">254</span><br><span class="line">255</span><br><span class="line">256</span><br><span class="line">257</span><br><span class="line">258</span><br><span class="line">259</span><br><span class="line">260</span><br><span class="line">261</span><br><span class="line">262</span><br><span class="line">263</span><br><span class="line">264</span><br><span class="line">265</span><br><span class="line">266</span><br><span class="line">267</span><br><span class="line">268</span><br><span class="line">269</span><br><span class="line">270</span><br><span class="line">271</span><br><span class="line">272</span><br><span class="line">273</span><br><span class="line">274</span><br><span class="line">275</span><br><span class="line">276</span><br><span class="line">277</span><br><span class="line">278</span><br><span class="line">279</span><br><span class="line">280</span><br><span class="line">281</span><br><span class="line">282</span><br><span class="line">283</span><br><span class="line">284</span><br><span class="line">285</span><br><span class="line">286</span><br><span class="line">287</span><br><span class="line">288</span><br><span class="line">289</span><br><span class="line">290</span><br><span class="line">291</span><br><span class="line">292</span><br><span class="line">293</span><br><span class="line">294</span><br><span class="line">295</span><br><span class="line">296</span><br><span class="line">297</span><br><span class="line">298</span><br><span class="line">299</span><br><span class="line">300</span><br><span class="line">301</span><br><span class="line">302</span><br><span class="line">303</span><br><span class="line">304</span><br><span class="line">305</span><br><span class="line">306</span><br><span class="line">307</span><br><span class="line">308</span><br><span class="line">309</span><br><span class="line">310</span><br><span class="line">311</span><br><span class="line">312</span><br><span class="line">313</span><br><span class="line">314</span><br><span class="line">315</span><br><span class="line">316</span><br><span class="line">317</span><br><span class="line">318</span><br><span class="line">319</span><br><span class="line">320</span><br><span class="line">321</span><br><span class="line">322</span><br><span class="line">323</span><br><span class="line">324</span><br><span class="line">325</span><br><span class="line">326</span><br><span class="line">327</span><br><span class="line">328</span><br><span class="line">329</span><br><span class="line">330</span><br><span class="line">331</span><br><span class="line">332</span><br><span class="line">333</span><br><span class="line">334</span><br><span class="line">335</span><br><span class="line">336</span><br><span class="line">337</span><br><span class="line">338</span><br><span class="line">339</span><br><span class="line">340</span><br><span class="line">341</span><br><span class="line">342</span><br><span class="line">343</span><br><span class="line">344</span><br><span class="line">345</span><br><span class="line">346</span><br><span class="line">347</span><br><span class="line">348</span><br><span class="line">349</span><br><span class="line">350</span><br><span class="line">351</span><br><span class="line">352</span><br><span class="line">353</span><br><span class="line">354</span><br><span class="line">355</span><br><span class="line">356</span><br><span class="line">357</span><br><span class="line">358</span><br><span class="line">359</span><br><span class="line">360</span><br><span class="line">361</span><br><span class="line">362</span><br><span class="line">363</span><br><span class="line">364</span><br><span class="line">365</span><br><span class="line">366</span><br><span class="line">367</span><br><span class="line">368</span><br><span class="line">369</span><br><span class="line">370</span><br><span class="line">371</span><br><span class="line">372</span><br><span class="line">373</span><br><span class="line">374</span><br><span class="line">375</span><br><span class="line">376</span><br><span class="line">377</span><br><span class="line">378</span><br><span class="line">379</span><br><span class="line">380</span><br><span class="line">381</span><br><span class="line">382</span><br><span class="line">383</span><br><span class="line">384</span><br><span class="line">385</span><br><span class="line">386</span><br><span class="line">387</span><br><span class="line">388</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> __future__ <span class="keyword">import</span> annotations</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> hashlib</span><br><span class="line"><span class="keyword">import</span> json</span><br><span class="line"><span class="keyword">import</span> re</span><br><span class="line"><span class="keyword">import</span> unicodedata</span><br><span class="line"><span class="keyword">import</span> unittest</span><br><span class="line"><span class="keyword">from</span> dataclasses <span class="keyword">import</span> dataclass, field, replace</span><br><span class="line"><span class="keyword">from</span> enum <span class="keyword">import</span> Enum</span><br><span class="line"><span class="keyword">from</span> typing <span class="keyword">import</span> Iterable</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">FailureCode</span>(<span class="built_in">str</span>, Enum):</span><br><span class="line">    INTENT_DRIFT = <span class="string">&quot;INTENT_DRIFT&quot;</span></span><br><span class="line">    INVALID_PLAN = <span class="string">&quot;INVALID_PLAN&quot;</span></span><br><span class="line">    DEPENDENCY_CYCLE = <span class="string">&quot;DEPENDENCY_CYCLE&quot;</span></span><br><span class="line">    DEPENDENCY_UNRESOLVED = <span class="string">&quot;DEPENDENCY_UNRESOLVED&quot;</span></span><br><span class="line">    ROUTING_DENIED = <span class="string">&quot;ROUTING_DENIED&quot;</span></span><br><span class="line">    BUDGET_EXCEEDED = <span class="string">&quot;BUDGET_EXCEEDED&quot;</span></span><br><span class="line">    SYNTHETIC_EVIDENCE = <span class="string">&quot;SYNTHETIC_EVIDENCE&quot;</span></span><br><span class="line">    ATTRIBUTION_MISSING = <span class="string">&quot;ATTRIBUTION_MISSING&quot;</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">PlanError</span>(<span class="title class_ inherited__">ValueError</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, code: FailureCode, detail: <span class="built_in">str</span></span>):</span><br><span class="line">        <span class="built_in">super</span>().__init__(<span class="string">f&quot;<span class="subst">&#123;code.value&#125;</span>: <span class="subst">&#123;detail&#125;</span>&quot;</span>)</span><br><span class="line">        <span class="variable language_">self</span>.code = code</span><br><span class="line">        <span class="variable language_">self</span>.detail = detail</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Strategy</span>(<span class="built_in">str</span>, Enum):</span><br><span class="line">    NORMALIZE = <span class="string">&quot;normalize&quot;</span></span><br><span class="line">    REWRITE = <span class="string">&quot;rewrite&quot;</span></span><br><span class="line">    MULTI_QUERY = <span class="string">&quot;multi_query&quot;</span></span><br><span class="line">    HYDE = <span class="string">&quot;hyde&quot;</span></span><br><span class="line">    ROUTE = <span class="string">&quot;route&quot;</span></span><br><span class="line">    DECOMPOSE = <span class="string">&quot;decompose&quot;</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">normalize</span>(<span class="params">text: <span class="built_in">str</span></span>) -&gt; <span class="built_in">str</span>:</span><br><span class="line">    normalized = unicodedata.normalize(<span class="string">&quot;NFKC&quot;</span>, text)</span><br><span class="line">    <span class="keyword">return</span> re.sub(<span class="string">r&quot;\s+&quot;</span>, <span class="string">&quot; &quot;</span>, normalized).strip()</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">stable_id</span>(<span class="params">prefix: <span class="built_in">str</span>, payload: <span class="built_in">object</span></span>) -&gt; <span class="built_in">str</span>:</span><br><span class="line">    body = json.dumps(</span><br><span class="line">        payload, ensure_ascii=<span class="literal">False</span>, sort_keys=<span class="literal">True</span>, separators=(<span class="string">&quot;,&quot;</span>, <span class="string">&quot;:&quot;</span>)</span><br><span class="line">    ).encode(<span class="string">&quot;utf-8&quot;</span>)</span><br><span class="line">    <span class="keyword">return</span> <span class="string">f&quot;<span class="subst">&#123;prefix&#125;</span>_<span class="subst">&#123;hashlib.sha256(body).hexdigest()[:<span class="number">12</span>]&#125;</span>&quot;</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">QueryEnvelope</span>:</span><br><span class="line">    raw_query: <span class="built_in">str</span></span><br><span class="line">    normalized_query: <span class="built_in">str</span></span><br><span class="line">    entities: <span class="built_in">tuple</span>[<span class="built_in">str</span>, ...]</span><br><span class="line">    time_terms: <span class="built_in">tuple</span>[<span class="built_in">str</span>, ...]</span><br><span class="line">    negations: <span class="built_in">tuple</span>[<span class="built_in">str</span>, ...]</span><br><span class="line">    tenant_id: <span class="built_in">str</span></span><br><span class="line">    principal_id: <span class="built_in">str</span></span><br><span class="line">    allowed_sources: <span class="built_in">frozenset</span>[<span class="built_in">str</span>]</span><br><span class="line"></span><br><span class="line"><span class="meta">    @property</span></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">invariants</span>(<span class="params">self</span>) -&gt; <span class="built_in">tuple</span>[<span class="built_in">str</span>, ...]:</span><br><span class="line">        <span class="keyword">return</span> <span class="variable language_">self</span>.entities + <span class="variable language_">self</span>.time_terms + <span class="variable language_">self</span>.negations</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">make_envelope</span>(<span class="params"></span></span><br><span class="line"><span class="params">    raw_query: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">    *,</span></span><br><span class="line"><span class="params">    entities: Iterable[<span class="built_in">str</span>],</span></span><br><span class="line"><span class="params">    time_terms: Iterable[<span class="built_in">str</span>],</span></span><br><span class="line"><span class="params">    negations: Iterable[<span class="built_in">str</span>],</span></span><br><span class="line"><span class="params">    tenant_id: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">    principal_id: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">    allowed_sources: Iterable[<span class="built_in">str</span>],</span></span><br><span class="line"><span class="params"></span>) -&gt; QueryEnvelope:</span><br><span class="line">    <span class="keyword">return</span> QueryEnvelope(</span><br><span class="line">        raw_query=raw_query,</span><br><span class="line">        normalized_query=normalize(raw_query),</span><br><span class="line">        entities=<span class="built_in">tuple</span>(entities),</span><br><span class="line">        time_terms=<span class="built_in">tuple</span>(time_terms),</span><br><span class="line">        negations=<span class="built_in">tuple</span>(negations),</span><br><span class="line">        tenant_id=tenant_id,</span><br><span class="line">        principal_id=principal_id,</span><br><span class="line">        allowed_sources=<span class="built_in">frozenset</span>(allowed_sources),</span><br><span class="line">    )</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Budget</span>:</span><br><span class="line">    max_queries: <span class="built_in">int</span> = <span class="number">4</span></span><br><span class="line">    max_hops: <span class="built_in">int</span> = <span class="number">3</span></span><br><span class="line">    max_candidates: <span class="built_in">int</span> = <span class="number">24</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Step</span>:</span><br><span class="line">    step_id: <span class="built_in">str</span></span><br><span class="line">    kind: <span class="built_in">str</span></span><br><span class="line">    query: <span class="built_in">str</span></span><br><span class="line">    target_source: <span class="built_in">str</span> | <span class="literal">None</span> = <span class="literal">None</span></span><br><span class="line">    depends_on: <span class="built_in">tuple</span>[<span class="built_in">str</span>, ...] = ()</span><br><span class="line">    max_candidates: <span class="built_in">int</span> = <span class="number">6</span></span><br><span class="line">    synthetic: <span class="built_in">bool</span> = <span class="literal">False</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Plan</span>:</span><br><span class="line">    plan_id: <span class="built_in">str</span></span><br><span class="line">    strategy: Strategy</span><br><span class="line">    planner_version: <span class="built_in">str</span></span><br><span class="line">    steps: <span class="built_in">tuple</span>[Step, ...]</span><br><span class="line">    budget: Budget</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Candidate</span>:</span><br><span class="line">    canonical_id: <span class="built_in">str</span></span><br><span class="line">    source_id: <span class="built_in">str</span></span><br><span class="line">    text: <span class="built_in">str</span></span><br><span class="line">    origin_steps: <span class="built_in">tuple</span>[<span class="built_in">str</span>, ...]</span><br><span class="line">    synthetic: <span class="built_in">bool</span> = <span class="literal">False</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">RetrievalOutcome</span>:</span><br><span class="line">    state: <span class="built_in">str</span></span><br><span class="line">    candidates: <span class="built_in">tuple</span>[Candidate, ...]</span><br><span class="line">    reason: <span class="built_in">str</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">BudgetLedger</span>:</span><br><span class="line">    limit: Budget</span><br><span class="line">    reserved_queries: <span class="built_in">int</span> = <span class="number">0</span></span><br><span class="line">    reserved_candidates: <span class="built_in">int</span> = <span class="number">0</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">reserve</span>(<span class="params">self, *, queries: <span class="built_in">int</span>, candidates: <span class="built_in">int</span></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="keyword">if</span> <span class="variable language_">self</span>.reserved_queries + queries &gt; <span class="variable language_">self</span>.limit.max_queries:</span><br><span class="line">            <span class="keyword">raise</span> PlanError(FailureCode.BUDGET_EXCEEDED, <span class="string">&quot;query budget&quot;</span>)</span><br><span class="line">        <span class="keyword">if</span> <span class="variable language_">self</span>.reserved_candidates + candidates &gt; <span class="variable language_">self</span>.limit.max_candidates:</span><br><span class="line">            <span class="keyword">raise</span> PlanError(FailureCode.BUDGET_EXCEEDED, <span class="string">&quot;candidate budget&quot;</span>)</span><br><span class="line">        <span class="variable language_">self</span>.reserved_queries += queries</span><br><span class="line">        <span class="variable language_">self</span>.reserved_candidates += candidates</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">_graph_depth</span>(<span class="params">steps: <span class="built_in">tuple</span>[Step, ...]</span>) -&gt; <span class="built_in">int</span>:</span><br><span class="line">    by_id = &#123;step.step_id: step <span class="keyword">for</span> step <span class="keyword">in</span> steps&#125;</span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(by_id) != <span class="built_in">len</span>(steps):</span><br><span class="line">        <span class="keyword">raise</span> PlanError(FailureCode.INVALID_PLAN, <span class="string">&quot;duplicate step_id&quot;</span>)</span><br><span class="line"></span><br><span class="line">    visiting: <span class="built_in">set</span>[<span class="built_in">str</span>] = <span class="built_in">set</span>()</span><br><span class="line">    memo: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="built_in">int</span>] = &#123;&#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">depth</span>(<span class="params">step_id: <span class="built_in">str</span></span>) -&gt; <span class="built_in">int</span>:</span><br><span class="line">        <span class="keyword">if</span> step_id <span class="keyword">not</span> <span class="keyword">in</span> by_id:</span><br><span class="line">            <span class="keyword">raise</span> PlanError(</span><br><span class="line">                FailureCode.DEPENDENCY_UNRESOLVED, <span class="string">f&quot;missing <span class="subst">&#123;step_id&#125;</span>&quot;</span></span><br><span class="line">            )</span><br><span class="line">        <span class="keyword">if</span> step_id <span class="keyword">in</span> visiting:</span><br><span class="line">            <span class="keyword">raise</span> PlanError(FailureCode.DEPENDENCY_CYCLE, step_id)</span><br><span class="line">        <span class="keyword">if</span> step_id <span class="keyword">in</span> memo:</span><br><span class="line">            <span class="keyword">return</span> memo[step_id]</span><br><span class="line">        visiting.add(step_id)</span><br><span class="line">        value = <span class="number">1</span> + <span class="built_in">max</span>(</span><br><span class="line">            (depth(dep) <span class="keyword">for</span> dep <span class="keyword">in</span> by_id[step_id].depends_on), default=<span class="number">0</span></span><br><span class="line">        )</span><br><span class="line">        visiting.remove(step_id)</span><br><span class="line">        memo[step_id] = value</span><br><span class="line">        <span class="keyword">return</span> value</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> <span class="built_in">max</span>((depth(step.step_id) <span class="keyword">for</span> step <span class="keyword">in</span> steps), default=<span class="number">0</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">validate_plan</span>(<span class="params">envelope: QueryEnvelope, plan: Plan</span>) -&gt; Plan:</span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> plan.steps:</span><br><span class="line">        <span class="keyword">raise</span> PlanError(FailureCode.INVALID_PLAN, <span class="string">&quot;plan has no steps&quot;</span>)</span><br><span class="line"></span><br><span class="line">    combined_queries = <span class="string">&quot;\n&quot;</span>.join(normalize(step.query) <span class="keyword">for</span> step <span class="keyword">in</span> plan.steps)</span><br><span class="line">    missing = [item <span class="keyword">for</span> item <span class="keyword">in</span> envelope.invariants <span class="keyword">if</span> item <span class="keyword">not</span> <span class="keyword">in</span> combined_queries]</span><br><span class="line">    <span class="keyword">if</span> missing:</span><br><span class="line">        <span class="keyword">raise</span> PlanError(</span><br><span class="line">            FailureCode.INTENT_DRIFT,</span><br><span class="line">            <span class="string">&quot;missing invariants: &quot;</span> + <span class="string">&quot;, &quot;</span>.join(missing),</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> step <span class="keyword">in</span> plan.steps:</span><br><span class="line">        <span class="keyword">if</span> (</span><br><span class="line">            step.target_source <span class="keyword">is</span> <span class="keyword">not</span> <span class="literal">None</span></span><br><span class="line">            <span class="keyword">and</span> step.target_source <span class="keyword">not</span> <span class="keyword">in</span> envelope.allowed_sources</span><br><span class="line">        ):</span><br><span class="line">            <span class="keyword">raise</span> PlanError(</span><br><span class="line">                FailureCode.ROUTING_DENIED,</span><br><span class="line">                <span class="string">f&quot;source <span class="subst">&#123;step.target_source&#125;</span> is not allowed&quot;</span>,</span><br><span class="line">            )</span><br><span class="line">        <span class="keyword">if</span> step.max_candidates &lt; <span class="number">0</span>:</span><br><span class="line">            <span class="keyword">raise</span> PlanError(FailureCode.INVALID_PLAN, <span class="string">&quot;negative candidates&quot;</span>)</span><br><span class="line"></span><br><span class="line">    depth = _graph_depth(plan.steps)</span><br><span class="line">    <span class="keyword">if</span> depth &gt; plan.budget.max_hops:</span><br><span class="line">        <span class="keyword">raise</span> PlanError(FailureCode.BUDGET_EXCEEDED, <span class="string">&quot;dependency depth&quot;</span>)</span><br><span class="line"></span><br><span class="line">    ledger = BudgetLedger(plan.budget)</span><br><span class="line">    retrieval_steps = [step <span class="keyword">for</span> step <span class="keyword">in</span> plan.steps <span class="keyword">if</span> step.kind != <span class="string">&quot;aggregate&quot;</span>]</span><br><span class="line">    ledger.reserve(</span><br><span class="line">        queries=<span class="built_in">len</span>(retrieval_steps),</span><br><span class="line">        candidates=<span class="built_in">sum</span>(step.max_candidates <span class="keyword">for</span> step <span class="keyword">in</span> retrieval_steps),</span><br><span class="line">    )</span><br><span class="line">    <span class="keyword">return</span> plan</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">build_plan</span>(<span class="params"></span></span><br><span class="line"><span class="params">    envelope: QueryEnvelope,</span></span><br><span class="line"><span class="params">    strategy: Strategy,</span></span><br><span class="line"><span class="params">    *,</span></span><br><span class="line"><span class="params">    queries: Iterable[<span class="built_in">str</span>] = (<span class="params"></span>),</span></span><br><span class="line"><span class="params">    source: <span class="built_in">str</span> | <span class="literal">None</span> = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">    steps: Iterable[Step] = (<span class="params"></span>),</span></span><br><span class="line"><span class="params">    budget: Budget = Budget(<span class="params"></span>),</span></span><br><span class="line"><span class="params"></span>) -&gt; Plan:</span><br><span class="line">    supplied = <span class="built_in">tuple</span>(queries)</span><br><span class="line">    <span class="keyword">if</span> strategy <span class="keyword">is</span> Strategy.NORMALIZE:</span><br><span class="line">        built = (</span><br><span class="line">            Step(<span class="string">&quot;q1&quot;</span>, <span class="string">&quot;retrieve&quot;</span>, envelope.normalized_query, source, max_candidates=<span class="number">6</span>),</span><br><span class="line">        )</span><br><span class="line">    <span class="keyword">elif</span> strategy <span class="keyword">is</span> Strategy.REWRITE:</span><br><span class="line">        <span class="keyword">if</span> <span class="built_in">len</span>(supplied) != <span class="number">1</span>:</span><br><span class="line">            <span class="keyword">raise</span> PlanError(FailureCode.INVALID_PLAN, <span class="string">&quot;rewrite needs one query&quot;</span>)</span><br><span class="line">        built = (Step(<span class="string">&quot;q1&quot;</span>, <span class="string">&quot;retrieve&quot;</span>, normalize(supplied[<span class="number">0</span>]), source),)</span><br><span class="line">    <span class="keyword">elif</span> strategy <span class="keyword">is</span> Strategy.MULTI_QUERY:</span><br><span class="line">        unique = <span class="built_in">tuple</span>(<span class="built_in">dict</span>.fromkeys(normalize(item) <span class="keyword">for</span> item <span class="keyword">in</span> supplied))</span><br><span class="line">        built = <span class="built_in">tuple</span>(</span><br><span class="line">            Step(<span class="string">f&quot;q<span class="subst">&#123;i&#125;</span>&quot;</span>, <span class="string">&quot;retrieve&quot;</span>, query, source, max_candidates=<span class="number">4</span>)</span><br><span class="line">            <span class="keyword">for</span> i, query <span class="keyword">in</span> <span class="built_in">enumerate</span>(unique, start=<span class="number">1</span>)</span><br><span class="line">        )</span><br><span class="line">    <span class="keyword">elif</span> strategy <span class="keyword">is</span> Strategy.HYDE:</span><br><span class="line">        <span class="keyword">if</span> <span class="built_in">len</span>(supplied) != <span class="number">1</span>:</span><br><span class="line">            <span class="keyword">raise</span> PlanError(FailureCode.INVALID_PLAN, <span class="string">&quot;HyDE needs one document&quot;</span>)</span><br><span class="line">        built = (</span><br><span class="line">            Step(</span><br><span class="line">                <span class="string">&quot;h1&quot;</span>,</span><br><span class="line">                <span class="string">&quot;hyde_vectorize&quot;</span>,</span><br><span class="line">                normalize(supplied[<span class="number">0</span>]),</span><br><span class="line">                source,</span><br><span class="line">                max_candidates=<span class="number">6</span>,</span><br><span class="line">                synthetic=<span class="literal">True</span>,</span><br><span class="line">            ),</span><br><span class="line">        )</span><br><span class="line">    <span class="keyword">elif</span> strategy <span class="keyword">is</span> Strategy.ROUTE:</span><br><span class="line">        built = (Step(<span class="string">&quot;q1&quot;</span>, <span class="string">&quot;retrieve&quot;</span>, envelope.normalized_query, source),)</span><br><span class="line">    <span class="keyword">elif</span> strategy <span class="keyword">is</span> Strategy.DECOMPOSE:</span><br><span class="line">        built = <span class="built_in">tuple</span>(steps)</span><br><span class="line">    <span class="keyword">else</span>:</span><br><span class="line">        <span class="keyword">raise</span> PlanError(FailureCode.INVALID_PLAN, <span class="string">&quot;unknown strategy&quot;</span>)</span><br><span class="line"></span><br><span class="line">    payload = &#123;</span><br><span class="line">        <span class="string">&quot;strategy&quot;</span>: strategy.value,</span><br><span class="line">        <span class="string">&quot;steps&quot;</span>: [step.__dict__ <span class="keyword">for</span> step <span class="keyword">in</span> built],</span><br><span class="line">        <span class="string">&quot;budget&quot;</span>: budget.__dict__,</span><br><span class="line">    &#125;</span><br><span class="line">    plan = Plan(</span><br><span class="line">        plan_id=stable_id(<span class="string">&quot;plan&quot;</span>, payload),</span><br><span class="line">        strategy=strategy,</span><br><span class="line">        planner_version=<span class="string">&quot;demo-1&quot;</span>,</span><br><span class="line">        steps=built,</span><br><span class="line">        budget=budget,</span><br><span class="line">    )</span><br><span class="line">    <span class="keyword">return</span> validate_plan(envelope, plan)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">merge_candidates</span>(<span class="params">candidates: Iterable[Candidate]</span>) -&gt; <span class="built_in">tuple</span>[Candidate, ...]:</span><br><span class="line">    merged: <span class="built_in">dict</span>[<span class="built_in">str</span>, Candidate] = &#123;&#125;</span><br><span class="line">    <span class="keyword">for</span> candidate <span class="keyword">in</span> candidates:</span><br><span class="line">        <span class="keyword">if</span> candidate.synthetic:</span><br><span class="line">            <span class="keyword">raise</span> PlanError(</span><br><span class="line">                FailureCode.SYNTHETIC_EVIDENCE, candidate.canonical_id</span><br><span class="line">            )</span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">not</span> candidate.source_id <span class="keyword">or</span> <span class="keyword">not</span> candidate.origin_steps:</span><br><span class="line">            <span class="keyword">raise</span> PlanError(</span><br><span class="line">                FailureCode.ATTRIBUTION_MISSING, candidate.canonical_id</span><br><span class="line">            )</span><br><span class="line">        previous = merged.get(candidate.canonical_id)</span><br><span class="line">        <span class="keyword">if</span> previous <span class="keyword">is</span> <span class="literal">None</span>:</span><br><span class="line">            merged[candidate.canonical_id] = candidate</span><br><span class="line">            <span class="keyword">continue</span></span><br><span class="line">        origins = <span class="built_in">tuple</span>(<span class="built_in">dict</span>.fromkeys(previous.origin_steps + candidate.origin_steps))</span><br><span class="line">        merged[candidate.canonical_id] = replace(previous, origin_steps=origins)</span><br><span class="line">    <span class="keyword">return</span> <span class="built_in">tuple</span>(merged.values())</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">finalize</span>(<span class="params">candidates: Iterable[Candidate]</span>) -&gt; RetrievalOutcome:</span><br><span class="line">    merged = merge_candidates(candidates)</span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> merged:</span><br><span class="line">        <span class="keyword">return</span> RetrievalOutcome(<span class="string">&quot;NO_ANSWER&quot;</span>, (), <span class="string">&quot;no authorized evidence&quot;</span>)</span><br><span class="line">    <span class="keyword">return</span> RetrievalOutcome(<span class="string">&quot;EVIDENCE_READY&quot;</span>, merged, <span class="string">&quot;validated evidence&quot;</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">PlannerContractTest</span>(unittest.TestCase):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">setUp</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.envelope = make_envelope(</span><br><span class="line">            <span class="string">&quot;ＡＣＭＥ  2025 年退款规则，不含草案&quot;</span>,</span><br><span class="line">            entities=(<span class="string">&quot;ACME&quot;</span>,),</span><br><span class="line">            time_terms=(<span class="string">&quot;2025 年&quot;</span>,),</span><br><span class="line">            negations=(<span class="string">&quot;不含草案&quot;</span>,),</span><br><span class="line">            tenant_id=<span class="string">&quot;tenant-a&quot;</span>,</span><br><span class="line">            principal_id=<span class="string">&quot;user-17&quot;</span>,</span><br><span class="line">            allowed_sources=(<span class="string">&quot;policy-current&quot;</span>, <span class="string">&quot;policy-archive&quot;</span>),</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_normalization_is_idempotent</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        once = normalize(<span class="variable language_">self</span>.envelope.raw_query)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(<span class="string">&quot;ACME 2025 年退款规则,不含草案&quot;</span>, once)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(once, normalize(once))</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_rewrite_that_drops_negation_is_rejected</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="keyword">with</span> <span class="variable language_">self</span>.assertRaisesRegex(PlanError, <span class="string">&quot;INTENT_DRIFT&quot;</span>):</span><br><span class="line">            build_plan(</span><br><span class="line">                <span class="variable language_">self</span>.envelope,</span><br><span class="line">                Strategy.REWRITE,</span><br><span class="line">                queries=(<span class="string">&quot;ACME 2025 年退款规则&quot;</span>,),</span><br><span class="line">                source=<span class="string">&quot;policy-current&quot;</span>,</span><br><span class="line">            )</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_unauthorized_route_is_rejected</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="keyword">with</span> <span class="variable language_">self</span>.assertRaisesRegex(PlanError, <span class="string">&quot;ROUTING_DENIED&quot;</span>):</span><br><span class="line">            build_plan(</span><br><span class="line">                <span class="variable language_">self</span>.envelope,</span><br><span class="line">                Strategy.ROUTE,</span><br><span class="line">                source=<span class="string">&quot;tenant-b-private&quot;</span>,</span><br><span class="line">            )</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_dependency_cycle_is_rejected</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        steps = (</span><br><span class="line">            Step(<span class="string">&quot;s1&quot;</span>, <span class="string">&quot;retrieve&quot;</span>, <span class="string">&quot;ACME 2025 年&quot;</span>, <span class="string">&quot;policy-current&quot;</span>, (<span class="string">&quot;s2&quot;</span>,)),</span><br><span class="line">            Step(<span class="string">&quot;s2&quot;</span>, <span class="string">&quot;retrieve&quot;</span>, <span class="string">&quot;不含草案&quot;</span>, <span class="string">&quot;policy-current&quot;</span>, (<span class="string">&quot;s1&quot;</span>,)),</span><br><span class="line">        )</span><br><span class="line">        <span class="keyword">with</span> <span class="variable language_">self</span>.assertRaisesRegex(PlanError, <span class="string">&quot;DEPENDENCY_CYCLE&quot;</span>):</span><br><span class="line">            build_plan(<span class="variable language_">self</span>.envelope, Strategy.DECOMPOSE, steps=steps)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_query_budget_is_enforced</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        queries = (</span><br><span class="line">            <span class="string">&quot;ACME 2025 年退款规则 不含草案&quot;</span>,</span><br><span class="line">            <span class="string">&quot;ACME 2025 年退款政策 不含草案&quot;</span>,</span><br><span class="line">            <span class="string">&quot;ACME 2025 年退费条款 不含草案&quot;</span>,</span><br><span class="line">            <span class="string">&quot;ACME 2025 年退款时限 不含草案&quot;</span>,</span><br><span class="line">        )</span><br><span class="line">        <span class="keyword">with</span> <span class="variable language_">self</span>.assertRaisesRegex(PlanError, <span class="string">&quot;BUDGET_EXCEEDED&quot;</span>):</span><br><span class="line">            build_plan(</span><br><span class="line">                <span class="variable language_">self</span>.envelope,</span><br><span class="line">                Strategy.MULTI_QUERY,</span><br><span class="line">                queries=queries,</span><br><span class="line">                source=<span class="string">&quot;policy-current&quot;</span>,</span><br><span class="line">                budget=Budget(max_queries=<span class="number">3</span>, max_candidates=<span class="number">20</span>),</span><br><span class="line">            )</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_dedup_keeps_all_origin_steps</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        result = finalize(</span><br><span class="line">            (</span><br><span class="line">                Candidate(<span class="string">&quot;chunk-7&quot;</span>, <span class="string">&quot;policy-current&quot;</span>, <span class="string">&quot;正式规则&quot;</span>, (<span class="string">&quot;q1&quot;</span>,)),</span><br><span class="line">                Candidate(<span class="string">&quot;chunk-7&quot;</span>, <span class="string">&quot;policy-current&quot;</span>, <span class="string">&quot;正式规则&quot;</span>, (<span class="string">&quot;q2&quot;</span>,)),</span><br><span class="line">            )</span><br><span class="line">        )</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(<span class="string">&quot;EVIDENCE_READY&quot;</span>, result.state)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual((<span class="string">&quot;q1&quot;</span>, <span class="string">&quot;q2&quot;</span>), result.candidates[<span class="number">0</span>].origin_steps)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_hyde_text_cannot_be_evidence</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="keyword">with</span> <span class="variable language_">self</span>.assertRaisesRegex(PlanError, <span class="string">&quot;SYNTHETIC_EVIDENCE&quot;</span>):</span><br><span class="line">            finalize(</span><br><span class="line">                (</span><br><span class="line">                    Candidate(</span><br><span class="line">                        <span class="string">&quot;synthetic-1&quot;</span>,</span><br><span class="line">                        <span class="string">&quot;hyde&quot;</span>,</span><br><span class="line">                        <span class="string">&quot;模型假设 ACME 在 2025 年发布了规则&quot;</span>,</span><br><span class="line">                        (<span class="string">&quot;h1&quot;</span>,),</span><br><span class="line">                        synthetic=<span class="literal">True</span>,</span><br><span class="line">                    ),</span><br><span class="line">                )</span><br><span class="line">            )</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_empty_authorized_results_are_explicit</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        result = finalize(())</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(<span class="string">&quot;NO_ANSWER&quot;</span>, result.state)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(<span class="string">&quot;no authorized evidence&quot;</span>, result.reason)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&quot;__main__&quot;</span>:</span><br><span class="line">    unittest.main(verbosity=<span class="number">2</span>)</span><br></pre></td></tr></table></figure>
+
+<p>在 Python 3.11 环境执行该代码，预期摘要为：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">Ran 8 tests in ...</span><br><span class="line"></span><br><span class="line">OK</span><br></pre></td></tr></table></figure>
+
+<p>测试名称会逐项显示 normalization 幂等、意图漂移、越权路由、依赖环、预算、去重归因、HyDE 隔离和无答案。省略号是不同机器上的运行时间，不是固定测试数据。</p>
+<h3 id="1-示例刻意简化了什么"><a href="#1-示例刻意简化了什么" class="headerlink" title="1. 示例刻意简化了什么"></a>1. 示例刻意简化了什么</h3><p><code>validate_plan</code> 用“全部步骤文本的并集包含不变量”演示可执行的最低保护。生产实现应升级为带作用域的谓词约束和输入绑定验证，否则模型可以把“不要引用草案”放进一个永不执行的步骤来骗过字符串检查。</p>
+<p>示例的 <code>canonical_id</code> 由调用方提供。生产系统应由摄取流水线基于稳定文档版本、Chunk 身份和内容指纹生成，不能信任检索适配器随意填写。</p>
+<p>示例也没有实现实际检索、重排和语义裁判。它展示的是控制面骨架：即使未来替换模型或检索后端，权限、预算、合成证据和失败状态仍由确定性代码保护。</p>
+<h3 id="2-怎样扩展成生产测试夹具"><a href="#2-怎样扩展成生产测试夹具" class="headerlink" title="2. 怎样扩展成生产测试夹具"></a>2. 怎样扩展成生产测试夹具</h3><p>可以把 Planner 输出录制为 JSON 夹具，再分别测试：</p>
+<ul>
+<li>老版本输出能否迁移到新 Schema</li>
+<li>未知字段是拒绝还是安全忽略</li>
+<li>Catalog 删除源后旧计划能否被拒绝</li>
+<li>Policy 版本变化后缓存计划是否失效</li>
+<li>同一 plan 重放能否得到相同步骤顺序和预算预留</li>
+<li>并行预留冲突时是否只有一个执行者成功</li>
+</ul>
+<p>录制夹具只能验证适配器和合同兼容，不代表模型语义稳定。语义变化仍需评测集。</p>
+<h2 id="十五、完整失败案例：所有接口都成功，问题却被改错了"><a href="#十五、完整失败案例：所有接口都成功，问题却被改错了" class="headerlink" title="十五、完整失败案例：所有接口都成功，问题却被改错了"></a>十五、完整失败案例：所有接口都成功，问题却被改错了</h2><h3 id="1-事故场景"><a href="#1-事故场景" class="headerlink" title="1. 事故场景"></a>1. 事故场景</h3><p>用户原问题：</p>
+<blockquote>
+<p>对比 ACME 华东企业版 2025 年仍有效、未撤回的退款时限与全国个人版规则，不要引用草案；缺资料就明确说明。</p>
+</blockquote>
+<p>当日系统没有报错，最终回答称：“企业版和个人版均为 30 天”，附了两条可打开链接。客服据此向企业客户承诺退款。</p>
+<p>事后核对发现：华东企业版正式规则是 45 天；30 天来自一份 2024 年已撤回草案。全国个人版 2025 年正式规则确实是 30 天。</p>
+<h3 id="2-表面证据为什么容易误导"><a href="#2-表面证据为什么容易误导" class="headerlink" title="2. 表面证据为什么容易误导"></a>2. 表面证据为什么容易误导</h3><p>构造的监控面板显示：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">Planner HTTP status       200</span><br><span class="line">Plan schema valid         true</span><br><span class="line">Retrieval calls           6/6 success</span><br><span class="line">Candidate count           30</span><br><span class="line">Reranker completed        true</span><br><span class="line">Generator HTTP status     200</span><br><span class="line">Citations reachable       2/2</span><br><span class="line">End-to-end latency        1.8 s</span><br></pre></td></tr></table></figure>
+
+<p>每个协议层都成功。Schema 正确、相似度高、模型自报高置信度、链接可访问，都没有证明业务结论正确。</p>
+<h3 id="3-从-QueryEnvelope-开始排查"><a href="#3-从-QueryEnvelope-开始排查" class="headerlink" title="3. 从 QueryEnvelope 开始排查"></a>3. 从 QueryEnvelope 开始排查</h3><p>首先比较原始 Envelope 与 Planner 输入：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;entities&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;ACME&quot;</span><span class="punctuation">,</span> <span class="string">&quot;华东&quot;</span><span class="punctuation">,</span> <span class="string">&quot;企业版&quot;</span><span class="punctuation">,</span> <span class="string">&quot;全国&quot;</span><span class="punctuation">,</span> <span class="string">&quot;个人版&quot;</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;time&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;2025&quot;</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;negations&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;未撤回&quot;</span><span class="punctuation">,</span> <span class="string">&quot;不要引用草案&quot;</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;operation&quot;</span><span class="punctuation">:</span> <span class="string">&quot;compare&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;on_missing&quot;</span><span class="punctuation">:</span> <span class="string">&quot;report_missing&quot;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>Envelope 完整，说明入口抽取没有丢失约束。接着查看 CandidatePlan：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;strategy&quot;</span><span class="punctuation">:</span> <span class="string">&quot;multi_query&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;queries&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">    <span class="string">&quot;ACME 华东企业退款时限 2025&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="string">&quot;ACME 企业退款政策 历史版本&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="string">&quot;ACME 全国个人退款时限 2025&quot;</span></span><br><span class="line">  <span class="punctuation">]</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>三条查询都没有“未撤回”和“不要引用草案”。第二条还主动扩成“历史版本”。这是第一处可证实失败：<code>INTENT_DRIFT</code>。</p>
+<h3 id="4-为什么合同没有拦住"><a href="#4-为什么合同没有拦住" class="headerlink" title="4. 为什么合同没有拦住"></a>4. 为什么合同没有拦住</h3><p>事故版本只验证：</p>
+<ul>
+<li>JSON 可解析</li>
+<li><code>queries</code> 数组长度不超过 5</li>
+<li>每个字符串非空</li>
+<li><code>strategy</code> 属于枚举</li>
+</ul>
+<p>它没有保存不变量，也没有比较原查询与计划。因此所谓 <code>schema_valid=true</code> 与语义风险完全正交。</p>
+<h3 id="5-路由如何放大错误"><a href="#5-路由如何放大错误" class="headerlink" title="5. 路由如何放大错误"></a>5. 路由如何放大错误</h3><p>路由器看到“历史版本”，同时选择：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">policy-current</span><br><span class="line">policy-archive</span><br><span class="line">policy-draft</span><br></pre></td></tr></table></figure>
+
+<p>当前主体其实有权查看草案供内部审核，所以这不是 ACL 越权，却违反了当前答案合同的来源限制。安全权限与任务允许来源是两层不同集合：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">主体可读集合 = &#123;current, archive, draft&#125;</span><br><span class="line">本任务允许集合 = &#123;current, archive 中 status=effective 且 not withdrawn&#125;</span><br></pre></td></tr></table></figure>
+
+<p>路由器只检查了第一层。</p>
+<h3 id="6-重复召回怎样制造“多数证据”假象"><a href="#6-重复召回怎样制造“多数证据”假象" class="headerlink" title="6. 重复召回怎样制造“多数证据”假象"></a>6. 重复召回怎样制造“多数证据”假象</h3><p>三条 query 在两个索引分区各取 5 条，共 30 个候选。草案有 HTML、PDF 附件和迁移镜像三份，每份又被不同查询命中。合并器按底层结果 ID 去重，未按 canonical document version 去重，于是 12 个候选实际来自同一草案。</p>
+<p>重排器把重复出现当成多个独立相关信号，草案占据前 4 位。生成模型看到大量一致的“30 天”，给出流畅结论。这里的第二个根因是 <code>DUPLICATE_SATURATION</code>，不是生成模型单独幻觉。</p>
+<h3 id="7-证据账本暴露了什么"><a href="#7-证据账本暴露了什么" class="headerlink" title="7. 证据账本暴露了什么"></a>7. 证据账本暴露了什么</h3><p>修复前 Trace 缺少：</p>
+<ul>
+<li><code>document_status</code></li>
+<li><code>effective_from/effective_to</code></li>
+<li><code>withdrawn_at</code></li>
+<li><code>canonical_document_id</code></li>
+<li><code>origin_step_ids</code></li>
+<li><code>route_policy_version</code></li>
+</ul>
+<p>只能看到链接和分数，无法判断十二条候选是否同源。团队重新从摄取清单和对象存储版本重建身份后，发现这些结果共享同一个 <code>canonical_document_id</code>，且状态为 <code>withdrawn_draft</code>。</p>
+<h3 id="8-反事实实验完成归因"><a href="#8-反事实实验完成归因" class="headerlink" title="8. 反事实实验完成归因"></a>8. 反事实实验完成归因</h3><p>按同一原问题做四组回放：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">A 原事故计划：回答 30 天 / 30 天</span><br><span class="line">B 保留原计划，只过滤 draft 与 withdrawn：45 天 / 30 天</span><br><span class="line">C 使用原查询直接检索 current：45 天 / 30 天</span><br><span class="line">D 保留错误候选，给生成模型显式状态字段：仍有 2/10 次引用草案</span><br></pre></td></tr></table></figure>
+
+<p>这些是事故讲解用构造结果。它们说明主要责任在 rewrite&#x2F;route&#x2F;去重链路；Prompt 中提示“优先正式文档”不能替代确定性状态过滤。D 也说明把所有候选交给模型自行选择仍有残余风险。</p>
+<h3 id="9-修复项"><a href="#9-修复项" class="headerlink" title="9. 修复项"></a>9. 修复项</h3><ol>
+<li>QueryEnvelope 固定实体、时间、否定和任务来源限制。</li>
+<li>Planner 合同按作用域验证每个必要约束可达。</li>
+<li>Catalog 把主体可读与当前任务可用分开。</li>
+<li>草案和撤回状态在检索过滤层硬过滤。</li>
+<li>摄取层生成稳定 canonical document&#x2F;version ID。</li>
+<li>合并器按版本身份去重并保留全部来源步骤。</li>
+<li>加入“删除否定词”和“历史索引诱导”的成对回归样本。</li>
+<li>无正式企业规则时返回缺失，不使用草案补齐比较。</li>
+</ol>
+<h3 id="10-如何证明修复有效"><a href="#10-如何证明修复有效" class="headerlink" title="10. 如何证明修复有效"></a>10. 如何证明修复有效</h3><p>不能只重跑事故问题。需要：</p>
+<ul>
+<li>所有否定和文档状态切片回归</li>
+<li>current&#x2F;archive&#x2F;draft 组合路由测试</li>
+<li>跨格式镜像和重复版本测试</li>
+<li>Planner 多次采样的 P0&#x2F;P1 漂移统计</li>
+<li>线上影子比较新旧计划</li>
+<li>观察无答案率是否合理上升</li>
+<li>延迟业务真值回填承诺是否正确</li>
+</ul>
+<p>修复后无答案率可能升高，因为系统不再用草案填空。这不是自动回归；如果业务要求“无正式资料时可展示草案”，产品必须明确标记草案并禁止把它当生效规则。</p>
+<h2 id="十六、离线、影子、灰度和线上闭环"><a href="#十六、离线、影子、灰度和线上闭环" class="headerlink" title="十六、离线、影子、灰度和线上闭环"></a>十六、离线、影子、灰度和线上闭环</h2><h3 id="1-离线阶段"><a href="#1-离线阶段" class="headerlink" title="1. 离线阶段"></a>1. 离线阶段</h3><p>每次 Planner、Prompt、词典、Catalog Schema 或路由策略变化时运行：</p>
+<ul>
+<li>确定性合同单测</li>
+<li>标注规划集</li>
+<li>关键否定、权限、多跳和无答案切片</li>
+<li>与直接检索基线的配对实验</li>
+<li>成本和延迟预算模拟</li>
+<li>历史事故重放</li>
+</ul>
+<p>结果保存版本、输入快照和逐样本差异。只有总分没有失败样本 ID 的报告无法评审。</p>
+<h3 id="2-影子阶段"><a href="#2-影子阶段" class="headerlink" title="2. 影子阶段"></a>2. 影子阶段</h3><p>新 Planner 读取脱敏后的真实请求并生成计划，但不执行写操作、不向用户交付结果。可以只在相同授权范围内执行只读检索，比较：</p>
+<ul>
+<li>策略选择变化</li>
+<li>路由集合变化</li>
+<li>约束漂移</li>
+<li>查询扇出和候选重复</li>
+<li>唯一证据增量</li>
+<li>无答案与澄清变化</li>
+</ul>
+<p>影子流量也消耗资源，需要独立配额，不能挤占在线查询。</p>
+<h3 id="3-灰度阶段"><a href="#3-灰度阶段" class="headerlink" title="3. 灰度阶段"></a>3. 灰度阶段</h3><p>按租户、查询类型和风险分层灰度。先开放简单知识问答，再开放跨源比较；否定、权限敏感和高风险业务可以最后进入。回滚键应是 Planner&#x2F;Prompt&#x2F;Policy&#x2F;Catalog 的完整版本组合，避免只回滚模型却保留不兼容合同。</p>
+<h3 id="4-线上监控"><a href="#4-线上监控" class="headerlink" title="4. 线上监控"></a>4. 线上监控</h3><p>低基数指标：</p>
+<ul>
+<li><code>plan_terminal_state_total&#123;strategy,failure_code&#125;</code></li>
+<li><code>query_fanout_histogram&#123;strategy&#125;</code></li>
+<li><code>dependency_depth_histogram</code></li>
+<li><code>duplicate_candidate_ratio</code></li>
+<li><code>no_answer_rate&#123;query_slice&#125;</code></li>
+<li><code>unauthorized_route_attempt_total</code></li>
+<li><code>synthetic_evidence_rejected_total</code></li>
+<li><code>budget_exhausted_total</code></li>
+</ul>
+<p>高基数的 query、plan、step、document ID 放 Trace 或审计日志，不作为 Metric 标签。</p>
+<h3 id="5-延迟真值回填"><a href="#5-延迟真值回填" class="headerlink" title="5. 延迟真值回填"></a>5. 延迟真值回填</h3><p>很多 Planner 错误要等客服纠正、用户补问或业务结果产生后才知道。应把后续确认关联到原 <code>query_id/plan_id</code>，区分：</p>
+<ul>
+<li>路由错误</li>
+<li>约束漂移</li>
+<li>子问题遗漏</li>
+<li>证据缺失</li>
+<li>生成错误</li>
+<li>用户问题变化</li>
+</ul>
+<p>否则线上只能优化点击率，无法优化业务正确性。</p>
+<h2 id="十七、常见误区"><a href="#十七、常见误区" class="headerlink" title="十七、常见误区"></a>十七、常见误区</h2><h3 id="1-把-normalization、rewrite-和-decomposition-放在一个-Prompt-字段"><a href="#1-把-normalization、rewrite-和-decomposition-放在一个-Prompt-字段" class="headerlink" title="1. 把 normalization、rewrite 和 decomposition 放在一个 Prompt 字段"></a>1. 把 normalization、rewrite 和 decomposition 放在一个 Prompt 字段</h3><p>三者风险和测试 Oracle 不同。混成 <code>optimized_query</code> 后，无法知道模型只改了格式，还是创建了新任务图。</p>
+<h3 id="2-用相似度判断意图保持"><a href="#2-用相似度判断意图保持" class="headerlink" title="2. 用相似度判断意图保持"></a>2. 用相似度判断意图保持</h3><p>“允许退款”和“不允许退款”向量可能很接近。相似度可辅助发现大幅偏离，不能验证否定、数字和实体关系。</p>
+<h3 id="3-让每个子问题独立携带完整原文"><a href="#3-让每个子问题独立携带完整原文" class="headerlink" title="3. 让每个子问题独立携带完整原文"></a>3. 让每个子问题独立携带完整原文</h3><p>这会浪费 Token，也可能让子问题重新解释全局任务。应使用作用域约束和结构化上游绑定。</p>
+<h3 id="4-多查询越多越稳"><a href="#4-多查询越多越稳" class="headerlink" title="4. 多查询越多越稳"></a>4. 多查询越多越稳</h3><p>更多查询可能增加召回，也可能带来重复、冲突、过期资料和成本长尾。要看边际有用证据。</p>
+<h3 id="5-HyDE-文本写得像答案，所以可以引用"><a href="#5-HyDE-文本写得像答案，所以可以引用" class="headerlink" title="5. HyDE 文本写得像答案，所以可以引用"></a>5. HyDE 文本写得像答案，所以可以引用</h3><p>HyDE 原论文就明确它可能幻觉。它是检索中间物，不是来源。</p>
+<h3 id="6-主体能读就代表当前任务应该用"><a href="#6-主体能读就代表当前任务应该用" class="headerlink" title="6. 主体能读就代表当前任务应该用"></a>6. 主体能读就代表当前任务应该用</h3><p>用户有权阅读草案，不代表系统可以用草案回答“已生效规则”。权限集合与任务来源合同必须相交。</p>
+<h3 id="7-空结果就搜索更多源"><a href="#7-空结果就搜索更多源" class="headerlink" title="7. 空结果就搜索更多源"></a>7. 空结果就搜索更多源</h3><p>这可能绕过租户、时间和状态约束。无答案是合法终态。</p>
+<h3 id="8-DAG-无环就算分解正确"><a href="#8-DAG-无环就算分解正确" class="headerlink" title="8. DAG 无环就算分解正确"></a>8. DAG 无环就算分解正确</h3><p>无环只是结构条件。子问题仍可能遗漏必要分支、错误聚合或回答另一个实体。</p>
+<h3 id="9-用-mock-LLM-的固定输出证明质量"><a href="#9-用-mock-LLM-的固定输出证明质量" class="headerlink" title="9. 用 mock LLM 的固定输出证明质量"></a>9. 用 mock LLM 的固定输出证明质量</h3><p>Mock 适合验证适配器、错误映射和状态机。它没有真实模型的语义分布、非确定性和版本变化，不能证明 Planner 质量。</p>
+<h3 id="10-用一个加权总分做发布门禁"><a href="#10-用一个加权总分做发布门禁" class="headerlink" title="10. 用一个加权总分做发布门禁"></a>10. 用一个加权总分做发布门禁</h3><p>越权率、否定反转和合成证据泄漏不能由较低延迟抵消。硬失败与优化指标应分开。</p>
+<h2 id="十八、上线检查表"><a href="#十八、上线检查表" class="headerlink" title="十八、上线检查表"></a>十八、上线检查表</h2><h3 id="定义与版本"><a href="#定义与版本" class="headerlink" title="定义与版本"></a>定义与版本</h3><ul>
+<li><input disabled="" type="checkbox"> Query Planning 的责任边界与通用 RAG 评测分开</li>
+<li><input disabled="" type="checkbox"> 原始查询不可变，request time 与 timezone 已绑定</li>
+<li><input disabled="" type="checkbox"> Planner、Prompt、词典、Catalog、Policy 和 Schema 全部版本化</li>
+<li><input disabled="" type="checkbox"> 候选计划与可执行计划是不同对象</li>
+<li><input disabled="" type="checkbox"> 缓存键包含租户、权限摘要和版本</li>
+</ul>
+<h3 id="查询不变量"><a href="#查询不变量" class="headerlink" title="查询不变量"></a>查询不变量</h3><ul>
+<li><input disabled="" type="checkbox"> 实体、时间、否定、范围和答案合同显式保存</li>
+<li><input disabled="" type="checkbox"> 全局、分支、继承和聚合约束有作用域</li>
+<li><input disabled="" type="checkbox"> 相对时间只解析一次</li>
+<li><input disabled="" type="checkbox"> 不确定实体会触发澄清，不由模型猜测</li>
+<li><input disabled="" type="checkbox"> 约束丢失和错误引入分别统计</li>
+</ul>
+<h3 id="策略边界"><a href="#策略边界" class="headerlink" title="策略边界"></a>策略边界</h3><ul>
+<li><input disabled="" type="checkbox"> normalization、rewrite、multi-query、HyDE、路由和分解分别建模</li>
+<li><input disabled="" type="checkbox"> 简单查询有直接检索基线</li>
+<li><input disabled="" type="checkbox"> Multi-query 记录每条查询目标和边际贡献</li>
+<li><input disabled="" type="checkbox"> HyDE 文本标记 synthetic 且不能进入引用</li>
+<li><input disabled="" type="checkbox"> 分解使用 DAG、输入绑定和聚合缺失策略</li>
+</ul>
+<h3 id="权限与路由"><a href="#权限与路由" class="headerlink" title="权限与路由"></a>权限与路由</h3><ul>
+<li><input disabled="" type="checkbox"> Planner 只看到裁剪后的数据源目录</li>
+<li><input disabled="" type="checkbox"> 执行前再次验证目标源属于允许集合</li>
+<li><input disabled="" type="checkbox"> 主体可读集合与任务允许来源分开</li>
+<li><input disabled="" type="checkbox"> 空结果不会移除租户、ACL、时间或状态过滤</li>
+<li><input disabled="" type="checkbox"> 权限变更的一致性策略和 <code>policy_version</code> 明确</li>
+</ul>
+<h3 id="预算与执行"><a href="#预算与执行" class="headerlink" title="预算与执行"></a>预算与执行</h3><ul>
+<li><input disabled="" type="checkbox"> 所有步骤共享绝对 deadline、查询、候选、Token 和成本预算</li>
+<li><input disabled="" type="checkbox"> 扇出前计算最坏上界</li>
+<li><input disabled="" type="checkbox"> 预算使用原子预留与结算</li>
+<li><input disabled="" type="checkbox"> 取消会传播到未完成步骤</li>
+<li><input disabled="" type="checkbox"> 预算耗尽、依赖失败和无答案是不同终态</li>
+</ul>
+<h3 id="去重与归因"><a href="#去重与归因" class="headerlink" title="去重与归因"></a>去重与归因</h3><ul>
+<li><input disabled="" type="checkbox"> 文档和 Chunk 有跨查询稳定身份</li>
+<li><input disabled="" type="checkbox"> 精确重复、内容重复和近重复版本分开处理</li>
+<li><input disabled="" type="checkbox"> 合并保留全部 <code>origin_step_ids</code> 和原始排名</li>
+<li><input disabled="" type="checkbox"> 每个被用候选可回到真实源、索引生成号和权限决策</li>
+<li><input disabled="" type="checkbox"> 合成材料与真实证据严格隔离</li>
+</ul>
+<h3 id="评测与发布"><a href="#评测与发布" class="headerlink" title="评测与发布"></a>评测与发布</h3><ul>
+<li><input disabled="" type="checkbox"> 评测集覆盖否定、时间、同名实体、权限、多跳和无答案</li>
+<li><input disabled="" type="checkbox"> 有变形测试与历史事故回放</li>
+<li><input disabled="" type="checkbox"> 硬合同测试与语义质量测试分开报告</li>
+<li><input disabled="" type="checkbox"> 论文数字没有外推成生产保证</li>
+<li><input disabled="" type="checkbox"> 影子与灰度有独立预算、回滚键和延迟真值回填</li>
+</ul>
+<h2 id="十九、总结"><a href="#十九、总结" class="headerlink" title="十九、总结"></a>十九、总结</h2><p>RAG 查询规划不是在检索前“润色一下问题”。它是一层会改变搜索空间、权限边界、成本结构和证据路径的控制面。</p>
+<p>一套可评测的实现应做到：</p>
+<ol>
+<li>用 <code>QueryEnvelope</code> 保存原文、实体、时间、否定、答案合同和安全上下文。</li>
+<li>明确区分表示规范化、单查询改写、多查询、HyDE、数据源路由和问题分解。</li>
+<li>把模型输出当 CandidatePlan，再由确定性合同验证权限、预算、DAG 和合成材料边界。</li>
+<li>用共享预算限制查询扇出、依赖深度、候选数、Token、成本和 deadline。</li>
+<li>按稳定身份去重，同时保留每个候选的来源步骤和原始排名。</li>
+<li>把 <code>NO_ANSWER</code>、<code>NEEDS_CLARIFICATION</code>、<code>DENIED</code> 和系统失败建成不同终态。</li>
+<li>用约束保留、路由、依赖、边际证据、重复、预算和归因指标评价规划层，不重复用最终答案总分代替归因。</li>
+<li>通过否定词删除、越权源、依赖环、错误 HyDE、重复饱和和预算爆炸等故障注入验证控制面。</li>
+<li>用真实标注集、反事实和线上延迟真值评价语义质量，不声称 mock LLM 能证明模型可靠。</li>
+</ol>
+<p>最终要证明的不是“Planner 总能生成一个合法 JSON”，而是：</p>
+<p><strong>它只在原问题、权限和预算允许的范围内扩展检索；每次扩展都能解释为何发生、带来了什么证据；条件不满足时能够明确停止。</strong></p>
+<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><p>以下资料核对截止 2026-07-26，优先列出原始论文、标准和官方文档。论文结果均应结合原文实验设置理解。</p>
+<ul>
+<li><a target="_blank" rel="noopener" href="https://aclanthology.org/2023.acl-long.99/">Gao et al., 2023, Precise Zero-Shot Dense Retrieval without Relevance Labels（HyDE，ACL Anthology）</a></li>
+<li><a target="_blank" rel="noopener" href="https://arxiv.org/abs/2210.02406">Khot et al., 2023, Decomposed Prompting: A Modular Approach for Solving Complex Tasks（arXiv 版本页）</a></li>
+<li><a target="_blank" rel="noopener" href="https://aclanthology.org/2023.acl-long.557/">Trivedi et al., 2023, Interleaving Retrieval with Chain-of-Thought Reasoning for Knowledge-Intensive Multi-Step Questions（IRCoT，ACL Anthology）</a></li>
+<li><a target="_blank" rel="noopener" href="https://arxiv.org/abs/2005.11401">Lewis et al., 2020, Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks（原始 RAG 论文）</a></li>
+<li><a target="_blank" rel="noopener" href="https://aclanthology.org/2023.emnlp-main.585/">Wang et al., 2023, Query2doc: Query Expansion with Large Language Models（ACL Anthology）</a></li>
+<li><a target="_blank" rel="noopener" href="https://aclanthology.org/2025.acl-srw.32/">Ammann et al., 2025, Question Decomposition for Retrieval-Augmented Generation（ACL Anthology）</a></li>
+<li><a target="_blank" rel="noopener" href="https://aclanthology.org/P19-1613/">Min et al., 2019, Multi-hop Reading Comprehension through Question Decomposition and Rescoring（ACL Anthology）</a></li>
+<li><a target="_blank" rel="noopener" href="https://aclanthology.org/2021.eacl-main.283/">Tang et al., 2021, Do Multi-Hop Question Answering Systems Know How to Answer the Single-Hop Sub-Questions?（ACL Anthology）</a></li>
+</ul>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/AI%E6%B5%8B%E8%AF%95/" rel="tag"># AI测试</a>
+              <a href="/tags/RAG/" rel="tag"># RAG</a>
+              <a href="/tags/%E6%95%85%E9%9A%9C%E6%B3%A8%E5%85%A5/" rel="tag"># 故障注入</a>
+              <a href="/tags/%E8%B4%A8%E9%87%8F%E5%B7%A5%E7%A8%8B/" rel="tag"># 质量工程</a>
+              <a href="/tags/%E6%9F%A5%E8%AF%A2%E6%94%B9%E5%86%99/" rel="tag"># 查询改写</a>
+              <a href="/tags/%E6%9F%A5%E8%AF%A2%E8%B7%AF%E7%94%B1/" rel="tag"># 查询路由</a>
+              <a href="/tags/%E9%97%AE%E9%A2%98%E5%88%86%E8%A7%A3/" rel="tag"># 问题分解</a>
+              <a href="/tags/HyDE/" rel="tag"># HyDE</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2026/04/26/AI%E6%B5%8B%E8%AF%95-35-%E6%B7%B7%E5%90%88%E6%A3%80%E7%B4%A2%E5%92%8CReranker%E6%80%8E%E4%B9%88%E7%BB%84%E5%90%88BM25%E5%90%91%E9%87%8F%E5%8F%AC%E5%9B%9E%E4%B8%8E%E9%87%8D%E6%8E%92/" rel="prev" title="AI测试-35-混合检索和Reranker怎么组合BM25向量召回与重排">
+                  <i class="fa fa-angle-left"></i> AI测试-35-混合检索和Reranker怎么组合BM25向量召回与重排
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2026/04/30/AI%E6%B5%8B%E8%AF%95-37-%E7%9F%A5%E8%AF%86%E5%BA%93%E6%91%84%E5%8F%96%E6%B5%81%E6%B0%B4%E7%BA%BF%E6%80%8E%E4%B9%88%E5%A4%84%E7%90%86%E8%A7%A3%E6%9E%90%E6%B8%85%E6%B4%97%E5%8E%BB%E9%87%8D%E6%9D%83%E9%99%90%E5%92%8C%E6%95%B0%E6%8D%AE%E8%A1%80%E7%BC%98/" rel="next" title="AI测试-37-知识库摄取流水线怎么处理解析清洗去重权限和数据血缘">
+                  AI测试-37-知识库摄取流水线怎么处理解析清洗去重权限和数据血缘 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">2.1m</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">129:05</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

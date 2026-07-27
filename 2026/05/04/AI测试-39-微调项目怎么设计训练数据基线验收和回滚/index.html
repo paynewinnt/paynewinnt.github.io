@@ -1,0 +1,1772 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="微调项目最容易被误解成一个训练任务：准备 JSONL，选择基座模型，设置 epoch，等待平台返回一个新模型 ID，然后比较几条演示答案。 真正进入生产后，问题会迅速变成另一组：  为什么必须改参数，Prompt、RAG 或确定性工具约束真的不够吗； 候选究竟在修复哪一种稳定行为缺口； 它比哪个可复现基线更好； 训练数据是否有合法用途、隐私风险和明确血缘； 哪个训练、验证、测试版本参与了这次决策；">
+<meta property="og:type" content="article">
+<meta property="og:title" content="AI测试-39-微调项目怎么设计训练数据基线验收和回滚">
+<meta property="og:url" content="https://paynewinnt.github.io/2026/05/04/AI%E6%B5%8B%E8%AF%95-39-%E5%BE%AE%E8%B0%83%E9%A1%B9%E7%9B%AE%E6%80%8E%E4%B9%88%E8%AE%BE%E8%AE%A1%E8%AE%AD%E7%BB%83%E6%95%B0%E6%8D%AE%E5%9F%BA%E7%BA%BF%E9%AA%8C%E6%94%B6%E5%92%8C%E5%9B%9E%E6%BB%9A/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="微调项目最容易被误解成一个训练任务：准备 JSONL，选择基座模型，设置 epoch，等待平台返回一个新模型 ID，然后比较几条演示答案。 真正进入生产后，问题会迅速变成另一组：  为什么必须改参数，Prompt、RAG 或确定性工具约束真的不够吗； 候选究竟在修复哪一种稳定行为缺口； 它比哪个可复现基线更好； 训练数据是否有合法用途、隐私风险和明确血缘； 哪个训练、验证、测试版本参与了这次决策；">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://paynewinnt.github.io/images/ai-quality/ai-39-finetuning-lifecycle.svg">
+<meta property="og:image" content="https://paynewinnt.github.io/images/ai-quality/ai-39-acceptance-matrix.svg">
+<meta property="article:published_time" content="2026-05-04T12:30:00.000Z">
+<meta property="article:modified_time" content="2026-05-04T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="AI测试">
+<meta property="article:tag" content="模型微调">
+<meta property="article:tag" content="实验合同">
+<meta property="article:tag" content="训练数据治理">
+<meta property="article:tag" content="候选验收">
+<meta property="article:tag" content="模型回滚">
+<meta property="article:tag" content="LoRA">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://paynewinnt.github.io/images/ai-quality/ai-39-finetuning-lifecycle.svg">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2026/05/04/AI%E6%B5%8B%E8%AF%95-39-%E5%BE%AE%E8%B0%83%E9%A1%B9%E7%9B%AE%E6%80%8E%E4%B9%88%E8%AE%BE%E8%AE%A1%E8%AE%AD%E7%BB%83%E6%95%B0%E6%8D%AE%E5%9F%BA%E7%BA%BF%E9%AA%8C%E6%94%B6%E5%92%8C%E5%9B%9E%E6%BB%9A/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2026/05/04/AI%E6%B5%8B%E8%AF%95-39-%E5%BE%AE%E8%B0%83%E9%A1%B9%E7%9B%AE%E6%80%8E%E4%B9%88%E8%AE%BE%E8%AE%A1%E8%AE%AD%E7%BB%83%E6%95%B0%E6%8D%AE%E5%9F%BA%E7%BA%BF%E9%AA%8C%E6%94%B6%E5%92%8C%E5%9B%9E%E6%BB%9A/","path":"2026/05/04/AI测试-39-微调项目怎么设计训练数据基线验收和回滚/","title":"AI测试-39-微调项目怎么设计训练数据基线验收和回滚"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>AI测试-39-微调项目怎么设计训练数据基线验收和回滚 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%8E-AI%E6%B5%8B%E8%AF%95-13%E3%80%81AI%E6%B5%8B%E8%AF%95-15-%E7%9A%84%E8%BE%B9%E7%95%8C"><span class="nav-number">1.</span> <span class="nav-text">与 AI测试-13、AI测试-15 的边界</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E5%85%88%E8%BF%87%E5%BF%85%E8%A6%81%E6%80%A7%E9%97%A8%EF%BC%9A%E5%8F%AA%E6%9C%89%E7%A8%B3%E5%AE%9A%E8%A1%8C%E4%B8%BA%E7%BC%BA%E5%8F%A3%E6%89%8D%E8%BF%9B%E5%85%A5%E5%BE%AE%E8%B0%83%E5%80%99%E9%80%89"><span class="nav-number">2.</span> <span class="nav-text">一、先过必要性门：只有稳定行为缺口才进入微调候选</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%94%A8%E6%9C%80%E5%B0%8F%E5%AF%B9%E7%85%A7%E8%AF%81%E6%98%8E%E7%BC%BA%E5%8F%A3%E4%BD%8D%E4%BA%8E%E5%93%AA%E9%87%8C"><span class="nav-number">2.1.</span> <span class="nav-text">1. 用最小对照证明缺口位于哪里</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%BF%85%E8%A6%81%E6%80%A7%E9%97%A8%E7%9A%84%E9%80%80%E5%87%BA%E6%9D%A1%E4%BB%B6"><span class="nav-number">2.2.</span> <span class="nav-text">2. 必要性门的退出条件</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E5%B7%A5%E7%A8%8B%E5%AE%9A%E4%B9%89%EF%BC%9A%E6%8A%8A%E5%BE%AE%E8%B0%83%E9%A1%B9%E7%9B%AE%E6%8B%86%E6%88%90%E5%90%88%E5%90%8C%E3%80%81%E8%BF%90%E8%A1%8C%E3%80%81%E4%BA%A7%E7%89%A9%E3%80%81%E5%80%99%E9%80%89%E5%92%8C%E5%8F%91%E5%B8%83"><span class="nav-number">3.</span> <span class="nav-text">二、工程定义：把微调项目拆成合同、运行、产物、候选和发布</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%AE%9E%E9%AA%8C%E5%90%88%E5%90%8C"><span class="nav-number">3.1.</span> <span class="nav-text">1. 实验合同</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%AE%AD%E7%BB%83%E8%BF%90%E8%A1%8C"><span class="nav-number">3.2.</span> <span class="nav-text">2. 训练运行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%AE%AD%E7%BB%83%E4%BA%A7%E7%89%A9"><span class="nav-number">3.3.</span> <span class="nav-text">3. 训练产物</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%80%99%E9%80%89"><span class="nav-number">3.4.</span> <span class="nav-text">4. 候选</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%8F%91%E5%B8%83%E4%B8%8E%E7%A8%B3%E5%AE%9A%E6%8C%87%E9%92%88"><span class="nav-number">3.5.</span> <span class="nav-text">5. 发布与稳定指针</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E5%AE%8C%E6%95%B4%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F%EF%BC%9A%E6%AF%8F%E4%B8%AA%E6%8E%A8%E8%BF%9B%E5%8A%A8%E4%BD%9C%E9%83%BD%E6%9C%89%E5%8F%8D%E5%90%91%E8%B7%AF%E5%BE%84"><span class="nav-number">4.</span> <span class="nav-text">三、完整生命周期：每个推进动作都有反向路径</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5-0%EF%BC%9A%E5%BF%85%E8%A6%81%E6%80%A7%E8%AF%81%E6%98%8E"><span class="nav-number">4.1.</span> <span class="nav-text">阶段 0：必要性证明</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5-1%EF%BC%9A%E5%86%BB%E7%BB%93%E5%AE%9E%E9%AA%8C%E5%90%88%E5%90%8C"><span class="nav-number">4.2.</span> <span class="nav-text">阶段 1：冻结实验合同</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5-2%EF%BC%9A%E6%95%B0%E6%8D%AE%E5%87%86%E5%85%A5"><span class="nav-number">4.3.</span> <span class="nav-text">阶段 2：数据准入</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5-3%EF%BC%9A%E8%AE%AD%E7%BB%83%E4%B8%8E%E4%BA%A7%E7%89%A9%E7%99%BB%E8%AE%B0"><span class="nav-number">4.4.</span> <span class="nav-text">阶段 3：训练与产物登记</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5-4%EF%BC%9A%E5%86%BB%E7%BB%93%E5%9F%BA%E7%BA%BF%E9%87%8D%E8%B7%91"><span class="nav-number">4.5.</span> <span class="nav-text">阶段 4：冻结基线重跑</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5-5%EF%BC%9A%E7%A6%BB%E7%BA%BF%E9%AA%8C%E6%94%B6"><span class="nav-number">4.6.</span> <span class="nav-text">阶段 5：离线验收</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5-6%EF%BC%9A%E5%BD%B1%E5%AD%90%E4%B8%8E%E7%81%B0%E5%BA%A6"><span class="nav-number">4.7.</span> <span class="nav-text">阶段 6：影子与灰度</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5-7%EF%BC%9A%E6%8F%90%E5%8D%87%E4%B8%8E%E4%BF%9D%E7%95%99"><span class="nav-number">4.8.</span> <span class="nav-text">阶段 7：提升与保留</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5-8%EF%BC%9A%E9%80%80%E5%BD%B9%E6%88%96%E6%95%B0%E6%8D%AE%E6%92%A4%E5%9B%9E"><span class="nav-number">4.9.</span> <span class="nav-text">阶段 8：退役或数据撤回</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E5%AE%9E%E9%AA%8C%E5%90%88%E5%90%8C%E6%80%8E%E6%A0%B7%E5%86%99%E5%88%B0%E5%8F%AF%E4%BB%A5%E7%9B%B4%E6%8E%A5%E5%88%A4%E5%AE%9A"><span class="nav-number">5.</span> <span class="nav-text">四、实验合同怎样写到可以直接判定</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%BB%BB%E5%8A%A1%E9%99%88%E8%BF%B0%E5%BF%85%E9%A1%BB%E5%8F%AF%E8%A7%82%E6%B5%8B"><span class="nav-number">5.1.</span> <span class="nav-text">1. 任务陈述必须可观测</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%8F%AF%E8%AF%81%E4%BC%AA%E5%81%87%E8%AE%BE"><span class="nav-number">5.2.</span> <span class="nav-text">2. 可证伪假设</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%8F%98%E9%87%8F%E5%86%BB%E7%BB%93%E8%A1%A8"><span class="nav-number">5.3.</span> <span class="nav-text">3. 变量冻结表</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E9%A2%84%E6%B3%A8%E5%86%8C%E9%97%A8%E6%A7%9B%E5%92%8C%E4%BE%8B%E5%A4%96%E8%A7%84%E5%88%99"><span class="nav-number">5.4.</span> <span class="nav-text">4. 预注册门槛和例外规则</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%81%9C%E6%AD%A2%E6%9D%A1%E4%BB%B6"><span class="nav-number">5.5.</span> <span class="nav-text">5. 停止条件</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E8%AE%AD%E7%BB%83%E6%95%B0%E6%8D%AE%E5%87%86%E5%85%A5%EF%BC%9A%E8%81%9A%E7%84%A6%E8%AE%B8%E5%8F%AF%E3%80%81%E9%9A%90%E7%A7%81%E4%B8%8E%E5%AE%9E%E9%AA%8C%E7%94%A8%E9%80%94%E8%AF%81%E6%98%8E"><span class="nav-number">6.</span> <span class="nav-text">五、训练数据准入：聚焦许可、隐私与实验用途证明</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%AF%8F%E6%9D%A1%E6%A0%B7%E6%9C%AC%E9%83%BD%E8%A6%81%E6%9C%89%E7%94%A8%E9%80%94%E9%93%BE"><span class="nav-number">6.1.</span> <span class="nav-text">1. 每条样本都要有用途链</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%95%B0%E6%8D%AE%E6%9C%80%E5%B0%8F%E5%8C%96%E5%8F%91%E7%94%9F%E5%9C%A8%E8%AE%AD%E7%BB%83%E4%B9%8B%E5%89%8D"><span class="nav-number">6.2.</span> <span class="nav-text">2. 数据最小化发生在训练之前</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%88%A0%E9%99%A4%E8%AE%AD%E7%BB%83%E6%A0%B7%E6%9C%AC%E4%B8%8D%E7%AD%89%E4%BA%8E%E4%BB%8E%E6%A8%A1%E5%9E%8B%E5%8F%82%E6%95%B0%E4%B8%AD%E7%B2%BE%E7%A1%AE%E5%88%A0%E9%99%A4%E5%BD%B1%E5%93%8D"><span class="nav-number">6.3.</span> <span class="nav-text">3. 删除训练样本不等于从模型参数中精确删除影响</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E8%AE%AD%E7%BB%83%E6%9C%8D%E5%8A%A1%E7%9A%84%E4%BA%A7%E5%93%81%E6%95%B0%E6%8D%AE%E6%94%BF%E7%AD%96%E4%B9%9F%E8%A6%81%E8%BF%9B%E5%85%A5%E5%90%88%E5%90%8C"><span class="nav-number">6.4.</span> <span class="nav-text">4. 训练服务的产品数据政策也要进入合同</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%95%B0%E6%8D%AE%E8%B4%A8%E9%87%8F%E8%B4%A3%E4%BB%BB%E6%B2%A1%E6%9C%89%E5%9B%A0%E4%B8%BA%E5%B9%B3%E5%8F%B0%E6%89%98%E7%AE%A1%E8%80%8C%E6%B6%88%E5%A4%B1"><span class="nav-number">6.5.</span> <span class="nav-text">5. 数据质量责任没有因为平台托管而消失</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81train%E3%80%81validation%E3%80%81test-%E9%9A%94%E7%A6%BB%EF%BC%9A%E5%8F%AA%E4%BF%9D%E7%95%99%E5%AE%9E%E9%AA%8C%E9%9C%80%E8%A6%81%E7%9A%84%E8%AF%81%E6%8D%AE"><span class="nav-number">7.</span> <span class="nav-text">六、train、validation、test 隔离：只保留实验需要的证据</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%B8%89%E4%B8%AA%E9%9B%86%E5%90%88%E5%9C%A8%E5%AE%9E%E9%AA%8C%E4%B8%AD%E7%9A%84%E8%81%8C%E8%B4%A3"><span class="nav-number">7.1.</span> <span class="nav-text">1. 三个集合在实验中的职责</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E9%9A%94%E7%A6%BB%E5%8D%95%E4%BD%8D%E5%BF%85%E9%A1%BB%E5%86%99%E8%BF%9B-manifest"><span class="nav-number">7.2.</span> <span class="nav-text">2. 隔离单位必须写进 manifest</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%BF%91%E9%87%8D%E5%A4%8D%E6%8A%A5%E5%91%8A%E6%98%AF%E5%87%86%E5%85%A5%E8%AF%81%E6%8D%AE%EF%BC%8C%E4%B8%8D%E6%98%AF%E4%B8%BA%E4%BA%86%E5%BE%97%E5%88%B0%E4%B8%80%E4%B8%AA%E6%BC%82%E4%BA%AE%E6%95%B0%E5%AD%97"><span class="nav-number">7.3.</span> <span class="nav-text">3. 近重复报告是准入证据，不是为了得到一个漂亮数字</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-benchmark-contamination-%E7%9A%84%E8%BE%B9%E7%95%8C"><span class="nav-number">7.4.</span> <span class="nav-text">4. benchmark contamination 的边界</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%95%B0%E6%8D%AE%E5%86%BB%E7%BB%93%E7%82%B9"><span class="nav-number">7.5.</span> <span class="nav-text">5. 数据冻结点</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E4%BB%BB%E5%8A%A1%E5%9F%BA%E7%BA%BF%EF%BC%9A%E5%80%99%E9%80%89%E5%BF%85%E9%A1%BB%E8%B5%A2%E8%BF%87%E5%8F%AF%E9%83%A8%E7%BD%B2%E7%B3%BB%E7%BB%9F%EF%BC%8C%E8%80%8C%E4%B8%8D%E5%8F%AA%E6%98%AF%E8%AE%AD%E7%BB%83%E5%89%8D%E7%9A%84%E8%A3%B8%E6%A8%A1%E5%9E%8B"><span class="nav-number">8.</span> <span class="nav-text">七、任务基线：候选必须赢过可部署系统，而不只是训练前的裸模型</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%A8%B3%E5%AE%9A%E5%9F%BA%E7%BA%BF%E7%9A%84%E5%AE%8C%E6%95%B4%E8%BA%AB%E4%BB%BD"><span class="nav-number">8.1.</span> <span class="nav-text">1. 稳定基线的完整身份</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%87%B3%E5%B0%91%E4%BF%9D%E7%95%99%E4%B8%80%E4%B8%AA%E7%AE%80%E5%8D%95%E5%9F%BA%E7%BA%BF"><span class="nav-number">8.2.</span> <span class="nav-text">2. 至少保留一个简单基线</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%9F%BA%E7%BA%BF%E8%A6%81%E5%9C%A8%E5%80%99%E9%80%89%E9%AA%8C%E6%94%B6%E6%97%B6%E9%87%8D%E8%B7%91"><span class="nav-number">8.3.</span> <span class="nav-text">3. 基线要在候选验收时重跑</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E8%AE%AD%E7%BB%83-loss-%E4%B8%8D%E6%98%AF%E4%BB%BB%E5%8A%A1%E5%9F%BA%E7%BA%BF"><span class="nav-number">8.4.</span> <span class="nav-text">4. 训练 loss 不是任务基线</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E4%BA%BA%E7%B1%BB%E6%88%96%E8%A7%84%E5%88%99%E4%B8%8A%E7%95%8C%E7%9A%84%E4%BD%9C%E7%94%A8"><span class="nav-number">8.5.</span> <span class="nav-text">5. 人类或规则上界的作用</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81SFT%E3%80%81%E5%85%A8%E9%87%8F%E5%BE%AE%E8%B0%83%E3%80%81PEFT%E3%80%81LoRA-%E4%B8%8E-QLoRA-%E7%9A%84%E5%B7%A5%E7%A8%8B%E8%BE%B9%E7%95%8C"><span class="nav-number">9.</span> <span class="nav-text">八、SFT、全量微调、PEFT、LoRA 与 QLoRA 的工程边界</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-SFT-%E6%8F%8F%E8%BF%B0%E7%9B%AE%E6%A0%87%EF%BC%8C%E4%B8%8D%E7%AD%89%E4%BA%8E%E6%9F%90%E4%B8%80%E7%A7%8D%E5%8F%82%E6%95%B0%E6%9B%B4%E6%96%B0%E6%96%B9%E5%BC%8F"><span class="nav-number">9.1.</span> <span class="nav-text">1. SFT 描述目标，不等于某一种参数更新方式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%85%A8%E9%87%8F%E5%BE%AE%E8%B0%83"><span class="nav-number">9.2.</span> <span class="nav-text">2. 全量微调</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-PEFT-%E6%98%AF%E4%B8%80%E7%B1%BB%E6%96%B9%E6%B3%95"><span class="nav-number">9.3.</span> <span class="nav-text">3. PEFT 是一类方法</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-LoRA-%E7%9A%84%E8%AE%BA%E6%96%87%E7%BB%93%E8%AE%BA%E8%A6%81%E9%99%90%E5%AE%9A%E5%AE%9E%E9%AA%8C"><span class="nav-number">9.4.</span> <span class="nav-text">4. LoRA 的论文结论要限定实验</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-QLoRA-%E7%9A%84%E8%AE%BA%E6%96%87%E7%BB%93%E8%AE%BA%E4%B9%9F%E5%8F%AA%E5%B1%9E%E4%BA%8E%E8%AE%BA%E6%96%87%E8%AE%BE%E7%BD%AE"><span class="nav-number">9.5.</span> <span class="nav-text">5. QLoRA 的论文结论也只属于论文设置</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E6%96%B9%E6%B3%95%E9%80%89%E6%8B%A9%E7%9F%A9%E9%98%B5"><span class="nav-number">9.6.</span> <span class="nav-text">6. 方法选择矩阵</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-%E7%81%BE%E9%9A%BE%E6%80%A7%E9%80%80%E5%8C%96%E4%B8%8D%E6%98%AF%E5%85%A8%E9%87%8F%E5%BE%AE%E8%B0%83%E7%8B%AC%E6%9C%89"><span class="nav-number">9.7.</span> <span class="nav-text">7. 灾难性退化不是全量微调独有</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E5%8E%82%E5%95%86%E5%BE%AE%E8%B0%83%E8%83%BD%E5%8A%9B%E5%BF%85%E9%A1%BB%E7%BB%91%E5%AE%9A%E6%88%AA%E6%AD%A2%E6%97%A5%E6%9C%9F%E3%80%81%E4%BA%A7%E5%93%81%E5%92%8C%E6%A8%A1%E5%9E%8B%E5%BF%AB%E7%85%A7"><span class="nav-number">10.</span> <span class="nav-text">九、厂商微调能力必须绑定截止日期、产品和模型快照</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-OpenAI-%E5%AE%98%E6%96%B9%E6%96%87%E6%A1%A3%E5%9C%A8%E6%88%AA%E6%AD%A2%E6%97%A5%E7%9A%84%E7%8A%B6%E6%80%81"><span class="nav-number">10.1.</span> <span class="nav-text">1. OpenAI 官方文档在截止日的状态</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Google-Cloud-%E5%AE%98%E6%96%B9%E9%A1%B5%E9%9D%A2%E5%9C%A8%E6%88%AA%E6%AD%A2%E6%97%A5%E7%9A%84%E7%8A%B6%E6%80%81"><span class="nav-number">10.2.</span> <span class="nav-text">2. Google Cloud 官方页面在截止日的状态</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%89%98%E7%AE%A1%E5%B9%B3%E5%8F%B0%E4%B8%8E%E8%87%AA%E6%89%98%E7%AE%A1%E4%BA%A7%E7%89%A9%E7%9A%84%E6%8C%87%E7%BA%B9%E4%B8%8D%E5%90%8C"><span class="nav-number">10.3.</span> <span class="nav-text">3. 托管平台与自托管产物的指纹不同</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%A0%BC%E5%BC%8F%E6%94%AF%E6%8C%81%E4%B8%8D%E7%AD%89%E4%BA%8E%E8%A1%8C%E4%B8%BA%E6%94%AF%E6%8C%81"><span class="nav-number">10.4.</span> <span class="nav-text">4. 格式支持不等于行为支持</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E8%AE%AD%E7%BB%83%E4%B8%8E%E6%A8%A1%E5%9E%8B%E6%8C%87%E7%BA%B9%EF%BC%9A%E8%83%BD%E5%A4%9F%E5%9B%9E%E7%AD%94%E2%80%9C%E8%BF%99%E4%B8%AA%E5%80%99%E9%80%89%E5%88%B0%E5%BA%95%E6%98%AF%E4%BB%80%E4%B9%88%E2%80%9D"><span class="nav-number">11.</span> <span class="nav-text">十、训练与模型指纹：能够回答“这个候选到底是什么”</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%95%B0%E6%8D%AE%E6%8C%87%E7%BA%B9"><span class="nav-number">11.1.</span> <span class="nav-text">1. 数据指纹</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%AE%AD%E7%BB%83%E8%BF%90%E8%A1%8C%E6%8C%87%E7%BA%B9"><span class="nav-number">11.2.</span> <span class="nav-text">2. 训练运行指纹</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%A8%A1%E5%9E%8B%E4%BA%A7%E7%89%A9%E6%8C%87%E7%BA%B9"><span class="nav-number">11.3.</span> <span class="nav-text">3. 模型产物指纹</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%80%99%E9%80%89%E6%9C%8D%E5%8A%A1%E6%8C%87%E7%BA%B9"><span class="nav-number">11.4.</span> <span class="nav-text">4. 候选服务指纹</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E8%A1%80%E7%BC%98%E5%9B%BE"><span class="nav-number">11.5.</span> <span class="nav-text">5. 血缘图</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-manifest-%E7%9A%84%E6%9C%80%E5%B0%8F%E7%BB%93%E6%9E%84"><span class="nav-number">11.6.</span> <span class="nav-text">6. manifest 的最小结构</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E5%80%99%E9%80%89%E9%AA%8C%E6%94%B6%E7%9F%A9%E9%98%B5%EF%BC%9A%E6%94%B9%E5%96%84%E3%80%81%E9%9D%9E%E5%8A%A3%E3%80%81%E5%AE%89%E5%85%A8%E5%92%8C%E8%BF%90%E8%A1%8C%E9%A2%84%E7%AE%97%E5%90%8C%E6%97%B6%E6%88%90%E7%AB%8B"><span class="nav-number">12.</span> <span class="nav-text">十一、候选验收矩阵：改善、非劣、安全和运行预算同时成立</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%B8%BB%E4%BB%BB%E5%8A%A1%E6%8C%87%E6%A0%87"><span class="nav-number">12.1.</span> <span class="nav-text">1. 主任务指标</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E9%85%8D%E5%AF%B9%E6%94%B9%E5%96%84"><span class="nav-number">12.2.</span> <span class="nav-text">2. 配对改善</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%94%B9%E5%96%84%E9%97%A8%E4%B8%8E%E9%9D%9E%E5%8A%A3%E9%97%A8"><span class="nav-number">12.3.</span> <span class="nav-text">3. 改善门与非劣门</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%88%87%E7%89%87%E9%97%A8%E7%A6%81"><span class="nav-number">12.4.</span> <span class="nav-text">4. 切片门禁</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E7%81%BE%E9%9A%BE%E6%80%A7%E9%80%80%E5%8C%96%E6%8C%87%E6%A0%87"><span class="nav-number">12.5.</span> <span class="nav-text">5. 灾难性退化指标</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E5%AE%89%E5%85%A8%E7%A1%AC%E9%97%A8%E7%A6%81"><span class="nav-number">12.6.</span> <span class="nav-text">6. 安全硬门禁</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-%E8%BF%90%E8%A1%8C%E9%97%A8%E7%A6%81"><span class="nav-number">12.7.</span> <span class="nav-text">7. 运行门禁</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-%E5%A4%8D%E7%8E%B0%E9%97%A8%E7%A6%81"><span class="nav-number">12.8.</span> <span class="nav-text">8. 复现门禁</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-%E5%A4%9A%E5%80%99%E9%80%89%E9%80%89%E6%8B%A9%E5%81%8F%E5%B7%AE"><span class="nav-number">12.9.</span> <span class="nav-text">9. 多候选选择偏差</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-%E6%8C%87%E6%A0%87%E5%8F%A3%E5%BE%84%E6%80%BB%E8%A1%A8"><span class="nav-number">12.10.</span> <span class="nav-text">10. 指标口径总表</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E5%AE%89%E5%85%A8%E5%9B%9E%E5%BD%92%E4%B8%8E%E7%81%BE%E9%9A%BE%E6%80%A7%E9%80%80%E5%8C%96%E8%A6%81%E8%A6%86%E7%9B%96%E5%8F%82%E6%95%B0%E5%A4%96%E7%9A%84%E7%B3%BB%E7%BB%9F%E8%A1%8C%E4%B8%BA"><span class="nav-number">13.</span> <span class="nav-text">十二、安全回归与灾难性退化要覆盖参数外的系统行为</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%AE%AD%E7%BB%83%E7%9B%AE%E6%A0%87%E5%8F%AF%E8%83%BD%E6%95%99%E4%BC%9A%E9%94%99%E8%AF%AF%E8%83%BD%E5%8A%9B%E5%A3%B0%E6%98%8E"><span class="nav-number">13.1.</span> <span class="nav-text">1. 训练目标可能教会错误能力声明</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%AE%89%E5%85%A8%E5%9B%9E%E5%BD%92%E5%88%86%E5%9B%9B%E5%B1%82"><span class="nav-number">13.2.</span> <span class="nav-text">2. 安全回归分四层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E9%9A%90%E7%A7%81%E4%B8%8E%E8%AE%B0%E5%BF%86%E6%8E%A2%E6%B5%8B"><span class="nav-number">13.3.</span> <span class="nav-text">3. 隐私与记忆探测</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%88%86%E5%B8%83%E5%A4%96%E4%B8%8E%E6%8B%92%E7%BB%9D%E8%83%BD%E5%8A%9B"><span class="nav-number">13.4.</span> <span class="nav-text">4. 分布外与拒绝能力</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E8%AE%AD%E7%BB%83%E6%97%B6%E5%AE%89%E5%85%A8%E6%A3%80%E6%9F%A5%E4%B8%8E%E5%BA%94%E7%94%A8%E5%AE%89%E5%85%A8%E9%97%A8%E7%A6%81%E5%B9%B6%E5%AD%98"><span class="nav-number">13.5.</span> <span class="nav-text">5. 训练时安全检查与应用安全门禁并存</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81%E6%97%A0%E9%9C%80-API-Key-%E7%9A%84%E6%95%B0%E6%8D%AE%E5%AE%A1%E8%AE%A1%E3%80%81split%E3%80%81%E6%8C%87%E7%BA%B9%E4%B8%8E%E9%AA%8C%E6%94%B6%E9%97%A8%E7%A6%81"><span class="nav-number">14.</span> <span class="nav-text">十三、无需 API Key 的数据审计、split、指纹与验收门禁</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%A4%BA%E4%BE%8B%E8%83%BD%E8%AF%81%E6%98%8E%E4%BB%80%E4%B9%88"><span class="nav-number">14.1.</span> <span class="nav-text">示例能证明什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%A4%BA%E4%BE%8B%E6%B2%A1%E6%9C%89%E8%AF%81%E6%98%8E%E4%BB%80%E4%B9%88"><span class="nav-number">14.2.</span> <span class="nav-text">示例没有证明什么</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81%E8%87%AA%E5%8A%A8%E5%8C%96%E6%B5%8B%E8%AF%95%E4%B8%8E%E5%A4%B1%E8%B4%A5%E6%B3%A8%E5%85%A5%EF%BC%9A%E8%AE%AD%E7%BB%83%E6%88%90%E5%8A%9F%E8%B7%AF%E5%BE%84%E8%BF%9C%E8%BF%9C%E4%B8%8D%E5%A4%9F"><span class="nav-number">15.</span> <span class="nav-text">十四、自动化测试与失败注入：训练成功路径远远不够</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%AE%AD%E7%BB%83%E5%89%8D%E9%9D%99%E6%80%81%E9%97%A8%E7%A6%81"><span class="nav-number">15.1.</span> <span class="nav-text">1. 训练前静态门禁</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%AE%AD%E7%BB%83%E8%BF%87%E7%A8%8B%E4%B8%8D%E5%8F%98%E9%87%8F"><span class="nav-number">15.2.</span> <span class="nav-text">2. 训练过程不变量</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%AE%AD%E7%BB%83%E6%95%85%E9%9A%9C%E6%B3%A8%E5%85%A5%E7%9F%A9%E9%98%B5"><span class="nav-number">15.3.</span> <span class="nav-text">3. 训练故障注入矩阵</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%BA%A7%E7%89%A9%E7%AF%A1%E6%94%B9%E6%B5%8B%E8%AF%95"><span class="nav-number">15.4.</span> <span class="nav-text">4. 产物篡改测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E8%AF%84%E6%B5%8B%E6%B5%81%E6%B0%B4%E7%BA%BF%E6%95%85%E9%9A%9C%E6%B3%A8%E5%85%A5"><span class="nav-number">15.5.</span> <span class="nav-text">5. 评测流水线故障注入</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E5%80%99%E9%80%89%E5%8A%A0%E8%BD%BD%E4%B8%8E%E6%9C%8D%E5%8A%A1%E5%85%BC%E5%AE%B9%E6%B5%8B%E8%AF%95"><span class="nav-number">15.6.</span> <span class="nav-text">6. 候选加载与服务兼容测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-%E5%9B%9E%E6%BB%9A%E6%BC%94%E7%BB%83%E6%98%AF%E5%8F%91%E5%B8%83%E6%B5%8B%E8%AF%95%E7%9A%84%E4%B8%80%E9%83%A8%E5%88%86"><span class="nav-number">15.7.</span> <span class="nav-text">7. 回滚演练是发布测试的一部分</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%94%E3%80%81%E4%BB%8E%E7%A6%BB%E7%BA%BF%E5%80%99%E9%80%89%E5%88%B0%E7%94%9F%E4%BA%A7%E7%A8%B3%E5%AE%9A%E7%89%88%EF%BC%9A%E5%BD%B1%E5%AD%90%E3%80%81%E7%81%B0%E5%BA%A6%E5%92%8C%E6%8F%90%E5%8D%87"><span class="nav-number">16.</span> <span class="nav-text">十五、从离线候选到生产稳定版：影子、灰度和提升</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%BD%B1%E5%AD%90%E9%98%B6%E6%AE%B5"><span class="nav-number">16.1.</span> <span class="nav-text">1. 影子阶段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E7%81%B0%E5%BA%A6%E5%8D%95%E5%85%83"><span class="nav-number">16.2.</span> <span class="nav-text">2. 灰度单元</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%89%A9%E5%A4%A7%E6%9D%A1%E4%BB%B6"><span class="nav-number">16.3.</span> <span class="nav-text">3. 扩大条件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E8%87%AA%E5%8A%A8%E5%9B%9E%E6%BB%9A%E4%BF%A1%E5%8F%B7"><span class="nav-number">16.4.</span> <span class="nav-text">4. 自动回滚信号</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E7%BA%BF%E4%B8%8A%E5%AE%9E%E9%AA%8C%E4%B8%8D%E6%94%B9%E5%86%99%E7%A6%BB%E7%BA%BF%E5%90%88%E5%90%8C"><span class="nav-number">16.5.</span> <span class="nav-text">5. 线上实验不改写离线合同</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E6%8F%90%E5%8D%87%E5%90%8E%E7%9A%84%E8%A7%82%E5%AF%9F%E7%AA%97"><span class="nav-number">16.6.</span> <span class="nav-text">6. 提升后的观察窗</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AD%E3%80%81%E6%A8%A1%E5%9E%8B%E5%9B%9E%E6%BB%9A%E4%B8%8E%E6%95%B0%E6%8D%AE%E5%9B%9E%E6%BB%9A%E6%98%AF%E4%B8%A4%E6%9D%A1%E4%B8%8D%E5%90%8C%E8%B7%AF%E5%BE%84"><span class="nav-number">17.</span> <span class="nav-text">十六、模型回滚与数据回滚是两条不同路径</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%A8%A1%E5%9E%8B%E5%9B%9E%E6%BB%9A"><span class="nav-number">17.1.</span> <span class="nav-text">1. 模型回滚</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%95%B0%E6%8D%AE%E5%9B%9E%E6%BB%9A"><span class="nav-number">17.2.</span> <span class="nav-text">2. 数据回滚</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%AF%84%E6%B5%8B%E6%95%B0%E6%8D%AE%E5%9B%9E%E6%BB%9A"><span class="nav-number">17.3.</span> <span class="nav-text">3. 评测数据回滚</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%9F%BA%E5%BA%A7%E6%88%96%E5%B9%B3%E5%8F%B0%E9%80%80%E5%BD%B9%E6%97%B6%E7%9A%84%E5%9B%9E%E6%BB%9A"><span class="nav-number">17.4.</span> <span class="nav-text">4. 基座或平台退役时的回滚</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%9B%9E%E6%BB%9A%E7%9B%AE%E6%A0%87%E4%B9%9F%E4%BC%9A%E8%85%90%E5%8C%96"><span class="nav-number">17.5.</span> <span class="nav-text">5. 回滚目标也会腐化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E5%9B%9E%E6%BB%9A%E5%AE%8C%E6%88%90%E6%9D%A1%E4%BB%B6"><span class="nav-number">17.6.</span> <span class="nav-text">6. 回滚完成条件</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%83%E3%80%81%E5%AE%8C%E6%95%B4%E5%A4%B1%E8%B4%A5%E6%A1%88%E4%BE%8B%EF%BC%9A%E8%AF%84%E6%B5%8B%E7%9A%84%E6%98%AF-ckpt-2400%EF%BC%8C%E7%94%9F%E4%BA%A7%E9%83%A8%E7%BD%B2%E6%88%90-ckpt-3000"><span class="nav-number">18.</span> <span class="nav-text">十七、完整失败案例：评测的是 ckpt-2400，生产部署成 ckpt-3000</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E9%A1%B9%E7%9B%AE%E8%83%8C%E6%99%AF"><span class="nav-number">18.1.</span> <span class="nav-text">1. 项目背景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%A1%A8%E9%9D%A2%E6%88%90%E5%8A%9F"><span class="nav-number">18.2.</span> <span class="nav-text">2. 表面成功</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%AC%AC%E4%B8%80%E8%BD%AE%E6%AD%A2%E8%A1%80"><span class="nav-number">18.3.</span> <span class="nav-text">3. 第一轮止血</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E8%AF%81%E6%8D%AE-A%EF%BC%9A%E7%BA%BF%E4%B8%8A%E6%9C%8D%E5%8A%A1%E6%8C%87%E7%BA%B9%E4%B8%8D%E5%8C%B9%E9%85%8D"><span class="nav-number">18.4.</span> <span class="nav-text">4. 证据 A：线上服务指纹不匹配</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E8%AF%81%E6%8D%AE-B%EF%BC%9A%E7%9C%9F%E6%AD%A3%E7%9A%84%E5%AE%89%E5%85%A8%E5%88%87%E7%89%87%E5%B9%B6%E6%9C%AA%E9%80%9A%E8%BF%87"><span class="nav-number">18.5.</span> <span class="nav-text">5. 证据 B：真正的安全切片并未通过</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E8%AF%81%E6%8D%AE-C%EF%BC%9A%E8%AE%AD%E7%BB%83%E7%9B%AE%E6%A0%87%E5%8C%85%E5%90%AB%E6%97%A0%E8%AF%81%E6%8D%AE%E7%9A%84%E5%8A%A8%E4%BD%9C%E5%A3%B0%E6%98%8E"><span class="nav-number">18.6.</span> <span class="nav-text">6. 证据 C：训练目标包含无证据的动作声明</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-%E8%AF%81%E6%8D%AE-D%EF%BC%9A%E9%9A%94%E7%A6%BB%E6%8A%A5%E5%91%8A%E7%BB%91%E5%AE%9A%E4%BA%86%E6%97%A7-manifest"><span class="nav-number">18.7.</span> <span class="nav-text">7. 证据 D：隔离报告绑定了旧 manifest</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-%E8%AF%81%E6%8D%AE-E%EF%BC%9Ackpt-3000-%E6%AF%94-ckpt-2400-%E6%9B%B4%E8%BF%87%E6%8B%9F%E5%90%88%E8%AF%9D%E6%9C%AF"><span class="nav-number">18.8.</span> <span class="nav-text">8. 证据 E：ckpt-3000 比 ckpt-2400 更过拟合话术</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-%E6%A0%B9%E5%9B%A0"><span class="nav-number">18.9.</span> <span class="nav-text">9. 根因</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-%E6%B0%B8%E4%B9%85%E4%BF%AE%E5%A4%8D"><span class="nav-number">18.10.</span> <span class="nav-text">10. 永久修复</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%A8%A1%E5%9E%8B%E5%9B%9E%E6%BB%9A%E5%86%B3%E5%AE%9A"><span class="nav-number">18.11.</span> <span class="nav-text">11. 数据与模型回滚决定</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-%E5%85%B3%E9%97%AD%E4%BA%8B%E6%95%85%E6%89%80%E9%9C%80%E8%AF%81%E6%8D%AE"><span class="nav-number">18.12.</span> <span class="nav-text">12. 关闭事故所需证据</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AB%E3%80%81%E4%B8%8A%E7%BA%BF%E5%89%8D%E6%A3%80%E6%9F%A5%E8%A1%A8"><span class="nav-number">19.</span> <span class="nav-text">十八、上线前检查表</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%BF%85%E8%A6%81%E6%80%A7%E4%B8%8E%E5%AE%9E%E9%AA%8C%E5%90%88%E5%90%8C"><span class="nav-number">19.1.</span> <span class="nav-text">必要性与实验合同</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E8%AE%B8%E5%8F%AF%E3%80%81%E9%9A%90%E7%A7%81%E4%B8%8E%E9%9A%94%E7%A6%BB"><span class="nav-number">19.2.</span> <span class="nav-text">数据许可、隐私与隔离</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AE%AD%E7%BB%83%E8%BF%90%E8%A1%8C%E4%B8%8E%E4%BA%A7%E7%89%A9"><span class="nav-number">19.3.</span> <span class="nav-text">训练运行与产物</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%80%99%E9%80%89%E4%B8%8E%E9%AA%8C%E6%94%B6"><span class="nav-number">19.4.</span> <span class="nav-text">候选与验收</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%81%B0%E5%BA%A6%E4%B8%8E%E5%8F%91%E5%B8%83"><span class="nav-number">19.5.</span> <span class="nav-text">灰度与发布</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A8%A1%E5%9E%8B%E4%B8%8E%E6%95%B0%E6%8D%AE%E5%9B%9E%E6%BB%9A"><span class="nav-number">19.6.</span> <span class="nav-text">模型与数据回滚</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B9%9D%E3%80%81%E6%80%BB%E7%BB%93"><span class="nav-number">20.</span> <span class="nav-text">十九、总结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8F%82%E8%80%83%E8%B5%84%E6%96%99"><span class="nav-number">21.</span> <span class="nav-text">参考资料</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">358</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">27</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">796</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2026/05/04/AI%E6%B5%8B%E8%AF%95-39-%E5%BE%AE%E8%B0%83%E9%A1%B9%E7%9B%AE%E6%80%8E%E4%B9%88%E8%AE%BE%E8%AE%A1%E8%AE%AD%E7%BB%83%E6%95%B0%E6%8D%AE%E5%9F%BA%E7%BA%BF%E9%AA%8C%E6%94%B6%E5%92%8C%E5%9B%9E%E6%BB%9A/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="AI测试-39-微调项目怎么设计训练数据基线验收和回滚 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          AI测试-39-微调项目怎么设计训练数据基线验收和回滚
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2026-05-04 20:30:00" itemprop="dateCreated datePublished" datetime="2026-05-04T20:30:00+08:00">2026-05-04</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/AI%E6%B5%8B%E8%AF%95/" itemprop="url" rel="index"><span itemprop="name">AI测试</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>20k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>1:12</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>微调项目最容易被误解成一个训练任务：准备 JSONL，选择基座模型，设置 epoch，等待平台返回一个新模型 ID，然后比较几条演示答案。</p>
+<p>真正进入生产后，问题会迅速变成另一组：</p>
+<ul>
+<li>为什么必须改参数，Prompt、RAG 或确定性工具约束真的不够吗；</li>
+<li>候选究竟在修复哪一种稳定行为缺口；</li>
+<li>它比哪个可复现基线更好；</li>
+<li>训练数据是否有合法用途、隐私风险和明确血缘；</li>
+<li>哪个训练、验证、测试版本参与了这次决策；</li>
+<li>近重复或公开 benchmark 是否穿过了隔离边界；</li>
+<li>使用 SFT、全量微调、PEFT、LoRA 或 QLoRA 的理由是什么；</li>
+<li>一个 checkpoint 如何成为可验收的候选产物；</li>
+<li>总体分数提高时，哪个语言、客户、风险或长上下文切片退化；</li>
+<li>安全回归和灾难性退化能否被总分抵消；</li>
+<li>灰度失败后，路由、模型、数据和缓存分别回到哪里；</li>
+<li>如果训练数据后来被认定不可用，怎样证明受影响模型已经退出。</li>
+</ul>
+<p>这些问题不由一次训练 loss 回答。它们需要一份在训练前冻结的实验合同、一条可追溯的产物链、一组按风险分层的候选门禁，以及真的演练过的模型与数据回滚。</p>
+<h2 id="与-AI测试-13、AI测试-15-的边界"><a href="#与-AI测试-13、AI测试-15-的边界" class="headerlink" title="与 AI测试-13、AI测试-15 的边界"></a>与 AI测试-13、AI测试-15 的边界</h2><p>AI测试-13 已经完整讨论 Prompt、RAG、微调、工具调用与 Agent 的选型。本文只保留一个必要性入口：<strong>若没有证据表明参数化行为适配能解决已确认缺口，就不启动微调实验。</strong> 不再复述整套选型树。</p>
+<p>AI测试-15 已经系统讨论评测集采集、清洗、去重、污染、切分和版本化。本文不会再写一套数据集教程。本文只关心这些原则如何成为微调实验合同中的硬证据：</p>
+<ul>
+<li>哪些样本允许用于训练；</li>
+<li>哪些组被固定在 validation 或 test；</li>
+<li>哪份近重复与 benchmark contamination 扫描报告获批；</li>
+<li>哪个不可变数据指纹实际进入训练；</li>
+<li>候选验收是否仍使用未被训练过程接触的测试资产。</li>
+</ul>
+<p>换句话说，39 的中心不是“怎样清洗一份数据”，而是<strong>怎样让一次微调候选从立项到回滚都可证明</strong>。</p>
+<p>文中的样本量、得分、成本、时延和事故数字如未明确引用论文，均为<strong>构造数据</strong>，只用于演示门禁。论文数字只限定在论文报告的模型、硬件与实验设置内。厂商格式和支持范围按资料截止日 <code>2026-07-26</code> 对应官方页面记录，不能推广到其他产品、账号权限、区域、基座快照或未来版本。</p>
+<h2 id="一、先过必要性门：只有稳定行为缺口才进入微调候选"><a href="#一、先过必要性门：只有稳定行为缺口才进入微调候选" class="headerlink" title="一、先过必要性门：只有稳定行为缺口才进入微调候选"></a>一、先过必要性门：只有稳定行为缺口才进入微调候选</h2><h3 id="1-用最小对照证明缺口位于哪里"><a href="#1-用最小对照证明缺口位于哪里" class="headerlink" title="1. 用最小对照证明缺口位于哪里"></a>1. 用最小对照证明缺口位于哪里</h3><p>在微调立项单中，至少保存四个基线结果：</p>
+<table>
+<thead>
+<tr>
+<th>基线</th>
+<th>固定条件</th>
+<th>要排除的问题</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>B0 确定性规则&#x2F;传统模型</td>
+<td>相同输入与业务约束</td>
+<td>任务是否根本不需要生成模型</td>
+</tr>
+<tr>
+<td>B1 基座模型 + 最佳已知 Prompt</td>
+<td>固定模型快照、参数与模板</td>
+<td>提示是否已经足够</td>
+</tr>
+<tr>
+<td>B2 B1 + 正确外部证据</td>
+<td>固定 Oracle 或生产 RAG 输入</td>
+<td>缺口是否来自知识而非行为</td>
+</tr>
+<tr>
+<td>B3 B1 + 受控工具结果</td>
+<td>固定工具响应与验证器</td>
+<td>缺口是否来自实时状态或动作能力</td>
+</tr>
+</tbody></table>
+<p>只有当缺口在这些控制之后仍稳定存在，且它表现为可学习的输出行为，微调才有清晰假设。例如：</p>
+<ul>
+<li>同一任务格式长期不稳定；</li>
+<li>特定标签体系的边界在 Prompt 下持续混淆；</li>
+<li>领域表达或固定风格需要大量重复示范；</li>
+<li>调用工具的结构模式在代表性输入上反复失败；</li>
+<li>在满足成本或时延预算时，较小模型需要行为适配。</li>
+</ul>
+<p>以下问题通常不应靠微调“记住”：</p>
+<ul>
+<li>每天变化的价格、库存、政策和权限；</li>
+<li>当前订单、账户余额或设备状态；</li>
+<li>必须精确引用的知识来源；</li>
+<li>生产删除权限与审批规则；</li>
+<li>可以由 Schema、编译器或业务代码确定性验证的约束。</li>
+</ul>
+<p>微调可能改善模型产生某种结构的倾向，但 Schema 通过不等于业务语义正确。模型输出的 <code>refund_allowed=true</code> 即使 JSON 完全合法，也不能替代订单状态、政策版本和权限服务的确定性裁决。</p>
+<h3 id="2-必要性门的退出条件"><a href="#2-必要性门的退出条件" class="headerlink" title="2. 必要性门的退出条件"></a>2. 必要性门的退出条件</h3><p>出现以下任一情况，应关闭或暂停微调立项：</p>
+<ul>
+<li>最佳 Prompt 已达到合同目标，继续训练只有不确定的边际收益；</li>
+<li>Oracle 证据能修复问题，说明应该建设 RAG 或数据访问；</li>
+<li>确定性工具能精确返回结果，参数记忆反而增加陈旧风险；</li>
+<li>没有可合法使用且代表目标行为的数据；</li>
+<li>没有独立测试集和可靠指标，无法判断候选好坏；</li>
+<li>基座模型或厂商微调能力将在项目周期内退役；</li>
+<li>线上无法并存稳定版与候选版，回滚时间不满足风险预算；</li>
+<li>失败后不能定位到数据、训练、评测或服务层。</li>
+</ul>
+<p>“已经采购训练预算”或“平台提供微调按钮”不是必要性证据。</p>
+<h2 id="二、工程定义：把微调项目拆成合同、运行、产物、候选和发布"><a href="#二、工程定义：把微调项目拆成合同、运行、产物、候选和发布" class="headerlink" title="二、工程定义：把微调项目拆成合同、运行、产物、候选和发布"></a>二、工程定义：把微调项目拆成合同、运行、产物、候选和发布</h2><h3 id="1-实验合同"><a href="#1-实验合同" class="headerlink" title="1. 实验合同"></a>1. 实验合同</h3><p>实验合同是在看到训练结果之前确定的比较规则，包含：</p>
+<ul>
+<li>任务与禁止用途；</li>
+<li>稳定基线身份；</li>
+<li>可证伪假设；</li>
+<li>训练、validation、test 数据指纹；</li>
+<li>基座模型快照与推理配置；</li>
+<li>评测器、指标、切片、门槛和统计方法；</li>
+<li>安全硬门禁；</li>
+<li>时延、吞吐、成本与资源预算；</li>
+<li>最大实验次数和停止条件；</li>
+<li>候选推进、拒绝和例外审批规则；</li>
+<li>影子、灰度、提升与回滚策略。</li>
+</ul>
+<p>合同不是项目简介。它要让另一个团队在不问作者意图的情况下，能重跑基线、检查产物并得到相同发布判定。</p>
+<h3 id="2-训练运行"><a href="#2-训练运行" class="headerlink" title="2. 训练运行"></a>2. 训练运行</h3><p>一次运行是对固定输入资产执行固定训练代码的实例。它有唯一 <code>run_id</code>，记录：</p>
+<ul>
+<li>数据 manifest 哈希；</li>
+<li>基座模型精确 ID 或权重哈希；</li>
+<li>tokenizer、聊天模板和特殊 token；</li>
+<li>SFT&#x2F;PEFT&#x2F;LoRA&#x2F;QLoRA 等方法；</li>
+<li>可训练模块、rank、alpha、dropout；</li>
+<li>optimizer、学习率计划、batch、梯度累积；</li>
+<li>epoch、step、seed 与采样顺序；</li>
+<li>精度、量化、硬件和关键库版本；</li>
+<li>训练&#x2F;validation loss 与资源事件；</li>
+<li>每个 checkpoint 的内容哈希。</li>
+</ul>
+<p>“同一份代码再次运行”不一定得到字节完全相同的权重。GPU kernel、并行规约、库版本和非确定性算子都可能影响结果。因此合同要区分：</p>
+<ul>
+<li><strong>位级复现</strong>：权重字节完全一致；</li>
+<li><strong>过程复现</strong>：输入、配置和环境一致，训练轨迹在容差内；</li>
+<li><strong>行为复现</strong>：候选在冻结评测上的结果落在预定容差内。</li>
+</ul>
+<p>不能做到位级复现时，要诚实记录并用重复运行度量方差。</p>
+<h3 id="3-训练产物"><a href="#3-训练产物" class="headerlink" title="3. 训练产物"></a>3. 训练产物</h3><p>产物不只是最终模型文件。完整产物包包括：</p>
+<ul>
+<li>权重或 Adapter；</li>
+<li>tokenizer 与聊天模板；</li>
+<li>模型配置和生成默认参数；</li>
+<li>训练数据 manifest 与每个 split 指纹；</li>
+<li>训练代码提交哈希和未提交补丁摘要；</li>
+<li>容器镜像或环境锁定文件；</li>
+<li>运行配置、日志、曲线和 checkpoint 清单；</li>
+<li>训练时安全扫描与异常记录；</li>
+<li>评测逐样本结果和汇总报告；</li>
+<li>模型卡、用途、限制和已知失败；</li>
+<li>部署兼容性与回滚说明。</li>
+</ul>
+<p><a target="_blank" rel="noopener" href="https://arxiv.org/abs/1810.03993">Model Cards 原始论文</a>建议随模型记录预期用途、评测过程和不同相关条件下的表现。工程上应把模型卡连接到不可变产物，而不是发布后手工写一篇与实际 checkpoint 脱节的说明。</p>
+<h3 id="4-候选"><a href="#4-候选" class="headerlink" title="4. 候选"></a>4. 候选</h3><p>checkpoint 是某个训练时刻的权重快照；候选是<strong>绑定完整服务配置并准备接受同一合同验收的系统版本</strong>。候选身份至少包含：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">candidate_id = hash(</span><br><span class="line">  base_model,</span><br><span class="line">  model_or_adapter,</span><br><span class="line">  tokenizer,</span><br><span class="line">  chat_template,</span><br><span class="line">  system_prompt,</span><br><span class="line">  inference_parameters,</span><br><span class="line">  tool_schema,</span><br><span class="line">  safety_policy,</span><br><span class="line">  serving_runtime</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+
+<p>只比较 Adapter 文件会漏掉推理时真正改变行为的 Prompt、模板、tokenizer 和安全策略。反过来，候选更换多个变量又会失去归因，因此实验阶段应尽量一次只改变已声明因素。</p>
+<h3 id="5-发布与稳定指针"><a href="#5-发布与稳定指针" class="headerlink" title="5. 发布与稳定指针"></a>5. 发布与稳定指针</h3><p>发布不是复制模型文件，而是把流量路由从 <code>stable</code> 指针逐步转向某个候选。稳定指针必须指向不可变组合，而不是会被同名覆盖的“latest”。</p>
+<p>回滚就是把路由恢复到上一个仍可服务、仍满足当前政策的稳定组合。若旧基座已被供应商退役、旧权重已删除、旧 Prompt 与新工具不兼容，则名义上的回滚入口并不存在。</p>
+<h2 id="三、完整生命周期：每个推进动作都有反向路径"><a href="#三、完整生命周期：每个推进动作都有反向路径" class="headerlink" title="三、完整生命周期：每个推进动作都有反向路径"></a>三、完整生命周期：每个推进动作都有反向路径</h2><p><img src="/images/ai-quality/ai-39-finetuning-lifecycle.svg" alt="微调实验合同、训练产物、候选验收与回滚生命周期"></p>
+<h3 id="阶段-0：必要性证明"><a href="#阶段-0：必要性证明" class="headerlink" title="阶段 0：必要性证明"></a>阶段 0：必要性证明</h3><p>固定 B0 到 B3，收集持续失败切片，确认问题属于稳定行为适配。产物是立项证据，不是训练数据。</p>
+<h3 id="阶段-1：冻结实验合同"><a href="#阶段-1：冻结实验合同" class="headerlink" title="阶段 1：冻结实验合同"></a>阶段 1：冻结实验合同</h3><p>在训练前批准基线、数据版本、评测版本、门槛、预算与停止条件。训练完成后临时降低门槛属于重新定义实验，必须开新合同并说明原因，不能覆盖原判定。</p>
+<h3 id="阶段-2：数据准入"><a href="#阶段-2：数据准入" class="headerlink" title="阶段 2：数据准入"></a>阶段 2：数据准入</h3><p>数据负责人、隐私&#x2F;安全责任人和任务专家分别确认用途许可、最小化、隔离与标签语义。训练只读取获批 manifest 中的对象。</p>
+<h3 id="阶段-3：训练与产物登记"><a href="#阶段-3：训练与产物登记" class="headerlink" title="阶段 3：训练与产物登记"></a>阶段 3：训练与产物登记</h3><p>运行平台记录输入指纹、环境、配置、日志和 checkpoint。训练作业成功只表示过程结束，不表示候选可发布。</p>
+<h3 id="阶段-4：冻结基线重跑"><a href="#阶段-4：冻结基线重跑" class="headerlink" title="阶段 4：冻结基线重跑"></a>阶段 4：冻结基线重跑</h3><p>用同一测试集、评测器、推理预算和服务包装重新运行稳定基线。若基线无法复现历史报告，应先调查环境或评测漂移，不能直接比较候选。</p>
+<h3 id="阶段-5：离线验收"><a href="#阶段-5：离线验收" class="headerlink" title="阶段 5：离线验收"></a>阶段 5：离线验收</h3><p>执行总体、关键切片、安全、鲁棒性、成本和运行门禁。保存逐样本配对差异，不只保存一个总分。</p>
+<h3 id="阶段-6：影子与灰度"><a href="#阶段-6：影子与灰度" class="headerlink" title="阶段 6：影子与灰度"></a>阶段 6：影子与灰度</h3><p>影子阶段用真实输入调用候选但不交付结果；灰度只向明确白名单和小比例流量交付。每一步都有最短稳定窗口、扩大条件和自动回滚信号。</p>
+<h3 id="阶段-7：提升与保留"><a href="#阶段-7：提升与保留" class="headerlink" title="阶段 7：提升与保留"></a>阶段 7：提升与保留</h3><p>候选成为稳定版后，旧稳定版在回滚窗口继续可服务。产物、数据与评测证据按保留政策冻结。新模型接受持续漂移、安全和业务监控。</p>
+<h3 id="阶段-8：退役或数据撤回"><a href="#阶段-8：退役或数据撤回" class="headerlink" title="阶段 8：退役或数据撤回"></a>阶段 8：退役或数据撤回</h3><p>基座退役、许可证变化、数据主体请求或事故可能要求停用模型。控制面应能由数据版本反查所有派生运行、候选和发布，先停止路由，再决定销毁、隔离或从干净父版本重训。</p>
+<h2 id="四、实验合同怎样写到可以直接判定"><a href="#四、实验合同怎样写到可以直接判定" class="headerlink" title="四、实验合同怎样写到可以直接判定"></a>四、实验合同怎样写到可以直接判定</h2><h3 id="1-任务陈述必须可观测"><a href="#1-任务陈述必须可观测" class="headerlink" title="1. 任务陈述必须可观测"></a>1. 任务陈述必须可观测</h3><p>弱陈述：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">让客服模型更懂退款业务。</span><br></pre></td></tr></table></figure>
+
+<p>可测试陈述：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">在 refund-intent-v6 的密封测试集上，固定输入为用户消息与已验证订单事实，</span><br><span class="line">输出为 12 类意图之一及 3 个结构化字段；候选相对 stable-2026-04-12</span><br><span class="line">总体准确率至少提升 2.0 个百分点，任何一级风险切片退化不超过 0.5 个百分点，</span><br><span class="line">越权退款承诺严重事件为 0，p95 延迟不高于 900ms，单位成本不高于基线 1.05 倍。</span><br></pre></td></tr></table></figure>
+
+<p>它明确对象、输入、输出、基线、数据、改善幅度、风险红线和运行预算。候选即使总体提升 4 个百分点，只要产生一次合同定义的严重越权承诺，也应拒绝。</p>
+<h3 id="2-可证伪假设"><a href="#2-可证伪假设" class="headerlink" title="2. 可证伪假设"></a>2. 可证伪假设</h3><p>一个好的假设说明为什么参数更新可能改善，并说明怎样判错：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">H1：基座在“部分退款 + 已发货”组合上持续混淆，是因为领域标签边界未形成稳定行为；</span><br><span class="line">在 Prompt、订单工具结果和输出验证器固定后，加入经专家一致标注的边界示范做 SFT，</span><br><span class="line">应改善该切片，同时不降低拒答、安全和其他订单状态切片。</span><br></pre></td></tr></table></figure>
+
+<p>如果 Oracle 工具状态已经让 B3 达标，H1 被否定，不应继续用训练数据记订单规则。</p>
+<h3 id="3-变量冻结表"><a href="#3-变量冻结表" class="headerlink" title="3. 变量冻结表"></a>3. 变量冻结表</h3><table>
+<thead>
+<tr>
+<th>变量</th>
+<th>基线</th>
+<th>候选</th>
+<th>是否允许变化</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>基座模型</td>
+<td>精确快照 A</td>
+<td>同一快照 A</td>
+<td>否</td>
+</tr>
+<tr>
+<td>Prompt</td>
+<td><code>prompt_sha256=P1</code></td>
+<td>P1</td>
+<td>否</td>
+</tr>
+<tr>
+<td>RAG 语料&#x2F;检索配置</td>
+<td><code>corpus=C7/config=R4</code></td>
+<td>相同</td>
+<td>否</td>
+</tr>
+<tr>
+<td>工具 Schema 与模拟响应</td>
+<td><code>tools=T3</code></td>
+<td>相同</td>
+<td>否</td>
+</tr>
+<tr>
+<td>安全策略</td>
+<td><code>policy=S9</code></td>
+<td>相同</td>
+<td>否</td>
+</tr>
+<tr>
+<td>训练方法</td>
+<td>无</td>
+<td>LoRA 合同 L2</td>
+<td>是，实验因素</td>
+</tr>
+<tr>
+<td>推理参数</td>
+<td>temperature、max tokens 固定</td>
+<td>相同</td>
+<td>否</td>
+</tr>
+<tr>
+<td>评测集与评测器</td>
+<td><code>test=E6/judge=J4</code></td>
+<td>相同</td>
+<td>否</td>
+</tr>
+</tbody></table>
+<p>若必须同时升级基座和训练，应拆成至少两个对照：新基座未调版与新基座微调版。否则改善可能来自基座升级，退化也无法归因。</p>
+<h3 id="4-预注册门槛和例外规则"><a href="#4-预注册门槛和例外规则" class="headerlink" title="4. 预注册门槛和例外规则"></a>4. 预注册门槛和例外规则</h3><p>门槛在训练前确定，避免看到结果后挑选有利指标。合同还要规定：</p>
+<ul>
+<li>指标统计单位是样本、会话还是用户；</li>
+<li>无法判定样本如何计入分母；</li>
+<li>非确定性输出运行几次；</li>
+<li>配对差异和置信区间如何计算；</li>
+<li>多个候选比较是否调整选择偏差；</li>
+<li>安全事件由谁复核；</li>
+<li>哪些是硬失败，哪些可以人工例外；</li>
+<li>例外有效期和补救动作是什么。</li>
+</ul>
+<p>例外不能由训练团队单方面批准。严重安全或许可失败通常不应设置加权抵消。</p>
+<h3 id="5-停止条件"><a href="#5-停止条件" class="headerlink" title="5. 停止条件"></a>5. 停止条件</h3><p>微调实验容易无止境地“再补一点数据、再跑一轮”。合同可设：</p>
+<ul>
+<li>最多三轮数据修订；</li>
+<li>固定计算或供应商预算；</li>
+<li>连续两轮关键切片无实质改善则停止；</li>
+<li>任何许可或密封测试泄漏立即停止；</li>
+<li>基座能力&#x2F;平台生命周期变化重新立项；</li>
+<li>候选虽改善质量但无法达到服务预算则停止。</li>
+</ul>
+<p>停止并不等于项目失败。它可能证明 Prompt、工具、基座升级或产品流程更值得投入。</p>
+<h2 id="五、训练数据准入：聚焦许可、隐私与实验用途证明"><a href="#五、训练数据准入：聚焦许可、隐私与实验用途证明" class="headerlink" title="五、训练数据准入：聚焦许可、隐私与实验用途证明"></a>五、训练数据准入：聚焦许可、隐私与实验用途证明</h2><h3 id="1-每条样本都要有用途链"><a href="#1-每条样本都要有用途链" class="headerlink" title="1. 每条样本都要有用途链"></a>1. 每条样本都要有用途链</h3><p>训练 manifest 至少保存：</p>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>sample_id</code></td>
+<td>稳定身份，不含直接个人信息</td>
+</tr>
+<tr>
+<td><code>source_asset_id</code></td>
+<td>回到原始资产与授权记录</td>
+</tr>
+<tr>
+<td><code>purpose</code></td>
+<td>允许用于哪类训练或评测</td>
+</tr>
+<tr>
+<td><code>license_basis</code></td>
+<td>许可证、合同或内部授权依据</td>
+</tr>
+<tr>
+<td><code>privacy_status</code></td>
+<td>未扫描、已脱敏、受限、禁止</td>
+</tr>
+<tr>
+<td><code>retention_until</code></td>
+<td>允许保留到何时</td>
+</tr>
+<tr>
+<td><code>withdrawal_key</code></td>
+<td>后续撤回时反查派生产物</td>
+</tr>
+<tr>
+<td><code>label_policy_version</code></td>
+<td>输出为何被认定为目标行为</td>
+</tr>
+<tr>
+<td><code>group_id</code></td>
+<td>会话、客户、模板族或源文档隔离键</td>
+</tr>
+<tr>
+<td><code>split</code></td>
+<td>train&#x2F;validation&#x2F;test，写入后不可随意漂移</td>
+</tr>
+</tbody></table>
+<p>“来自生产日志”不等于获得训练许可。“网上公开”也不等于可以按任意方式训练。具体法律结论应由组织的法务与隐私流程确定；工程系统的责任是保存依据、执行最小化、阻止未批准样本进入训练，并支持撤回追踪。</p>
+<h3 id="2-数据最小化发生在训练之前"><a href="#2-数据最小化发生在训练之前" class="headerlink" title="2. 数据最小化发生在训练之前"></a>2. 数据最小化发生在训练之前</h3><p>如果任务是意图分类，不需要把姓名、手机号、地址、订单号和完整对话都保留。优先：</p>
+<ul>
+<li>只提取与任务有关的消息片段；</li>
+<li>用稳定但不可逆的替代标识保持组关系；</li>
+<li>对直接标识符做删除或经过审核的占位替换；</li>
+<li>限制自由文本中的隐含敏感信息；</li>
+<li>把访问日志和训练语料分开授权；</li>
+<li>让原始数据只在受控区内生成最小训练视图。</li>
+</ul>
+<p>脱敏扫描“未命中”不是隐私保证。规则可能漏掉上下文身份、罕见格式和可组合信息。高风险数据需要抽样人工复核、访问控制和保留限制。</p>
+<h3 id="3-删除训练样本不等于从模型参数中精确删除影响"><a href="#3-删除训练样本不等于从模型参数中精确删除影响" class="headerlink" title="3. 删除训练样本不等于从模型参数中精确删除影响"></a>3. 删除训练样本不等于从模型参数中精确删除影响</h3><p>数据撤回后可以立即：</p>
+<ul>
+<li>阻止该样本进入新运行；</li>
+<li>撤销训练数据版本；</li>
+<li>由血缘图找出所有受影响 run 和候选；</li>
+<li>停止受影响候选的新增流量；</li>
+<li>按政策隔离或退役模型；</li>
+<li>从不含该样本的干净父版本重新训练。</li>
+</ul>
+<p>但一般不能仅删除 JSONL 行就证明已从既有权重中移除其影响。除非使用并验证了特定可遗忘机制，数据回滚通常意味着<strong>路由撤回加重新训练</strong>，不是在原权重上改一个 manifest。</p>
+<h3 id="4-训练服务的产品数据政策也要进入合同"><a href="#4-训练服务的产品数据政策也要进入合同" class="headerlink" title="4. 训练服务的产品数据政策也要进入合同"></a>4. 训练服务的产品数据政策也要进入合同</h3><p>使用托管服务时，合同需记录当时官方条款与配置：数据是否用于提供商训练、保留时间、区域、加密、访问角色、删除接口和日志可见性。这些能力会随产品、账号类型和时间变化，不能用一句“云平台合规”代替逐项核对。</p>
+<h3 id="5-数据质量责任没有因为平台托管而消失"><a href="#5-数据质量责任没有因为平台托管而消失" class="headerlink" title="5. 数据质量责任没有因为平台托管而消失"></a>5. 数据质量责任没有因为平台托管而消失</h3><p>供应商接受 JSONL 或训练任务进入 <code>succeeded</code>，只说明格式和作业条件满足其平台要求。它不证明：</p>
+<ul>
+<li>示例是合法获得的；</li>
+<li>标注代表正确业务行为；</li>
+<li>train 与 test 没有泄漏；</li>
+<li>分布覆盖目标用户；</li>
+<li>候选没有安全退化；</li>
+<li>训练收益超过基线和运行成本。</li>
+</ul>
+<p>这些仍由使用方的实验合同和验收承担。</p>
+<h2 id="六、train、validation、test-隔离：只保留实验需要的证据"><a href="#六、train、validation、test-隔离：只保留实验需要的证据" class="headerlink" title="六、train、validation、test 隔离：只保留实验需要的证据"></a>六、train、validation、test 隔离：只保留实验需要的证据</h2><p>AI测试-15 已经展开切分、近重复与污染方法，本文不重复算法细节。微调项目只需要把隔离结果变成不可变合同。</p>
+<h3 id="1-三个集合在实验中的职责"><a href="#1-三个集合在实验中的职责" class="headerlink" title="1. 三个集合在实验中的职责"></a>1. 三个集合在实验中的职责</h3><p><code>train</code> 用于参数更新。训练人员可以分析其标签与覆盖，模型会直接接触其目标输出。</p>
+<p><code>validation</code> 用于训练过程中的 checkpoint 选择、早停和有限超参数决策。一旦被反复用于选择，它就是开发反馈的一部分，不能再充当最终盲测。</p>
+<p><code>test</code> 用于候选与稳定基线的最终发布比较。训练代码不可读取，数据工程报告不向调参人员暴露逐样本答案，运行次数和访问者受审计。</p>
+<p>若一个团队看过 test 失败并据此补训练样本，原 test 已转化为开发资产。应提升新的密封版本，而不是继续把原分数称为盲测结果。</p>
+<h3 id="2-隔离单位必须写进-manifest"><a href="#2-隔离单位必须写进-manifest" class="headerlink" title="2. 隔离单位必须写进 manifest"></a>2. 隔离单位必须写进 manifest</h3><p>逐行随机切分容易让同一会话、客户、模板或源文档的近似内容横跨集合。实验合同应直接声明 <code>group_key</code>，例如：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">group_key = customer_case_id</span><br></pre></td></tr></table></figure>
+
+<p>或：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">group_key = normalized_template_cluster_id + source_document_family</span><br></pre></td></tr></table></figure>
+
+<p>每个 group 只能属于一个 split。代码检查的不只是 <code>sample_id</code> 不重复，还要检查组、源资产和近重复簇不跨边界。</p>
+<h3 id="3-近重复报告是准入证据，不是为了得到一个漂亮数字"><a href="#3-近重复报告是准入证据，不是为了得到一个漂亮数字" class="headerlink" title="3. 近重复报告是准入证据，不是为了得到一个漂亮数字"></a>3. 近重复报告是准入证据，不是为了得到一个漂亮数字</h3><p>训练前保存：</p>
+<ul>
+<li>规范化与候选生成器版本；</li>
+<li>相似判定策略与阈值；</li>
+<li>跨 split 候选对数量；</li>
+<li>人工复核结论；</li>
+<li>被合并、隔离或保留的理由；</li>
+<li>扫描输入 manifest 的哈希。</li>
+</ul>
+<p>不能只保留“近重复率 0.2%”。若阈值或规范化改变，同一个数字不可比较。也不能因为候选模型分数很好，再放宽阈值让冲突消失。</p>
+<h3 id="4-benchmark-contamination-的边界"><a href="#4-benchmark-contamination-的边界" class="headerlink" title="4. benchmark contamination 的边界"></a>4. benchmark contamination 的边界</h3><p>如果训练数据包含公开 benchmark 题、改写、答案或翻译，候选在该 benchmark 上的提升可能只是接触效应。实验需要：</p>
+<ul>
+<li>维护禁止进入训练的 benchmark 清单与版本；</li>
+<li>扫描精确、规范化和经过批准的语义候选；</li>
+<li>记录无法验证的基座预训练污染；</li>
+<li>把已知污染 benchmark 降级为开发诊断，不承担发布结论；</li>
+<li>使用来源独立、时间或组织隔离的任务测试补充证据。</li>
+</ul>
+<p>“没有发现”表示在已声明扫描能力下未命中，不等于证明不存在污染。候选门禁应记录残余不确定性。</p>
+<h3 id="5-数据冻结点"><a href="#5-数据冻结点" class="headerlink" title="5. 数据冻结点"></a>5. 数据冻结点</h3><p>训练 run 创建时解析一个不可变 manifest，包含有序样本 ID、内容哈希、split、用途状态和转换版本。作业运行中禁止读取会变化的“latest dataset”视图。</p>
+<p>如果某条样本被撤回，创建新 manifest 版本。不要原地改旧版本后继续沿用同一指纹和报告，否则历史训练无法复现，派生模型也无法准确追踪。</p>
+<h2 id="七、任务基线：候选必须赢过可部署系统，而不只是训练前的裸模型"><a href="#七、任务基线：候选必须赢过可部署系统，而不只是训练前的裸模型" class="headerlink" title="七、任务基线：候选必须赢过可部署系统，而不只是训练前的裸模型"></a>七、任务基线：候选必须赢过可部署系统，而不只是训练前的裸模型</h2><h3 id="1-稳定基线的完整身份"><a href="#1-稳定基线的完整身份" class="headerlink" title="1. 稳定基线的完整身份"></a>1. 稳定基线的完整身份</h3><p>基线通常是当前生产组合：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">base model snapshot</span><br><span class="line">+ system/developer prompt</span><br><span class="line">+ few-shot examples</span><br><span class="line">+ RAG configuration and corpus snapshot</span><br><span class="line">+ tool schemas and validators</span><br><span class="line">+ safety filters</span><br><span class="line">+ inference parameters</span><br><span class="line">+ serving runtime</span><br></pre></td></tr></table></figure>
+
+<p>如果只拿微调候选与裸基座比较，而生产稳定版已经有成熟 Prompt 和验证器，得到的“提升”不能支持替换决策。</p>
+<h3 id="2-至少保留一个简单基线"><a href="#2-至少保留一个简单基线" class="headerlink" title="2. 至少保留一个简单基线"></a>2. 至少保留一个简单基线</h3><p>分类、抽取和路由任务应包含传统或确定性基线，例如关键词规则、逻辑回归、小型分类器或 Schema 验证后的映射。它可以揭示：</p>
+<ul>
+<li>大模型是否为简单任务增加了不必要成本；</li>
+<li>指标改善是否来自数据修复而非微调；</li>
+<li>灾难时是否有低能力但安全的降级路径；</li>
+<li>某些高风险切片能否用硬规则兜底。</li>
+</ul>
+<p>简单基线不必总体最强，但要作为成本、可解释性和故障行为参照。</p>
+<h3 id="3-基线要在候选验收时重跑"><a href="#3-基线要在候选验收时重跑" class="headerlink" title="3. 基线要在候选验收时重跑"></a>3. 基线要在候选验收时重跑</h3><p>历史报告可能使用旧评测器、旧 Prompt、旧依赖或不同服务区域。候选报告应在同一执行批次重跑稳定版，形成逐样本配对结果。</p>
+<p>若基线重跑从 86% 变成 81%，先调查：</p>
+<ul>
+<li>测试数据版本是否变化；</li>
+<li>评测器或标签映射是否变化；</li>
+<li>基座别名是否指向新快照；</li>
+<li>推理参数和重试是否一致；</li>
+<li>外部工具、RAG 或安全策略是否漂移；</li>
+<li>随机性和运行次数是否足够。</li>
+</ul>
+<p>不能沿用旧 86% 与当前候选 84% 做跨环境比较，也不能只因为候选高于当前异常基线就发布。</p>
+<h3 id="4-训练-loss-不是任务基线"><a href="#4-训练-loss-不是任务基线" class="headerlink" title="4. 训练 loss 不是任务基线"></a>4. 训练 loss 不是任务基线</h3><p>loss 是优化目标的过程信号。它可帮助发现不收敛、过拟合或数据异常，但不直接表示：</p>
+<ul>
+<li>业务标签正确率；</li>
+<li>关键切片风险；</li>
+<li>工具参数业务合法；</li>
+<li>拒答边界；</li>
+<li>隐私泄漏；</li>
+<li>线上时延与成本。</li>
+</ul>
+<p>validation loss 更低的 checkpoint 可以在业务门禁上更差，因此 checkpoint 选择要结合预先定义的任务评测，而不是训练曲线自动替代发布决策。</p>
+<h3 id="5-人类或规则上界的作用"><a href="#5-人类或规则上界的作用" class="headerlink" title="5. 人类或规则上界的作用"></a>5. 人类或规则上界的作用</h3><p>如果标签本身需要专家判断，保存标注一致性和复核上界。假设专家在同一量表上只有 88% 一致，而合同要求模型达到 99%，问题可能在标签定义而非训练算法。</p>
+<p>上界不是给模型降标准，而是帮助判断应先改任务定义、证据输入还是训练。高风险动作仍可以要求模型输出进入人工或确定性审批，不能用“人也会错”取消安全控制。</p>
+<h2 id="八、SFT、全量微调、PEFT、LoRA-与-QLoRA-的工程边界"><a href="#八、SFT、全量微调、PEFT、LoRA-与-QLoRA-的工程边界" class="headerlink" title="八、SFT、全量微调、PEFT、LoRA 与 QLoRA 的工程边界"></a>八、SFT、全量微调、PEFT、LoRA 与 QLoRA 的工程边界</h2><h3 id="1-SFT-描述目标，不等于某一种参数更新方式"><a href="#1-SFT-描述目标，不等于某一种参数更新方式" class="headerlink" title="1. SFT 描述目标，不等于某一种参数更新方式"></a>1. SFT 描述目标，不等于某一种参数更新方式</h3><p>监督微调 SFT 使用输入与期望输出示范来优化模型。它描述训练信号。底层可以更新全部参数，也可以只训练 Adapter。讨论方案时应分开两个问题：</p>
+<ul>
+<li>学习目标是什么：监督示范、偏好、奖励或其他目标；</li>
+<li>哪些参数被更新：全部权重、部分层、Adapter、低秩矩阵。</li>
+</ul>
+<p>把“SFT”和“LoRA”当互斥选项会混淆目标与参数化方法。</p>
+<h3 id="2-全量微调"><a href="#2-全量微调" class="headerlink" title="2. 全量微调"></a>2. 全量微调</h3><p>全量微调更新全部或大部分模型权重。它可能提供更高适配容量，但带来：</p>
+<ul>
+<li>更高显存、计算和存储成本；</li>
+<li>每个候选产物更大；</li>
+<li>更复杂的分布式训练与复现；</li>
+<li>对学习率、数据量和灾难性退化更敏感；</li>
+<li>多租户或多任务版本管理成本高。</li>
+</ul>
+<p>它适合什么任务不能仅凭“任务复杂”判断。需要同预算对照，确认 PEFT 容量不足且全量更新的增益能通过风险门禁。</p>
+<h3 id="3-PEFT-是一类方法"><a href="#3-PEFT-是一类方法" class="headerlink" title="3. PEFT 是一类方法"></a>3. PEFT 是一类方法</h3><p>参数高效微调 PEFT 只更新较小参数子集或增加可训练模块。它通常降低训练和存储成本，便于为不同任务保留独立 Adapter。但它不自动保证：</p>
+<ul>
+<li>质量等同全量微调；</li>
+<li>不发生灾难性退化；</li>
+<li>Adapter 可与任意基座快照兼容；</li>
+<li>合并权重与动态加载行为一致；</li>
+<li>服务并发和热切换没有额外复杂度。</li>
+</ul>
+<p>产物 manifest 必须把 Adapter 绑定到精确基座、tokenizer、目标模块与 PEFT 库版本。对错误基座加载成功也可能产生无意义行为。</p>
+<h3 id="4-LoRA-的论文结论要限定实验"><a href="#4-LoRA-的论文结论要限定实验" class="headerlink" title="4. LoRA 的论文结论要限定实验"></a>4. LoRA 的论文结论要限定实验</h3><p><a target="_blank" rel="noopener" href="https://arxiv.org/abs/2106.09685">LoRA 原始论文</a>提出冻结预训练权重，在 Transformer 层注入可训练低秩分解矩阵。论文摘要报告：相对于用 Adam 全量微调 GPT-3 175B 的对应设置，可训练参数减少约 10,000 倍、GPU 内存需求约减少 3 倍，并在论文测试的 RoBERTa、DeBERTa、GPT-2 和 GPT-3 任务上得到可比或更好结果。</p>
+<p>这些数字属于论文具体架构、目标模块、优化器和实验，不是“任何 LoRA 项目都节省 10,000 倍”或“一定不降质量”的承诺。实际项目必须记录并测量：</p>
+<ul>
+<li>rank <code>r</code>；</li>
+<li>alpha 与缩放；</li>
+<li>注入哪些线性层；</li>
+<li>dropout；</li>
+<li>可训练参数占比；</li>
+<li>是否训练 bias、embedding 或输出头；</li>
+<li>Adapter 合并方式；</li>
+<li>服务时动态加载还是预合并；</li>
+<li>与基座许可证和分发约束的关系。</li>
+</ul>
+<h3 id="5-QLoRA-的论文结论也只属于论文设置"><a href="#5-QLoRA-的论文结论也只属于论文设置" class="headerlink" title="5. QLoRA 的论文结论也只属于论文设置"></a>5. QLoRA 的论文结论也只属于论文设置</h3><p><a target="_blank" rel="noopener" href="https://arxiv.org/abs/2305.14314">QLoRA 原始论文</a>描述通过冻结的 4-bit 量化预训练模型反向传播到 LoRA Adapter，并引入 NF4、double quantization 和 paged optimizers。论文摘要报告在单张 48GB GPU 上微调 65B 参数模型，并在其论文实验中比较 16-bit 微调任务表现。</p>
+<p>这不意味着任何 65B 模型、序列长度、batch 或硬件都能放入 48GB，也不意味着量化误差对所有任务无影响。项目要测试：</p>
+<ul>
+<li>量化数据类型与计算精度；</li>
+<li>基座量化版本和校准方式；</li>
+<li>长序列峰值显存；</li>
+<li>梯度检查点与 paged optimizer 配置；</li>
+<li>合并后与未合并 Adapter 的行为差异；</li>
+<li>训练运行时和生产服务量化是否一致；</li>
+<li>数值不稳定、NaN、overflow 和恢复点。</li>
+</ul>
+<h3 id="6-方法选择矩阵"><a href="#6-方法选择矩阵" class="headerlink" title="6. 方法选择矩阵"></a>6. 方法选择矩阵</h3><table>
+<thead>
+<tr>
+<th>条件</th>
+<th>优先实验方向</th>
+<th>必须补的证据</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>数据少、缺口未稳定</td>
+<td>不训练，先强化基线</td>
+<td>缺口定位与数据可用性</td>
+</tr>
+<tr>
+<td>行为窄、多个任务版本</td>
+<td>LoRA&#x2F;其他 PEFT 对照</td>
+<td>Adapter 绑定与服务隔离</td>
+</tr>
+<tr>
+<td>显存受限、开源权重可控</td>
+<td>QLoRA 对照</td>
+<td>量化与数值稳定性</td>
+</tr>
+<tr>
+<td>PEFT 明确容量不足</td>
+<td>小规模全量微调试验</td>
+<td>同预算增益和退化风险</td>
+</tr>
+<tr>
+<td>托管模型不暴露权重</td>
+<td>厂商支持的方法</td>
+<td>平台模型 ID、数据政策、退役和导出边界</td>
+</tr>
+</tbody></table>
+<p>这个矩阵只决定下一项实验，不直接决定生产方案。</p>
+<h3 id="7-灾难性退化不是全量微调独有"><a href="#7-灾难性退化不是全量微调独有" class="headerlink" title="7. 灾难性退化不是全量微调独有"></a>7. 灾难性退化不是全量微调独有</h3><p>只要训练把输出分布推向新示范，就可能损害原能力。常见形式包括：</p>
+<ul>
+<li>过度拒答或拒答减少；</li>
+<li>只会训练模板，不再处理自然表达；</li>
+<li>多语言能力下降；</li>
+<li>长上下文指令遵循退化；</li>
+<li>工具调用转成自然语言“假装执行”；</li>
+<li>输出变短但遗漏必要字段；</li>
+<li>对训练中高频类别产生先验偏置；</li>
+<li>安全策略被有问题的目标答案覆盖。</li>
+</ul>
+<p>因此所有方法都要运行保留能力集与安全回归，不能因为只训练少量参数就省略。</p>
+<h2 id="九、厂商微调能力必须绑定截止日期、产品和模型快照"><a href="#九、厂商微调能力必须绑定截止日期、产品和模型快照" class="headerlink" title="九、厂商微调能力必须绑定截止日期、产品和模型快照"></a>九、厂商微调能力必须绑定截止日期、产品和模型快照</h2><h3 id="1-OpenAI-官方文档在截止日的状态"><a href="#1-OpenAI-官方文档在截止日的状态" class="headerlink" title="1. OpenAI 官方文档在截止日的状态"></a>1. OpenAI 官方文档在截止日的状态</h3><p>在本文资料核对日 <code>2026-07-26</code>，<a target="_blank" rel="noopener" href="https://developers.openai.com/api/docs/guides/supervised-fine-tuning">OpenAI Supervised fine-tuning 官方页面</a>写明其 fine-tuning platform 正在逐步收缩：新用户已不能访问，现有用户在后续若干月仍可创建训练任务，微调模型可推理到相应基座模型退役为止。该页面当时列出的 SFT 模型快照为：</p>
+<ul>
+<li><code>gpt-4.1-2025-04-14</code>；</li>
+<li><code>gpt-4.1-mini-2025-04-14</code>；</li>
+<li><code>gpt-4.1-nano-2025-04-14</code>。</li>
+</ul>
+<p>同一页面当时描述训练文件使用 JSONL、每行一个完整 JSON 结构并采用 chat completions 格式，文件至少 10 行；页面建议先建立 eval，并把 holdout 用于比较。</p>
+<p>这些是该产品页面在截止日的状态，不是 OpenAI 所有模型、所有优化方法、所有账号或未来平台的通用承诺。项目立项必须重新检查模型目录、退役时间、组织权限和数据政策。尤其在平台已宣布收缩时，回滚与迁移计划应先于训练投入。</p>
+<h3 id="2-Google-Cloud-官方页面在截止日的状态"><a href="#2-Google-Cloud-官方页面在截止日的状态" class="headerlink" title="2. Google Cloud 官方页面在截止日的状态"></a>2. Google Cloud 官方页面在截止日的状态</h3><p>原 Vertex AI <code>tune-models</code> 链接在资料核对日重定向到 <a target="_blank" rel="noopener" href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/tuning">Gemini Enterprise Agent Platform 的 tuning 文档</a>，页面标注最后更新 <code>2026-07-23 UTC</code>。该页面当时列出的 supervised tuning 支持模型为：</p>
+<ul>
+<li>Gemini 3.5 Flash；</li>
+<li>Gemini 3.1 Flash-Lite；</li>
+<li>Gemini 2.5 Pro；</li>
+<li>Gemini 2.5 Flash；</li>
+<li>Gemini 2.5 Flash-Lite。</li>
+</ul>
+<p>页面还分别列出 preference tuning、tuning checkpoints 与 continuous tuning 的支持范围。不能因为某个模型出现在 supervised tuning 列表，就推断它也支持其他方法、所有模态、所有区域或同样的 checkpoint 行为。每个 run manifest 应保存产品名、区域、精确模型 ID、官方页面核对时间和任务 API 返回的能力字段。</p>
+<h3 id="3-托管平台与自托管产物的指纹不同"><a href="#3-托管平台与自托管产物的指纹不同" class="headerlink" title="3. 托管平台与自托管产物的指纹不同"></a>3. 托管平台与自托管产物的指纹不同</h3><p>自托管权重通常可以记录每个文件 SHA-256、训练框架、optimizer 状态和 checkpoint。托管平台可能只返回：</p>
+<ul>
+<li>job ID；</li>
+<li>base model ID；</li>
+<li>training&#x2F;validation file ID；</li>
+<li>方法与超参数；</li>
+<li>seed；</li>
+<li>result file；</li>
+<li>fine-tuned model ID；</li>
+<li>checkpoint ID 和平台指标。</li>
+</ul>
+<p>无法获得权重哈希时，不应伪造“模型权重可复现”。应把供应商不可变 ID、API 响应快照、输入文件本地哈希、创建时间和组织&#x2F;区域作为可获得的身份，并明确平台外无法重建相同权重的限制。</p>
+<h3 id="4-格式支持不等于行为支持"><a href="#4-格式支持不等于行为支持" class="headerlink" title="4. 格式支持不等于行为支持"></a>4. 格式支持不等于行为支持</h3><p>厂商接受带工具调用或结构化消息的训练格式，不保证候选在业务上安全调用工具。工具名正确、参数 Schema 通过、请求成功，都不能证明：</p>
+<ul>
+<li>选择了正确工具；</li>
+<li>参数值来自可靠事实；</li>
+<li>调用者有权执行；</li>
+<li>重复调用不会产生副作用；</li>
+<li>工具返回被正确解释；</li>
+<li>最终用户结果满足业务规则。</li>
+</ul>
+<p>这些要在系统候选层用确定性断言和端到端测试验收。</p>
+<h2 id="十、训练与模型指纹：能够回答“这个候选到底是什么”"><a href="#十、训练与模型指纹：能够回答“这个候选到底是什么”" class="headerlink" title="十、训练与模型指纹：能够回答“这个候选到底是什么”"></a>十、训练与模型指纹：能够回答“这个候选到底是什么”</h2><h3 id="1-数据指纹"><a href="#1-数据指纹" class="headerlink" title="1. 数据指纹"></a>1. 数据指纹</h3><p>不要只对压缩包做哈希。压缩时间戳、文件顺序和元数据会改变字节。建议同时保存：</p>
+<ul>
+<li>每条样本规范化 JSON 的 SHA-256；</li>
+<li>按稳定 <code>sample_id</code> 排序后的 split manifest 哈希；</li>
+<li>全数据 manifest 哈希；</li>
+<li>转换代码与 Schema 版本；</li>
+<li>原始资产映射的受控引用。</li>
+</ul>
+<p>内容指纹用于复现，原始引用用于许可和撤回。二者权限可以不同。</p>
+<h3 id="2-训练运行指纹"><a href="#2-训练运行指纹" class="headerlink" title="2. 训练运行指纹"></a>2. 训练运行指纹</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">run_fingerprint = sha256(canonical_json(&#123;</span><br><span class="line">  contract_id,</span><br><span class="line">  train_manifest_sha256,</span><br><span class="line">  validation_manifest_sha256,</span><br><span class="line">  base_model_fingerprint,</span><br><span class="line">  tokenizer_fingerprint,</span><br><span class="line">  code_commit,</span><br><span class="line">  dirty_patch_sha256,</span><br><span class="line">  container_digest,</span><br><span class="line">  method,</span><br><span class="line">  hyperparameters,</span><br><span class="line">  seed,</span><br><span class="line">  hardware_profile</span><br><span class="line">&#125;))</span><br></pre></td></tr></table></figure>
+
+<p>运行指纹不含运行结束后才产生的权重。它标识“计划执行的训练输入与配置”。若两个 run 指纹相同但权重或指标差异大，说明存在未捕获非确定性或环境变量。</p>
+<h3 id="3-模型产物指纹"><a href="#3-模型产物指纹" class="headerlink" title="3. 模型产物指纹"></a>3. 模型产物指纹</h3><p>自托管产物：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">artifact_fingerprint = sha256(</span><br><span class="line">  sorted(weight_file_name + weight_file_sha256)</span><br><span class="line">  + tokenizer_sha256</span><br><span class="line">  + model_config_sha256</span><br><span class="line">  + chat_template_sha256</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+
+<p>托管产物以供应商不可变 model&#x2F;checkpoint ID 和完整创建响应为主，再对本地可得 manifest 哈希。不能把可变展示名当身份。</p>
+<h3 id="4-候选服务指纹"><a href="#4-候选服务指纹" class="headerlink" title="4. 候选服务指纹"></a>4. 候选服务指纹</h3><p>同一模型在不同 Prompt、temperature、tool schema、安全策略和运行时下会表现不同。候选报告必须引用服务指纹。线上 trace 也记录该指纹，事故才能准确回放。</p>
+<h3 id="5-血缘图"><a href="#5-血缘图" class="headerlink" title="5. 血缘图"></a>5. 血缘图</h3><p>完整关系应能双向查询：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">source assets</span><br><span class="line">  -&gt; dataset manifest</span><br><span class="line">  -&gt; split manifests</span><br><span class="line">  -&gt; training run</span><br><span class="line">  -&gt; checkpoints / adapter</span><br><span class="line">  -&gt; candidate service fingerprint</span><br><span class="line">  -&gt; evaluation report</span><br><span class="line">  -&gt; rollout decision</span><br><span class="line">  -&gt; production traces</span><br></pre></td></tr></table></figure>
+
+<p>反向查询尤其重要：给定一条被撤回样本，找到所有数据版本、run、候选和发布；给定一次线上事故，回到模型、数据、代码和合同。</p>
+<h3 id="6-manifest-的最小结构"><a href="#6-manifest-的最小结构" class="headerlink" title="6. manifest 的最小结构"></a>6. manifest 的最小结构</h3><figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;candidate_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;refund-lora-c17&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;contract_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;ft-contract-2026-04-v3&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;run_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;run-01JQ9...&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;run_fingerprint&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sha256:3bd1...&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;base_model&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;local-base-8b@a17c&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;weights_sha256&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sha256:8ca2...&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;tokenizer_sha256&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sha256:410d...&quot;</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;data&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;train&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sha256:1f22...&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;validation&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sha256:889a...&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;test&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sha256:7b13...&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;license_report&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sha256:02f1...&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;contamination_report&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sha256:f117...&quot;</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;training&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;method&quot;</span><span class="punctuation">:</span> <span class="string">&quot;lora-sft&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;rank&quot;</span><span class="punctuation">:</span> <span class="number">16</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;alpha&quot;</span><span class="punctuation">:</span> <span class="number">32</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;target_modules&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;q_proj&quot;</span><span class="punctuation">,</span> <span class="string">&quot;v_proj&quot;</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;seed&quot;</span><span class="punctuation">:</span> <span class="number">20260504</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;code_commit&quot;</span><span class="punctuation">:</span> <span class="string">&quot;4f8c2e1&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;container_digest&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sha256:ad90...&quot;</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;artifact&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;adapter_sha256&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sha256:91ce...&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;chat_template_sha256&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sha256:5a42...&quot;</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;evaluation&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;suite&quot;</span><span class="punctuation">:</span> <span class="string">&quot;refund-acceptance-v6&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;runner_sha256&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sha256:11d0...&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;report_sha256&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sha256:aa08...&quot;</span></span><br><span class="line">  <span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>JSON 结构合法只说明 manifest 可解析。发布控制面还要验证哈希对象存在、权限状态有效、关系一致且门禁报告确实针对同一候选。</p>
+<h2 id="十一、候选验收矩阵：改善、非劣、安全和运行预算同时成立"><a href="#十一、候选验收矩阵：改善、非劣、安全和运行预算同时成立" class="headerlink" title="十一、候选验收矩阵：改善、非劣、安全和运行预算同时成立"></a>十一、候选验收矩阵：改善、非劣、安全和运行预算同时成立</h2><p><img src="/images/ai-quality/ai-39-acceptance-matrix.svg" alt="微调候选分切片验收矩阵"></p>
+<p>图中所有数字均为构造数据。候选核心任务从 86.2% 提升到 89.1%，但高风险拒答切片退化 3.9 个百分点，并出现 2 个严重安全事件。合同结论必须是拒绝，而不是用 2.9 个百分点总体提升把安全失败平均掉。</p>
+<h3 id="1-主任务指标"><a href="#1-主任务指标" class="headerlink" title="1. 主任务指标"></a>1. 主任务指标</h3><p>指标随任务定义：</p>
+<ul>
+<li>单标签分类可报告准确率、宏 F1 和各类召回；</li>
+<li>多标签任务报告每标签 precision&#x2F;recall、样本级错误和关键标签漏报；</li>
+<li>抽取任务区分字段级 exact match、部分匹配和业务归一化后正确；</li>
+<li>结构生成同时测结构合法、字段语义和端到端业务结果；</li>
+<li>开放生成使用证据化量表、人工复核或经过校准的评测器。</li>
+</ul>
+<p>不要把“JSON 可解析率”称为任务正确率，也不要用模型自报置信度代替标签或业务断言。</p>
+<h3 id="2-配对改善"><a href="#2-配对改善" class="headerlink" title="2. 配对改善"></a>2. 配对改善</h3><p>稳定版与候选在同一样本上运行。对样本 <code>i</code> 定义：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">d_i = score(candidate_i) - score(baseline_i)</span><br><span class="line">paired_delta = mean(d_i)</span><br></pre></td></tr></table></figure>
+
+<p>保存四格迁移：</p>
+<table>
+<thead>
+<tr>
+<th>基线</th>
+<th>候选</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>对</td>
+<td>对</td>
+<td>保持成功</td>
+</tr>
+<tr>
+<td>错</td>
+<td>对</td>
+<td>实际修复</td>
+</tr>
+<tr>
+<td>对</td>
+<td>错</td>
+<td>新增回归</td>
+</tr>
+<tr>
+<td>错</td>
+<td>错</td>
+<td>未修复或共同失败</td>
+</tr>
+</tbody></table>
+<p>总体提升可能由少数高频模板贡献，而“基线对、候选错”的新回归集中在高风险切片。逐样本配对能直接形成回归清单。</p>
+<h3 id="3-改善门与非劣门"><a href="#3-改善门与非劣门" class="headerlink" title="3. 改善门与非劣门"></a>3. 改善门与非劣门</h3><p>主指标可设最小实际改善：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">paired_delta &gt;= +2.0 percentage points</span><br></pre></td></tr></table></figure>
+
+<p>保留能力和关键切片设非劣边界：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">slice_delta &gt;= -0.5 percentage points</span><br></pre></td></tr></table></figure>
+
+<p>点估计刚好过线仍可能是抽样波动。对二元或连续样本分数，可以按样本或正确聚类单位做配对 bootstrap，报告差值置信区间。门禁可要求差值区间下界高于改善或非劣边界。若样本来自同一用户或会话，不能把高度相关的行当独立样本重采样。</p>
+<h3 id="4-切片门禁"><a href="#4-切片门禁" class="headerlink" title="4. 切片门禁"></a>4. 切片门禁</h3><p>至少覆盖合同相关切片：</p>
+<ul>
+<li>意图和标签；</li>
+<li>语言、地区和表达形式；</li>
+<li>客户层级与产品版本；</li>
+<li>输入长度、轮数和上下文复杂度；</li>
+<li>工具可用、超时和错误响应；</li>
+<li>可回答、不可回答、需要澄清；</li>
+<li>低频高风险动作；</li>
+<li>已知事故族；</li>
+<li>数据来源与标注置信层级。</li>
+</ul>
+<p>每个切片报告分子、分母、基线、候选、差值和不确定性。样本太少时标记 <code>INSUFFICIENT_EVIDENCE</code>，不能把 1&#x2F;1 的 100% 当充分通过。</p>
+<h3 id="5-灾难性退化指标"><a href="#5-灾难性退化指标" class="headerlink" title="5. 灾难性退化指标"></a>5. 灾难性退化指标</h3><p>建立与训练目标不同的保留能力集：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">retention_delta(capability)</span><br><span class="line">  = candidate_score(capability) - baseline_score(capability)</span><br></pre></td></tr></table></figure>
+
+<p>重点不是求一个平均 retention score，而是检查每项必须保留能力：通用指令遵循、多语言、拒答、工具真实性、结构输出、长输入、事实约束和原有主任务。</p>
+<p>新增错误率也要单列：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">new_regression_rate</span><br><span class="line">  = count(baseline_pass and candidate_fail) / count(baseline_pass)</span><br></pre></td></tr></table></figure>
+
+<p>它回答“原本能做对的样本有多少被破坏”，比候选总正确率更直接。</p>
+<h3 id="6-安全硬门禁"><a href="#6-安全硬门禁" class="headerlink" title="6. 安全硬门禁"></a>6. 安全硬门禁</h3><p>严重安全事件通常要求：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">critical_safety_failures == 0</span><br></pre></td></tr></table></figure>
+
+<p>严重类别由应用定义，例如：</p>
+<ul>
+<li>越权动作或敏感信息披露；</li>
+<li>把未执行工具描述为已执行；</li>
+<li>在缺少必要事实时作出不可逆承诺；</li>
+<li>绕过强制审批；</li>
+<li>生成合同禁止的危险内容；</li>
+<li>泄露训练样本中的秘密或直接标识符。</li>
+</ul>
+<p>自动评测先筛查，严重候选由人工复核。模型裁判“判定安全”不是安全事实；要保存原输入、候选输出、上下文、工具记录、规则命中和复核结论。</p>
+<h3 id="7-运行门禁"><a href="#7-运行门禁" class="headerlink" title="7. 运行门禁"></a>7. 运行门禁</h3><p>微调可能减少长 Prompt，也可能引入更慢基座、Adapter 加载和新服务栈。报告：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">latency_p50 / p95 / p99</span><br><span class="line">time_to_first_token</span><br><span class="line">tokens_in / tokens_out</span><br><span class="line">requests_per_second</span><br><span class="line">error_rate / timeout_rate</span><br><span class="line">cost_per_successful_task</span><br><span class="line">GPU memory / adapter cache hit</span><br></pre></td></tr></table></figure>
+
+<p>成本分母应是成功业务任务，而不是总请求。候选错误率更高时，单请求便宜可能导致单次成功任务更贵。</p>
+<h3 id="8-复现门禁"><a href="#8-复现门禁" class="headerlink" title="8. 复现门禁"></a>8. 复现门禁</h3><p>候选必须满足：</p>
+<ul>
+<li>合同、数据、代码、基座、环境、训练和评测指纹齐全；</li>
+<li>所有哈希对象可读取且权限有效；</li>
+<li>基线重跑在容差内；</li>
+<li>候选重复推理结果方差在预算内；</li>
+<li>关键报告可由逐样本结果重算；</li>
+<li>模型或 Adapter 能在隔离环境加载；</li>
+<li>稳定版和候选可以并存并快速切换。</li>
+</ul>
+<p>无法复现不一定说明模型质量差，但说明它不适合承担受控发布。</p>
+<h3 id="9-多候选选择偏差"><a href="#9-多候选选择偏差" class="headerlink" title="9. 多候选选择偏差"></a>9. 多候选选择偏差</h3><p>如果对同一 validation&#x2F;test 运行 30 个候选再挑最高分，即使每个候选没有真实差异，也容易选到随机高点。应：</p>
+<ul>
+<li>用 validation 选择超参数；</li>
+<li>限制 test 使用次数；</li>
+<li>记录所有候选而非只保留赢家；</li>
+<li>对最终候选使用新的密封确认集或重复实验；</li>
+<li>报告选择过程和不确定性。</li>
+</ul>
+<p>不能把“最佳 checkpoint”当作事先指定候选。</p>
+<h3 id="10-指标口径总表"><a href="#10-指标口径总表" class="headerlink" title="10. 指标口径总表"></a>10. 指标口径总表</h3><table>
+<thead>
+<tr>
+<th>指标</th>
+<th>统计单位</th>
+<th>分子与分母</th>
+<th>必须同时报告</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>总体任务通过率</td>
+<td>合同定义的样本或会话</td>
+<td>通过单元数 &#x2F; 全部合格单元数</td>
+<td>样本量、无效数、基线、候选、配对差值</td>
+</tr>
+<tr>
+<td>切片通过率</td>
+<td>同一切片内的独立单元</td>
+<td>切片通过数 &#x2F; 切片合格总数</td>
+<td>切片定义、分子分母、最小证据要求</td>
+</tr>
+<tr>
+<td>新增回归率</td>
+<td>基线原本通过的单元</td>
+<td>基线通过且候选失败 &#x2F; 基线通过数</td>
+<td>逐样本回归清单与风险等级</td>
+</tr>
+<tr>
+<td>严重安全事件数</td>
+<td>经复核的独立事件</td>
+<td>严重事件绝对数量，不做加权平均</td>
+<td>类别、原始证据、复核者、处置状态</td>
+</tr>
+<tr>
+<td>延迟 p95&#x2F;p99</td>
+<td>一次端到端业务请求</td>
+<td>固定负载和环境下的延迟分布</td>
+<td>超时、重试、冷启动与样本数</td>
+</tr>
+<tr>
+<td>单次成功成本</td>
+<td>成功完成的业务任务</td>
+<td>总推理与服务成本 &#x2F; 成功任务数</td>
+<td>token、重试、失败请求和基线比值</td>
+</tr>
+</tbody></table>
+<p>所有版本比较都使用同一统计单位、同一有效性规则和同一观察窗口。失败、超时或评测器无法判定的样本不能静默移出分母；若合同允许 <code>NA</code>，报告必须单列数量和原因。</p>
+<h2 id="十二、安全回归与灾难性退化要覆盖参数外的系统行为"><a href="#十二、安全回归与灾难性退化要覆盖参数外的系统行为" class="headerlink" title="十二、安全回归与灾难性退化要覆盖参数外的系统行为"></a>十二、安全回归与灾难性退化要覆盖参数外的系统行为</h2><h3 id="1-训练目标可能教会错误能力声明"><a href="#1-训练目标可能教会错误能力声明" class="headerlink" title="1. 训练目标可能教会错误能力声明"></a>1. 训练目标可能教会错误能力声明</h3><p>如果示范答案写着“退款已为您处理”，但训练输入里没有成功工具回执，模型会学习把语言风格当执行事实。训练数据审计应检查目标答案中的每项外部事实是否在输入证据中存在。</p>
+<p>OpenAI 当前微调最佳实践页面也以类似例子提醒：若训练示范让模型声称自己完成了实际不能完成的动作，数据本身会教出错误行为。这个原则适用于数据设计，但具体平台安全检查不替代项目自己的工具与权限验收。</p>
+<h3 id="2-安全回归分四层"><a href="#2-安全回归分四层" class="headerlink" title="2. 安全回归分四层"></a>2. 安全回归分四层</h3><p>第一层是模型层：拒答、敏感信息、危险指令和训练样本记忆探测。</p>
+<p>第二层是协议层：结构、工具名、参数类型和停止条件。协议通过只说明形状。</p>
+<p>第三层是业务层：订单状态、金额边界、授权主体、幂等键、审批和副作用结果。</p>
+<p>第四层是系统层：RAG 污染、工具超时、重复回调、缓存、并发和审计证据。</p>
+<p>微调候选必须在完整系统候选层验收，因为相同模型放进不同工具包装可能产生不同风险。</p>
+<h3 id="3-隐私与记忆探测"><a href="#3-隐私与记忆探测" class="headerlink" title="3. 隐私与记忆探测"></a>3. 隐私与记忆探测</h3><p>可以使用获批的合成 canary 检查模型是否在异常提示下复述训练特征，并对生产敏感模式做扫描。结果要谨慎解释：</p>
+<ul>
+<li>未提取出 canary 不能证明模型没有记忆其他样本；</li>
+<li>成功提取表示存在明确风险，需要隔离候选；</li>
+<li>canary 不应使用真实秘密；</li>
+<li>测试 Prompt 和解码策略要版本化；</li>
+<li>托管平台的服务政策与模型本身记忆风险分开评估。</li>
+</ul>
+<h3 id="4-分布外与拒绝能力"><a href="#4-分布外与拒绝能力" class="headerlink" title="4. 分布外与拒绝能力"></a>4. 分布外与拒绝能力</h3><p>训练集越窄，候选越可能在相似格式上自信输出。加入：</p>
+<ul>
+<li>完全无关任务；</li>
+<li>缺字段或冲突字段；</li>
+<li>工具结果为空、超时、过期；</li>
+<li>多语言混合与拼写噪声；</li>
+<li>超长输入和截断；</li>
+<li>恶意指令覆盖系统规则；</li>
+<li>要求模型伪造引用、审批或执行结果。</li>
+</ul>
+<p>期望行为可能是澄清、拒绝、调用确定性工具或转人工。模型置信度高不能把未知输入变成已知事实。</p>
+<h3 id="5-训练时安全检查与应用安全门禁并存"><a href="#5-训练时安全检查与应用安全门禁并存" class="headerlink" title="5. 训练时安全检查与应用安全门禁并存"></a>5. 训练时安全检查与应用安全门禁并存</h3><p>厂商可能对微调作业或产物执行平台安全检查。它证明候选满足该平台当时定义的类别和阈值，不证明符合本应用的租户隔离、退款权限、医疗边界或内部政策。</p>
+<p>平台检查通过是必要输入之一，应用门禁仍由使用方定义并保存证据。</p>
+<h2 id="十三、无需-API-Key-的数据审计、split、指纹与验收门禁"><a href="#十三、无需-API-Key-的数据审计、split、指纹与验收门禁" class="headerlink" title="十三、无需 API Key 的数据审计、split、指纹与验收门禁"></a>十三、无需 API Key 的数据审计、split、指纹与验收门禁</h2><p>下面的 Python 示例只使用标准库，不下载模型、不连接训练平台，也不需要真实 API Key。它实现的是训练前后最容易被漏掉的控制面：</p>
+<ul>
+<li>样本必须有获批许可、训练用途和脱敏状态；</li>
+<li>简化 PII 规则与禁止 benchmark 清单用于硬阻断；</li>
+<li>split 由稳定 <code>group_id</code> 和 seed 决定，同组不会跨集合；</li>
+<li>规范化重复跨 split 会被隔离检查发现；</li>
+<li>数据 manifest、训练 run 和候选服务分别生成 SHA-256；</li>
+<li>候选必须同时通过总体改善、关键切片非劣、安全、运行和产物门禁；</li>
+<li>发布注册表能在数据版本撤回时反查并隔离候选，稳定指针切回未受影响版本。</li>
+</ul>
+<p>示例的邮箱、电话和重复检测是最小演示，不是完整隐私或近重复系统。生产实现应接入组织批准的分类器、规则、人工复核和 AI测试-15 所述数据治理流程。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br><span class="line">146</span><br><span class="line">147</span><br><span class="line">148</span><br><span class="line">149</span><br><span class="line">150</span><br><span class="line">151</span><br><span class="line">152</span><br><span class="line">153</span><br><span class="line">154</span><br><span class="line">155</span><br><span class="line">156</span><br><span class="line">157</span><br><span class="line">158</span><br><span class="line">159</span><br><span class="line">160</span><br><span class="line">161</span><br><span class="line">162</span><br><span class="line">163</span><br><span class="line">164</span><br><span class="line">165</span><br><span class="line">166</span><br><span class="line">167</span><br><span class="line">168</span><br><span class="line">169</span><br><span class="line">170</span><br><span class="line">171</span><br><span class="line">172</span><br><span class="line">173</span><br><span class="line">174</span><br><span class="line">175</span><br><span class="line">176</span><br><span class="line">177</span><br><span class="line">178</span><br><span class="line">179</span><br><span class="line">180</span><br><span class="line">181</span><br><span class="line">182</span><br><span class="line">183</span><br><span class="line">184</span><br><span class="line">185</span><br><span class="line">186</span><br><span class="line">187</span><br><span class="line">188</span><br><span class="line">189</span><br><span class="line">190</span><br><span class="line">191</span><br><span class="line">192</span><br><span class="line">193</span><br><span class="line">194</span><br><span class="line">195</span><br><span class="line">196</span><br><span class="line">197</span><br><span class="line">198</span><br><span class="line">199</span><br><span class="line">200</span><br><span class="line">201</span><br><span class="line">202</span><br><span class="line">203</span><br><span class="line">204</span><br><span class="line">205</span><br><span class="line">206</span><br><span class="line">207</span><br><span class="line">208</span><br><span class="line">209</span><br><span class="line">210</span><br><span class="line">211</span><br><span class="line">212</span><br><span class="line">213</span><br><span class="line">214</span><br><span class="line">215</span><br><span class="line">216</span><br><span class="line">217</span><br><span class="line">218</span><br><span class="line">219</span><br><span class="line">220</span><br><span class="line">221</span><br><span class="line">222</span><br><span class="line">223</span><br><span class="line">224</span><br><span class="line">225</span><br><span class="line">226</span><br><span class="line">227</span><br><span class="line">228</span><br><span class="line">229</span><br><span class="line">230</span><br><span class="line">231</span><br><span class="line">232</span><br><span class="line">233</span><br><span class="line">234</span><br><span class="line">235</span><br><span class="line">236</span><br><span class="line">237</span><br><span class="line">238</span><br><span class="line">239</span><br><span class="line">240</span><br><span class="line">241</span><br><span class="line">242</span><br><span class="line">243</span><br><span class="line">244</span><br><span class="line">245</span><br><span class="line">246</span><br><span class="line">247</span><br><span class="line">248</span><br><span class="line">249</span><br><span class="line">250</span><br><span class="line">251</span><br><span class="line">252</span><br><span class="line">253</span><br><span class="line">254</span><br><span class="line">255</span><br><span class="line">256</span><br><span class="line">257</span><br><span class="line">258</span><br><span class="line">259</span><br><span class="line">260</span><br><span class="line">261</span><br><span class="line">262</span><br><span class="line">263</span><br><span class="line">264</span><br><span class="line">265</span><br><span class="line">266</span><br><span class="line">267</span><br><span class="line">268</span><br><span class="line">269</span><br><span class="line">270</span><br><span class="line">271</span><br><span class="line">272</span><br><span class="line">273</span><br><span class="line">274</span><br><span class="line">275</span><br><span class="line">276</span><br><span class="line">277</span><br><span class="line">278</span><br><span class="line">279</span><br><span class="line">280</span><br><span class="line">281</span><br><span class="line">282</span><br><span class="line">283</span><br><span class="line">284</span><br><span class="line">285</span><br><span class="line">286</span><br><span class="line">287</span><br><span class="line">288</span><br><span class="line">289</span><br><span class="line">290</span><br><span class="line">291</span><br><span class="line">292</span><br><span class="line">293</span><br><span class="line">294</span><br><span class="line">295</span><br><span class="line">296</span><br><span class="line">297</span><br><span class="line">298</span><br><span class="line">299</span><br><span class="line">300</span><br><span class="line">301</span><br><span class="line">302</span><br><span class="line">303</span><br><span class="line">304</span><br><span class="line">305</span><br><span class="line">306</span><br><span class="line">307</span><br><span class="line">308</span><br><span class="line">309</span><br><span class="line">310</span><br><span class="line">311</span><br><span class="line">312</span><br><span class="line">313</span><br><span class="line">314</span><br><span class="line">315</span><br><span class="line">316</span><br><span class="line">317</span><br><span class="line">318</span><br><span class="line">319</span><br><span class="line">320</span><br><span class="line">321</span><br><span class="line">322</span><br><span class="line">323</span><br><span class="line">324</span><br><span class="line">325</span><br><span class="line">326</span><br><span class="line">327</span><br><span class="line">328</span><br><span class="line">329</span><br><span class="line">330</span><br><span class="line">331</span><br><span class="line">332</span><br><span class="line">333</span><br><span class="line">334</span><br><span class="line">335</span><br><span class="line">336</span><br><span class="line">337</span><br><span class="line">338</span><br><span class="line">339</span><br><span class="line">340</span><br><span class="line">341</span><br><span class="line">342</span><br><span class="line">343</span><br><span class="line">344</span><br><span class="line">345</span><br><span class="line">346</span><br><span class="line">347</span><br><span class="line">348</span><br><span class="line">349</span><br><span class="line">350</span><br><span class="line">351</span><br><span class="line">352</span><br><span class="line">353</span><br><span class="line">354</span><br><span class="line">355</span><br><span class="line">356</span><br><span class="line">357</span><br><span class="line">358</span><br><span class="line">359</span><br><span class="line">360</span><br><span class="line">361</span><br><span class="line">362</span><br><span class="line">363</span><br><span class="line">364</span><br><span class="line">365</span><br><span class="line">366</span><br><span class="line">367</span><br><span class="line">368</span><br><span class="line">369</span><br><span class="line">370</span><br><span class="line">371</span><br><span class="line">372</span><br><span class="line">373</span><br><span class="line">374</span><br><span class="line">375</span><br><span class="line">376</span><br><span class="line">377</span><br><span class="line">378</span><br><span class="line">379</span><br><span class="line">380</span><br><span class="line">381</span><br><span class="line">382</span><br><span class="line">383</span><br><span class="line">384</span><br><span class="line">385</span><br><span class="line">386</span><br><span class="line">387</span><br><span class="line">388</span><br><span class="line">389</span><br><span class="line">390</span><br><span class="line">391</span><br><span class="line">392</span><br><span class="line">393</span><br><span class="line">394</span><br><span class="line">395</span><br><span class="line">396</span><br><span class="line">397</span><br><span class="line">398</span><br><span class="line">399</span><br><span class="line">400</span><br><span class="line">401</span><br><span class="line">402</span><br><span class="line">403</span><br><span class="line">404</span><br><span class="line">405</span><br><span class="line">406</span><br><span class="line">407</span><br><span class="line">408</span><br><span class="line">409</span><br><span class="line">410</span><br><span class="line">411</span><br><span class="line">412</span><br><span class="line">413</span><br><span class="line">414</span><br><span class="line">415</span><br><span class="line">416</span><br><span class="line">417</span><br><span class="line">418</span><br><span class="line">419</span><br><span class="line">420</span><br><span class="line">421</span><br><span class="line">422</span><br><span class="line">423</span><br><span class="line">424</span><br><span class="line">425</span><br><span class="line">426</span><br><span class="line">427</span><br><span class="line">428</span><br><span class="line">429</span><br><span class="line">430</span><br><span class="line">431</span><br><span class="line">432</span><br><span class="line">433</span><br><span class="line">434</span><br><span class="line">435</span><br><span class="line">436</span><br><span class="line">437</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># ai39_finetune_gate.py</span></span><br><span class="line"><span class="keyword">from</span> __future__ <span class="keyword">import</span> annotations</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> hashlib</span><br><span class="line"><span class="keyword">import</span> json</span><br><span class="line"><span class="keyword">import</span> re</span><br><span class="line"><span class="keyword">import</span> unittest</span><br><span class="line"><span class="keyword">from</span> dataclasses <span class="keyword">import</span> asdict, dataclass, replace</span><br><span class="line"><span class="keyword">from</span> typing <span class="keyword">import</span> <span class="type">Dict</span>, Iterable, <span class="type">List</span>, Mapping, <span class="type">Sequence</span>, <span class="type">Tuple</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">AuditError</span>(<span class="title class_ inherited__">ValueError</span>):</span><br><span class="line">    <span class="keyword">pass</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">canonical_hash</span>(<span class="params">value: <span class="built_in">object</span></span>) -&gt; <span class="built_in">str</span>:</span><br><span class="line">    payload = json.dumps(</span><br><span class="line">        value,</span><br><span class="line">        ensure_ascii=<span class="literal">False</span>,</span><br><span class="line">        sort_keys=<span class="literal">True</span>,</span><br><span class="line">        separators=(<span class="string">&quot;,&quot;</span>, <span class="string">&quot;:&quot;</span>),</span><br><span class="line">    ).encode(<span class="string">&quot;utf-8&quot;</span>)</span><br><span class="line">    <span class="keyword">return</span> hashlib.sha256(payload).hexdigest()</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">normalize_text</span>(<span class="params">value: <span class="built_in">str</span></span>) -&gt; <span class="built_in">str</span>:</span><br><span class="line">    <span class="keyword">return</span> <span class="string">&quot; &quot;</span>.join(value.casefold().split())</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Sample</span>:</span><br><span class="line">    sample_id: <span class="built_in">str</span></span><br><span class="line">    group_id: <span class="built_in">str</span></span><br><span class="line">    prompt: <span class="built_in">str</span></span><br><span class="line">    response: <span class="built_in">str</span></span><br><span class="line">    source_asset_id: <span class="built_in">str</span></span><br><span class="line">    license_basis: <span class="built_in">str</span></span><br><span class="line">    purpose: <span class="built_in">str</span></span><br><span class="line">    privacy_status: <span class="built_in">str</span></span><br><span class="line">    benchmark: <span class="built_in">str</span> = <span class="string">&quot;&quot;</span></span><br><span class="line">    split: <span class="built_in">str</span> = <span class="string">&quot;&quot;</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">content_fingerprint</span>(<span class="params">self</span>) -&gt; <span class="built_in">str</span>:</span><br><span class="line">        <span class="keyword">return</span> canonical_hash(</span><br><span class="line">            &#123;</span><br><span class="line">                <span class="string">&quot;prompt&quot;</span>: normalize_text(<span class="variable language_">self</span>.prompt),</span><br><span class="line">                <span class="string">&quot;response&quot;</span>: normalize_text(<span class="variable language_">self</span>.response),</span><br><span class="line">            &#125;</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">AuditReport</span>:</span><br><span class="line">    sample_count: <span class="built_in">int</span></span><br><span class="line">    group_count: <span class="built_in">int</span></span><br><span class="line">    content_fingerprints: <span class="type">Tuple</span>[<span class="built_in">str</span>, ...]</span><br><span class="line">    report_sha256: <span class="built_in">str</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">DataAuditor</span>:</span><br><span class="line">    EMAIL = re.<span class="built_in">compile</span>(<span class="string">r&quot;\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]&#123;2,&#125;\b&quot;</span>, re.I)</span><br><span class="line">    PHONE = re.<span class="built_in">compile</span>(<span class="string">r&quot;(?&lt;!\d)(?:\+?86[- ]?)?1[3-9]\d&#123;9&#125;(?!\d)&quot;</span>)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        allowed_licenses: Iterable[<span class="built_in">str</span>],</span></span><br><span class="line"><span class="params">        forbidden_benchmarks: Iterable[<span class="built_in">str</span>],</span></span><br><span class="line"><span class="params">    </span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.allowed_licenses = <span class="built_in">set</span>(allowed_licenses)</span><br><span class="line">        <span class="variable language_">self</span>.forbidden_benchmarks = <span class="built_in">set</span>(forbidden_benchmarks)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">audit</span>(<span class="params">self, samples: <span class="type">Sequence</span>[Sample]</span>) -&gt; AuditReport:</span><br><span class="line">        issues: <span class="type">List</span>[<span class="built_in">str</span>] = []</span><br><span class="line">        ids = <span class="built_in">set</span>()</span><br><span class="line">        fingerprints: <span class="type">Dict</span>[<span class="built_in">str</span>, <span class="built_in">str</span>] = &#123;&#125;</span><br><span class="line">        <span class="keyword">for</span> sample <span class="keyword">in</span> samples:</span><br><span class="line">            <span class="keyword">if</span> <span class="keyword">not</span> <span class="built_in">all</span>(</span><br><span class="line">                [</span><br><span class="line">                    sample.sample_id,</span><br><span class="line">                    sample.group_id,</span><br><span class="line">                    sample.prompt,</span><br><span class="line">                    sample.response,</span><br><span class="line">                    sample.source_asset_id,</span><br><span class="line">                ]</span><br><span class="line">            ):</span><br><span class="line">                issues.append(<span class="string">f&quot;<span class="subst">&#123;sample.sample_id <span class="keyword">or</span> <span class="string">&#x27;&lt;missing-id&gt;&#x27;</span>&#125;</span>: required field missing&quot;</span>)</span><br><span class="line">            <span class="keyword">if</span> sample.sample_id <span class="keyword">in</span> ids:</span><br><span class="line">                issues.append(<span class="string">f&quot;<span class="subst">&#123;sample.sample_id&#125;</span>: duplicate sample_id&quot;</span>)</span><br><span class="line">            ids.add(sample.sample_id)</span><br><span class="line">            <span class="keyword">if</span> sample.license_basis <span class="keyword">not</span> <span class="keyword">in</span> <span class="variable language_">self</span>.allowed_licenses:</span><br><span class="line">                issues.append(<span class="string">f&quot;<span class="subst">&#123;sample.sample_id&#125;</span>: license not approved&quot;</span>)</span><br><span class="line">            <span class="keyword">if</span> sample.purpose != <span class="string">&quot;fine-tune-approved&quot;</span>:</span><br><span class="line">                issues.append(<span class="string">f&quot;<span class="subst">&#123;sample.sample_id&#125;</span>: purpose not approved&quot;</span>)</span><br><span class="line">            <span class="keyword">if</span> sample.privacy_status != <span class="string">&quot;deidentified&quot;</span>:</span><br><span class="line">                issues.append(<span class="string">f&quot;<span class="subst">&#123;sample.sample_id&#125;</span>: privacy status not approved&quot;</span>)</span><br><span class="line">            combined = <span class="string">f&quot;<span class="subst">&#123;sample.prompt&#125;</span>\n<span class="subst">&#123;sample.response&#125;</span>&quot;</span></span><br><span class="line">            <span class="keyword">if</span> <span class="variable language_">self</span>.EMAIL.search(combined) <span class="keyword">or</span> <span class="variable language_">self</span>.PHONE.search(combined):</span><br><span class="line">                issues.append(<span class="string">f&quot;<span class="subst">&#123;sample.sample_id&#125;</span>: direct identifier detected&quot;</span>)</span><br><span class="line">            <span class="keyword">if</span> sample.benchmark <span class="keyword">in</span> <span class="variable language_">self</span>.forbidden_benchmarks:</span><br><span class="line">                issues.append(<span class="string">f&quot;<span class="subst">&#123;sample.sample_id&#125;</span>: forbidden benchmark source&quot;</span>)</span><br><span class="line">            fingerprint = sample.content_fingerprint()</span><br><span class="line">            <span class="keyword">if</span> fingerprint <span class="keyword">in</span> fingerprints:</span><br><span class="line">                issues.append(</span><br><span class="line">                    <span class="string">f&quot;<span class="subst">&#123;sample.sample_id&#125;</span>: normalized duplicate of <span class="subst">&#123;fingerprints[fingerprint]&#125;</span>&quot;</span></span><br><span class="line">                )</span><br><span class="line">            fingerprints[fingerprint] = sample.sample_id</span><br><span class="line">        <span class="keyword">if</span> issues:</span><br><span class="line">            <span class="keyword">raise</span> AuditError(<span class="string">&quot;; &quot;</span>.join(issues))</span><br><span class="line">        report_body = &#123;</span><br><span class="line">            <span class="string">&quot;sample_ids&quot;</span>: <span class="built_in">sorted</span>(ids),</span><br><span class="line">            <span class="string">&quot;group_ids&quot;</span>: <span class="built_in">sorted</span>(&#123;sample.group_id <span class="keyword">for</span> sample <span class="keyword">in</span> samples&#125;),</span><br><span class="line">            <span class="string">&quot;content_fingerprints&quot;</span>: <span class="built_in">sorted</span>(fingerprints),</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> AuditReport(</span><br><span class="line">            sample_count=<span class="built_in">len</span>(samples),</span><br><span class="line">            group_count=<span class="built_in">len</span>(report_body[<span class="string">&quot;group_ids&quot;</span>]),</span><br><span class="line">            content_fingerprints=<span class="built_in">tuple</span>(report_body[<span class="string">&quot;content_fingerprints&quot;</span>]),</span><br><span class="line">            report_sha256=canonical_hash(report_body),</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">split_for_group</span>(<span class="params">group_id: <span class="built_in">str</span>, seed: <span class="built_in">str</span></span>) -&gt; <span class="built_in">str</span>:</span><br><span class="line">    bucket = <span class="built_in">int</span>(hashlib.sha256(<span class="string">f&quot;<span class="subst">&#123;seed&#125;</span>|<span class="subst">&#123;group_id&#125;</span>&quot;</span>.encode()).hexdigest()[:<span class="number">8</span>], <span class="number">16</span>) % <span class="number">100</span></span><br><span class="line">    <span class="keyword">if</span> bucket &lt; <span class="number">70</span>:</span><br><span class="line">        <span class="keyword">return</span> <span class="string">&quot;train&quot;</span></span><br><span class="line">    <span class="keyword">if</span> bucket &lt; <span class="number">85</span>:</span><br><span class="line">        <span class="keyword">return</span> <span class="string">&quot;validation&quot;</span></span><br><span class="line">    <span class="keyword">return</span> <span class="string">&quot;test&quot;</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">assign_splits</span>(<span class="params">samples: <span class="type">Sequence</span>[Sample], seed: <span class="built_in">str</span></span>) -&gt; <span class="type">Tuple</span>[Sample, ...]:</span><br><span class="line">    <span class="keyword">return</span> <span class="built_in">tuple</span>(</span><br><span class="line">        replace(sample, split=split_for_group(sample.group_id, seed))</span><br><span class="line">        <span class="keyword">for</span> sample <span class="keyword">in</span> samples</span><br><span class="line">    )</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">assert_split_isolation</span>(<span class="params">samples: <span class="type">Sequence</span>[Sample]</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    group_splits: <span class="type">Dict</span>[<span class="built_in">str</span>, <span class="built_in">set</span>] = &#123;&#125;</span><br><span class="line">    content_splits: <span class="type">Dict</span>[<span class="built_in">str</span>, <span class="built_in">set</span>] = &#123;&#125;</span><br><span class="line">    <span class="keyword">for</span> sample <span class="keyword">in</span> samples:</span><br><span class="line">        <span class="keyword">if</span> sample.split <span class="keyword">not</span> <span class="keyword">in</span> &#123;<span class="string">&quot;train&quot;</span>, <span class="string">&quot;validation&quot;</span>, <span class="string">&quot;test&quot;</span>&#125;:</span><br><span class="line">            <span class="keyword">raise</span> AuditError(<span class="string">f&quot;<span class="subst">&#123;sample.sample_id&#125;</span>: invalid split&quot;</span>)</span><br><span class="line">        group_splits.setdefault(sample.group_id, <span class="built_in">set</span>()).add(sample.split)</span><br><span class="line">        content_splits.setdefault(sample.content_fingerprint(), <span class="built_in">set</span>()).add(sample.split)</span><br><span class="line">    leaked_groups = <span class="built_in">sorted</span>(group <span class="keyword">for</span> group, splits <span class="keyword">in</span> group_splits.items() <span class="keyword">if</span> <span class="built_in">len</span>(splits) &gt; <span class="number">1</span>)</span><br><span class="line">    leaked_content = <span class="built_in">sorted</span>(</span><br><span class="line">        fingerprint <span class="keyword">for</span> fingerprint, splits <span class="keyword">in</span> content_splits.items() <span class="keyword">if</span> <span class="built_in">len</span>(splits) &gt; <span class="number">1</span></span><br><span class="line">    )</span><br><span class="line">    <span class="keyword">if</span> leaked_groups <span class="keyword">or</span> leaked_content:</span><br><span class="line">        <span class="keyword">raise</span> AuditError(</span><br><span class="line">            <span class="string">f&quot;split leakage groups=<span class="subst">&#123;leaked_groups&#125;</span> content_fingerprints=<span class="subst">&#123;leaked_content&#125;</span>&quot;</span></span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">dataset_manifest</span>(<span class="params">samples: <span class="type">Sequence</span>[Sample]</span>) -&gt; Mapping[<span class="built_in">str</span>, <span class="built_in">object</span>]:</span><br><span class="line">    assert_split_isolation(samples)</span><br><span class="line">    split_hashes = &#123;&#125;</span><br><span class="line">    split_counts = &#123;&#125;</span><br><span class="line">    <span class="keyword">for</span> split <span class="keyword">in</span> (<span class="string">&quot;train&quot;</span>, <span class="string">&quot;validation&quot;</span>, <span class="string">&quot;test&quot;</span>):</span><br><span class="line">        rows = [</span><br><span class="line">            asdict(sample)</span><br><span class="line">            <span class="keyword">for</span> sample <span class="keyword">in</span> <span class="built_in">sorted</span>(samples, key=<span class="keyword">lambda</span> item: item.sample_id)</span><br><span class="line">            <span class="keyword">if</span> sample.split == split</span><br><span class="line">        ]</span><br><span class="line">        split_hashes[split] = canonical_hash(rows)</span><br><span class="line">        split_counts[split] = <span class="built_in">len</span>(rows)</span><br><span class="line">    body = &#123;</span><br><span class="line">        <span class="string">&quot;schema_version&quot;</span>: <span class="number">1</span>,</span><br><span class="line">        <span class="string">&quot;split_hashes&quot;</span>: split_hashes,</span><br><span class="line">        <span class="string">&quot;split_counts&quot;</span>: split_counts,</span><br><span class="line">        <span class="string">&quot;all_sample_ids&quot;</span>: <span class="built_in">sorted</span>(sample.sample_id <span class="keyword">for</span> sample <span class="keyword">in</span> samples),</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> &#123;**body, <span class="string">&quot;manifest_sha256&quot;</span>: canonical_hash(body)&#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">RunSpec</span>:</span><br><span class="line">    contract_id: <span class="built_in">str</span></span><br><span class="line">    train_manifest_sha256: <span class="built_in">str</span></span><br><span class="line">    validation_manifest_sha256: <span class="built_in">str</span></span><br><span class="line">    base_model_fingerprint: <span class="built_in">str</span></span><br><span class="line">    tokenizer_fingerprint: <span class="built_in">str</span></span><br><span class="line">    code_commit: <span class="built_in">str</span></span><br><span class="line">    container_digest: <span class="built_in">str</span></span><br><span class="line">    method: <span class="built_in">str</span></span><br><span class="line">    hyperparameters: Mapping[<span class="built_in">str</span>, <span class="built_in">object</span>]</span><br><span class="line">    seed: <span class="built_in">int</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">fingerprint</span>(<span class="params">self</span>) -&gt; <span class="built_in">str</span>:</span><br><span class="line">        <span class="keyword">return</span> canonical_hash(asdict(<span class="variable language_">self</span>))</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">CandidateMetrics</span>:</span><br><span class="line">    overall: <span class="built_in">float</span></span><br><span class="line">    slices: Mapping[<span class="built_in">str</span>, <span class="built_in">float</span>]</span><br><span class="line">    slice_counts: Mapping[<span class="built_in">str</span>, <span class="built_in">int</span>]</span><br><span class="line">    critical_safety_failures: <span class="built_in">int</span></span><br><span class="line">    latency_p95_ms: <span class="built_in">int</span></span><br><span class="line">    cost_ratio: <span class="built_in">float</span></span><br><span class="line">    artifact_complete: <span class="built_in">bool</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">GateContract</span>:</span><br><span class="line">    minimum_overall_improvement: <span class="built_in">float</span></span><br><span class="line">    maximum_slice_regression: <span class="built_in">float</span></span><br><span class="line">    required_slices: <span class="type">Tuple</span>[<span class="built_in">str</span>, ...]</span><br><span class="line">    minimum_slice_samples: <span class="built_in">int</span></span><br><span class="line">    maximum_latency_p95_ms: <span class="built_in">int</span></span><br><span class="line">    maximum_cost_ratio: <span class="built_in">float</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">GateResult</span>:</span><br><span class="line">    passed: <span class="built_in">bool</span></span><br><span class="line">    reasons: <span class="type">Tuple</span>[<span class="built_in">str</span>, ...]</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">evaluate_candidate</span>(<span class="params"></span></span><br><span class="line"><span class="params">    contract: GateContract,</span></span><br><span class="line"><span class="params">    baseline: CandidateMetrics,</span></span><br><span class="line"><span class="params">    candidate: CandidateMetrics,</span></span><br><span class="line"><span class="params"></span>) -&gt; GateResult:</span><br><span class="line">    failures: <span class="type">List</span>[<span class="built_in">str</span>] = []</span><br><span class="line">    improvement = candidate.overall - baseline.overall</span><br><span class="line">    <span class="keyword">if</span> improvement &lt; contract.minimum_overall_improvement:</span><br><span class="line">        failures.append(</span><br><span class="line">            <span class="string">f&quot;overall improvement <span class="subst">&#123;improvement:<span class="number">.3</span>f&#125;</span> below &quot;</span></span><br><span class="line">            <span class="string">f&quot;<span class="subst">&#123;contract.minimum_overall_improvement:<span class="number">.3</span>f&#125;</span>&quot;</span></span><br><span class="line">        )</span><br><span class="line">    <span class="keyword">for</span> name <span class="keyword">in</span> contract.required_slices:</span><br><span class="line">        <span class="keyword">if</span> name <span class="keyword">not</span> <span class="keyword">in</span> baseline.slices <span class="keyword">or</span> name <span class="keyword">not</span> <span class="keyword">in</span> candidate.slices:</span><br><span class="line">            failures.append(<span class="string">f&quot;required slice missing: <span class="subst">&#123;name&#125;</span>&quot;</span>)</span><br><span class="line">            <span class="keyword">continue</span></span><br><span class="line">        count = candidate.slice_counts.get(name, <span class="number">0</span>)</span><br><span class="line">        <span class="keyword">if</span> count &lt; contract.minimum_slice_samples:</span><br><span class="line">            failures.append(<span class="string">f&quot;slice <span class="subst">&#123;name&#125;</span> has insufficient evidence: n=<span class="subst">&#123;count&#125;</span>&quot;</span>)</span><br><span class="line">            <span class="keyword">continue</span></span><br><span class="line">        delta = candidate.slices[name] - baseline.slices[name]</span><br><span class="line">        <span class="keyword">if</span> delta &lt; -contract.maximum_slice_regression:</span><br><span class="line">            failures.append(<span class="string">f&quot;slice <span class="subst">&#123;name&#125;</span> regressed by <span class="subst">&#123;<span class="built_in">abs</span>(delta):<span class="number">.3</span>f&#125;</span>&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> candidate.critical_safety_failures != <span class="number">0</span>:</span><br><span class="line">        failures.append(</span><br><span class="line">            <span class="string">f&quot;critical safety failures=<span class="subst">&#123;candidate.critical_safety_failures&#125;</span>, expected 0&quot;</span></span><br><span class="line">        )</span><br><span class="line">    <span class="keyword">if</span> candidate.latency_p95_ms &gt; contract.maximum_latency_p95_ms:</span><br><span class="line">        failures.append(<span class="string">&quot;latency budget exceeded&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> candidate.cost_ratio &gt; contract.maximum_cost_ratio:</span><br><span class="line">        failures.append(<span class="string">&quot;cost budget exceeded&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> candidate.artifact_complete:</span><br><span class="line">        failures.append(<span class="string">&quot;artifact manifest incomplete&quot;</span>)</span><br><span class="line">    <span class="keyword">return</span> GateResult(passed=<span class="keyword">not</span> failures, reasons=<span class="built_in">tuple</span>(failures))</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">CandidateRecord</span>:</span><br><span class="line">    candidate_id: <span class="built_in">str</span></span><br><span class="line">    dataset_fingerprint: <span class="built_in">str</span></span><br><span class="line">    service_fingerprint: <span class="built_in">str</span></span><br><span class="line">    gate_result: GateResult</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">ReleaseRegistry</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, baseline: CandidateRecord</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.records = &#123;baseline.candidate_id: baseline&#125;</span><br><span class="line">        <span class="variable language_">self</span>.stable = baseline.candidate_id</span><br><span class="line">        <span class="variable language_">self</span>.history = [baseline.candidate_id]</span><br><span class="line">        <span class="variable language_">self</span>.quarantined = <span class="built_in">set</span>()</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">register</span>(<span class="params">self, candidate: CandidateRecord</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.records[candidate.candidate_id] = candidate</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">promote</span>(<span class="params">self, candidate_id: <span class="built_in">str</span></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        candidate = <span class="variable language_">self</span>.records[candidate_id]</span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">not</span> candidate.gate_result.passed <span class="keyword">or</span> candidate_id <span class="keyword">in</span> <span class="variable language_">self</span>.quarantined:</span><br><span class="line">            <span class="keyword">raise</span> ValueError(<span class="string">&quot;candidate is not promotable&quot;</span>)</span><br><span class="line">        <span class="variable language_">self</span>.stable = candidate_id</span><br><span class="line">        <span class="variable language_">self</span>.history.append(candidate_id)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">rollback</span>(<span class="params">self</span>) -&gt; <span class="built_in">str</span>:</span><br><span class="line">        <span class="keyword">for</span> candidate_id <span class="keyword">in</span> <span class="built_in">reversed</span>(<span class="variable language_">self</span>.history[:-<span class="number">1</span>]):</span><br><span class="line">            <span class="keyword">if</span> candidate_id <span class="keyword">not</span> <span class="keyword">in</span> <span class="variable language_">self</span>.quarantined:</span><br><span class="line">                <span class="variable language_">self</span>.stable = candidate_id</span><br><span class="line">                <span class="variable language_">self</span>.history.append(candidate_id)</span><br><span class="line">                <span class="keyword">return</span> candidate_id</span><br><span class="line">        <span class="keyword">raise</span> RuntimeError(<span class="string">&quot;no non-quarantined rollback target&quot;</span>)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">revoke_dataset</span>(<span class="params">self, dataset_fingerprint: <span class="built_in">str</span></span>) -&gt; <span class="type">Tuple</span>[<span class="built_in">str</span>, ...]:</span><br><span class="line">        affected = <span class="built_in">tuple</span>(</span><br><span class="line">            <span class="built_in">sorted</span>(</span><br><span class="line">                candidate_id</span><br><span class="line">                <span class="keyword">for</span> candidate_id, record <span class="keyword">in</span> <span class="variable language_">self</span>.records.items()</span><br><span class="line">                <span class="keyword">if</span> record.dataset_fingerprint == dataset_fingerprint</span><br><span class="line">            )</span><br><span class="line">        )</span><br><span class="line">        <span class="variable language_">self</span>.quarantined.update(affected)</span><br><span class="line">        <span class="keyword">if</span> <span class="variable language_">self</span>.stable <span class="keyword">in</span> <span class="variable language_">self</span>.quarantined:</span><br><span class="line">            <span class="variable language_">self</span>.rollback()</span><br><span class="line">        <span class="keyword">return</span> affected</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">sample</span>(<span class="params">sample_id: <span class="built_in">str</span>, group_id: <span class="built_in">str</span>, prompt: <span class="built_in">str</span></span>) -&gt; Sample:</span><br><span class="line">    <span class="keyword">return</span> Sample(</span><br><span class="line">        sample_id=sample_id,</span><br><span class="line">        group_id=group_id,</span><br><span class="line">        prompt=prompt,</span><br><span class="line">        response=<span class="string">f&quot;label:<span class="subst">&#123;sample_id&#125;</span>&quot;</span>,</span><br><span class="line">        source_asset_id=<span class="string">f&quot;asset:<span class="subst">&#123;group_id&#125;</span>&quot;</span>,</span><br><span class="line">        license_basis=<span class="string">&quot;internal-approved&quot;</span>,</span><br><span class="line">        purpose=<span class="string">&quot;fine-tune-approved&quot;</span>,</span><br><span class="line">        privacy_status=<span class="string">&quot;deidentified&quot;</span>,</span><br><span class="line">    )</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">valid_metrics</span>(<span class="params">overall: <span class="built_in">float</span> = <span class="number">0.90</span></span>) -&gt; CandidateMetrics:</span><br><span class="line">    <span class="keyword">return</span> CandidateMetrics(</span><br><span class="line">        overall=overall,</span><br><span class="line">        slices=&#123;<span class="string">&quot;zh-CN&quot;</span>: <span class="number">0.91</span>, <span class="string">&quot;high-risk-refusal&quot;</span>: <span class="number">0.98</span>&#125;,</span><br><span class="line">        slice_counts=&#123;<span class="string">&quot;zh-CN&quot;</span>: <span class="number">300</span>, <span class="string">&quot;high-risk-refusal&quot;</span>: <span class="number">180</span>&#125;,</span><br><span class="line">        critical_safety_failures=<span class="number">0</span>,</span><br><span class="line">        latency_p95_ms=<span class="number">790</span>,</span><br><span class="line">        cost_ratio=<span class="number">0.93</span>,</span><br><span class="line">        artifact_complete=<span class="literal">True</span>,</span><br><span class="line">    )</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">FineTuneControlTests</span>(unittest.TestCase):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">setUp</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.auditor = DataAuditor(</span><br><span class="line">            allowed_licenses=&#123;<span class="string">&quot;internal-approved&quot;</span>, <span class="string">&quot;cc-by-4.0&quot;</span>&#125;,</span><br><span class="line">            forbidden_benchmarks=&#123;<span class="string">&quot;public-benchmark-v1&quot;</span>&#125;,</span><br><span class="line">        )</span><br><span class="line">        <span class="variable language_">self</span>.contract = GateContract(</span><br><span class="line">            minimum_overall_improvement=<span class="number">0.02</span>,</span><br><span class="line">            maximum_slice_regression=<span class="number">0.005</span>,</span><br><span class="line">            required_slices=(<span class="string">&quot;zh-CN&quot;</span>, <span class="string">&quot;high-risk-refusal&quot;</span>),</span><br><span class="line">            minimum_slice_samples=<span class="number">100</span>,</span><br><span class="line">            maximum_latency_p95_ms=<span class="number">900</span>,</span><br><span class="line">            maximum_cost_ratio=<span class="number">1.05</span>,</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_audit_rejects_license_privacy_and_benchmark_failures</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        bad = replace(</span><br><span class="line">            sample(<span class="string">&quot;s1&quot;</span>, <span class="string">&quot;g1&quot;</span>, <span class="string">&quot;contact me at user@example.com&quot;</span>),</span><br><span class="line">            license_basis=<span class="string">&quot;unknown&quot;</span>,</span><br><span class="line">            privacy_status=<span class="string">&quot;raw&quot;</span>,</span><br><span class="line">            benchmark=<span class="string">&quot;public-benchmark-v1&quot;</span>,</span><br><span class="line">        )</span><br><span class="line">        <span class="keyword">with</span> <span class="variable language_">self</span>.assertRaises(AuditError) <span class="keyword">as</span> error:</span><br><span class="line">            <span class="variable language_">self</span>.auditor.audit([bad])</span><br><span class="line">        <span class="variable language_">self</span>.assertIn(<span class="string">&quot;license not approved&quot;</span>, <span class="built_in">str</span>(error.exception))</span><br><span class="line">        <span class="variable language_">self</span>.assertIn(<span class="string">&quot;direct identifier detected&quot;</span>, <span class="built_in">str</span>(error.exception))</span><br><span class="line">        <span class="variable language_">self</span>.assertIn(<span class="string">&quot;forbidden benchmark&quot;</span>, <span class="built_in">str</span>(error.exception))</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_audit_report_is_stable_for_same_samples</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        samples = [sample(<span class="string">&quot;s1&quot;</span>, <span class="string">&quot;g1&quot;</span>, <span class="string">&quot;refund one&quot;</span>), sample(<span class="string">&quot;s2&quot;</span>, <span class="string">&quot;g2&quot;</span>, <span class="string">&quot;refund two&quot;</span>)]</span><br><span class="line">        left = <span class="variable language_">self</span>.auditor.audit(samples)</span><br><span class="line">        right = <span class="variable language_">self</span>.auditor.audit(<span class="built_in">list</span>(<span class="built_in">reversed</span>(samples)))</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(left.report_sha256, right.report_sha256)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_group_split_is_deterministic_and_isolated</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        samples = [</span><br><span class="line">            sample(<span class="string">&quot;s1&quot;</span>, <span class="string">&quot;case-7&quot;</span>, <span class="string">&quot;first turn&quot;</span>),</span><br><span class="line">            sample(<span class="string">&quot;s2&quot;</span>, <span class="string">&quot;case-7&quot;</span>, <span class="string">&quot;second turn&quot;</span>),</span><br><span class="line">            sample(<span class="string">&quot;s3&quot;</span>, <span class="string">&quot;case-8&quot;</span>, <span class="string">&quot;other case&quot;</span>),</span><br><span class="line">        ]</span><br><span class="line">        left = assign_splits(samples, <span class="string">&quot;seed-20260504&quot;</span>)</span><br><span class="line">        right = assign_splits(samples, <span class="string">&quot;seed-20260504&quot;</span>)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(left, right)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(left[<span class="number">0</span>].split, left[<span class="number">1</span>].split)</span><br><span class="line">        assert_split_isolation(left)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_cross_split_normalized_duplicate_is_rejected</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        left = replace(sample(<span class="string">&quot;s1&quot;</span>, <span class="string">&quot;g1&quot;</span>, <span class="string">&quot;Refund   NOW&quot;</span>), split=<span class="string">&quot;train&quot;</span>)</span><br><span class="line">        right = replace(sample(<span class="string">&quot;s2&quot;</span>, <span class="string">&quot;g2&quot;</span>, <span class="string">&quot;refund now&quot;</span>), response=<span class="string">&quot;label:s1&quot;</span>, split=<span class="string">&quot;test&quot;</span>)</span><br><span class="line">        <span class="keyword">with</span> <span class="variable language_">self</span>.assertRaises(AuditError):</span><br><span class="line">            assert_split_isolation([left, right])</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_dataset_fingerprint_changes_with_content</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        first = assign_splits([sample(<span class="string">&quot;s1&quot;</span>, <span class="string">&quot;g1&quot;</span>, <span class="string">&quot;refund one&quot;</span>)], <span class="string">&quot;seed&quot;</span>)</span><br><span class="line">        changed = (replace(first[<span class="number">0</span>], response=<span class="string">&quot;different target&quot;</span>),)</span><br><span class="line">        <span class="variable language_">self</span>.assertNotEqual(</span><br><span class="line">            dataset_manifest(first)[<span class="string">&quot;manifest_sha256&quot;</span>],</span><br><span class="line">            dataset_manifest(changed)[<span class="string">&quot;manifest_sha256&quot;</span>],</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_run_fingerprint_changes_with_hyperparameters</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        base = RunSpec(</span><br><span class="line">            contract_id=<span class="string">&quot;contract-v3&quot;</span>,</span><br><span class="line">            train_manifest_sha256=<span class="string">&quot;train-hash&quot;</span>,</span><br><span class="line">            validation_manifest_sha256=<span class="string">&quot;validation-hash&quot;</span>,</span><br><span class="line">            base_model_fingerprint=<span class="string">&quot;base-hash&quot;</span>,</span><br><span class="line">            tokenizer_fingerprint=<span class="string">&quot;tokenizer-hash&quot;</span>,</span><br><span class="line">            code_commit=<span class="string">&quot;4f8c2e1&quot;</span>,</span><br><span class="line">            container_digest=<span class="string">&quot;sha256:container&quot;</span>,</span><br><span class="line">            method=<span class="string">&quot;lora-sft&quot;</span>,</span><br><span class="line">            hyperparameters=&#123;<span class="string">&quot;rank&quot;</span>: <span class="number">16</span>, <span class="string">&quot;alpha&quot;</span>: <span class="number">32</span>&#125;,</span><br><span class="line">            seed=<span class="number">20260504</span>,</span><br><span class="line">        )</span><br><span class="line">        changed = replace(base, hyperparameters=&#123;<span class="string">&quot;rank&quot;</span>: <span class="number">32</span>, <span class="string">&quot;alpha&quot;</span>: <span class="number">32</span>&#125;)</span><br><span class="line">        <span class="variable language_">self</span>.assertNotEqual(base.fingerprint(), changed.fingerprint())</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_candidate_passes_all_independent_gates</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        baseline = replace(valid_metrics(<span class="number">0.86</span>), cost_ratio=<span class="number">1.0</span>, latency_p95_ms=<span class="number">820</span>)</span><br><span class="line">        result = evaluate_candidate(<span class="variable language_">self</span>.contract, baseline, valid_metrics(<span class="number">0.89</span>))</span><br><span class="line">        <span class="variable language_">self</span>.assertTrue(result.passed)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(result.reasons, ())</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_safety_and_slice_regression_cannot_be_averaged_away</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        baseline = replace(valid_metrics(<span class="number">0.86</span>), cost_ratio=<span class="number">1.0</span>, latency_p95_ms=<span class="number">820</span>)</span><br><span class="line">        candidate = replace(</span><br><span class="line">            valid_metrics(<span class="number">0.91</span>),</span><br><span class="line">            slices=&#123;<span class="string">&quot;zh-CN&quot;</span>: <span class="number">0.92</span>, <span class="string">&quot;high-risk-refusal&quot;</span>: <span class="number">0.93</span>&#125;,</span><br><span class="line">            critical_safety_failures=<span class="number">2</span>,</span><br><span class="line">        )</span><br><span class="line">        result = evaluate_candidate(<span class="variable language_">self</span>.contract, baseline, candidate)</span><br><span class="line">        <span class="variable language_">self</span>.assertFalse(result.passed)</span><br><span class="line">        <span class="variable language_">self</span>.assertTrue(<span class="built_in">any</span>(<span class="string">&quot;high-risk-refusal&quot;</span> <span class="keyword">in</span> reason <span class="keyword">for</span> reason <span class="keyword">in</span> result.reasons))</span><br><span class="line">        <span class="variable language_">self</span>.assertTrue(<span class="built_in">any</span>(<span class="string">&quot;critical safety&quot;</span> <span class="keyword">in</span> reason <span class="keyword">for</span> reason <span class="keyword">in</span> result.reasons))</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_dataset_revocation_quarantines_model_and_rolls_back</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        passed = GateResult(<span class="literal">True</span>, ())</span><br><span class="line">        baseline = CandidateRecord(<span class="string">&quot;stable-v1&quot;</span>, <span class="string">&quot;data-clean&quot;</span>, <span class="string">&quot;svc-v1&quot;</span>, passed)</span><br><span class="line">        candidate = CandidateRecord(<span class="string">&quot;candidate-v2&quot;</span>, <span class="string">&quot;data-bad&quot;</span>, <span class="string">&quot;svc-v2&quot;</span>, passed)</span><br><span class="line">        registry = ReleaseRegistry(baseline)</span><br><span class="line">        registry.register(candidate)</span><br><span class="line">        registry.promote(<span class="string">&quot;candidate-v2&quot;</span>)</span><br><span class="line">        affected = registry.revoke_dataset(<span class="string">&quot;data-bad&quot;</span>)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(affected, (<span class="string">&quot;candidate-v2&quot;</span>,))</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(registry.stable, <span class="string">&quot;stable-v1&quot;</span>)</span><br><span class="line">        <span class="variable language_">self</span>.assertIn(<span class="string">&quot;candidate-v2&quot;</span>, registry.quarantined)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&quot;__main__&quot;</span>:</span><br><span class="line">    unittest.main(verbosity=<span class="number">2</span>)</span><br></pre></td></tr></table></figure>
+
+<p>把代码保存为 <code>/tmp/ai39_finetune_gate.py</code> 后执行：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">python3 /tmp/ai39_finetune_gate.py</span><br></pre></td></tr></table></figure>
+
+<p>本文写作时的实际执行结果为：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">test_audit_rejects_license_privacy_and_benchmark_failures ... ok</span><br><span class="line">test_audit_report_is_stable_for_same_samples ... ok</span><br><span class="line">test_candidate_passes_all_independent_gates ... ok</span><br><span class="line">test_cross_split_normalized_duplicate_is_rejected ... ok</span><br><span class="line">test_dataset_fingerprint_changes_with_content ... ok</span><br><span class="line">test_dataset_revocation_quarantines_model_and_rolls_back ... ok</span><br><span class="line">test_group_split_is_deterministic_and_isolated ... ok</span><br><span class="line">test_run_fingerprint_changes_with_hyperparameters ... ok</span><br><span class="line">test_safety_and_slice_regression_cannot_be_averaged_away ... ok</span><br><span class="line"></span><br><span class="line">Ran 9 tests</span><br><span class="line"></span><br><span class="line">OK</span><br></pre></td></tr></table></figure>
+
+<h3 id="示例能证明什么"><a href="#示例能证明什么" class="headerlink" title="示例能证明什么"></a>示例能证明什么</h3><p>九个测试证明在这个最小控制模型里：</p>
+<ul>
+<li>未批准许可、原始隐私状态、直接标识符和禁止 benchmark 会阻断准入；</li>
+<li>同一组在同一 seed 下稳定进入同一个 split；</li>
+<li>规范化内容跨 split 会被发现；</li>
+<li>数据内容或超参数变化会改变对应指纹；</li>
+<li>总体提升无法抵消切片退化和严重安全事件；</li>
+<li>被撤回数据版本可以反查受影响候选并触发稳定指针回滚。</li>
+</ul>
+<h3 id="示例没有证明什么"><a href="#示例没有证明什么" class="headerlink" title="示例没有证明什么"></a>示例没有证明什么</h3><ul>
+<li>两条正则不能发现所有个人或敏感信息；</li>
+<li>规范化精确重复不能替代成熟近重复和污染扫描；</li>
+<li>哈希证明内容相同，不证明内容正确、合法或公平；</li>
+<li>稳定 split 不自动代表生产分布；</li>
+<li>构造分数没有统计置信结论；</li>
+<li>注册表切换只是状态模型，没有验证真实服务、缓存和连接耗尽；</li>
+<li>数据撤回后的路由回滚不等于从已训练权重中精确遗忘该样本。</li>
+</ul>
+<p>生产落地应把这些最小不变量接到真正的资产目录、训练编排、模型注册表、评测平台和发布控制面。</p>
+<h2 id="十四、自动化测试与失败注入：训练成功路径远远不够"><a href="#十四、自动化测试与失败注入：训练成功路径远远不够" class="headerlink" title="十四、自动化测试与失败注入：训练成功路径远远不够"></a>十四、自动化测试与失败注入：训练成功路径远远不够</h2><h3 id="1-训练前静态门禁"><a href="#1-训练前静态门禁" class="headerlink" title="1. 训练前静态门禁"></a>1. 训练前静态门禁</h3><p>在任何 GPU 或托管训练费用发生前，流水线先验证：</p>
+<ul>
+<li><code>contract_id</code> 存在且状态为已批准；</li>
+<li>train、validation、test manifest 不可变且哈希一致；</li>
+<li>test 对训练作业身份不可读；</li>
+<li>许可、用途、隐私和保留状态全部有效；</li>
+<li>禁止 benchmark 和跨 split 报告针对当前 manifest；</li>
+<li>基座、tokenizer、聊天模板和许可证兼容；</li>
+<li>训练方法所需目标模块确实存在；</li>
+<li>输出目录、日志与 checkpoint 不包含原始敏感样本；</li>
+<li>预算、区域、硬件和最大运行时间符合合同；</li>
+<li>稳定回滚目标仍可部署。</li>
+</ul>
+<p>这些检查失败时，状态应为 <code>REJECTED_BEFORE_TRAINING</code>，而不是自动修正后继续。自动删除一条不合规样本会改变数据指纹和覆盖，需要生成新 manifest 并重新批准。</p>
+<h3 id="2-训练过程不变量"><a href="#2-训练过程不变量" class="headerlink" title="2. 训练过程不变量"></a>2. 训练过程不变量</h3><p>运行中持续检查：</p>
+<ul>
+<li>实际加载样本数与 manifest 一致；</li>
+<li>每个 epoch 的样本身份摘要符合预期；</li>
+<li>test 文件从未被打开；</li>
+<li>可训练参数集合与合同一致；</li>
+<li>loss、gradient norm、学习率和吞吐没有 NaN、Inf 或异常跳变；</li>
+<li>checkpoint 写入采用临时路径、校验后原子登记；</li>
+<li>恢复后 global step、optimizer、scheduler 和数据游标一致；</li>
+<li>分布式 worker 使用相同代码、配置与基座；</li>
+<li>预算或安全停止信号能终止所有 worker；</li>
+<li>训练失败不会把半成品登记成候选。</li>
+</ul>
+<p>训练作业返回退出码 0 只说明进程认为自己完成。产物登记还要独立核对文件哈希、大小、配置和可加载性。</p>
+<h3 id="3-训练故障注入矩阵"><a href="#3-训练故障注入矩阵" class="headerlink" title="3. 训练故障注入矩阵"></a>3. 训练故障注入矩阵</h3><table>
+<thead>
+<tr>
+<th>注入点</th>
+<th>预期行为</th>
+<th>必查证据</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>下载基座中断</td>
+<td>不启动训练，不使用半文件</td>
+<td>基座哈希失败、临时文件隔离</td>
+</tr>
+<tr>
+<td>数据分片缺失</td>
+<td>立即失败，不减少样本数继续</td>
+<td>manifest 数量和缺失 ID</td>
+</tr>
+<tr>
+<td>worker 中途退出</td>
+<td>整体失败或从一致 checkpoint 恢复</td>
+<td>worker 集合、global step</td>
+</tr>
+<tr>
+<td>checkpoint 写到一半断电</td>
+<td>不可登记、恢复到上一完整点</td>
+<td>文件哈希与完成标记</td>
+</tr>
+<tr>
+<td>optimizer 状态损坏</td>
+<td>拒绝恢复，不只加载权重假装续训</td>
+<td>optimizer&#x2F;scheduler 指纹</td>
+</tr>
+<tr>
+<td>磁盘写满</td>
+<td>保留最后完整 checkpoint 并停止</td>
+<td>错误阶段与剩余空间</td>
+</tr>
+<tr>
+<td>出现 NaN&#x2F;Inf</td>
+<td>触发停止并隔离运行</td>
+<td>首次异常 step、batch 身份</td>
+</tr>
+<tr>
+<td>指标上报失败</td>
+<td>训练策略按合同决定暂停或继续</td>
+<td>本地不可变日志，不静默丢失</td>
+</tr>
+<tr>
+<td>托管任务超时</td>
+<td>查询最终状态，不重复创建未知任务</td>
+<td>幂等请求键、job ID</td>
+</tr>
+<tr>
+<td>spot&#x2F;抢占恢复</td>
+<td>恢复后样本游标不跳过、不双计</td>
+<td>epoch 样本摘要</td>
+</tr>
+</tbody></table>
+<p>每个恢复测试要比较连续训练与中断恢复的过程和行为容差。只比较最后文件是否存在，可能漏掉学习率重置或某批样本重复导致的分布变化。</p>
+<h3 id="4-产物篡改测试"><a href="#4-产物篡改测试" class="headerlink" title="4. 产物篡改测试"></a>4. 产物篡改测试</h3><p>在隔离环境复制候选包，分别修改一个因素：</p>
+<ul>
+<li>Adapter 一个字节；</li>
+<li>tokenizer 配置；</li>
+<li>聊天模板；</li>
+<li>base model ID；</li>
+<li>target module 列表；</li>
+<li>system Prompt；</li>
+<li>serving runtime 镜像；</li>
+<li>安全策略版本。</li>
+</ul>
+<p>注册表应拒绝哈希不匹配，候选服务指纹也应变化。若修改模板后仍沿用原评测报告，发布门禁必须识别报告绑定的候选 ID 不一致。</p>
+<h3 id="5-评测流水线故障注入"><a href="#5-评测流水线故障注入" class="headerlink" title="5. 评测流水线故障注入"></a>5. 评测流水线故障注入</h3><p>模拟：</p>
+<ul>
+<li>基线和候选使用不同温度；</li>
+<li>候选部分请求重试而基线不重试；</li>
+<li>评测器版本漂移；</li>
+<li>测试样本被静默跳过；</li>
+<li>某语言解析失败后被计为 <code>NA</code>；</li>
+<li>模型裁判超时后默认通过；</li>
+<li>逐样本结果与汇总不一致；</li>
+<li>安全复核队列未完成却生成总报告；</li>
+<li>报告引用错误 checkpoint；</li>
+<li>多候选只保留最高分运行。</li>
+</ul>
+<p>预期是门禁失败并指出证据缺口。任何异常默认填 0、填通过或从分母移除，都会让报告比系统更乐观。</p>
+<h3 id="6-候选加载与服务兼容测试"><a href="#6-候选加载与服务兼容测试" class="headerlink" title="6. 候选加载与服务兼容测试"></a>6. 候选加载与服务兼容测试</h3><p>微调产物在训练框架可加载，不代表生产服务可用。测试：</p>
+<ul>
+<li>冷启动与首次请求；</li>
+<li>Adapter 动态加载、卸载和并发隔离；</li>
+<li>合并权重与动态 Adapter 的逐样本差异；</li>
+<li>tokenizer 特殊 token 与最大长度；</li>
+<li>流式输出、停止 token 和超时；</li>
+<li>批处理不同长度请求；</li>
+<li>工具调用、结构化输出和安全中间件；</li>
+<li>服务滚动升级中的版本粘性；</li>
+<li>模型缓存淘汰后重新加载；</li>
+<li>稳定版与候选同时驻留的资源峰值。</li>
+</ul>
+<h3 id="7-回滚演练是发布测试的一部分"><a href="#7-回滚演练是发布测试的一部分" class="headerlink" title="7. 回滚演练是发布测试的一部分"></a>7. 回滚演练是发布测试的一部分</h3><p>在候选尚未接真实用户前，主动执行：</p>
+<ol>
+<li>部署 stable 与 candidate；</li>
+<li>发送带版本断言的合成请求；</li>
+<li>把 1% 测试流量切到 candidate；</li>
+<li>注入安全硬失败信号；</li>
+<li>验证自动停止扩大并把新请求切回 stable；</li>
+<li>等待或终止 candidate 在途请求；</li>
+<li>清除与候选服务指纹绑定的缓存；</li>
+<li>验证稳定版指标、trace 与业务结果恢复；</li>
+<li>保存实际 RTO 与未回滚状态清单。</li>
+</ol>
+<p>若回滚只在文档里有命令、从未在当前服务拓扑演练，不能作为上线保证。</p>
+<h2 id="十五、从离线候选到生产稳定版：影子、灰度和提升"><a href="#十五、从离线候选到生产稳定版：影子、灰度和提升" class="headerlink" title="十五、从离线候选到生产稳定版：影子、灰度和提升"></a>十五、从离线候选到生产稳定版：影子、灰度和提升</h2><h3 id="1-影子阶段"><a href="#1-影子阶段" class="headerlink" title="1. 影子阶段"></a>1. 影子阶段</h3><p>复制经过批准的真实请求到候选，候选结果不交付用户，也不允许执行写工具。对敏感字段做与生产观测一致的最小化。比较：</p>
+<ul>
+<li>稳定版与候选的逐请求差异；</li>
+<li>输入分布与离线测试覆盖；</li>
+<li>结构和工具调用倾向；</li>
+<li>延迟、token、错误和资源；</li>
+<li>新失败簇与人工复核结果。</li>
+</ul>
+<p>影子不能测用户交互反馈，也不能完全模拟候选结果会改变后续会话或工具状态。它是灰度前的分布检查，不是最终线上证明。</p>
+<h3 id="2-灰度单元"><a href="#2-灰度单元" class="headerlink" title="2. 灰度单元"></a>2. 灰度单元</h3><p>优先按可隔离单位灰度，例如内部员工、测试租户、低风险意图或明确白名单。避免纯随机逐请求切换导致同一会话在两个模型之间来回跳，破坏上下文与归因。</p>
+<p>灰度记录：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">request_id</span><br><span class="line">conversation_id</span><br><span class="line">tenant_id</span><br><span class="line">assignment_bucket</span><br><span class="line">candidate_service_fingerprint</span><br><span class="line">stable_service_fingerprint</span><br><span class="line">contract_id</span><br><span class="line">policy_version</span><br><span class="line">rollback_epoch</span><br></pre></td></tr></table></figure>
+
+<p>身份字段按隐私政策最小化或哈希化，但要能支持一致分桶和事故范围分析。</p>
+<h3 id="3-扩大条件"><a href="#3-扩大条件" class="headerlink" title="3. 扩大条件"></a>3. 扩大条件</h3><p>示例阶段可以是 1%、5%、20%、50%、100%，比例不是通用最佳实践。每阶段必须满足：</p>
+<ul>
+<li>最小样本量或最短稳定时间；</li>
+<li>无安全硬失败；</li>
+<li>核心业务与保留能力在门槛内；</li>
+<li>投诉、人工接管和撤销动作无异常；</li>
+<li>p95&#x2F;p99 延迟、错误和成本达标；</li>
+<li>关键租户、语言和意图有足够证据；</li>
+<li>候选与稳定版本路由、trace 可准确区分；</li>
+<li>回滚目标健康且容量足够。</li>
+</ul>
+<p>高峰前刚达到样本量，不代表已经观察到高峰行为。最短时间要覆盖重要业务周期。</p>
+<h3 id="4-自动回滚信号"><a href="#4-自动回滚信号" class="headerlink" title="4. 自动回滚信号"></a>4. 自动回滚信号</h3><p>适合自动触发的信号通常清晰且高置信：</p>
+<ul>
+<li>严重安全策略命中；</li>
+<li>越权或错误副作用；</li>
+<li>错误率、超时或资源超过硬阈值；</li>
+<li>模型&#x2F;数据&#x2F;服务指纹不匹配；</li>
+<li>关键输出 Schema 大面积失败；</li>
+<li>稳定版与候选差异监控失去证据。</li>
+</ul>
+<p>语义质量下降可能需要聚合与人工确认，但不能等到日终总分才处理严重样本。安全事件应先停止扩大并隔离候选。</p>
+<h3 id="5-线上实验不改写离线合同"><a href="#5-线上实验不改写离线合同" class="headerlink" title="5. 线上实验不改写离线合同"></a>5. 线上实验不改写离线合同</h3><p>灰度可以发现离线集未覆盖的新分布。它产生的是新证据和下一版数据候选，不应把失败请求即时加入训练并在线更新当前候选。在线学习会让服务指纹持续变化，破坏归因、审批和回滚。</p>
+<p>需要持续训练时，也应以离散批次形成新数据版本、新 run、新候选和新门禁。</p>
+<h3 id="6-提升后的观察窗"><a href="#6-提升后的观察窗" class="headerlink" title="6. 提升后的观察窗"></a>6. 提升后的观察窗</h3><p>100% 流量不是项目结束。保持：</p>
+<ul>
+<li>旧稳定版的可服务副本；</li>
+<li>持续安全和业务 SLI；</li>
+<li>分切片漂移与新增失败采样；</li>
+<li>基座或供应商退役监控；</li>
+<li>数据许可与撤回监控；</li>
+<li>定期回滚演练；</li>
+<li>模型卡和已知限制更新。</li>
+</ul>
+<p>观察窗结束后再按政策退役旧版，且要确认没有异步任务、缓存或离线消费者仍引用它。</p>
+<h2 id="十六、模型回滚与数据回滚是两条不同路径"><a href="#十六、模型回滚与数据回滚是两条不同路径" class="headerlink" title="十六、模型回滚与数据回滚是两条不同路径"></a>十六、模型回滚与数据回滚是两条不同路径</h2><h3 id="1-模型回滚"><a href="#1-模型回滚" class="headerlink" title="1. 模型回滚"></a>1. 模型回滚</h3><p>模型回滚目标是停止候选影响并恢复已验证服务。完整动作包括：</p>
+<ul>
+<li>冻结灰度扩大；</li>
+<li>稳定指针切回明确版本；</li>
+<li>处理候选在途请求；</li>
+<li>禁止候选继续执行工具副作用；</li>
+<li>清除候选专属缓存和会话路由；</li>
+<li>恢复 stable 对应 Prompt、tokenizer、工具和安全策略；</li>
+<li>验证容量、延迟和业务结果；</li>
+<li>隔离候选产物，保留证据但禁止新流量。</li>
+</ul>
+<p>只切模型 ID 可能制造不兼容：新 Prompt 为微调候选缩短了指令，旧稳定模型切回后可能失去必要约束。回滚单位应是完整服务指纹。</p>
+<h3 id="2-数据回滚"><a href="#2-数据回滚" class="headerlink" title="2. 数据回滚"></a>2. 数据回滚</h3><p>数据回滚表示某个训练 manifest 不再可用于后续运行，常见原因包括许可撤回、隐私问题、标签错误、污染或转换 bug。动作包括：</p>
+<ol>
+<li>冻结数据版本；</li>
+<li>由血缘找到所有派生 run、checkpoint、候选和报告；</li>
+<li>阻止受影响候选提升；</li>
+<li>若受影响版本已生产，先执行模型回滚；</li>
+<li>从最近干净父 manifest 派生修复版本；</li>
+<li>重做准入、隔离、训练和验收；</li>
+<li>根据政策隔离或销毁旧产物；</li>
+<li>保存撤回依据、影响范围和完成证据。</li>
+</ol>
+<p>数据 manifest 指针回退不会改变已经训练的参数。需要消除受影响训练的生产使用时，必须停用模型；需要得到不含该数据影响的新模型时，通常需要重新训练。</p>
+<h3 id="3-评测数据回滚"><a href="#3-评测数据回滚" class="headerlink" title="3. 评测数据回滚"></a>3. 评测数据回滚</h3><p>若发现 test 泄漏或标签错误，不能简单改几行后沿用原候选通过结论。应：</p>
+<ul>
+<li>撤销受影响评测报告；</li>
+<li>标记哪些候选决策使用了它；</li>
+<li>建立修复测试版本；</li>
+<li>用相同候选重新评测；</li>
+<li>重新执行门禁和审批；</li>
+<li>对已发布候选决定是否暂停或限制流量。</li>
+</ul>
+<p>评测修复可能改变基线和候选，必须同时重跑。</p>
+<h3 id="4-基座或平台退役时的回滚"><a href="#4-基座或平台退役时的回滚" class="headerlink" title="4. 基座或平台退役时的回滚"></a>4. 基座或平台退役时的回滚</h3><p>托管基座退役可能让旧 stable 无法继续推理。项目需要在退役前：</p>
+<ul>
+<li>记录供应商时间线；</li>
+<li>选择新基座并建立未调基线；</li>
+<li>验证旧微调产物是否可迁移；</li>
+<li>把迁移视为新候选，而不是透明替换；</li>
+<li>在旧端点关闭前完成并行验证；</li>
+<li>更新回滚目标和最长保留窗口。</li>
+</ul>
+<p>如果供应商不允许导出权重，无法把旧微调模型迁往自托管。这个锁定边界应在立项合同中明确。</p>
+<h3 id="5-回滚目标也会腐化"><a href="#5-回滚目标也会腐化" class="headerlink" title="5. 回滚目标也会腐化"></a>5. 回滚目标也会腐化</h3><p>旧模型文件存在，但依赖镜像被删、GPU 不兼容、密钥过期、工具 Schema 升级或安全政策变化，都可能让它不可用。定期合成探测 stable-1：</p>
+<ul>
+<li>能加载；</li>
+<li>能处理代表性输入；</li>
+<li>能调用当前只读工具或明确拒绝不兼容写工具；</li>
+<li>满足当前强制安全策略；</li>
+<li>容量足以接回全量；</li>
+<li>RTO 在合同内。</li>
+</ul>
+<h3 id="6-回滚完成条件"><a href="#6-回滚完成条件" class="headerlink" title="6. 回滚完成条件"></a>6. 回滚完成条件</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">rollback_complete =</span><br><span class="line">  new_requests_on_stable</span><br><span class="line">  AND candidate_writes_blocked</span><br><span class="line">  AND candidate_cache_isolated</span><br><span class="line">  AND stable_capacity_healthy</span><br><span class="line">  AND critical_business_probes_pass</span><br><span class="line">  AND affected_scope_recorded</span><br></pre></td></tr></table></figure>
+
+<p>路由配置返回成功只是第一步，不是完成条件。</p>
+<h2 id="十七、完整失败案例：评测的是-ckpt-2400，生产部署成-ckpt-3000"><a href="#十七、完整失败案例：评测的是-ckpt-2400，生产部署成-ckpt-3000" class="headerlink" title="十七、完整失败案例：评测的是 ckpt-2400，生产部署成 ckpt-3000"></a>十七、完整失败案例：评测的是 ckpt-2400，生产部署成 ckpt-3000</h2><p>下面是构造案例，所有时间、样本数和分数均为演示数据。</p>
+<h3 id="1-项目背景"><a href="#1-项目背景" class="headerlink" title="1. 项目背景"></a>1. 项目背景</h3><p>团队要让一个 8B 自托管模型完成退款意图分类和客服答复。稳定版由基座、长 Prompt、订单只读工具和响应验证器组成。立项假设是：LoRA SFT 能稳定 12 类标签并缩短 Prompt，从而降低成本。</p>
+<p>合同规定：</p>
+<ul>
+<li>密封 test <code>refund-eval-v6</code> 共 2,400 条；</li>
+<li>核心准确率至少提升 2.0 个百分点；</li>
+<li>高风险拒答切片退化不超过 0.5 个百分点；</li>
+<li>“未收到成功工具回执却声称退款已执行”严重事件必须为 0；</li>
+<li>p95 不超过 900ms，单位成功成本不超过 1.05 倍；</li>
+<li>评测、灰度和生产必须使用同一 candidate service fingerprint；</li>
+<li>灰度异常 60 秒内切回 <code>stable-2026-04-12</code>。</li>
+</ul>
+<h3 id="2-表面成功"><a href="#2-表面成功" class="headerlink" title="2. 表面成功"></a>2. 表面成功</h3><p>训练平台产生 <code>ckpt-1800</code>、<code>ckpt-2400</code> 和 <code>ckpt-3000</code>。工程师在 <code>ckpt-2400</code> 上运行离线评测：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">baseline overall = 86.2%</span><br><span class="line">candidate overall = 89.1%</span><br><span class="line">latency p95 = 790ms</span><br><span class="line">cost ratio = 0.93x</span><br></pre></td></tr></table></figure>
+
+<p>报告页面显示绿色，团队把服务从 1% 扩到 20%。两小时后，灰度用户在订单工具超时时收到“退款已经处理，将在三个工作日到账”。实际上没有任何写工具，也没有成功回执。</p>
+<h3 id="3-第一轮止血"><a href="#3-第一轮止血" class="headerlink" title="3. 第一轮止血"></a>3. 第一轮止血</h3><p>值班人员执行：</p>
+<ol>
+<li>冻结灰度扩大；</li>
+<li>禁止候选流量进入任何退款相关意图；</li>
+<li>将新请求切回完整 <code>stable-2026-04-12</code> 服务组合；</li>
+<li>清除 candidate service fingerprint 的答案缓存；</li>
+<li>核对工具审计，确认候选没有真实执行退款；</li>
+<li>查找已经收到错误承诺的会话并进入人工处理；</li>
+<li>冻结候选、训练 manifest、评测报告和线上 trace。</li>
+</ol>
+<p>实际回滚用时 47 秒，满足 60 秒目标，但用户沟通影响仍需单独处理。</p>
+<h3 id="4-证据-A：线上服务指纹不匹配"><a href="#4-证据-A：线上服务指纹不匹配" class="headerlink" title="4. 证据 A：线上服务指纹不匹配"></a>4. 证据 A：线上服务指纹不匹配</h3><p>事故请求 trace：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">service_fingerprint=svc-c17-3000</span><br><span class="line">adapter_sha256=sha256:ckpt3000...</span><br><span class="line">prompt_sha256=sha256:short-prompt...</span><br><span class="line">tool_policy=readonly-order-v4</span><br><span class="line">response_validator=refund-v7</span><br></pre></td></tr></table></figure>
+
+<p>离线报告绑定：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">service_fingerprint=svc-c17-2400</span><br><span class="line">adapter_sha256=sha256:ckpt2400...</span><br></pre></td></tr></table></figure>
+
+<p>部署脚本读取了对象存储可变别名 <code>candidate/latest</code>。评测后训练任务继续到 3000 step，并覆盖该别名。注册表只保存逻辑名，没有强制产物哈希，因此未经评测的 checkpoint 进入生产。</p>
+<h3 id="5-证据-B：真正的安全切片并未通过"><a href="#5-证据-B：真正的安全切片并未通过" class="headerlink" title="5. 证据 B：真正的安全切片并未通过"></a>5. 证据 B：真正的安全切片并未通过</h3><p>重新读取 <code>ckpt-2400</code> 的逐样本报告发现：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">high-risk-refusal baseline = 97.8% (176/180)</span><br><span class="line">high-risk-refusal candidate = 93.9% (169/180)</span><br><span class="line">critical false-execution claims = 2</span><br></pre></td></tr></table></figure>
+
+<p>汇总器把六个维度按权重平均，安全切片只占 5%，总体仍高于阈值。合同写的是硬门禁，流水线实现却用了加权总分。UI 的绿色不是合同结论。</p>
+<h3 id="6-证据-C：训练目标包含无证据的动作声明"><a href="#6-证据-C：训练目标包含无证据的动作声明" class="headerlink" title="6. 证据 C：训练目标包含无证据的动作声明"></a>6. 证据 C：训练目标包含无证据的动作声明</h3><p>训练 manifest 中 14% 的退款答复来自历史客服话术。抽查发现 63 条示范在输入中没有工具结果，却以“已为您退款”结尾。数据转换器只保留用户和客服文本，丢掉了原工单中的实际动作状态。</p>
+<p>模型学到的不是正确工具使用，而是“退款语境下给出完成承诺”的表面模式。JSONL、角色和标签都合法，业务因果却错误。</p>
+<h3 id="7-证据-D：隔离报告绑定了旧-manifest"><a href="#7-证据-D：隔离报告绑定了旧-manifest" class="headerlink" title="7. 证据 D：隔离报告绑定了旧 manifest"></a>7. 证据 D：隔离报告绑定了旧 manifest</h3><p>候选 manifest 引用 <code>train-manifest-v9</code>，但近重复与 contamination 报告的输入哈希对应 <code>v8</code>。v9 在最后一天加入 320 条客服样本，其中 37 条是 test 题的轻微改写或同一工单后续轮次。</p>
+<p>这不需要重新讲一遍近重复算法；关键控制失败是<strong>发布门禁没有验证报告输入哈希等于训练 manifest 哈希</strong>。因此“扫描通过”与实际训练数据无关。</p>
+<h3 id="8-证据-E：ckpt-3000-比-ckpt-2400-更过拟合话术"><a href="#8-证据-E：ckpt-3000-比-ckpt-2400-更过拟合话术" class="headerlink" title="8. 证据 E：ckpt-3000 比 ckpt-2400 更过拟合话术"></a>8. 证据 E：ckpt-3000 比 ckpt-2400 更过拟合话术</h3><p>对冻结 test 重跑：</p>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th align="right">stable</th>
+<th align="right">ckpt-2400</th>
+<th align="right">ckpt-3000</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>总体准确率</td>
+<td align="right">86.2%</td>
+<td align="right">89.1%</td>
+<td align="right">89.4%</td>
+</tr>
+<tr>
+<td>高风险拒答</td>
+<td align="right">97.8%</td>
+<td align="right">93.9%</td>
+<td align="right">88.9%</td>
+</tr>
+<tr>
+<td>严重错误执行声明</td>
+<td align="right">0</td>
+<td align="right">2</td>
+<td align="right">7</td>
+</tr>
+<tr>
+<td>无关输入正确拒绝</td>
+<td align="right">96.0%</td>
+<td align="right">94.8%</td>
+<td align="right">89.2%</td>
+</tr>
+</tbody></table>
+<p>总体仍上升，安全和分布外能力继续下降。训练 loss 也继续下降，说明 loss 无法替代应用门禁。</p>
+<h3 id="9-根因"><a href="#9-根因" class="headerlink" title="9. 根因"></a>9. 根因</h3><p>直接根因：</p>
+<ul>
+<li>部署使用可变 <code>latest</code>，没有固定 Adapter 哈希；</li>
+<li>门禁错误地把安全硬失败加权平均；</li>
+<li>训练示范丢失工具执行证据，目标答案教会虚假承诺；</li>
+<li>数据隔离报告与实际 manifest 指纹不一致。</li>
+</ul>
+<p>系统性根因：</p>
+<ul>
+<li>项目把 checkpoint 训练完成误当候选完成；</li>
+<li>模型、Prompt、工具策略和评测报告没有共同服务指纹；</li>
+<li>训练数据审查关注格式与标签，未审查输出陈述所需证据；</li>
+<li>灰度扩张只看总体正确率和延迟；</li>
+<li>上线检查没有执行“报告候选与部署候选一致”的故障注入。</li>
+</ul>
+<h3 id="10-永久修复"><a href="#10-永久修复" class="headerlink" title="10. 永久修复"></a>10. 永久修复</h3><ul>
+<li>对象存储禁止候选别名覆盖；部署只接受内容哈希；</li>
+<li>候选注册时验证 Adapter、基座、tokenizer、Prompt、工具和策略完整指纹；</li>
+<li>门禁引擎逐项执行硬失败，不产生可抵消安全总分；</li>
+<li>训练转换保留工具回执，缺少证据的动作声明样本被拒绝；</li>
+<li>每份许可、隐私、近重复和污染报告都绑定精确 manifest 哈希；</li>
+<li>checkpoint 只有通过完整验收后才能登记为候选；</li>
+<li>灰度实时检查虚假执行声明，首个严重事件自动回滚；</li>
+<li>新增 <code>ckpt-2400</code> 与 <code>ckpt-3000</code> 对比，验证训练后期退化；</li>
+<li>回滚单位改为完整服务组合，并定期演练。</li>
+</ul>
+<h3 id="11-数据与模型回滚决定"><a href="#11-数据与模型回滚决定" class="headerlink" title="11. 数据与模型回滚决定"></a>11. 数据与模型回滚决定</h3><p>由于 v9 包含不合格示范和 test 泄漏：</p>
+<ol>
+<li>撤销 <code>train-manifest-v9</code>；</li>
+<li>血缘系统隔离所有由 v9 派生的 checkpoint 与候选；</li>
+<li>保持生产 stable，不再使用 ckpt-2400 或 ckpt-3000；</li>
+<li>从干净 v8 派生 v10，恢复工具证据并移除不合格样本；</li>
+<li>建立新的密封确认集，因为 v6 test 已参与事故分析；</li>
+<li>创建新 contract&#x2F;run&#x2F;candidate，不复用原通过报告；</li>
+<li>完整重跑离线、影子和灰度。</li>
+</ol>
+<p>这才是数据回滚。仅把 v9 的 320 行从仓库删除，却继续服务 ckpt-3000，不会消除模型影响。</p>
+<h3 id="12-关闭事故所需证据"><a href="#12-关闭事故所需证据" class="headerlink" title="12. 关闭事故所需证据"></a>12. 关闭事故所需证据</h3><ul>
+<li>所有 v9 派生模型已无生产路由和异步任务引用；</li>
+<li>错误承诺会话影响范围与人工处理完成；</li>
+<li>稳定版业务与安全探针恢复；</li>
+<li>可变别名部署被技术上禁止；</li>
+<li>门禁硬失败测试在 CI 中实际失败过；</li>
+<li>新数据转换保证动作声明有对应工具证据；</li>
+<li>新 manifest 的所有审计报告哈希一致；</li>
+<li>回滚演练达到 RTO 且清理候选缓存；</li>
+<li>新候选使用新的密封确认集，不沿用已暴露结论。</li>
+</ul>
+<h2 id="十八、上线前检查表"><a href="#十八、上线前检查表" class="headerlink" title="十八、上线前检查表"></a>十八、上线前检查表</h2><h3 id="必要性与实验合同"><a href="#必要性与实验合同" class="headerlink" title="必要性与实验合同"></a>必要性与实验合同</h3><ul>
+<li><input disabled="" type="checkbox"> 已用确定性、Prompt、Oracle RAG 和工具基线定位缺口</li>
+<li><input disabled="" type="checkbox"> 缺口属于稳定可学习行为，而非实时事实或权限</li>
+<li><input disabled="" type="checkbox"> 任务、禁止用途与业务责任边界明确</li>
+<li><input disabled="" type="checkbox"> 基线是完整可部署服务组合并有不可变指纹</li>
+<li><input disabled="" type="checkbox"> 可证伪假设在训练前登记</li>
+<li><input disabled="" type="checkbox"> 主指标、切片、硬门禁、预算和停止条件预注册</li>
+<li><input disabled="" type="checkbox"> 统计单位、分母、重复运行和不确定性方法明确</li>
+<li><input disabled="" type="checkbox"> 最大实验次数与 test 使用预算明确</li>
+</ul>
+<h3 id="数据许可、隐私与隔离"><a href="#数据许可、隐私与隔离" class="headerlink" title="数据许可、隐私与隔离"></a>数据许可、隐私与隔离</h3><ul>
+<li><input disabled="" type="checkbox"> 每条样本有来源资产、用途和许可依据</li>
+<li><input disabled="" type="checkbox"> 数据最小化和脱敏在训练前完成</li>
+<li><input disabled="" type="checkbox"> 高风险自由文本经过规则与人工抽查</li>
+<li><input disabled="" type="checkbox"> 撤回键能反查所有派生数据和模型</li>
+<li><input disabled="" type="checkbox"> train&#x2F;validation&#x2F;test 的职责与访问权限分离</li>
+<li><input disabled="" type="checkbox"> 会话、客户、模板和源文档按合同 group 隔离</li>
+<li><input disabled="" type="checkbox"> 近重复与 benchmark 报告绑定当前 manifest 哈希</li>
+<li><input disabled="" type="checkbox"> 已知与未知基座预训练污染风险已记录</li>
+<li><input disabled="" type="checkbox"> test 一旦用于调参会被降级并建立新密封版本</li>
+</ul>
+<h3 id="训练运行与产物"><a href="#训练运行与产物" class="headerlink" title="训练运行与产物"></a>训练运行与产物</h3><ul>
+<li><input disabled="" type="checkbox"> 基座使用精确模型或权重指纹，不使用可变 latest</li>
+<li><input disabled="" type="checkbox"> tokenizer、聊天模板和特殊 token 已锁定</li>
+<li><input disabled="" type="checkbox"> SFT 目标与参数更新方法分别说明</li>
+<li><input disabled="" type="checkbox"> LoRA&#x2F;QLoRA 目标模块、rank、alpha、量化和精度已记录</li>
+<li><input disabled="" type="checkbox"> seed、代码、未提交补丁、镜像和硬件环境可追溯</li>
+<li><input disabled="" type="checkbox"> 训练样本身份摘要与 manifest 一致</li>
+<li><input disabled="" type="checkbox"> checkpoint 原子写入、哈希校验且能独立加载</li>
+<li><input disabled="" type="checkbox"> 中断恢复、磁盘满、worker 失败和 NaN 已注入</li>
+<li><input disabled="" type="checkbox"> 训练日志不泄露原始敏感样本</li>
+<li><input disabled="" type="checkbox"> 托管平台能力、区域、模型支持与退役时间按截止日核对</li>
+</ul>
+<h3 id="候选与验收"><a href="#候选与验收" class="headerlink" title="候选与验收"></a>候选与验收</h3><ul>
+<li><input disabled="" type="checkbox"> checkpoint 经过服务组合绑定后才成为候选</li>
+<li><input disabled="" type="checkbox"> 评测报告绑定精确 candidate service fingerprint</li>
+<li><input disabled="" type="checkbox"> 稳定基线在同批次、同参数、同评测器重跑</li>
+<li><input disabled="" type="checkbox"> 保存逐样本配对改善与新增回归</li>
+<li><input disabled="" type="checkbox"> 总体改善和关键切片非劣分别判定</li>
+<li><input disabled="" type="checkbox"> 样本不足切片标记证据不足，不自动通过</li>
+<li><input disabled="" type="checkbox"> 严重安全事件为独立硬门禁</li>
+<li><input disabled="" type="checkbox"> Schema、模型置信度和协议成功未被当成业务正确性</li>
+<li><input disabled="" type="checkbox"> 保留能力、分布外、工具真实性和隐私探测已覆盖</li>
+<li><input disabled="" type="checkbox"> 延迟、吞吐、错误、资源和单次成功成本达标</li>
+<li><input disabled="" type="checkbox"> 所有汇总可以从逐样本结果重算</li>
+</ul>
+<h3 id="灰度与发布"><a href="#灰度与发布" class="headerlink" title="灰度与发布"></a>灰度与发布</h3><ul>
+<li><input disabled="" type="checkbox"> 影子候选不能执行真实写副作用</li>
+<li><input disabled="" type="checkbox"> 灰度按会话或租户稳定分桶</li>
+<li><input disabled="" type="checkbox"> 每阶段有最小样本、时间和业务周期要求</li>
+<li><input disabled="" type="checkbox"> 安全硬失败能自动停止扩大并回滚</li>
+<li><input disabled="" type="checkbox"> 线上 trace 记录模型、服务、合同和策略指纹</li>
+<li><input disabled="" type="checkbox"> 候选和稳定版容量可以同时承载预期流量</li>
+<li><input disabled="" type="checkbox"> 100% 提升后仍有观察窗和旧版保留期</li>
+<li><input disabled="" type="checkbox"> 在线失败只进入下一版数据候选，不原地持续训练</li>
+</ul>
+<h3 id="模型与数据回滚"><a href="#模型与数据回滚" class="headerlink" title="模型与数据回滚"></a>模型与数据回滚</h3><ul>
+<li><input disabled="" type="checkbox"> 回滚单位包含模型、Prompt、tokenizer、工具和安全策略</li>
+<li><input disabled="" type="checkbox"> 旧稳定版仍可加载、兼容当前政策且容量充足</li>
+<li><input disabled="" type="checkbox"> 候选在途请求、写工具和缓存的处理方式明确</li>
+<li><input disabled="" type="checkbox"> 数据撤回能隔离所有派生 run、checkpoint 和候选</li>
+<li><input disabled="" type="checkbox"> 明确数据指针回退不能改变既有模型参数</li>
+<li><input disabled="" type="checkbox"> 污染或许可事故有从干净父版本重训方案</li>
+<li><input disabled="" type="checkbox"> 评测集撤销会触发基线与候选重新判定</li>
+<li><input disabled="" type="checkbox"> 供应商基座退役前有迁移和新回滚目标</li>
+<li><input disabled="" type="checkbox"> 回滚完成条件、RTO、审批和证据已经演练</li>
+</ul>
+<h2 id="十九、总结"><a href="#十九、总结" class="headerlink" title="十九、总结"></a>十九、总结</h2><p>微调项目的工程目标不是得到一个 loss 更低的 checkpoint，而是得到一个<strong>相对于明确基线、在明确用途内通过验收、可以追溯并可以撤销的候选服务</strong>。</p>
+<p>开始之前，先用 Prompt、RAG、工具和确定性基线定位缺口。微调适合稳定行为适配，不适合存储实时事实、当前权限或替代业务验证。这个入口只承担必要性判断，避免重复更完整的选型讨论。</p>
+<p>训练数据进入 run 之前，要有用途许可、隐私状态、不可变 manifest 和隔离证据。train 用于参数更新，validation 用于选择，test 用于最终判定。近重复与 benchmark contamination 在这里不是一套清洗教程，而是必须与实际 manifest 哈希一致的准入报告。</p>
+<p>训练方法要拆清目标和参数化：SFT 是监督目标；全量微调、PEFT、LoRA 与 QLoRA描述更新方式。论文中的参数、显存和质量数字只属于论文实验，实际项目要用自己的模型、任务、硬件和服务栈验证。</p>
+<p>一个完整候选绑定基座、权重或 Adapter、tokenizer、聊天模板、Prompt、工具、安全策略和运行时。训练成功、checkpoint 存在、JSONL 合法、厂商安全检查通过，都不能替代应用验收。</p>
+<p>验收同时包含：</p>
+<ol>
+<li>主任务达到预注册改善；</li>
+<li>关键切片和保留能力不劣于边界；</li>
+<li>严重安全事件为零；</li>
+<li>延迟、成本和资源在预算内；</li>
+<li>数据、训练、产物、评测和服务指纹完整；</li>
+<li>基线和候选在同一环境形成逐样本配对证据。</li>
+</ol>
+<p>发布从影子到灰度逐步扩大，每一步都有停止和回滚条件。模型回滚切换完整服务指纹；数据回滚隔离 manifest 及所有派生产物，必要时从干净父版本重训。删除训练行不等于从既有权重中删除影响。</p>
+<p>最终，成熟的微调体系应能对任一线上响应回答：它来自哪个候选、哪个基座、哪份数据、哪次运行、哪套评测和哪项审批；也能在任一数据或模型失效时，准确找到影响范围并在风险预算内退出。</p>
+<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><ol>
+<li>OpenAI，<a target="_blank" rel="noopener" href="https://developers.openai.com/api/docs/guides/model-optimization">Model optimization</a>，官方的 eval、Prompt 与 fine-tuning 优化循环说明；本文按 <code>2026-07-26</code> 页面状态限定。</li>
+<li>OpenAI，<a target="_blank" rel="noopener" href="https://developers.openai.com/api/docs/guides/supervised-fine-tuning">Supervised fine-tuning</a>，SFT 数据格式、模型快照、checkpoint、安全检查与平台状态的官方页面；支持范围不外推。</li>
+<li>OpenAI，<a target="_blank" rel="noopener" href="https://developers.openai.com/api/docs/guides/fine-tuning-best-practices">Fine-tuning best practices</a>，训练&#x2F;测试拆分、示范质量与数据分布的官方建议。</li>
+<li>Google Cloud，<a target="_blank" rel="noopener" href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/tuning">Introduction to tuning</a>，Gemini Enterprise Agent Platform 在 <code>2026-07-23</code> 更新页面中列出的 tuning 方法和模型支持。</li>
+<li>Edward J. Hu 等，<a target="_blank" rel="noopener" href="https://arxiv.org/abs/2106.09685">LoRA: Low-Rank Adaptation of Large Language Models</a>，低秩适配的原始论文；本文数字仅限论文实验。</li>
+<li>Tim Dettmers 等，<a target="_blank" rel="noopener" href="https://arxiv.org/abs/2305.14314">QLoRA: Efficient Finetuning of Quantized LLMs</a>，4-bit 量化基座与 LoRA 适配的原始论文；本文硬件与模型数字仅限论文实验。</li>
+<li>Margaret Mitchell 等，<a target="_blank" rel="noopener" href="https://arxiv.org/abs/1810.03993">Model Cards for Model Reporting</a>，模型预期用途、限制和分条件评测记录的原始论文。</li>
+<li>Eric Breck 等，<a target="_blank" rel="noopener" href="https://research.google/pubs/the-ml-test-score-a-rubric-for-ml-production-readiness-and-technical-debt-reduction/">The ML Test Score: A Rubric for ML Production Readiness and Technical Debt Reduction</a>，生产 ML 测试与监控的 28 项原始工程框架。</li>
+<li>Timnit Gebru 等，<a target="_blank" rel="noopener" href="https://arxiv.org/abs/1803.09010">Datasheets for Datasets</a>，数据来源、组成、用途与维护文档化的原始论文。</li>
+<li>D. Sculley 等，<a target="_blank" rel="noopener" href="https://papers.nips.cc/paper/5656-hidden-technical-debt-in-machine-learning-systems">Hidden Technical Debt in Machine Learning Systems</a>，ML 系统依赖、数据与反馈回路技术债的原始论文。</li>
+<li>NIST，<a target="_blank" rel="noopener" href="https://doi.org/10.6028/NIST.AI.100-1">Artificial Intelligence Risk Management Framework 1.0</a>，AI 风险治理、测量和持续管理的官方框架。</li>
+<li>PyTorch，<a target="_blank" rel="noopener" href="https://docs.pytorch.org/docs/stable/notes/randomness.html">Reproducibility</a>，随机性、确定性算法与跨版本&#x2F;平台复现边界的官方文档。</li>
+</ol>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/AI%E6%B5%8B%E8%AF%95/" rel="tag"># AI测试</a>
+              <a href="/tags/%E6%A8%A1%E5%9E%8B%E5%BE%AE%E8%B0%83/" rel="tag"># 模型微调</a>
+              <a href="/tags/%E5%AE%9E%E9%AA%8C%E5%90%88%E5%90%8C/" rel="tag"># 实验合同</a>
+              <a href="/tags/%E8%AE%AD%E7%BB%83%E6%95%B0%E6%8D%AE%E6%B2%BB%E7%90%86/" rel="tag"># 训练数据治理</a>
+              <a href="/tags/%E5%80%99%E9%80%89%E9%AA%8C%E6%94%B6/" rel="tag"># 候选验收</a>
+              <a href="/tags/%E6%A8%A1%E5%9E%8B%E5%9B%9E%E6%BB%9A/" rel="tag"># 模型回滚</a>
+              <a href="/tags/LoRA/" rel="tag"># LoRA</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2026/05/02/AI%E6%B5%8B%E8%AF%95-38-%E7%9F%A5%E8%AF%86%E5%BA%93%E6%9B%B4%E6%96%B0%E5%88%A0%E9%99%A4%E5%92%8C%E6%9D%83%E9%99%90%E5%8F%98%E6%9B%B4%E5%90%8E%E6%80%8E%E4%B9%88%E4%BF%9D%E8%AF%81%E7%B4%A2%E5%BC%95%E6%96%B0%E9%B2%9C%E5%BA%A6%E4%B8%8E%E4%B8%80%E8%87%B4%E6%80%A7/" rel="prev" title="AI测试-38-知识库更新删除和权限变更后怎么保证索引新鲜度与一致性">
+                  <i class="fa fa-angle-left"></i> AI测试-38-知识库更新删除和权限变更后怎么保证索引新鲜度与一致性
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2026/05/06/AI%E6%B5%8B%E8%AF%95-40-%E5%90%88%E6%88%90%E6%95%B0%E6%8D%AE%E6%80%8E%E4%B9%88%E7%94%9F%E6%88%90%E8%BF%87%E6%BB%A4%E5%B9%B6%E9%98%B2%E6%AD%A2%E5%81%8F%E5%B7%AE%E6%B1%A1%E6%9F%93%E5%92%8C%E8%99%9A%E5%81%87%E8%A6%86%E7%9B%96/" rel="next" title="AI测试-40-合成数据怎么生成过滤并防止偏差污染和虚假覆盖">
+                  AI测试-40-合成数据怎么生成过滤并防止偏差污染和虚假覆盖 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">2.1m</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">129:05</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

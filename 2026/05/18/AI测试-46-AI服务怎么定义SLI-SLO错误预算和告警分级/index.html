@@ -1,0 +1,1366 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="一个 AI 服务的 HTTP 成功率是 99.98%，能不能据此宣布可靠性已经达标？ 不能。网关返回 200，只能说明某次请求在协议层得到响应。它可能返回了合法 JSON，却没有完成用户任务；可能在三次重试后才成功，用户已经等待二十秒；可能生成了语义错误的退款结论；也可能把高风险任务转给人工，自动链路的成功率看起来很好，真正的任务积压却在增长。 反过来，某天抽样质检正确率下降，也不能立刻推导出“线">
+<meta property="og:type" content="article">
+<meta property="og:title" content="AI测试-46-AI服务怎么定义SLI-SLO错误预算和告警分级">
+<meta property="og:url" content="https://paynewinnt.github.io/2026/05/18/AI%E6%B5%8B%E8%AF%95-46-AI%E6%9C%8D%E5%8A%A1%E6%80%8E%E4%B9%88%E5%AE%9A%E4%B9%89SLI-SLO%E9%94%99%E8%AF%AF%E9%A2%84%E7%AE%97%E5%92%8C%E5%91%8A%E8%AD%A6%E5%88%86%E7%BA%A7/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="一个 AI 服务的 HTTP 成功率是 99.98%，能不能据此宣布可靠性已经达标？ 不能。网关返回 200，只能说明某次请求在协议层得到响应。它可能返回了合法 JSON，却没有完成用户任务；可能在三次重试后才成功，用户已经等待二十秒；可能生成了语义错误的退款结论；也可能把高风险任务转给人工，自动链路的成功率看起来很好，真正的任务积压却在增长。 反过来，某天抽样质检正确率下降，也不能立刻推导出“线">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://paynewinnt.github.io/images/ai-quality/ai-46-sli-slo-budget-stack.svg">
+<meta property="og:image" content="https://paynewinnt.github.io/images/ai-quality/ai-46-multiwindow-burn-alerts.svg">
+<meta property="article:published_time" content="2026-05-18T12:30:00.000Z">
+<meta property="article:modified_time" content="2026-05-18T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="AI测试">
+<meta property="article:tag" content="可观测性">
+<meta property="article:tag" content="错误预算">
+<meta property="article:tag" content="SLI">
+<meta property="article:tag" content="SLO">
+<meta property="article:tag" content="Burn Rate">
+<meta property="article:tag" content="告警分级">
+<meta property="article:tag" content="语义质量">
+<meta property="article:tag" content="发布治理">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://paynewinnt.github.io/images/ai-quality/ai-46-sli-slo-budget-stack.svg">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2026/05/18/AI%E6%B5%8B%E8%AF%95-46-AI%E6%9C%8D%E5%8A%A1%E6%80%8E%E4%B9%88%E5%AE%9A%E4%B9%89SLI-SLO%E9%94%99%E8%AF%AF%E9%A2%84%E7%AE%97%E5%92%8C%E5%91%8A%E8%AD%A6%E5%88%86%E7%BA%A7/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2026/05/18/AI%E6%B5%8B%E8%AF%95-46-AI%E6%9C%8D%E5%8A%A1%E6%80%8E%E4%B9%88%E5%AE%9A%E4%B9%89SLI-SLO%E9%94%99%E8%AF%AF%E9%A2%84%E7%AE%97%E5%92%8C%E5%91%8A%E8%AD%A6%E5%88%86%E7%BA%A7/","path":"2026/05/18/AI测试-46-AI服务怎么定义SLI-SLO错误预算和告警分级/","title":"AI测试-46-AI服务怎么定义SLI-SLO错误预算和告警分级"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>AI测试-46-AI服务怎么定义SLI-SLO错误预算和告警分级 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E5%85%88%E5%A3%B0%E6%98%8E%E4%BA%A4%E7%95%8C%EF%BC%9A%E6%9C%AC%E6%96%87%E4%B8%8D%E9%87%8D%E5%A4%8D%E4%BB%80%E4%B9%88"><span class="nav-number">1.</span> <span class="nav-text">一、先声明交界：本文不重复什么</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E5%85%88%E7%BB%99%E7%BB%93%E8%AE%BA%EF%BC%9A%E4%B8%80%E5%A5%97%E5%8F%AF%E6%89%A7%E8%A1%8C%E7%9A%84-SLO-%E7%B3%BB%E7%BB%9F%E5%BA%94%E6%BB%A1%E8%B6%B3%E5%8D%81%E5%9B%9B%E6%9D%A1%E7%BA%A6%E6%9D%9F"><span class="nav-number">2.</span> <span class="nav-text">二、先给结论：一套可执行的 SLO 系统应满足十四条约束</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E6%9C%AF%E8%AF%AD%E5%A5%91%E7%BA%A6%EF%BC%9ASLI%E3%80%81SLO%E3%80%81%E9%94%99%E8%AF%AF%E9%A2%84%E7%AE%97%E4%B8%8E%E5%91%8A%E8%AD%A6%E4%B8%8D%E6%98%AF%E5%90%8C%E4%B8%80%E4%B8%AA%E5%AF%B9%E8%B1%A1"><span class="nav-number">3.</span> <span class="nav-text">三、术语契约：SLI、SLO、错误预算与告警不是同一个对象</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-SLI-specification"><span class="nav-number">3.1.</span> <span class="nav-text">1. SLI specification</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-SLI-implementation"><span class="nav-number">3.2.</span> <span class="nav-text">2. SLI implementation</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-SLO"><span class="nav-number">3.3.</span> <span class="nav-text">3. SLO</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-Error-budget"><span class="nav-number">3.4.</span> <span class="nav-text">4. Error budget</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-Alert"><span class="nav-number">3.5.</span> <span class="nav-text">5. Alert</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E5%9B%9B%E6%80%81%E4%BA%8B%E4%BB%B6%E6%A8%A1%E5%9E%8B%EF%BC%9A%E4%B8%8D%E8%A6%81%E8%AE%A9-Unknown-%E5%81%B7%E8%B5%B0%E5%88%86%E6%AF%8D"><span class="nav-number">4.</span> <span class="nav-text">四、四态事件模型：不要让 Unknown 偷走分母</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8F%8D%E4%BE%8B%EF%BC%9A%E4%B8%A2%E5%A4%B1%E5%A4%B1%E8%B4%A5%E6%97%A5%E5%BF%97%E5%90%8E%E5%8F%AF%E7%94%A8%E6%80%A7%E4%B8%8A%E5%8D%87"><span class="nav-number">4.1.</span> <span class="nav-text">反例：丢失失败日志后可用性上升</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E4%BB%8E%E5%85%A5%E5%8F%A3%E5%88%B0%E5%86%B3%E7%AD%96%E7%9A%84%E5%88%86%E5%B1%82%E6%9E%B6%E6%9E%84%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%B5%81"><span class="nav-number">5.</span> <span class="nav-text">五、从入口到决策的分层架构与数据流</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%94%A8%E6%88%B7%E8%BE%B9%E7%95%8C%E4%B8%8E%E6%8E%A5%E5%85%A5%E5%B1%82"><span class="nav-number">5.1.</span> <span class="nav-text">1. 用户边界与接入层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Request-attempt-%E5%B1%82"><span class="nav-number">5.2.</span> <span class="nav-text">2. Request attempt 层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Workflow-run-%E5%B1%82"><span class="nav-number">5.3.</span> <span class="nav-text">3. Workflow run 层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-Business-task-%E5%B1%82"><span class="nav-number">5.4.</span> <span class="nav-text">4. Business task 层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-Outcome-%E4%B8%8E-label-%E5%B1%82"><span class="nav-number">5.5.</span> <span class="nav-text">5. Outcome 与 label 层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-SLI-ledger-%E5%B1%82"><span class="nav-number">5.6.</span> <span class="nav-text">6. SLI ledger 层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-Budget-%E4%B8%8E-rule-evaluation-%E5%B1%82"><span class="nav-number">5.7.</span> <span class="nav-text">7. Budget 与 rule evaluation 层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-Decision-%E5%B1%82"><span class="nav-number">5.8.</span> <span class="nav-text">8. Decision 层</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E7%BB%9F%E4%B8%80%E6%95%B0%E6%8D%AE%E6%A8%A1%E5%9E%8B%EF%BC%9A%E5%8E%9F%E5%A7%8B%E4%BA%8B%E5%AE%9E%E3%80%81%E5%88%86%E7%B1%BB%E7%BB%93%E6%9E%9C%E5%92%8C%E5%86%B3%E7%AD%96%E8%AE%B0%E5%BD%95%E5%88%86%E7%A6%BB"><span class="nav-number">6.</span> <span class="nav-text">六、统一数据模型：原始事实、分类结果和决策记录分离</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-RequestAttempt"><span class="nav-number">6.1.</span> <span class="nav-text">1. RequestAttempt</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-BusinessTask"><span class="nav-number">6.2.</span> <span class="nav-text">2. BusinessTask</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-QualityLabel"><span class="nav-number">6.3.</span> <span class="nav-text">3. QualityLabel</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-SLIClassification"><span class="nav-number">6.4.</span> <span class="nav-text">4. SLIClassification</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-DecisionRecord"><span class="nav-number">6.5.</span> <span class="nav-text">5. DecisionRecord</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81Request-SLI%EF%BC%9A%E5%8D%8F%E8%AE%AE%E5%B1%82%E8%A6%81%E6%8C%89%E7%94%A8%E6%88%B7%E5%8F%AF%E8%A7%82%E5%AF%9F%E7%BB%93%E6%9E%9C%E8%AE%A1%E6%95%B0"><span class="nav-number">7.</span> <span class="nav-text">七、Request SLI：协议层要按用户可观察结果计数</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%8F%AF%E7%94%A8%E6%80%A7"><span class="nav-number">7.1.</span> <span class="nav-text">1. 可用性</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%85%A5%E7%AB%99%E6%8B%92%E7%BB%9D"><span class="nav-number">7.2.</span> <span class="nav-text">2. 入站拒绝</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E9%87%8D%E8%AF%95"><span class="nav-number">7.3.</span> <span class="nav-text">3. 重试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E9%99%8D%E7%BA%A7"><span class="nav-number">7.4.</span> <span class="nav-text">4. 降级</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8F%8D%E4%BE%8B%EF%BC%9A%E5%8F%AA%E7%9C%8B%E4%BE%9B%E5%BA%94%E5%95%86%E8%AF%B7%E6%B1%82%E6%88%90%E5%8A%9F%E7%8E%87"><span class="nav-number">7.5.</span> <span class="nav-text">反例：只看供应商请求成功率</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81Task-SLI%EF%BC%9A%E5%8F%AF%E9%9D%A0%E6%80%A7%E5%AF%B9%E8%B1%A1%E6%98%AF%E4%B8%9A%E5%8A%A1%E5%90%8E%E7%BD%AE%E6%9D%A1%E4%BB%B6"><span class="nav-number">8.</span> <span class="nav-text">八、Task SLI：可靠性对象是业务后置条件</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Task-completion"><span class="nav-number">8.1.</span> <span class="nav-text">1. Task completion</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Eventual-success-%E4%B8%8E-deadline-success"><span class="nav-number">8.2.</span> <span class="nav-text">2. Eventual success 与 deadline success</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%BA%BA%E5%B7%A5%E6%8E%A5%E7%AE%A1"><span class="nav-number">8.3.</span> <span class="nav-text">3. 人工接管</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E9%87%8D%E5%A4%8D%E4%B8%8E%E5%B9%82%E7%AD%89"><span class="nav-number">8.4.</span> <span class="nav-text">4. 重复与幂等</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-Cohort-%E9%80%89%E6%8B%A9"><span class="nav-number">8.5.</span> <span class="nav-text">5. Cohort 选择</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E8%AF%AD%E4%B9%89%E8%B4%A8%E9%87%8F-SLO%EF%BC%9A%E6%9C%89%E7%9C%9F%E5%80%BC%E7%9A%84%E6%A0%B7%E6%9C%AC%E6%89%8D%E6%9C%89%E8%B4%A8%E9%87%8F%E5%88%86%E6%AF%8D"><span class="nav-number">9.</span> <span class="nav-text">九、语义质量 SLO：有真值的样本才有质量分母</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%B8%89%E4%B8%AA%E9%9B%86%E5%90%88"><span class="nav-number">9.1.</span> <span class="nav-text">1. 三个集合</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%8F%AF%E6%8E%A5%E5%8F%97%E7%9C%9F%E5%80%BC"><span class="nav-number">9.2.</span> <span class="nav-text">2. 可接受真值</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%A4%9A%E7%BB%B4%E8%B4%A8%E9%87%8F%E4%B8%8D%E8%83%BD%E5%85%88%E5%8E%8B%E6%88%90%E5%B9%B3%E5%9D%87%E5%88%86"><span class="nav-number">9.3.</span> <span class="nav-text">3. 多维质量不能先压成平均分</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%A0%87%E7%AD%BE%E8%A6%86%E7%9B%96%E4%B8%8D%E6%98%AF%E4%B8%80%E4%B8%AA%E6%80%BB%E7%99%BE%E5%88%86%E6%AF%94"><span class="nav-number">9.4.</span> <span class="nav-text">4. 标签覆盖不是一个总百分比</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%8A%BD%E6%A0%B7%E5%81%8F%E5%B7%AE%E4%B8%8E%E7%BD%AE%E4%BF%A1%E5%8C%BA%E9%97%B4"><span class="nav-number">9.5.</span> <span class="nav-text">5. 抽样偏差与置信区间</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E6%A0%87%E7%AD%BE%E8%BF%9F%E5%88%B0"><span class="nav-number">9.6.</span> <span class="nav-text">6. 标签迟到</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8F%8D%E4%BE%8B%EF%BC%9A%E6%8A%8A%E6%89%80%E6%9C%89%E6%9C%AA%E6%8A%95%E8%AF%89%E4%BB%BB%E5%8A%A1%E7%AE%97%E6%AD%A3%E7%A1%AE"><span class="nav-number">9.7.</span> <span class="nav-text">反例：把所有未投诉任务算正确</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E5%BB%B6%E8%BF%9F%E7%9C%9F%E5%80%BC%EF%BC%9A%E6%97%B6%E9%92%9F%E8%BE%B9%E7%95%8C%E6%AF%94%E5%88%86%E4%BD%8D%E6%95%B0%E6%9B%B4%E5%85%88%E5%86%B3%E5%AE%9A%E7%BB%93%E8%AE%BA"><span class="nav-number">10.</span> <span class="nav-text">十、延迟真值：时钟边界比分位数更先决定结论</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%B8%80%E6%AC%A1%E6%B5%81%E5%BC%8F%E8%AF%B7%E6%B1%82%E8%87%B3%E5%B0%91%E6%9C%89%E5%85%AD%E4%B8%AA%E6%97%B6%E9%97%B4%E7%82%B9"><span class="nav-number">10.1.</span> <span class="nav-text">1. 一次流式请求至少有六个时间点</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E7%94%A8%E6%88%B7%E8%A7%86%E8%A7%92%E4%B8%8E%E6%9C%8D%E5%8A%A1%E7%AB%AF%E8%A7%86%E8%A7%92%E5%B9%B6%E5%AD%98"><span class="nav-number">10.2.</span> <span class="nav-text">2. 用户视角与服务端视角并存</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%BB%B6%E8%BF%9F-SLI-%E4%BC%98%E5%85%88%E7%94%A8%E9%98%88%E5%80%BC%E6%AF%94%E4%BE%8B"><span class="nav-number">10.3.</span> <span class="nav-text">3. 延迟 SLI 优先用阈值比例</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%A4%B1%E8%B4%A5%E4%BB%BB%E5%8A%A1%E5%A6%82%E4%BD%95%E8%BF%9B%E5%85%A5%E5%BB%B6%E8%BF%9F"><span class="nav-number">10.4.</span> <span class="nav-text">4. 失败任务如何进入延迟</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E9%87%8D%E8%AF%95%E4%B8%8D%E8%83%BD%E9%87%8D%E7%BD%AE%E7%94%A8%E6%88%B7%E6%97%B6%E9%92%9F"><span class="nav-number">10.5.</span> <span class="nav-text">5. 重试不能重置用户时钟</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E5%8F%96%E6%B6%88%E4%B8%8E%E6%88%AA%E5%B0%BE"><span class="nav-number">10.6.</span> <span class="nav-text">6. 取消与截尾</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-%E8%B7%A8%E6%9C%BA%E5%99%A8%E6%97%B6%E9%92%9F"><span class="nav-number">10.7.</span> <span class="nav-text">7. 跨机器时钟</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-%E5%A4%9A%E9%98%88%E5%80%BC"><span class="nav-number">10.8.</span> <span class="nav-text">8. 多阈值</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E4%B8%80%E4%BB%BD%E5%8F%AF%E5%AE%A1%E8%AE%A1%E7%9A%84-SLO-%E6%96%87%E6%A1%A3%E9%9C%80%E8%A6%81%E5%86%99%E4%BB%80%E4%B9%88"><span class="nav-number">11.</span> <span class="nav-text">十一、一份可审计的 SLO 文档需要写什么</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9E%84%E9%80%A0%E7%A4%BA%E4%BE%8B%EF%BC%9A%E5%AE%A2%E6%9C%8D%E7%9F%A5%E8%AF%86%E9%97%AE%E7%AD%94%E4%BB%BB%E5%8A%A1"><span class="nav-number">11.1.</span> <span class="nav-text">构造示例：客服知识问答任务</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E7%9B%AE%E6%A0%87%E6%80%8E%E6%A0%B7%E5%AE%9A%EF%BC%9A%E5%85%88%E7%A1%AE%E5%AE%9A%E4%B8%8D%E5%8F%AF%E6%8E%A5%E5%8F%97%E7%9A%84%E7%94%A8%E6%88%B7%E7%BB%93%E6%9E%9C"><span class="nav-number">12.</span> <span class="nav-text">十二、目标怎样定：先确定不可接受的用户结果</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%B8%8D%E5%90%8C%E9%A3%8E%E9%99%A9%E5%B1%82%E4%B8%8D%E5%90%8C%E7%9B%AE%E6%A0%87"><span class="nav-number">12.1.</span> <span class="nav-text">1. 不同风险层不同目标</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%B8%8D%E6%8A%8A-100-%E5%BD%93%E5%8F%A3%E5%8F%B7"><span class="nav-number">12.2.</span> <span class="nav-text">2. 不把 100% 当口号</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%B8%80%E7%BB%84%E5%B0%91%E8%80%8C%E5%85%B3%E9%94%AE%E7%9A%84-SLO"><span class="nav-number">12.3.</span> <span class="nav-text">3. 一组少而关键的 SLO</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81%E5%A4%9A%E4%B8%AA-SLO-%E7%9A%84%E9%A2%84%E7%AE%97%E4%B8%8D%E8%83%BD%E7%9B%B4%E6%8E%A5%E7%9B%B8%E5%8A%A0"><span class="nav-number">13.</span> <span class="nav-text">十三、多个 SLO 的预算不能直接相加</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81%E9%94%99%E8%AF%AF%E9%A2%84%E7%AE%97%E7%9A%84%E5%9B%9B%E7%A7%8D%E8%A1%A8%E8%BE%BE"><span class="nav-number">14.</span> <span class="nav-text">十四、错误预算的四种表达</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%B7%B2%E8%A7%82%E5%AF%9F-SLI"><span class="nav-number">14.1.</span> <span class="nav-text">1. 已观察 SLI</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%85%81%E8%AE%B8%E5%9D%8F%E6%AF%94%E4%BE%8B"><span class="nav-number">14.2.</span> <span class="nav-text">2. 允许坏比例</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%AE%8C%E6%95%B4%E5%91%A8%E6%9C%9F%E7%9A%84%E4%BA%8B%E4%BB%B6%E9%A2%84%E7%AE%97"><span class="nav-number">14.3.</span> <span class="nav-text">3. 完整周期的事件预算</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-Budget-consumed%EF%BC%9A%E7%AA%97%E5%8F%A3%E5%9D%8F%E4%BA%8B%E4%BB%B6%E5%8D%A0%E5%AE%8C%E6%95%B4%E5%91%A8%E6%9C%9F%E9%A2%9D%E5%BA%A6"><span class="nav-number">14.4.</span> <span class="nav-text">4. Budget consumed：窗口坏事件占完整周期额度</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BD%8E%E6%B5%81%E9%87%8F%E5%8F%8D%E4%BE%8B"><span class="nav-number">14.5.</span> <span class="nav-text">低流量反例</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%94%E3%80%81Burn-rate%EF%BC%9A%E9%A2%84%E7%AE%97%E6%AD%A3%E5%9C%A8%E4%BB%A5%E5%A4%9A%E5%BF%AB%E7%9A%84%E9%80%9F%E5%BA%A6%E6%B6%88%E8%80%97"><span class="nav-number">15.</span> <span class="nav-text">十五、Burn rate：预算正在以多快的速度消耗</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Burn-rate-%E4%B8%8D%E6%98%AF%E9%94%99%E8%AF%AF%E7%8E%87"><span class="nav-number">15.1.</span> <span class="nav-text">Burn rate 不是错误率</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Burn-rate-%E4%B8%8D%E6%98%AF%E6%A0%B9%E5%9B%A0"><span class="nav-number">15.2.</span> <span class="nav-text">Burn rate 不是根因</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AD%E3%80%81%E4%B8%BA%E4%BB%80%E4%B9%88%E8%A6%81%E5%90%8C%E6%97%B6%E7%9C%8B%E9%95%BF%E7%AA%97%E4%B8%8E%E7%9F%AD%E7%AA%97"><span class="nav-number">16.</span> <span class="nav-text">十六、为什么要同时看长窗与短窗</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Google-%E6%95%B0%E5%80%BC%E7%9A%84%E4%B8%A5%E6%A0%BC%E9%80%82%E7%94%A8%E8%BE%B9%E7%95%8C"><span class="nav-number">16.1.</span> <span class="nav-text">Google 数值的严格适用边界</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%83%E3%80%81%E8%AF%AD%E4%B9%89%E8%B4%A8%E9%87%8F%E4%B8%BA%E4%BB%80%E4%B9%88%E9%80%9A%E5%B8%B8%E4%B8%8D%E9%80%82%E5%90%88%E7%9B%B4%E6%8E%A5%E5%A5%97%E5%AE%9E%E6%97%B6-Page"><span class="nav-number">17.</span> <span class="nav-text">十七、语义质量为什么通常不适合直接套实时 Page</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%80%82%E5%90%88-Page-%E7%9A%84%E8%B4%A8%E9%87%8F%E7%9B%B8%E5%85%B3%E6%83%85%E5%86%B5"><span class="nav-number">17.1.</span> <span class="nav-text">适合 Page 的质量相关情况</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9B%B4%E9%80%82%E5%90%88%E5%B7%A5%E5%8D%95%E6%88%96%E5%B7%A5%E4%BD%9C%E6%97%B6%E6%AE%B5%E9%80%9A%E7%9F%A5%E7%9A%84%E6%83%85%E5%86%B5"><span class="nav-number">17.2.</span> <span class="nav-text">更适合工单或工作时段通知的情况</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%BA%94%E5%8F%AA%E8%BF%9B%E5%85%A5%E6%8A%A5%E5%91%8A%E8%80%8C%E9%9D%9E%E5%91%8A%E8%AD%A6%E7%9A%84%E6%83%85%E5%86%B5"><span class="nav-number">17.3.</span> <span class="nav-text">应只进入报告而非告警的情况</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AB%E3%80%81%E5%91%8A%E8%AD%A6%E5%88%86%E7%BA%A7%EF%BC%9A%E6%8C%89%E5%93%8D%E5%BA%94%E6%97%B6%E9%99%90%E4%B8%8E%E5%8F%AF%E9%80%86%E6%80%A7%E8%AE%BE%E8%AE%A1"><span class="nav-number">18.</span> <span class="nav-text">十八、告警分级：按响应时限与可逆性设计</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%91%8A%E8%AD%A6%E8%BD%BD%E8%8D%B7"><span class="nav-number">18.1.</span> <span class="nav-text">1. 告警载荷</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%8E%BB%E9%87%8D%E4%B8%8E%E6%8A%91%E5%88%B6"><span class="nav-number">18.2.</span> <span class="nav-text">2. 去重与抑制</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%81%A2%E5%A4%8D%E9%80%9A%E7%9F%A5"><span class="nav-number">18.3.</span> <span class="nav-text">3. 恢复通知</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B9%9D%E3%80%81Owner-%E6%A8%A1%E5%9E%8B%EF%BC%9A%E6%8C%87%E6%A0%87%E3%80%81%E6%9C%8D%E5%8A%A1%E5%92%8C%E5%86%B3%E5%AE%9A%E5%88%86%E5%88%AB%E6%9C%89%E4%BA%BA%E8%B4%9F%E8%B4%A3"><span class="nav-number">19.</span> <span class="nav-text">十九、Owner 模型：指标、服务和决定分别有人负责</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#RACI-%E5%8F%8D%E4%BE%8B"><span class="nav-number">19.1.</span> <span class="nav-text">RACI 反例</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E3%80%81%E9%94%99%E8%AF%AF%E9%A2%84%E7%AE%97%E6%94%BF%E7%AD%96%EF%BC%9A%E5%86%BB%E7%BB%93%E6%98%AF%E9%A3%8E%E9%99%A9%E6%8E%A7%E5%88%B6%EF%BC%8C%E4%B8%8D%E6%98%AF%E6%83%A9%E7%BD%9A"><span class="nav-number">20.</span> <span class="nav-text">二十、错误预算政策：冻结是风险控制，不是惩罚</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%86%BB%E7%BB%93%E8%8C%83%E5%9B%B4%E8%A6%81%E4%B8%8E%E6%95%85%E9%9A%9C%E5%9F%9F%E5%8C%B9%E9%85%8D"><span class="nav-number">20.1.</span> <span class="nav-text">1. 冻结范围要与故障域匹配</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%BF%AE%E5%A4%8D%E5%8F%91%E5%B8%83%E4%B9%9F%E8%A6%81%E9%97%A8%E7%A6%81"><span class="nav-number">20.2.</span> <span class="nav-text">2. 修复发布也要门禁</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%AE%89%E5%85%A8%E4%BF%AE%E5%A4%8D%E4%BC%98%E5%85%88%E7%BA%A7"><span class="nav-number">20.3.</span> <span class="nav-text">3. 安全修复优先级</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%80%E3%80%81%E8%B4%A8%E9%87%8F-SLO-%E4%B8%8E%E5%8F%91%E5%B8%83%E9%97%A8%E7%A6%81%E7%9A%84%E7%BB%84%E5%90%88"><span class="nav-number">21.</span> <span class="nav-text">二十一、质量 SLO 与发布门禁的组合</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%A6%BB%E7%BA%BF%E5%8F%91%E5%B8%83%E9%9B%86"><span class="nav-number">21.1.</span> <span class="nav-text">1. 离线发布集</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%BD%B1%E5%AD%90%E4%B8%8E%E7%81%B0%E5%BA%A6%E6%A0%B7%E6%9C%AC"><span class="nav-number">21.2.</span> <span class="nav-text">2. 影子与灰度样本</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%94%9F%E4%BA%A7%E8%BF%9F%E5%88%B0%E7%BB%93%E6%9E%9C"><span class="nav-number">21.3.</span> <span class="nav-text">3. 生产迟到结果</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%8C%E3%80%81%E8%A7%82%E6%B5%8B%E3%80%81%E6%8E%A8%E6%96%AD%E4%B8%8E%E5%86%B3%E7%AD%96%E8%A6%81%E5%9C%A8%E4%BA%8B%E6%95%85%E8%AE%B0%E5%BD%95%E4%B8%AD%E5%88%86%E6%A0%8F"><span class="nav-number">22.</span> <span class="nav-text">二十二、观测、推断与决策要在事故记录中分栏</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%89%E3%80%81%E7%9B%91%E6%8E%A7%E6%95%B0%E6%8D%AE%E5%A5%91%E7%BA%A6%EF%BC%9A%E6%8C%87%E6%A0%87%E6%96%B0%E9%B2%9C%E5%BA%A6%E6%9C%AC%E8%BA%AB%E4%B9%9F%E6%98%AF%E5%8F%AF%E9%9D%A0%E6%80%A7%E5%AF%B9%E8%B1%A1"><span class="nav-number">23.</span> <span class="nav-text">二十三、监控数据契约：指标新鲜度本身也是可靠性对象</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%8F%8C%E5%85%A5%E5%8F%A3%E8%AE%A1%E6%95%B0"><span class="nav-number">23.1.</span> <span class="nav-text">1. 双入口计数</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%8D%95%E8%B0%83-Counter-%E4%B8%8E%E5%8F%97%E6%8E%A7%E6%A0%87%E7%AD%BE"><span class="nav-number">23.2.</span> <span class="nav-text">2. 单调 Counter 与受控标签</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%97%A5%E5%BF%97%E4%B8%8E%E6%8C%87%E6%A0%87%E5%90%8C%E6%BA%90%E5%88%A4%E5%AE%9A"><span class="nav-number">23.3.</span> <span class="nav-text">3. 日志与指标同源判定</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E8%BF%9F%E5%88%B0%E4%B8%8E%E5%9B%9E%E5%A1%AB"><span class="nav-number">23.4.</span> <span class="nav-text">4. 迟到与回填</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E8%A7%84%E5%88%99%E7%89%88%E6%9C%AC"><span class="nav-number">23.5.</span> <span class="nav-text">5. 规则版本</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%9B%9B%E3%80%81%E8%87%AA%E5%8A%A8%E5%8C%96%E7%AD%96%E7%95%A5%EF%BC%9A%E4%BB%8E%E4%BA%8B%E4%BB%B6%E5%8D%95%E6%B5%8B%E5%88%B0%E5%80%BC%E7%8F%AD%E9%80%9A%E7%9F%A5%E6%BC%94%E7%BB%83"><span class="nav-number">24.</span> <span class="nav-text">二十四、自动化策略：从事件单测到值班通知演练</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%BA%8B%E4%BB%B6%E7%94%9F%E4%BA%A7%E5%8D%95%E6%B5%8B"><span class="nav-number">24.1.</span> <span class="nav-text">1. 事件生产单测</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%88%86%E7%B1%BB%E5%99%A8%E5%A5%91%E7%BA%A6%E6%B5%8B%E8%AF%95"><span class="nav-number">24.2.</span> <span class="nav-text">2. 分类器契约测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%81%9A%E5%90%88%E6%95%B0%E5%AD%A6%E6%B5%8B%E8%AF%95"><span class="nav-number">24.3.</span> <span class="nav-text">3. 聚合数学测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%90%88%E6%88%90%E6%97%B6%E9%97%B4%E5%BA%8F%E5%88%97%E6%B5%8B%E8%AF%95"><span class="nav-number">24.4.</span> <span class="nav-text">4. 合成时间序列测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E8%B7%AF%E7%94%B1%E6%B5%8B%E8%AF%95"><span class="nav-number">24.5.</span> <span class="nav-text">5. 路由测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E5%8F%91%E5%B8%83%E6%94%BF%E7%AD%96%E6%BC%94%E7%BB%83"><span class="nav-number">24.6.</span> <span class="nav-text">6. 发布政策演练</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%94%E3%80%81%E6%95%85%E9%9A%9C%E6%B3%A8%E5%85%A5%EF%BC%9A%E6%B5%8B%E8%AF%95%E7%9A%84%E6%98%AF%E8%AF%81%E6%8D%AE%E9%93%BE%E5%92%8C%E5%86%B3%E7%AD%96%E9%93%BE"><span class="nav-number">25.</span> <span class="nav-text">二十五、故障注入：测试的是证据链和决策链</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%B8%A2%E7%BB%88%E6%80%81%E4%BA%8B%E4%BB%B6"><span class="nav-number">25.1.</span> <span class="nav-text">1. 丢终态事件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E9%87%8D%E5%A4%8D%E6%8A%95%E9%80%92"><span class="nav-number">25.2.</span> <span class="nav-text">2. 重复投递</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%97%B6%E9%92%9F%E5%81%8F%E5%B7%AE"><span class="nav-number">25.3.</span> <span class="nav-text">3. 时钟偏差</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E9%87%8D%E8%AF%95%E9%A3%8E%E6%9A%B4"><span class="nav-number">25.4.</span> <span class="nav-text">4. 重试风暴</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%A0%87%E7%AD%BE%E5%85%A8%E6%96%AD"><span class="nav-number">25.5.</span> <span class="nav-text">5. 标签全断</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E6%A0%87%E7%AD%BE%E5%81%8F%E6%96%9C"><span class="nav-number">25.6.</span> <span class="nav-text">6. 标签偏斜</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-%E8%A7%84%E5%88%99%E9%94%99%E8%AF%AF%E5%88%86%E7%B1%BB"><span class="nav-number">25.7.</span> <span class="nav-text">7. 规则错误分类</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-%E8%81%9A%E5%90%88%E5%99%A8%E5%81%9C%E6%BB%9E"><span class="nav-number">25.8.</span> <span class="nav-text">8. 聚合器停滞</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-%E5%91%8A%E8%AD%A6%E8%B7%AF%E7%94%B1%E6%95%85%E9%9A%9C"><span class="nav-number">25.9.</span> <span class="nav-text">9. 告警路由故障</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-%E4%BD%8E%E6%B5%81%E9%87%8F%E5%8D%95%E7%82%B9%E5%A4%B1%E8%B4%A5"><span class="nav-number">25.10.</span> <span class="nav-text">10. 低流量单点失败</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%85%AD%E3%80%81%E5%8F%AA%E7%94%A8-Python-%E6%A0%87%E5%87%86%E5%BA%93%E7%9A%84-SLI%E3%80%81%E8%B4%A8%E9%87%8F%E8%A6%86%E7%9B%96%E4%B8%8E%E5%A4%9A%E7%AA%97%E5%8F%A3%E9%97%A8%E7%A6%81"><span class="nav-number">26.</span> <span class="nav-text">二十六、只用 Python 标准库的 SLI、质量覆盖与多窗口门禁</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%83%E3%80%81%E5%AE%8C%E6%95%B4%E5%8F%91%E5%B8%83%E5%86%B3%E7%AD%96%E6%A1%88%E4%BE%8B%EF%BC%9AHTTP-%E5%85%A8%E7%BB%BF%EF%BC%8CTask-%E9%A2%84%E7%AE%97%E5%BF%AB%E9%80%9F%E7%87%83%E7%83%A7"><span class="nav-number">27.</span> <span class="nav-text">二十七、完整发布决策案例：HTTP 全绿，Task 预算快速燃烧</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%83%8C%E6%99%AF%E4%B8%8E%E9%A2%84%E5%85%88%E6%94%BF%E7%AD%96"><span class="nav-number">27.1.</span> <span class="nav-text">1. 背景与预先政策</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%8F%91%E5%B8%83%E5%89%8D%E8%AF%81%E6%8D%AE"><span class="nav-number">27.2.</span> <span class="nav-text">2. 发布前证据</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%97%B6%E9%97%B4%E7%BA%BF%E4%B8%8E%E7%AC%AC%E4%B8%80%E6%89%B9%E8%A7%82%E6%B5%8B"><span class="nav-number">27.3.</span> <span class="nav-text">3. 时间线与第一批观测</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%BD%93%E6%97%B6%E5%8F%AF%E4%BB%A5%E8%AF%B4%E4%BB%80%E4%B9%88"><span class="nav-number">27.4.</span> <span class="nav-text">4. 当时可以说什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E4%B8%BA%E4%BB%80%E4%B9%88%E6%B2%A1%E6%9C%89%E5%9B%A0-HTTP-99-97-%E7%BB%A7%E7%BB%AD%E5%8F%91%E5%B8%83"><span class="nav-number">27.5.</span> <span class="nav-text">5. 为什么没有因 HTTP 99.97% 继续发布</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E4%B8%BA%E4%BB%80%E4%B9%88%E6%B2%A1%E6%9C%89%E7%AD%89%E5%BE%85-28-%E5%A4%A9%E7%AA%97%E5%8F%A3%E8%80%97%E5%B0%BD"><span class="nav-number">27.6.</span> <span class="nav-text">6. 为什么没有等待 28 天窗口耗尽</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-%E6%A0%B9%E5%9B%A0%E8%AF%81%E6%8D%AE"><span class="nav-number">27.7.</span> <span class="nav-text">7. 根因证据</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-%E8%BF%9F%E5%88%B0%E8%B4%A8%E9%87%8F%E6%A0%87%E7%AD%BE%E6%80%8E%E6%A0%B7%E5%A4%84%E7%90%86"><span class="nav-number">27.8.</span> <span class="nav-text">8. 迟到质量标签怎样处理</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-%E4%BF%AE%E5%A4%8D%E3%80%81%E5%A4%8D%E6%B5%8B%E4%B8%8E%E8%A7%A3%E5%86%BB"><span class="nav-number">27.9.</span> <span class="nav-text">9. 修复、复测与解冻</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-%E4%BA%8B%E6%95%85%E8%A1%8C%E5%8A%A8%E9%A1%B9"><span class="nav-number">27.10.</span> <span class="nav-text">10. 事故行动项</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%85%AB%E3%80%81%E5%B8%B8%E8%A7%81%E5%A4%B1%E8%B4%A5%E6%A8%A1%E5%BC%8F%E4%B8%8E%E5%8F%8D%E4%BE%8B"><span class="nav-number">28.</span> <span class="nav-text">二十八、常见失败模式与反例</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%94%A8-HTTP-200-total-%E4%BB%A3%E8%A1%A8-AI-%E8%B4%A8%E9%87%8F"><span class="nav-number">28.1.</span> <span class="nav-text">1. 用 HTTP 200 &#x2F; total 代表 AI 质量</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%97%A0%E6%A0%87%E7%AD%BE%E6%A0%B7%E6%9C%AC%E9%BB%98%E8%AE%A4%E6%AD%A3%E7%A1%AE"><span class="nav-number">28.2.</span> <span class="nav-text">2. 无标签样本默认正确</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%8F%AA%E6%8A%A5%E8%B4%A8%E9%87%8F%E3%80%81%E4%B8%8D%E6%8A%A5%E8%A6%86%E7%9B%96"><span class="nav-number">28.3.</span> <span class="nav-text">3. 只报质量、不报覆盖</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%BB%8E%E6%9C%8D%E5%8A%A1%E7%AB%AF%E6%A8%A1%E5%9E%8B%E5%BC%80%E5%A7%8B%E8%AE%A1%E7%94%A8%E6%88%B7%E5%BB%B6%E8%BF%9F"><span class="nav-number">28.4.</span> <span class="nav-text">4. 从服务端模型开始计用户延迟</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%8F%AA%E7%9C%8B%E6%88%90%E5%8A%9F%E8%AF%B7%E6%B1%82%E7%9A%84%E5%BB%B6%E8%BF%9F"><span class="nav-number">28.5.</span> <span class="nav-text">5. 只看成功请求的延迟</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E6%89%80%E6%9C%89%E5%BC%82%E5%B8%B8%E9%83%BD-Page"><span class="nav-number">28.6.</span> <span class="nav-text">6. 所有异常都 Page</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-Page-%E5%90%8D%E7%A7%B0%E5%86%99%E6%A0%B9%E5%9B%A0"><span class="nav-number">28.7.</span> <span class="nav-text">7. Page 名称写根因</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-%E5%A4%8D%E5%88%B6-Google-14-4-6-1"><span class="nav-number">28.8.</span> <span class="nav-text">8. 复制 Google 14.4&#x2F;6&#x2F;1</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-%E9%A2%84%E7%AE%97%E8%80%97%E5%B0%BD%E5%90%8E%E5%8F%A3%E5%A4%B4%E5%86%BB%E7%BB%93"><span class="nav-number">28.9.</span> <span class="nav-text">9. 预算耗尽后口头冻结</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-SLO-%E8%A7%84%E5%88%99%E5%9C%A8%E4%BA%8B%E6%95%85%E4%B8%AD%E4%B8%B4%E6%97%B6%E6%94%B9%E5%88%86%E6%AF%8D"><span class="nav-number">28.10.</span> <span class="nav-text">10. SLO 规则在事故中临时改分母</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B9%9D%E3%80%81%E4%BB%8E%E9%9B%B6%E8%90%BD%E5%9C%B0%E7%9A%84%E5%9B%9B%E4%B8%AA%E9%98%B6%E6%AE%B5"><span class="nav-number">29.</span> <span class="nav-text">二十九、从零落地的四个阶段</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5%E4%B8%80%EF%BC%9A%E5%85%88%E5%BB%BA%E7%AB%8B-Task-%E8%BA%AB%E4%BB%BD%E4%B8%8E%E5%85%A5%E5%8F%A3-%E7%BB%88%E6%80%81%E5%AF%B9%E8%B4%A6"><span class="nav-number">29.1.</span> <span class="nav-text">阶段一：先建立 Task 身份与入口&#x2F;终态对账</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5%E4%BA%8C%EF%BC%9A%E5%8F%91%E5%B8%83%E7%AC%AC%E4%B8%80%E7%89%88-SLO-%E6%96%87%E6%A1%A3"><span class="nav-number">29.2.</span> <span class="nav-text">阶段二：发布第一版 SLO 文档</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5%E4%B8%89%EF%BC%9A%E5%BC%95%E5%85%A5%E9%A2%84%E7%AE%97%E4%B8%8E%E5%91%8A%E8%AD%A6"><span class="nav-number">29.3.</span> <span class="nav-text">阶段三：引入预算与告警</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5%E5%9B%9B%EF%BC%9A%E8%BF%9E%E6%8E%A5%E8%B4%A8%E9%87%8F%E4%B8%8E%E5%8F%91%E5%B8%83%E6%B2%BB%E7%90%86"><span class="nav-number">29.4.</span> <span class="nav-text">阶段四：连接质量与发布治理</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E5%8D%81%E3%80%81%E4%B8%8A%E7%BA%BF%E4%B8%8E%E8%BF%90%E7%BB%B4%E5%8F%AF%E6%89%A7%E8%A1%8C%E6%B8%85%E5%8D%95"><span class="nav-number">30.</span> <span class="nav-text">三十、上线与运维可执行清单</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%BE%B9%E7%95%8C%E4%B8%8E%E8%BA%AB%E4%BB%BD"><span class="nav-number">30.1.</span> <span class="nav-text">边界与身份</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%86%E7%B1%BB%E4%B8%8E%E5%88%86%E6%AF%8D"><span class="nav-number">30.2.</span> <span class="nav-text">分类与分母</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%B4%A8%E9%87%8F%E4%B8%8E%E6%A0%87%E7%AD%BE"><span class="nav-number">30.3.</span> <span class="nav-text">质量与标签</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%BB%B6%E8%BF%9F"><span class="nav-number">30.4.</span> <span class="nav-text">延迟</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%A2%84%E7%AE%97%E4%B8%8E%E5%91%8A%E8%AD%A6"><span class="nav-number">30.5.</span> <span class="nav-text">预算与告警</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8F%91%E5%B8%83%E6%94%BF%E7%AD%96%E4%B8%8E-owner"><span class="nav-number">30.6.</span> <span class="nav-text">发布政策与 owner</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%87%AA%E5%8A%A8%E5%8C%96%E4%B8%8E%E6%95%85%E9%9A%9C%E6%B3%A8%E5%85%A5"><span class="nav-number">30.7.</span> <span class="nav-text">自动化与故障注入</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E5%8D%81%E4%B8%80%E3%80%81%E6%80%BB%E7%BB%93"><span class="nav-number">31.</span> <span class="nav-text">三十一、总结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8F%82%E8%80%83%E8%B5%84%E6%96%99"><span class="nav-number">32.</span> <span class="nav-text">参考资料</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">358</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">27</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">796</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2026/05/18/AI%E6%B5%8B%E8%AF%95-46-AI%E6%9C%8D%E5%8A%A1%E6%80%8E%E4%B9%88%E5%AE%9A%E4%B9%89SLI-SLO%E9%94%99%E8%AF%AF%E9%A2%84%E7%AE%97%E5%92%8C%E5%91%8A%E8%AD%A6%E5%88%86%E7%BA%A7/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="AI测试-46-AI服务怎么定义SLI-SLO错误预算和告警分级 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          AI测试-46-AI服务怎么定义SLI-SLO错误预算和告警分级
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2026-05-18 20:30:00" itemprop="dateCreated datePublished" datetime="2026-05-18T20:30:00+08:00">2026-05-18</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/AI%E6%B5%8B%E8%AF%95/" itemprop="url" rel="index"><span itemprop="name">AI测试</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>18k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>1:05</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>一个 AI 服务的 HTTP 成功率是 99.98%，能不能据此宣布可靠性已经达标？</p>
+<p>不能。网关返回 200，只能说明某次请求在协议层得到响应。它可能返回了合法 JSON，却没有完成用户任务；可能在三次重试后才成功，用户已经等待二十秒；可能生成了语义错误的退款结论；也可能把高风险任务转给人工，自动链路的成功率看起来很好，真正的任务积压却在增长。</p>
+<p>反过来，某天抽样质检正确率下降，也不能立刻推导出“线上正在发生需要叫醒值班人的事故”。样本可能很少，标签可能迟到，任务分布可能变化，质检规则也可能刚升级。这里有一个异常观测，但根因、用户影响和响应时效仍待证据支持。</p>
+<p>AI 服务要把 SLI、SLO、错误预算和告警接到工程决策，必须同时回答五个问题：</p>
+<ol>
+<li><strong>对象是谁。</strong> 指标在数物理请求、工作流执行、业务任务、用户会话，还是有真值的质量样本？</li>
+<li><strong>什么算好。</strong> 协议成功、时延达标、业务完成、语义正确和安全合规不能互相替代。</li>
+<li><strong>什么进入分母。</strong> 重试、取消、超时、未知结果、无标签样本和测试流量怎样处理？</li>
+<li><strong>什么时候知道。</strong> 请求结果近实时可见，业务结果与人工真值可能数小时甚至数天后才到。</li>
+<li><strong>谁据此行动。</strong> Page、工单、发布冻结、回滚和接受风险必须有不同触发条件与 owner。</li>
+</ol>
+<p>本文从事件账本出发，建立 request、task、semantic quality 三组独立 SLI，解释延迟真值、标签覆盖率、错误预算、multi-window burn rate、告警分级、发布冻结与责任人机制，并给出一段只用 Python 标准库、可离线运行且包含故障注入和 <code>unittest</code> 的参考实现。</p>
+<h2 id="一、先声明交界：本文不重复什么"><a href="#一、先声明交界：本文不重复什么" class="headerlink" title="一、先声明交界：本文不重复什么"></a>一、先声明交界：本文不重复什么</h2><p>《AI测试-21-AI调用链怎么统一记录Prompt检索工具调用和模型输出》已经讨论 Trace、Span 和证据关联；《AI测试-17-LLM-as-Judge怎么设计评分规则并控制裁判偏差》已经讨论裁判偏差；《AI测试-20-非确定性AI应用怎么做稳定的自动化回归测试》已经讨论重复运行与统计稳定性；《AI测试-42-大模型推理性能怎么分析TTFT-TPOT吞吐批处理和KV-Cache》已经细分 TTFT、TPOT、E2E 和 Goodput；《AI测试-43-AI应用成本怎么拆Token缓存检索工具和单位任务预算》已经讨论单位任务成本。</p>
+<p>本文不重讲这些实现，而只处理它们在可靠性治理中的交界：哪些事件形成 SLI，哪些目标形成 SLO，预算怎样消耗，何时告警，何时阻止发布，以及谁有权作出例外决定。</p>
+<p>本文还不把 SLA、合规承诺或客户赔付条款混进内部工程目标。SLA 是外部契约，SLO 是内部目标，二者可以相关，但不应默认数值相同。本文给出的所有业务数字均标为<strong>构造示例</strong>，不代表任何生产服务，也不构成通用阈值。</p>
+<h2 id="二、先给结论：一套可执行的-SLO-系统应满足十四条约束"><a href="#二、先给结论：一套可执行的-SLO-系统应满足十四条约束" class="headerlink" title="二、先给结论：一套可执行的 SLO 系统应满足十四条约束"></a>二、先给结论：一套可执行的 SLO 系统应满足十四条约束</h2><ol>
+<li><strong>先写用户旅程，再选指标。</strong> 指标必须对应用户实际等待或依赖的结果。</li>
+<li><strong>Request 与 Task 分账。</strong> 一次业务任务可能产生多个 attempt，最终成功不能擦掉中间失败。</li>
+<li><strong>Good、Bad、Unknown、Excluded 四态分开。</strong> 缺失证据不是成功，也不应被静默补成失败。</li>
+<li><strong>协议、延迟、业务完成、语义质量、安全各有判定。</strong> 一个指标不能冒充另一层结论。</li>
+<li><strong>质量分母只包含有可接受真值的样本。</strong> 没有标签的线上请求不能被伪装成质量 SLO 的成功分母。</li>
+<li><strong>标签覆盖率单独报告。</strong> 质量分数必须与覆盖率、标签时延和样本分布一起看。</li>
+<li><strong>延迟从用户可观察边界计时。</strong> 服务端模型耗时不能替代客户端端到端等待。</li>
+<li><strong>重试和降级保留原始事实。</strong> 成功的最终结果不能覆盖尝试次数、降级质量与额外等待。</li>
+<li><strong>每个 SLO 独立计算预算。</strong> 不同分母、时间窗和用户影响不能直接相加成一个“总健康分”。</li>
+<li><strong>Burn rate 描述预算消耗速度。</strong> 它是告警输入，不是根因定位结果。</li>
+<li><strong>Page 只用于需要立即人工行动的可操作风险。</strong> 并非所有语义质量异常都适合 paging。</li>
+<li><strong>发布策略必须预先批准。</strong> 预算耗尽后冻结什么、谁可豁免、何时解冻不能在事故中临时争论。</li>
+<li><strong>监控本身要测试。</strong> 事件上报、规则计算、路由和值班通知都要做故障注入。</li>
+<li><strong>结论标明证据层级。</strong> 观测、推断和决策分别记录，不能把告警名称写成根因。</li>
+</ol>
+<h2 id="三、术语契约：SLI、SLO、错误预算与告警不是同一个对象"><a href="#三、术语契约：SLI、SLO、错误预算与告警不是同一个对象" class="headerlink" title="三、术语契约：SLI、SLO、错误预算与告警不是同一个对象"></a>三、术语契约：SLI、SLO、错误预算与告警不是同一个对象</h2><h3 id="1-SLI-specification"><a href="#1-SLI-specification" class="headerlink" title="1. SLI specification"></a>1. SLI specification</h3><p>SLI specification 描述用户在意的结果，暂不绑定采集方式。例如：</p>
+<blockquote>
+<p>在退款资格审核任务中，从用户提交完整材料到系统给出可执行决定，结果在十分钟内完成且最终决定正确的任务比例。</p>
+</blockquote>
+<p>这是结果语义。它尚未说明从哪个日志取时间、正确性由谁标、缺失事件怎样处理。</p>
+<h3 id="2-SLI-implementation"><a href="#2-SLI-implementation" class="headerlink" title="2. SLI implementation"></a>2. SLI implementation</h3><p>SLI implementation 把 specification 变成可计算规则：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">population      = 生产环境、指定产品和地区、用户提交完整材料的 task</span><br><span class="line">good event      = committed_at - accepted_at &lt;= 10 min</span><br><span class="line">                  AND terminal_status = completed</span><br><span class="line">bad event       = 超时、失败、错误结果或需要未约定的人工补救</span><br><span class="line">unknown event   = 终态或真值在截止时间仍缺失</span><br><span class="line">excluded event  = 明确登记的演练流量、重复提交或不在产品契约内的任务</span><br><span class="line">source          = task ledger + outcome ledger + adjudicated labels</span><br><span class="line">window          = 28 天滚动，按 accepted_at 建 cohort</span><br><span class="line">freshness       = 运行结果 5 分钟内；质量标签 48 小时内</span><br></pre></td></tr></table></figure>
+
+<p>Google SRE Workbook 区分 SLI specification 与 implementation，并指出同一 specification 可有多种采集实现，它们在准确性、覆盖和成本上各有取舍。这个区分对 AI 服务尤其重要：服务端日志能快速计算，客户端遥测更接近体验，人工标签更接近语义真值，却更慢且覆盖更低。</p>
+<h3 id="3-SLO"><a href="#3-SLO" class="headerlink" title="3. SLO"></a>3. SLO</h3><p>SLO 是在明确时间窗内对某个 SLI 的目标，例如：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">过去 28 天滚动窗口内，至少 99.5% 的有效退款审核任务在 10 分钟内完成。</span><br></pre></td></tr></table></figure>
+
+<p>目标必须经产品、研发、运行保障和业务 owner 同意。没有后果的阈值只是看板线；当低于阈值不会改变优先级、发布或资源分配时，它还不是有效的治理工具。</p>
+<h3 id="4-Error-budget"><a href="#4-Error-budget" class="headerlink" title="4. Error budget"></a>4. Error budget</h3><p>对于 good&#x2F;total 形式的 SLI，若目标为 <code>S</code>，允许的坏事件比例是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">allowed_bad_ratio = 1 - S</span><br></pre></td></tr></table></figure>
+
+<p>若窗口内有效事件数为 <code>N</code>，简单事件预算是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">allowed_bad_events = (1 - S) × N</span><br></pre></td></tr></table></figure>
+
+<p>错误预算不是“允许故意制造错误”，也不是对单个用户的赔偿承诺。它是组织在既定目标下权衡变更速度与可靠性投入的决策额度。</p>
+<h3 id="5-Alert"><a href="#5-Alert" class="headerlink" title="5. Alert"></a>5. Alert</h3><p>告警是对某种需要行动的条件发出的通知。SLO 告警通常回答“预算是否以危险速度消耗”；调试告警回答“某个依赖或资源是否异常”；安全告警可能回答“是否发生单次不可容忍事件”。这些告警可以关联，但不应混成同一规则。</p>
+<p>告警触发只是一条观测：某个表达式在某个时间窗超过阈值。它不证明根因是模型、检索、供应商或刚发布的版本。</p>
+<h2 id="四、四态事件模型：不要让-Unknown-偷走分母"><a href="#四、四态事件模型：不要让-Unknown-偷走分母" class="headerlink" title="四、四态事件模型：不要让 Unknown 偷走分母"></a>四、四态事件模型：不要让 Unknown 偷走分母</h2><p>最小事件分类不是二元成功&#x2F;失败，而是四态：</p>
+<table>
+<thead>
+<tr>
+<th>状态</th>
+<th>定义</th>
+<th align="right">是否进入当前 SLI 分母</th>
+<th>运营动作</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>good</code></td>
+<td>有完整证据且满足 good 条件</td>
+<td align="right">是</td>
+<td>消耗 0 个坏事件</td>
+</tr>
+<tr>
+<td><code>bad</code></td>
+<td>有完整证据且不满足条件</td>
+<td align="right">是</td>
+<td>消耗预算</td>
+</tr>
+<tr>
+<td><code>unknown</code></td>
+<td>本应有证据，但在截止时间缺失、冲突或不可判</td>
+<td align="right">否，单独计数</td>
+<td>数据质量告警、补数或人工核验</td>
+</tr>
+<tr>
+<td><code>excluded</code></td>
+<td>按事先规则不属于 population</td>
+<td align="right">否</td>
+<td>保留原因和批准记录</td>
+</tr>
+</tbody></table>
+<p><code>unknown</code> 不能静默变成 <code>good</code>，否则丢日志会让可靠性变好；也不能默认并入 <code>bad</code>，否则观测链故障会被误写成用户失败。正确做法是同时报告：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">known_sli          = good / (good + bad)</span><br><span class="line">unknown_rate       = unknown / (good + bad + unknown)</span><br><span class="line">exclusion_rate     = excluded / all_observed_candidates</span><br></pre></td></tr></table></figure>
+
+<p>Unknown 必须有独立的覆盖硬门：<code>unknown_rate &lt;= max_unknown_rate</code>。等于已批准上限时仍可继续评价其他门，严格超过上限时，SLO 状态标成 <code>insufficient_data</code>，发布门禁进入 HOLD&#x2F;BLOCK，不能因为已知样本 SLI 变高而放行。阈值、比较符号和恢复条件都应由组织事先批准；这是决策政策，不是数学自动得出的事实。</p>
+<h3 id="反例：丢失失败日志后可用性上升"><a href="#反例：丢失失败日志后可用性上升" class="headerlink" title="反例：丢失失败日志后可用性上升"></a>反例：丢失失败日志后可用性上升</h3><p>假设网关只有完成响应时才递增计数。一次后端连接中断让 500 个请求没有产生响应日志，剩余 9,500 个请求全成功。看板显示 100%，用户实际只收到 95% 响应。</p>
+<p>问题不是阈值太宽，而是分母在失败路径消失。入口计数器和终态计数器必须独立，二者差值进入 unknown；仅在出口采集无法形成可靠的可用性分母。</p>
+<h2 id="五、从入口到决策的分层架构与数据流"><a href="#五、从入口到决策的分层架构与数据流" class="headerlink" title="五、从入口到决策的分层架构与数据流"></a>五、从入口到决策的分层架构与数据流</h2><p><img src="/images/ai-quality/ai-46-sli-slo-budget-stack.svg" alt="AI服务SLI、SLO与错误预算分层架构"></p>
+<p>建议把系统拆成八层，每层只承担一种主要责任。</p>
+<h3 id="1-用户边界与接入层"><a href="#1-用户边界与接入层" class="headerlink" title="1. 用户边界与接入层"></a>1. 用户边界与接入层</h3><p>客户端、SDK、API 网关记录用户真正发起请求的时间、首个可用内容、最终内容、取消原因、网络失败和可见错误。服务端收到请求之前的失败只能从这一层看到。</p>
+<h3 id="2-Request-attempt-层"><a href="#2-Request-attempt-层" class="headerlink" title="2. Request attempt 层"></a>2. Request attempt 层</h3><p>每一次物理调用都有 <code>request_id</code>、<code>attempt_id</code>、开始与结束事件。限流、认证失败、超时、供应商错误、模型响应和网关重试都不能覆盖前一次 attempt。</p>
+<h3 id="3-Workflow-run-层"><a href="#3-Workflow-run-层" class="headerlink" title="3. Workflow run 层"></a>3. Workflow run 层</h3><p>Agent、RAG 或多步骤 Workflow 把检索、模型、工具、审批和恢复步骤挂到 <code>run_id</code>。该层记录完成图、首错步骤、降级路径和副作用提交状态。</p>
+<h3 id="4-Business-task-层"><a href="#4-Business-task-层" class="headerlink" title="4. Business task 层"></a>4. Business task 层</h3><p><code>task_id</code> 对应用户要完成的业务目标。它聚合多个 request 与 run，并以业务后置条件决定终态。Task 是完成率、端到端时延、返工和人工接管的主要分母。</p>
+<h3 id="5-Outcome-与-label-层"><a href="#5-Outcome-与-label-层" class="headerlink" title="5. Outcome 与 label 层"></a>5. Outcome 与 label 层</h3><p>确定性规则、业务数据库终态、人工双标、申诉结果或经过批准的评审器产生质量证据。每个 label 记录来源、rubric 版本、标注者角色、时间和冲突状态。</p>
+<h3 id="6-SLI-ledger-层"><a href="#6-SLI-ledger-层" class="headerlink" title="6. SLI ledger 层"></a>6. SLI ledger 层</h3><p>事件分类器按版本化 SLI 规则生成 good&#x2F;bad&#x2F;unknown&#x2F;excluded 判定。原事件不可因规则修改而覆盖；新规则回放形成新的 <code>sli_version</code>。</p>
+<h3 id="7-Budget-与-rule-evaluation-层"><a href="#7-Budget-与-rule-evaluation-层" class="headerlink" title="7. Budget 与 rule evaluation 层"></a>7. Budget 与 rule evaluation 层</h3><p>窗口聚合器计算 SLI、标签覆盖、剩余预算、burn rate、低流量置信状态和遥测新鲜度。规则配置作为代码评审、测试和发布。</p>
+<h3 id="8-Decision-层"><a href="#8-Decision-层" class="headerlink" title="8. Decision 层"></a>8. Decision 层</h3><p>Alert router 只负责把已命名的条件路由给 owner；发布控制器读取经批准的预算政策；事故指挥、产品和服务 owner 基于证据作出回滚、冻结、豁免或继续发布的决定。</p>
+<p>关键数据流是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">candidate at ingress</span><br><span class="line">  -&gt; request attempts</span><br><span class="line">  -&gt; workflow run</span><br><span class="line">  -&gt; business task terminal event</span><br><span class="line">  -&gt; delayed outcome / label</span><br><span class="line">  -&gt; versioned SLI classification</span><br><span class="line">  -&gt; rolling budget and burn rates</span><br><span class="line">  -&gt; page / ticket / release gate / review</span><br></pre></td></tr></table></figure>
+
+<p>不能从最后一个仪表盘反推并补造前面的事实。若 task 身份、入口时间或标签来源不存在，应该暴露数据缺口，而不是用 HTTP 200、模型自评或默认值填上。</p>
+<h2 id="六、统一数据模型：原始事实、分类结果和决策记录分离"><a href="#六、统一数据模型：原始事实、分类结果和决策记录分离" class="headerlink" title="六、统一数据模型：原始事实、分类结果和决策记录分离"></a>六、统一数据模型：原始事实、分类结果和决策记录分离</h2><h3 id="1-RequestAttempt"><a href="#1-RequestAttempt" class="headerlink" title="1. RequestAttempt"></a>1. RequestAttempt</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">request_id, attempt_id, task_id, run_id</span><br><span class="line">tenant_id, route_id, model_id, prompt_version</span><br><span class="line">client_sent_at, gateway_received_at, upstream_started_at</span><br><span class="line">first_content_at, response_completed_at, client_observed_at</span><br><span class="line">protocol_status, error_class, retry_reason, degraded_mode</span><br><span class="line">trace_id, source_event_ids</span><br></pre></td></tr></table></figure>
+
+<p><code>attempt_id</code> 必须幂等。同一个逻辑请求被重试三次，应保留三个 attempt。最终成功是 task 结果，不是删除前两个失败的理由。</p>
+<h3 id="2-BusinessTask"><a href="#2-BusinessTask" class="headerlink" title="2. BusinessTask"></a>2. BusinessTask</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">task_id, task_type, tenant_id, risk_tier</span><br><span class="line">accepted_at, due_at, terminal_at, terminal_status</span><br><span class="line">business_postcondition, postcondition_status</span><br><span class="line">run_ids, manual_handoff, duplicate_of</span><br><span class="line">cohort_key, policy_version</span><br></pre></td></tr></table></figure>
+
+<p><code>accepted_at</code> 是任务进入承诺边界的时间，不一定等于用户第一次输入时间。若产品先等待用户补齐材料，应明确哪一刻开始计服务时钟，并在界面和契约中保持一致。</p>
+<h3 id="3-QualityLabel"><a href="#3-QualityLabel" class="headerlink" title="3. QualityLabel"></a>3. QualityLabel</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">label_id, task_id, dimension, verdict, score</span><br><span class="line">truth_source, rubric_version, sampling_policy_version</span><br><span class="line">annotator_role, labeled_at, adjudication_status</span><br><span class="line">evidence_refs, supersedes_label_id</span><br></pre></td></tr></table></figure>
+
+<p>质量标签不能只存一个浮点分数。需要知道评价维度、阈值、真值来源和冲突解决状态。模型自报置信度可以作为诊断特征，不能自动升级为真值来源。</p>
+<h3 id="4-SLIClassification"><a href="#4-SLIClassification" class="headerlink" title="4. SLIClassification"></a>4. SLIClassification</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">classification_id, subject_id, subject_type</span><br><span class="line">sli_name, sli_version, window_cohort</span><br><span class="line">state: good | bad | unknown | excluded</span><br><span class="line">reason_code, evaluated_at, evidence_refs</span><br></pre></td></tr></table></figure>
+
+<p>分类结果是派生数据，必须能由原始证据和规则版本重放。<code>reason_code</code> 使用受控枚举，如 <code>UPSTREAM_TIMEOUT</code>、<code>TASK_POSTCONDITION_FAILED</code>、<code>LABEL_PENDING</code>、<code>CLIENT_CANCELLED_AFTER_DEADLINE</code>，避免把自然语言根因猜测写进指标标签。</p>
+<h3 id="5-DecisionRecord"><a href="#5-DecisionRecord" class="headerlink" title="5. DecisionRecord"></a>5. DecisionRecord</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">decision_id, decision_type, scope</span><br><span class="line">observations, hypotheses, chosen_action</span><br><span class="line">owner, approver, policy_version</span><br><span class="line">created_at, expires_at, follow_up_ids</span><br></pre></td></tr></table></figure>
+
+<p>发布冻结或告警豁免不是对时间序列的修改。它是基于某组观测作出的独立决定，必须保留 owner、有效期和复审条件。</p>
+<h2 id="七、Request-SLI：协议层要按用户可观察结果计数"><a href="#七、Request-SLI：协议层要按用户可观察结果计数" class="headerlink" title="七、Request SLI：协议层要按用户可观察结果计数"></a>七、Request SLI：协议层要按用户可观察结果计数</h2><h3 id="1-可用性"><a href="#1-可用性" class="headerlink" title="1. 可用性"></a>1. 可用性</h3><p>最基础的请求可用性可以写成：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">request_availability</span><br><span class="line">= good_valid_requests / valid_requests</span><br></pre></td></tr></table></figure>
+
+<p>但 <code>good_valid_requests</code> 的定义不能简单等于 <code>status &lt; 500</code>。至少要决定：</p>
+<ul>
+<li>认证失败是否属于服务责任，还是调用方错误；</li>
+<li>429 是容量保护、租户配额还是上游限流；</li>
+<li>客户端取消发生在 SLO 截止前还是截止后；</li>
+<li>200 响应是否包含应用级错误对象；</li>
+<li>流式响应中断但已经发送部分文本算成功、降级还是失败；</li>
+<li>依赖降级后返回静态答案是否满足该接口承诺。</li>
+</ul>
+<p>这些不是协议标准自动给出的答案，而是产品契约。规则应按 endpoint、task type 和 risk tier 版本化。</p>
+<h3 id="2-入站拒绝"><a href="#2-入站拒绝" class="headerlink" title="2. 入站拒绝"></a>2. 入站拒绝</h3><p>如果系统在承诺接收之前因非法参数明确拒绝，请求通常可以排除于服务可用性 population，但仍应进入调用质量报表。如果系统已经接受任务，随后因为内部容量不足返回 429，就不能用“它不是 5xx”逃避预算。</p>
+<h3 id="3-重试"><a href="#3-重试" class="headerlink" title="3. 重试"></a>3. 重试</h3><p>建议同时报告三项：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">attempt_availability = successful_attempts / valid_attempts</span><br><span class="line">task_delivery        = delivered_tasks / valid_tasks</span><br><span class="line">retry_amplification  = total_attempts / tasks_with_attempts</span><br></pre></td></tr></table></figure>
+
+<p>Task 最终成功时，<code>task_delivery</code> 可以是 good；失败 attempt 仍然降低 <code>attempt_availability</code> 并提高重试放大。这样既不夸大用户失败，也不隐藏系统浪费和依赖不稳定。</p>
+<h3 id="4-降级"><a href="#4-降级" class="headerlink" title="4. 降级"></a>4. 降级</h3><p>降级不是天然成功或失败。若产品明确承诺“检索不可用时给出带提示的基础回答”，且用户目标仍完成，可以在 availability 中算 good，同时在 <code>undegraded_quality</code> SLI 中算 bad。若基础回答不能满足高风险任务，则 task 应失败或转人工，不能借降级掩盖。</p>
+<h3 id="反例：只看供应商请求成功率"><a href="#反例：只看供应商请求成功率" class="headerlink" title="反例：只看供应商请求成功率"></a>反例：只看供应商请求成功率</h3><p>一个工作流先检索，再调用模型，最后写入工单。模型供应商请求成功率 99.99%，但写库步骤有 2% 冲突且没有幂等恢复。用户看见回答后刷新，工单状态仍旧。供应商 SLI 是依赖诊断指标，不是业务 Task SLI。</p>
+<h2 id="八、Task-SLI：可靠性对象是业务后置条件"><a href="#八、Task-SLI：可靠性对象是业务后置条件" class="headerlink" title="八、Task SLI：可靠性对象是业务后置条件"></a>八、Task SLI：可靠性对象是业务后置条件</h2><h3 id="1-Task-completion"><a href="#1-Task-completion" class="headerlink" title="1. Task completion"></a>1. Task completion</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">task_completion_sli</span><br><span class="line">= tasks_with_postcondition_satisfied / valid_terminal_tasks</span><br></pre></td></tr></table></figure>
+
+<p>对于“生成客服回复草稿”，后置条件可能是草稿已保存且可被坐席打开；对于“自动批准退款”，后置条件可能是资格判定正确、审批状态提交成功、金额未越权且审计记录完整。输出一段文本并不等于任务完成。</p>
+<h3 id="2-Eventual-success-与-deadline-success"><a href="#2-Eventual-success-与-deadline-success" class="headerlink" title="2. Eventual success 与 deadline success"></a>2. Eventual success 与 deadline success</h3><p>异步任务应至少有两种视图：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">eventual_completion = eventually_completed / valid_tasks</span><br><span class="line">deadline_completion = completed_before_due / valid_tasks</span><br></pre></td></tr></table></figure>
+
+<p>三天后补跑成功可以改善 eventual completion，却不能改写用户在十分钟承诺窗口内经历的失败。迟到结果应以 correction 事件补充，不覆盖原 deadline 判定。</p>
+<h3 id="3-人工接管"><a href="#3-人工接管" class="headerlink" title="3. 人工接管"></a>3. 人工接管</h3><p>人工接管的语义由产品承诺决定：</p>
+<ul>
+<li>若服务承诺“自动或人工在 30 分钟内给出结论”，按最终任务 SLI 计；</li>
+<li>若服务承诺“自动实时完成”，人工接管意味着自动化 SLI bad，即使最终业务任务完成；</li>
+<li>无论哪种，人工接管率、等待时长和返工成本都应单独报告。</li>
+</ul>
+<h3 id="4-重复与幂等"><a href="#4-重复与幂等" class="headerlink" title="4. 重复与幂等"></a>4. 重复与幂等</h3><p>同一用户目标因前端重发形成两个 task 时，不能都进入成功分母。需要稳定业务幂等键，将重复项标为 <code>excluded: duplicate</code>，同时把重复生成与副作用风险作为独立故障指标。</p>
+<h3 id="5-Cohort-选择"><a href="#5-Cohort-选择" class="headerlink" title="5. Cohort 选择"></a>5. Cohort 选择</h3><p>Task 以 <code>accepted_at</code> 进入 cohort，结果可能晚到。窗口尾部存在未决任务时，必须报告成熟度：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">matured_task_rate = tasks_past_outcome_deadline / accepted_tasks</span><br></pre></td></tr></table></figure>
+
+<p>只有已超过结果截止时间的 cohort 才适合做最终 SLO 结算。实时看板可显示 provisional 值，但必须清楚标识，不能把尚未到期的任务全算成功。</p>
+<h2 id="九、语义质量-SLO：有真值的样本才有质量分母"><a href="#九、语义质量-SLO：有真值的样本才有质量分母" class="headerlink" title="九、语义质量 SLO：有真值的样本才有质量分母"></a>九、语义质量 SLO：有真值的样本才有质量分母</h2><p>这是 AI 服务最容易做错的一层。</p>
+<p>假设一天有 100,000 个任务，人工只标了 500 个，其中 475 个通过。可以观察到：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">labeled_quality_sli = 475 / 500 = 95%</span><br><span class="line">label_coverage      = 500 / 100000 = 0.5%</span><br></pre></td></tr></table></figure>
+
+<p>不能写成 <code>99,975 / 100,000 = 99.975%</code>，因为其余 99,500 个没有被证明正确。也不能只展示 95% 而隐藏 0.5% 覆盖率，因为这 500 个可能集中在投诉、低风险或容易样本。</p>
+<h3 id="1-三个集合"><a href="#1-三个集合" class="headerlink" title="1. 三个集合"></a>1. 三个集合</h3><p>定义：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">E = 在 population 中、到质量截止时间已成熟的 eligible tasks</span><br><span class="line">L = E 中拥有可接受且已裁决真值的 tasks</span><br><span class="line">G = L 中通过质量 rubric 的 tasks</span><br></pre></td></tr></table></figure>
+
+<p>分别计算：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">quality_on_labeled = |G| / |L|</span><br><span class="line">label_coverage     = |L| / |E|</span><br><span class="line">known_good_share  = |G| / |E|</span><br></pre></td></tr></table></figure>
+
+<p><code>known_good_share</code> 只能解释为“全部 eligible 任务中已被证明确认为 good 的比例”，不能改名为总体质量。总体未标注部分的质量仍未知。</p>
+<p>当 <code>|L| = 0</code> 时，质量 SLI 的正确状态是 <code>insufficient_data</code>，不是 100%、0% 或沿用昨天的值。</p>
+<h3 id="2-可接受真值"><a href="#2-可接受真值" class="headerlink" title="2. 可接受真值"></a>2. 可接受真值</h3><p>真值来源按任务风险预先批准，可以包括：</p>
+<ul>
+<li>可确定计算的业务规则或数据库终态；</li>
+<li>与被测实现独立的参考系统；</li>
+<li>受训标注者按固定 rubric 的双标与裁决；</li>
+<li>延迟到达的真实业务后果，如申诉后最终结论；</li>
+<li>经过单独验证、只用于低风险维度的自动评审器。</li>
+</ul>
+<p>模型自评、生成概率、Embedding 相似度、未校准的 LLM-as-Judge 分数和“用户没有投诉”都不能自动当真值。它们可以用于抽样、诊断或风险排序，但其误差必须独立评估。</p>
+<h3 id="3-多维质量不能先压成平均分"><a href="#3-多维质量不能先压成平均分" class="headerlink" title="3. 多维质量不能先压成平均分"></a>3. 多维质量不能先压成平均分</h3><p>一个回答可能事实正确却泄露隐私，也可能格式完美但拒绝了合法请求。建议保留维度：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">correctness, groundedness, completeness, policy_safety,</span><br><span class="line">permission_compliance, action_validity, user_task_success</span><br></pre></td></tr></table></figure>
+
+<p>高风险硬门以布尔性质判定；可补偿维度才考虑加权。禁止用语言流畅度的高分抵消越权动作。</p>
+<h3 id="4-标签覆盖不是一个总百分比"><a href="#4-标签覆盖不是一个总百分比" class="headerlink" title="4. 标签覆盖不是一个总百分比"></a>4. 标签覆盖不是一个总百分比</h3><p>至少按以下维度切片：</p>
+<ul>
+<li>task type 与风险等级；</li>
+<li>语言、地区、租户与入口；</li>
+<li>模型、Prompt、检索与工具版本；</li>
+<li>自动完成、降级、重试和人工接管；</li>
+<li>高频常见任务与长尾任务；</li>
+<li>随机样本、风险样本、投诉样本和发布样本。</li>
+</ul>
+<p>全站覆盖率 5% 可能掩盖高风险退款任务覆盖率为零。报表应同时给总体和关键切片，且展示抽样策略版本。</p>
+<h3 id="5-抽样偏差与置信区间"><a href="#5-抽样偏差与置信区间" class="headerlink" title="5. 抽样偏差与置信区间"></a>5. 抽样偏差与置信区间</h3><p>随机抽样有助于估计总体，风险抽样有助于发现缺陷，二者目的不同。风险样本的失败率不能直接外推总体；随机样本也可能因样本量不足而看不到稀有严重问题。</p>
+<p>对二元质量结果，可以报告 Wilson 区间等抽样不确定性，但区间只处理抽样波动，不会修复标签偏差、标注误差、遗漏切片或分布漂移。区间越窄也不等于真值越可靠。</p>
+<h3 id="6-标签迟到"><a href="#6-标签迟到" class="headerlink" title="6. 标签迟到"></a>6. 标签迟到</h3><p>质量 SLO 需要固定 label deadline，例如任务完成后 48 小时。到期前显示 provisional；到期后仍无标签记入 coverage 缺口。迟到标签到达后可以追加修订版本，但要保留原报表生成时间和决策历史，不能悄悄改写一次发布审批当时看到的证据。</p>
+<h3 id="反例：把所有未投诉任务算正确"><a href="#反例：把所有未投诉任务算正确" class="headerlink" title="反例：把所有未投诉任务算正确"></a>反例：把所有未投诉任务算正确</h3><p>投诉是一个高精度、低召回且受用户行为影响的信号。用户可能没有发现错误、没有时间投诉，或直接离开。<code>1 - complaint_rate</code> 可以是体验指标，不能未经验证就定义为语义正确率。</p>
+<h2 id="十、延迟真值：时钟边界比分位数更先决定结论"><a href="#十、延迟真值：时钟边界比分位数更先决定结论" class="headerlink" title="十、延迟真值：时钟边界比分位数更先决定结论"></a>十、延迟真值：时钟边界比分位数更先决定结论</h2><h3 id="1-一次流式请求至少有六个时间点"><a href="#1-一次流式请求至少有六个时间点" class="headerlink" title="1. 一次流式请求至少有六个时间点"></a>1. 一次流式请求至少有六个时间点</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">t0  client_send</span><br><span class="line">t1  gateway_accept</span><br><span class="line">t2  upstream_start</span><br><span class="line">t3  first_meaningful_content_visible</span><br><span class="line">t4  final_content_visible</span><br><span class="line">t5  task_postcondition_committed</span><br></pre></td></tr></table></figure>
+
+<p>可派生：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">client_ttfc        = t3 - t0</span><br><span class="line">client_response    = t4 - t0</span><br><span class="line">task_e2e           = t5 - t0</span><br><span class="line">gateway_queue      = t2 - t1</span><br><span class="line">server_processing  = server_end - t1</span><br></pre></td></tr></table></figure>
+
+<p><code>t3</code> 必须是首个有意义内容，而不是连接建立、HTTP header、空 SSE heartbeat 或隐藏 reasoning token。<code>t5</code> 对有副作用任务尤其关键：用户看见“已完成”而数据库尚未提交，不能算任务结束。</p>
+<h3 id="2-用户视角与服务端视角并存"><a href="#2-用户视角与服务端视角并存" class="headerlink" title="2. 用户视角与服务端视角并存"></a>2. 用户视角与服务端视角并存</h3><p>客户端 SLI 更接近体验，但可能受设备与网络影响；服务端 SLI 更易稳定采集，但看不到到达服务前的失败。两者应分别命名，而不是选择一个数字冒充全部真相：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">client_task_latency_sli</span><br><span class="line">gateway_service_latency_sli</span><br><span class="line">model_dependency_latency_metric</span><br></pre></td></tr></table></figure>
+
+<p>依赖耗时用于归因，不自动成为产品 SLO。</p>
+<h3 id="3-延迟-SLI-优先用阈值比例"><a href="#3-延迟-SLI-优先用阈值比例" class="headerlink" title="3. 延迟 SLI 优先用阈值比例"></a>3. 延迟 SLI 优先用阈值比例</h3><p>为了直接计算预算，建议把用户承诺写成 good&#x2F;total：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">latency_sli(T) = valid tasks completed within T / valid tasks</span><br></pre></td></tr></table></figure>
+
+<p>P95&#x2F;P99 仍适合观察分布和诊断，但“P99 小于 10 秒”不如“99% 任务在 10 秒内完成”容易与事件预算、burn rate 和具体坏任务关联。二者不是互斥，只是用途不同。</p>
+<h3 id="4-失败任务如何进入延迟"><a href="#4-失败任务如何进入延迟" class="headerlink" title="4. 失败任务如何进入延迟"></a>4. 失败任务如何进入延迟</h3><p>若产品承诺“在 10 秒内给出成功结果”，超时、错误和永不完成的任务应是 latency SLI 的 bad，而不是从延迟样本中删除。可以另外提供 <code>latency_given_success</code> 做性能诊断，但它不能替代用户视角 SLO。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">user_latency_good = successful AND completed_before_T</span><br><span class="line">diagnostic_latency_given_success = duration of successful tasks only</span><br></pre></td></tr></table></figure>
+
+<h3 id="5-重试不能重置用户时钟"><a href="#5-重试不能重置用户时钟" class="headerlink" title="5. 重试不能重置用户时钟"></a>5. 重试不能重置用户时钟</h3><p>服务内部第二次 attempt 从零计时只适合诊断。Task 端到端时间仍从用户第一次被接受的时刻开始。否则每次重试都能“刷新”延迟，最不稳定的系统反而得到最好数据。</p>
+<h3 id="6-取消与截尾"><a href="#6-取消与截尾" class="headerlink" title="6. 取消与截尾"></a>6. 取消与截尾</h3><p>用户在阈值前主动改变主意，可能按预定义原因排除；用户因为长时间无响应而取消，应计 bad。系统无法区分时，记 unknown 并改进埋点。窗口结束时仍在途的任务是 right-censored，不应暂时算成功；等待成熟或按 deadline 规则转 bad。</p>
+<h3 id="7-跨机器时钟"><a href="#7-跨机器时钟" class="headerlink" title="7. 跨机器时钟"></a>7. 跨机器时钟</h3><p>不要直接用未校准的客户端墙钟减服务端墙钟。单段持续时间优先用本机单调时钟；跨系统链路用 Trace 顺序、客户端端到端持续时间和时钟偏差监控关联。发现负延迟时必须拒绝该样本并产生遥测质量事件，不能取绝对值“修复”。</p>
+<h3 id="8-多阈值"><a href="#8-多阈值" class="headerlink" title="8. 多阈值"></a>8. 多阈值</h3><p>交互式 AI 可以同时定义，例如：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">99% 的有效任务在 2 秒内显示首个有意义内容</span><br><span class="line">95% 的有效任务在 12 秒内显示完整回答</span><br><span class="line">99.5% 的有副作用任务在 30 秒内提交最终后置条件</span><br></pre></td></tr></table></figure>
+
+<p>这些只是格式示例。实际数值应来自用户研究、产品承诺、当前分布和可承受工程成本，而不是从另一家公司复制。</p>
+<h2 id="十一、一份可审计的-SLO-文档需要写什么"><a href="#十一、一份可审计的-SLO-文档需要写什么" class="headerlink" title="十一、一份可审计的 SLO 文档需要写什么"></a>十一、一份可审计的 SLO 文档需要写什么</h2><p>每个 SLO 应作为版本化文档存在，而不是仪表盘里一个无上下文阈值。建议至少包含以下字段：</p>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>必须回答的问题</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>name/version</code></td>
+<td>指标与规则如何唯一识别，何时生效</td>
+</tr>
+<tr>
+<td><code>user/journey</code></td>
+<td>哪类用户在完成什么目标</td>
+</tr>
+<tr>
+<td><code>scope</code></td>
+<td>产品、租户、地区、入口、任务类型与风险等级</td>
+</tr>
+<tr>
+<td><code>population</code></td>
+<td>哪些 candidate 有资格进入分母</td>
+</tr>
+<tr>
+<td><code>good</code></td>
+<td>满足哪些协议、业务、时限、质量和安全条件</td>
+</tr>
+<tr>
+<td><code>bad</code></td>
+<td>哪些已知结果消耗预算，reason code 如何映射</td>
+</tr>
+<tr>
+<td><code>unknown</code></td>
+<td>哪些证据缺失或冲突，何时判数据不足</td>
+</tr>
+<tr>
+<td><code>excluded</code></td>
+<td>允许排除什么，谁批准，排除率如何监督</td>
+</tr>
+<tr>
+<td><code>measurement</code></td>
+<td>数据源、事件位置、聚合方式和规则版本</td>
+</tr>
+<tr>
+<td><code>objective/window</code></td>
+<td>目标比例、滚动或自然时间窗、时区</td>
+</tr>
+<tr>
+<td><code>freshness</code></td>
+<td>指标最迟何时可见，标签最迟何时成熟</td>
+</tr>
+<tr>
+<td><code>segmentation</code></td>
+<td>必须展示哪些关键切片，哪些不得聚合隐藏</td>
+</tr>
+<tr>
+<td><code>budget_policy</code></td>
+<td>预算状态如何改变发布和可靠性工作优先级</td>
+</tr>
+<tr>
+<td><code>alerts</code></td>
+<td>哪些 burn 条件发 Page、工单或只展示</td>
+</tr>
+<tr>
+<td><code>owners</code></td>
+<td>服务、产品、数据、质量、告警规则和发布决策 owner</td>
+</tr>
+<tr>
+<td><code>review</code></td>
+<td>何时复审目标、规则和采样代表性</td>
+</tr>
+</tbody></table>
+<h3 id="构造示例：客服知识问答任务"><a href="#构造示例：客服知识问答任务" class="headerlink" title="构造示例：客服知识问答任务"></a>构造示例：客服知识问答任务</h3><figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">name:</span> <span class="string">support_answer_task_success</span></span><br><span class="line"><span class="attr">version:</span> <span class="number">7</span></span><br><span class="line"><span class="attr">effective_from:</span> <span class="number">2026-05-01T00:00:00+08:00</span></span><br><span class="line"><span class="attr">population:</span> <span class="string">production</span> <span class="string">tasks</span> <span class="string">accepted</span> <span class="string">for</span> <span class="string">supported</span> <span class="string">products</span> <span class="string">and</span> <span class="string">languages</span></span><br><span class="line"><span class="attr">good:</span> <span class="string">terminal=completed</span> <span class="string">AND</span> <span class="string">answer_saved</span> <span class="string">AND</span> <span class="string">citations_authorized</span></span><br><span class="line"><span class="attr">bad:</span> <span class="string">deadline_exceeded</span> <span class="string">OR</span> <span class="string">terminal_failed</span> <span class="string">OR</span> <span class="string">postcondition_failed</span></span><br><span class="line"><span class="attr">unknown:</span> <span class="string">missing_terminal_event</span> <span class="string">after</span> <span class="number">15</span> <span class="string">minutes</span></span><br><span class="line"><span class="attr">excluded:</span> <span class="string">approved</span> <span class="string">chaos</span> <span class="string">drills;</span> <span class="string">duplicate_of</span> <span class="string">is</span> <span class="string">not</span> <span class="literal">null</span></span><br><span class="line"><span class="attr">objective:</span> <span class="number">99.5</span><span class="string">%</span></span><br><span class="line"><span class="attr">window:</span> <span class="string">rolling</span> <span class="number">28</span> <span class="string">days</span></span><br><span class="line"><span class="attr">measurement_freshness:</span> <span class="number">5</span> <span class="string">minutes</span></span><br><span class="line"><span class="attr">owner:</span> <span class="string">ai-support-runtime</span></span><br><span class="line"><span class="attr">policy_owner:</span> <span class="string">support-product-director</span></span><br></pre></td></tr></table></figure>
+
+<p>这份示例还不是完整质量 SLO，因为 <code>citations_authorized</code> 只证明引用权限，不证明答案事实正确。语义正确性需要另一个带标签覆盖约束的 SLO 文档。</p>
+<h2 id="十二、目标怎样定：先确定不可接受的用户结果"><a href="#十二、目标怎样定：先确定不可接受的用户结果" class="headerlink" title="十二、目标怎样定：先确定不可接受的用户结果"></a>十二、目标怎样定：先确定不可接受的用户结果</h2><p>目标不能从当前线上平均值机械取整，也不能因为行业常见“几个九”就复制。一个可解释的设置过程包含：</p>
+<ol>
+<li>列出关键用户旅程和失败后果。</li>
+<li>区分可重试低价值请求与不可逆高价值任务。</li>
+<li>从用户研究、支持记录和业务截止时间确定什么是可感知失败。</li>
+<li>测量当前基线，但把基线当约束信息，不当用户需求。</li>
+<li>估算达到候选目标所需的容量、冗余、人工与工程成本。</li>
+<li>让产品 owner 接受目标以上继续发布、目标以下转向可靠性工作的权衡。</li>
+<li>设置复审日期，并约定改变 population 或 good 定义等同于新版本。</li>
+</ol>
+<h3 id="1-不同风险层不同目标"><a href="#1-不同风险层不同目标" class="headerlink" title="1. 不同风险层不同目标"></a>1. 不同风险层不同目标</h3><p>“推荐相似文章”和“自动发起退款”不应共享一个聚合目标。前者失败可能只影响体验，后者可能产生资金与合规后果。风险分层后可以有不同 SLO，也可以对高风险动作设置零容忍安全不变量。零容忍性质不必强行转成 99.999% 比例，例如：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">任何未经授权的付款提交都触发安全事件；</span><br><span class="line">该性质不与普通可用性错误预算互相抵消。</span><br></pre></td></tr></table></figure>
+
+<h3 id="2-不把-100-当口号"><a href="#2-不把-100-当口号" class="headerlink" title="2. 不把 100% 当口号"></a>2. 不把 100% 当口号</h3><p>Google SRE Workbook 解释了为什么 100% 通常不是合理的服务可靠性目标，并强调低于 100% 的 SLO 需要由有权权衡功能速度与可靠性的 owner 负责。本文沿用的是“显式权衡”思想，不是要求所有 AI 服务采用相同目标。安全、财务完整性等不变量可以要求每次都由确定性控制守住，但那是控制性质，不应与总体可用性比例混写。</p>
+<h3 id="3-一组少而关键的-SLO"><a href="#3-一组少而关键的-SLO" class="headerlink" title="3. 一组少而关键的 SLO"></a>3. 一组少而关键的 SLO</h3><p>建议一个用户旅程先选择三到五个关键目标：</p>
+<ul>
+<li>request availability；</li>
+<li>task deadline completion；</li>
+<li>user-visible latency；</li>
+<li>labeled semantic quality，并带 label coverage 门；</li>
+<li>high-risk action safety invariant。</li>
+</ul>
+<p>指标太多会产生互相冲突的告警和无人负责的预算。调试指标可以很多，SLO 应聚焦真正驱动用户与发布决策的少数结果。</p>
+<h2 id="十三、多个-SLO-的预算不能直接相加"><a href="#十三、多个-SLO-的预算不能直接相加" class="headerlink" title="十三、多个 SLO 的预算不能直接相加"></a>十三、多个 SLO 的预算不能直接相加</h2><p>可用性预算按请求数，任务时延预算按 task 数，语义质量预算按有真值样本数。它们的单位和覆盖不同，因此下面的做法是错误的：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">总健康分 = 40% × 可用性 + 30% × P99延迟得分 + 30% × 质量得分</span><br></pre></td></tr></table></figure>
+
+<p>这个平均分可能让一次越权行为被低延迟抵消，也可能让没有标签的质量项被可用性“补分”。正确方式是每个 SLO 独立判定，再由政策组合状态：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">release_eligible =</span><br><span class="line">    availability_budget_state not in &#123;exhausted, invalid&#125;</span><br><span class="line">    AND task_latency_budget_state not in &#123;exhausted, invalid&#125;</span><br><span class="line">    AND quality_gate in &#123;pass, approved_exception&#125;</span><br><span class="line">    AND safety_invariants = pass</span><br></pre></td></tr></table></figure>
+
+<p>这是决策逻辑，不是统计平均。某个 SLO 无数据时应进入 <code>invalid</code> 或 <code>insufficient_data</code>，不能把缺失值当成 0 权重。</p>
+<h2 id="十四、错误预算的四种表达"><a href="#十四、错误预算的四种表达" class="headerlink" title="十四、错误预算的四种表达"></a>十四、错误预算的四种表达</h2><p>设 SLO 目标为 <code>S</code>，完整 SLO 周期长度为 <code>P</code>。完整周期内有 <code>G_P</code> 个 good 和 <code>B_P</code> 个 bad，某个子窗口 <code>w</code> 内有 <code>G_w</code> 个 good 和 <code>B_w</code> 个 bad。</p>
+<h3 id="1-已观察-SLI"><a href="#1-已观察-SLI" class="headerlink" title="1. 已观察 SLI"></a>1. 已观察 SLI</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">SLI_w = G_w / (G_w + B_w)</span><br></pre></td></tr></table></figure>
+
+<p>Unknown 和 Excluded 不进入这个值，但必须在旁边报告。</p>
+<h3 id="2-允许坏比例"><a href="#2-允许坏比例" class="headerlink" title="2. 允许坏比例"></a>2. 允许坏比例</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">E = 1 - S</span><br></pre></td></tr></table></figure>
+
+<p>若 <code>S = 99.5%</code>，则 <code>E = 0.5%</code>。这是目标的代数结果，不代表任何服务都应该选择 99.5%。</p>
+<h3 id="3-完整周期的事件预算"><a href="#3-完整周期的事件预算" class="headerlink" title="3. 完整周期的事件预算"></a>3. 完整周期的事件预算</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">N_P                  = G_P + B_P</span><br><span class="line">allowed_bad_events_P = E × N_P</span><br><span class="line">remaining_events_P   = allowed_bad_events_P - B_P</span><br></pre></td></tr></table></figure>
+
+<p>滚动周期的请求量会变化，因此 <code>allowed_bad_events_P</code> 也会随当前完整滚动周期的实际有效事件量变化。报表应保留小数计算并明确最终显示如何舍入；不能先把每分钟预算取整再累加。</p>
+<h3 id="4-Budget-consumed：窗口坏事件占完整周期额度"><a href="#4-Budget-consumed：窗口坏事件占完整周期额度" class="headerlink" title="4. Budget consumed：窗口坏事件占完整周期额度"></a>4. Budget consumed：窗口坏事件占完整周期额度</h3><p>窗口 <code>w</code> 实际花掉完整周期预算的份额，必须用完整周期允许坏事件数作分母：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">budget_consumed_ratio_w = B_w / allowed_bad_events_P</span><br><span class="line">                        = B_w / (E × N_P)</span><br></pre></td></tr></table></figure>
+
+<p>这里的 <code>N_P</code> 是完整周期 population 的有效事件数，不是子窗口的 <code>G_w + B_w</code>。值为 0.02 表示该窗口实际坏事件占完整周期允许坏事件数的 2%；值为 1 表示窗口中的坏事件已经用完整个周期额度。只有当 <code>w = P</code> 时，这个结果才在数值上等于整周期 burn rate。不能把任意子窗口的 <code>B_w / (E × (G_w + B_w))</code> 命名为“已消耗完整周期预算份额”；那是子窗口 burn rate，回答的是速度问题。若自然周期尚未结束、未来 <code>N_P</code> 还不存在，就只能报告截至当前的已实现值或带假设的预测值，不能把预测伪装成实际消耗。</p>
+<h3 id="低流量反例"><a href="#低流量反例" class="headerlink" title="低流量反例"></a>低流量反例</h3><p>一个每小时只有 10 个请求的服务，单次失败就形成 10% 小时错误率。对于严格 SLO，它可能计算出极高 burn rate，但单个样本的统计稳定性很差。Google SRE Workbook 也专门提醒 multi-window burn 方法在低流量服务上会遇到问题，并给出合并服务、合成流量或调整产品影响等方向。</p>
+<p>工程上还可以：</p>
+<ul>
+<li>对不可重试高价值请求逐事件处置，而不是等待比例；</li>
+<li>在 Page 条件外增加最小坏事件数，但记录由此增加的检测延迟；</li>
+<li>对可合并的同质任务使用更长窗口；</li>
+<li>让合成探针验证基础可用性，同时明确它不代表真实任务分布；</li>
+<li>将统计不确定性标记为 <code>low_traffic</code>，交给值班手册处理。</li>
+</ul>
+<h2 id="十五、Burn-rate：预算正在以多快的速度消耗"><a href="#十五、Burn-rate：预算正在以多快的速度消耗" class="headerlink" title="十五、Burn rate：预算正在以多快的速度消耗"></a>十五、Burn rate：预算正在以多快的速度消耗</h2><p>某观察窗的 burn rate 定义为“窗口坏率除以 SLO 允许坏比例”：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">burn_rate_w = observed_bad_ratio_w / allowed_bad_ratio</span><br><span class="line">            = (B_w / (G_w + B_w)) / (1 - S)</span><br></pre></td></tr></table></figure>
+
+<p>解释：</p>
+<ul>
+<li><code>burn_rate = 0</code>：当前窗没有已知坏事件；</li>
+<li><code>burn_rate = 1</code>：若持续整个 SLO 周期，恰好耗完预算；</li>
+<li><code>burn_rate = 10</code>：若当前速率持续，预算消耗速度是基准的十倍；</li>
+<li>负值或分母为零是实现错误；没有有效事件时状态是 no data。</li>
+</ul>
+<p>只有在流量相对稳定、事件权重相同且窗口按时间定义时，观察窗实际消耗的完整周期预算份额才可近似为：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">window_budget_fraction_approx = burn_rate_w × window_duration / SLO_period</span><br></pre></td></tr></table></figure>
+
+<p>这只是用时间占比代替流量占比的近似。更稳妥的事件实现使用 <code>B_w / allowed_bad_events_P</code>，尤其是在昼夜流量差异大、任务权重不同或标签批量到达时。若无法得到完整周期允许坏事件数，应把结果标成估计值并公开流量稳定假设。</p>
+<h3 id="Burn-rate-不是错误率"><a href="#Burn-rate-不是错误率" class="headerlink" title="Burn rate 不是错误率"></a>Burn rate 不是错误率</h3><p>相同 1% 错误率，对 99% SLO 的 burn rate 是 1，对 99.9% SLO 的 burn rate 是 10。告警必须绑定具体 SLO target 和版本，不能只传一个没有上下文的 <code>burn=10</code>。</p>
+<h3 id="Burn-rate-不是根因"><a href="#Burn-rate-不是根因" class="headerlink" title="Burn rate 不是根因"></a>Burn rate 不是根因</h3><p>高 burn 只说明用户结果正在快速偏离目标。模型版本、依赖超时、标签规则变化、流量构成、数据丢失都可能造成它。Page 标题应写“任务时限 SLO 快速消耗”，而不是“模型供应商故障”。</p>
+<h2 id="十六、为什么要同时看长窗与短窗"><a href="#十六、为什么要同时看长窗与短窗" class="headerlink" title="十六、为什么要同时看长窗与短窗"></a>十六、为什么要同时看长窗与短窗</h2><p>只看短窗容易被瞬时噪声触发；只看长窗会在事故恢复后长时间保持告警。multi-window 条件用同一 burn threshold 同时约束长窗和短窗：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">page_fast = burn_rate_1h &gt; R_fast AND burn_rate_5m &gt; R_fast</span><br><span class="line">page_slow = burn_rate_6h &gt; R_slow AND burn_rate_30m &gt; R_slow</span><br><span class="line">ticket    = burn_rate_3d &gt; R_ticket AND burn_rate_6h &gt; R_ticket</span><br></pre></td></tr></table></figure>
+
+<p>长窗确认已经消耗了值得关注的预算，短窗确认问题仍在发生。不同级别之间再做抑制，避免一个事故同时发出三条通知。</p>
+<p><img src="/images/ai-quality/ai-46-multiwindow-burn-alerts.svg" alt="AI服务多窗口Burn Rate与告警分级"></p>
+<h3 id="Google-数值的严格适用边界"><a href="#Google-数值的严格适用边界" class="headerlink" title="Google 数值的严格适用边界"></a>Google 数值的严格适用边界</h3><p>Google SRE Workbook 的示例以 <strong>99.9% SLO、30 天周期</strong>推导，并把以下组合作为其 SLO 告警配置的起始参数：</p>
+<table>
+<thead>
+<tr>
+<th>原文示例级别</th>
+<th align="right">长窗</th>
+<th align="right">短窗</th>
+<th align="right">Burn rate</th>
+<th align="right">对应预算消耗</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Page</td>
+<td align="right">1 小时</td>
+<td align="right">5 分钟</td>
+<td align="right">14.4</td>
+<td align="right">2%</td>
+</tr>
+<tr>
+<td>Page</td>
+<td align="right">6 小时</td>
+<td align="right">30 分钟</td>
+<td align="right">6</td>
+<td align="right">5%</td>
+</tr>
+<tr>
+<td>Ticket</td>
+<td align="right">3 天</td>
+<td align="right">6 小时</td>
+<td align="right">1</td>
+<td align="right">10%</td>
+</tr>
+</tbody></table>
+<p>这些数字只能解释为该文档条件下的设计示例与起点，<strong>不是通用行业标准</strong>。改变 SLO 周期、目标、流量、值班能力、用户损失、标签时延或允许响应时间后，都应重新推导和仿真。</p>
+<p>以表中第一行为例，30 天是 720 小时；在流量稳定近似下，<code>14.4 × 1 / 720 = 0.02</code>，所以 1 小时窗口对应约 2% 的完整周期预算，而不是“消耗了 14.4 倍完整周期预算”。<code>14.4</code> 表示相对允许坏比例的燃烧速度倍数。</p>
+<p>例如，若希望在周期 <code>P</code> 中，窗口 <code>w</code> 持续异常时消耗预算份额 <code>q</code> 后通知，可先计算候选：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">R = q × P / w</span><br></pre></td></tr></table></figure>
+
+<p>然后用历史与合成时间序列评估检测时间、精度、召回、重置时间和 Page 负荷。公式只生成候选阈值，不能替代运营决策。</p>
+<h2 id="十七、语义质量为什么通常不适合直接套实时-Page"><a href="#十七、语义质量为什么通常不适合直接套实时-Page" class="headerlink" title="十七、语义质量为什么通常不适合直接套实时 Page"></a>十七、语义质量为什么通常不适合直接套实时 Page</h2><p>语义质量往往具备三个特征：标签迟到、样本较少、判定需要裁决。把每批质检下降直接接到 pager，会产生不稳定且不可立即处置的通知。</p>
+<h3 id="适合-Page-的质量相关情况"><a href="#适合-Page-的质量相关情况" class="headerlink" title="适合 Page 的质量相关情况"></a>适合 Page 的质量相关情况</h3><ul>
+<li>确定性后置条件显示大量任务产生同类错误副作用；</li>
+<li>高风险安全性质被可靠探针或策略执行日志直接证明突破；</li>
+<li>新版本上线后，在线可验证的不变量快速失败，且有明确回滚动作；</li>
+<li>标签流水线本身故障会让关键发布在错误数据上自动继续，且值班能立即恢复。</li>
+</ul>
+<h3 id="更适合工单或工作时段通知的情况"><a href="#更适合工单或工作时段通知的情况" class="headerlink" title="更适合工单或工作时段通知的情况"></a>更适合工单或工作时段通知的情况</h3><ul>
+<li>人工抽样正确率在一批标签中低于目标；</li>
+<li>某语言切片的质量趋势缓慢下降；</li>
+<li>标签覆盖率不足但没有证据表明用户结果已经恶化；</li>
+<li>Judge 与人工分歧率升高，需要重新校准 rubric；</li>
+<li>长尾场景在一周窗口内累积了少量失败。</li>
+</ul>
+<h3 id="应只进入报告而非告警的情况"><a href="#应只进入报告而非告警的情况" class="headerlink" title="应只进入报告而非告警的情况"></a>应只进入报告而非告警的情况</h3><ul>
+<li>样本量低于事先定义的最低解释条件；</li>
+<li>标签未成熟；</li>
+<li>单次非高风险主观维度评分波动；</li>
+<li>没有 owner、没有运行手册、也没有立即动作的探索性指标。</li>
+</ul>
+<p>关键原则是：Page 要同时满足<strong>用户影响可信、需要尽快响应、值班人有可执行动作</strong>。异常严重度与通知紧迫度相关，却不是同一个字段。</p>
+<h2 id="十八、告警分级：按响应时限与可逆性设计"><a href="#十八、告警分级：按响应时限与可逆性设计" class="headerlink" title="十八、告警分级：按响应时限与可逆性设计"></a>十八、告警分级：按响应时限与可逆性设计</h2><p>下面是一套构造分级，组织应按自身事件管理制度改名和调整：</p>
+<table>
+<thead>
+<tr>
+<th>级别</th>
+<th>典型条件</th>
+<th>通知</th>
+<th>期望动作</th>
+<th>决策 owner</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>SEV-0</td>
+<td>已证实越权副作用、敏感数据外发、不可逆高损失</td>
+<td>安全与事故 Page</td>
+<td>立即隔离、撤销能力、启动事故指挥</td>
+<td>Incident Commander &#x2F; Security</td>
+</tr>
+<tr>
+<td>SEV-1</td>
+<td>关键 Task SLO 快速 burn，数小时内可能耗尽预算</td>
+<td>服务 Page</td>
+<td>止损、回滚、限流或切换已验证降级</td>
+<td>Service On-call</td>
+</tr>
+<tr>
+<td>SEV-2</td>
+<td>慢速 burn、批量质量下降、覆盖不足</td>
+<td>工单与工作时通知</td>
+<td>分析切片、补标、安排修复与复测</td>
+<td>Service &#x2F; Quality Owner</td>
+</tr>
+<tr>
+<td>SEV-3</td>
+<td>趋势、容量或非关键切片偏移</td>
+<td>Dashboard &#x2F; 周报</td>
+<td>进入计划和复审</td>
+<td>Product &#x2F; Tech Lead</td>
+</tr>
+</tbody></table>
+<h3 id="1-告警载荷"><a href="#1-告警载荷" class="headerlink" title="1. 告警载荷"></a>1. 告警载荷</h3><p>每条通知至少包含：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">slo_name + version</span><br><span class="line">scope and affected journey</span><br><span class="line">long/short window good, bad, unknown, excluded counts</span><br><span class="line">target, observed SLI, burn rate, remaining budget</span><br><span class="line">telemetry freshness and low-traffic flag</span><br><span class="line">first observed time, current duration</span><br><span class="line">recent releases/config/model/prompt/retrieval versions</span><br><span class="line">runbook, dashboard, trace query, owner and escalation target</span><br></pre></td></tr></table></figure>
+
+<p>不得只发送“错误率高”。值班人在一分钟内应能知道受影响对象、证据是否新鲜、先执行哪一步和谁拥有回滚权限。</p>
+<h3 id="2-去重与抑制"><a href="#2-去重与抑制" class="headerlink" title="2. 去重与抑制"></a>2. 去重与抑制</h3><p>同一 SLO 的 fast Page 触发后，slow Page 和 ticket 应被抑制；全局故障触发后，按实例的子告警可以聚合。抑制必须有明确结束条件，恢复后不能永久静默。</p>
+<p>依赖告警可以作为上下文附加，不能自动抑制用户 SLO 告警到不可见。即使根因在外部依赖，服务 owner 仍需要评估降级、流量和用户沟通。</p>
+<h3 id="3-恢复通知"><a href="#3-恢复通知" class="headerlink" title="3. 恢复通知"></a>3. 恢复通知</h3><p>短窗降到阈值下可以结束 Page，但不代表预算已经恢复。恢复通知应区分：</p>
+<ul>
+<li><code>incident_signal_cleared</code>：当前快速消耗停止；</li>
+<li><code>slo_back_in_budget</code>：滚动窗口重新满足目标；</li>
+<li><code>release_freeze_lifted</code>：有权 owner 按政策批准解冻。</li>
+</ul>
+<p>三者可能相隔数小时或数周。</p>
+<h2 id="十九、Owner-模型：指标、服务和决定分别有人负责"><a href="#十九、Owner-模型：指标、服务和决定分别有人负责" class="headerlink" title="十九、Owner 模型：指标、服务和决定分别有人负责"></a>十九、Owner 模型：指标、服务和决定分别有人负责</h2><p>“AI 平台团队负责”通常过于模糊。至少建立六类 owner：</p>
+<table>
+<thead>
+<tr>
+<th>对象</th>
+<th>主要职责</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Service owner</td>
+<td>生产服务、容量、依赖、降级与值班</td>
+</tr>
+<tr>
+<td>Product owner</td>
+<td>用户旅程、目标值、例外风险与功能优先级</td>
+</tr>
+<tr>
+<td>SLI data owner</td>
+<td>事件契约、完整性、时钟、回填与血缘</td>
+</tr>
+<tr>
+<td>Quality owner</td>
+<td>rubric、采样、标注、裁决与覆盖</td>
+</tr>
+<tr>
+<td>Alert rule owner</td>
+<td>规则代码、测试、路由、抑制和 Page 负荷</td>
+</tr>
+<tr>
+<td>Release authority</td>
+<td>冻结、豁免、解冻与审计决定</td>
+</tr>
+</tbody></table>
+<p>一个人可以兼任多个角色，但职责不能消失。SLO 文档应记录个人以外的稳定团队标识、值班队列和升级路径。</p>
+<h3 id="RACI-反例"><a href="#RACI-反例" class="headerlink" title="RACI 反例"></a>RACI 反例</h3><p>若质量团队能看到语义下降，却无权回滚；平台值班能回滚模型，却不知道业务 rubric；产品经理能批准风险，却不在告警路由中，那么每个人都“关注”指标，实际上没有人能闭环。演练时应验证从 Page 到有权限动作的完整链路。</p>
+<h2 id="二十、错误预算政策：冻结是风险控制，不是惩罚"><a href="#二十、错误预算政策：冻结是风险控制，不是惩罚" class="headerlink" title="二十、错误预算政策：冻结是风险控制，不是惩罚"></a>二十、错误预算政策：冻结是风险控制，不是惩罚</h2><p>Google SRE Workbook 提供的 <strong>Example Error Budget Policy</strong> 明确标为示例。该示例在前四周预算超出后暂停除 P0 与安全修复外的变更，并强调暂停变更不是惩罚，而是允许团队在数据表明可靠性更重要时集中投入。本文借鉴其政策结构，但不复制数值或适用范围。</p>
+<p>AI 服务的预算政策应明确：</p>
+<ol>
+<li>哪个 SLO 状态触发 <code>release_at_risk</code>、<code>frozen</code> 或 <code>manual_approval</code>。</li>
+<li>冻结范围是模型、Prompt、检索索引、工具、应用代码，还是全部生产变化。</li>
+<li>哪些修复性变更、安全补丁和数据纠正可以继续。</li>
+<li>谁能批准例外，例外最长多久，必须附哪些证据。</li>
+<li>如何验证一次变更会减少而不是增加风险。</li>
+<li>何时解冻，是当前 burn 停止、预算重新为正，还是完成指定行动项。</li>
+<li>质量标签迟到时，发布证据需要成熟到什么程度。</li>
+<li>多个服务共享依赖时，预算责任怎样分配而不互相甩锅。</li>
+</ol>
+<h3 id="1-冻结范围要与故障域匹配"><a href="#1-冻结范围要与故障域匹配" class="headerlink" title="1. 冻结范围要与故障域匹配"></a>1. 冻结范围要与故障域匹配</h3><p>若错误来自检索索引更新，不一定要阻止一个独立的监控文案发布；若无法证明隔离，应默认进入人工审批。冻结粒度越细，越需要可靠的变更血缘和依赖图。</p>
+<h3 id="2-修复发布也要门禁"><a href="#2-修复发布也要门禁" class="headerlink" title="2. 修复发布也要门禁"></a>2. 修复发布也要门禁</h3><p>预算耗尽时允许可靠性修复，不等于跳过测试。修复应具备最小差异、可回滚、针对首错性质的回归、影子或小流量验证和明确停止条件。</p>
+<h3 id="3-安全修复优先级"><a href="#3-安全修复优先级" class="headerlink" title="3. 安全修复优先级"></a>3. 安全修复优先级</h3><p>安全补丁可能短期增加可用性风险。政策应让安全 owner 与服务 owner共同评估，而不是让可用性预算机械阻止必要补丁。决定和接受的剩余风险必须记录。</p>
+<h2 id="二十一、质量-SLO-与发布门禁的组合"><a href="#二十一、质量-SLO-与发布门禁的组合" class="headerlink" title="二十一、质量 SLO 与发布门禁的组合"></a>二十一、质量 SLO 与发布门禁的组合</h2><p>由于标签迟到，质量门禁通常分三阶段：</p>
+<h3 id="1-离线发布集"><a href="#1-离线发布集" class="headerlink" title="1. 离线发布集"></a>1. 离线发布集</h3><p>固定、版本化、有真值的代表性和高风险集合必须通过。它能快速阻止已知回归，但不能证明生产分布质量。</p>
+<h3 id="2-影子与灰度样本"><a href="#2-影子与灰度样本" class="headerlink" title="2. 影子与灰度样本"></a>2. 影子与灰度样本</h3><p>新旧版本在同一任务 cohort 上生成候选，使用确定性断言和盲化标注比较。需要防止只标“有趣”样本，并报告每个切片的覆盖。</p>
+<h3 id="3-生产迟到结果"><a href="#3-生产迟到结果" class="headerlink" title="3. 生产迟到结果"></a>3. 生产迟到结果</h3><p>发布后持续连接真实业务终态与人工标签。当成熟 cohort 低于目标或关键切片失效时，按工单、暂停扩量或回滚政策处理。不能因为发布已经完成就把迟到标签从版本归因中剥离。</p>
+<p>一个构造门禁可以是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">offline critical invariants: 100% pass</span><br><span class="line">offline stratified quality: target met with required sample plan</span><br><span class="line">shadow deterministic checks: no regression</span><br><span class="line">canary request/task SLO: no fast-burn Page</span><br><span class="line">canary label coverage: &gt;= approved minimum by deadline</span><br><span class="line">canary labeled quality: target met; no critical slice regression</span><br></pre></td></tr></table></figure>
+
+<p>数值必须由产品风险和样本设计确定。样本不足时结论是等待、补标或由授权人接受不确定性，不是自动通过。</p>
+<h2 id="二十二、观测、推断与决策要在事故记录中分栏"><a href="#二十二、观测、推断与决策要在事故记录中分栏" class="headerlink" title="二十二、观测、推断与决策要在事故记录中分栏"></a>二十二、观测、推断与决策要在事故记录中分栏</h2><p>下面这种写法混淆了证据层级：</p>
+<blockquote>
+<p>告警证明新模型导致退款答案变差，所以已回滚。</p>
+</blockquote>
+<p>更可审计的写法是：</p>
+<table>
+<thead>
+<tr>
+<th>层级</th>
+<th>记录</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>观测</td>
+<td><code>refund_task_quality/v12</code> 的 6 小时成熟样本中 42&#x2F;300 bad，标签覆盖 18%；上一成熟 cohort 为 9&#x2F;310；模型版本在 14:05 从 A 切到 B</td>
+</tr>
+<tr>
+<td>推断</td>
+<td>时间相关且失败集中在新版，但检索语料与标签 rubric 同期也有变更，模型是候选原因而非已证实根因</td>
+</tr>
+<tr>
+<td>决策</td>
+<td>由发布 authority 在 15:10 暂停 B 扩量并回到 A，以降低继续暴露；同时冻结 rubric 与索引版本做配对复测</td>
+</tr>
+</tbody></table>
+<p>回滚可能是正确止损动作，即使根因尚未完全证实。关键是不要把决策需要的“足够证据”和事后根因分析需要的“完整证据”混成同一门槛。</p>
+<h2 id="二十三、监控数据契约：指标新鲜度本身也是可靠性对象"><a href="#二十三、监控数据契约：指标新鲜度本身也是可靠性对象" class="headerlink" title="二十三、监控数据契约：指标新鲜度本身也是可靠性对象"></a>二十三、监控数据契约：指标新鲜度本身也是可靠性对象</h2><p>一个 SLO 看板可能显示绿色，只因为聚合任务停了。至少要监控以下元指标：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">ingress_to_terminal_gap</span><br><span class="line">event_duplicate_rate</span><br><span class="line">event_late_arrival_rate</span><br><span class="line">classification_unknown_rate</span><br><span class="line">metric_last_success_timestamp</span><br><span class="line">label_queue_age</span><br><span class="line">label_coverage_by_required_slice</span><br><span class="line">rule_evaluation_duration_and_failures</span><br><span class="line">alert_delivery_success_and_latency</span><br></pre></td></tr></table></figure>
+
+<h3 id="1-双入口计数"><a href="#1-双入口计数" class="headerlink" title="1. 双入口计数"></a>1. 双入口计数</h3><p>在用户承诺边界记录 candidate，在终态记录 result。两者通过稳定 ID 对账。仅采结果会漏掉无结果故障；仅采入口无法判断最终体验。</p>
+<h3 id="2-单调-Counter-与受控标签"><a href="#2-单调-Counter-与受控标签" class="headerlink" title="2. 单调 Counter 与受控标签"></a>2. 单调 Counter 与受控标签</h3><p>Good、bad、unknown、excluded 适合用单调 Counter 累计，再由监控系统计算窗口增量。<code>task_id</code>、<code>user_id</code>、Prompt 文本等高基数字段留在日志或 Trace，不作为时间序列标签。指标标签只保留受控低基数维度，如 SLO 版本、任务类型、风险层、地区和 reason class。</p>
+<h3 id="3-日志与指标同源判定"><a href="#3-日志与指标同源判定" class="headerlink" title="3. 日志与指标同源判定"></a>3. 日志与指标同源判定</h3><p>请求完成时由同一个分类库同时写结构化事件和递增指标：指标用于快速告警，事件用于重放与定位。若两个系统各自复制一套 5xx、超时和排除规则，SLO 报表与 Page 很快会不一致。</p>
+<h3 id="4-迟到与回填"><a href="#4-迟到与回填" class="headerlink" title="4. 迟到与回填"></a>4. 迟到与回填</h3><p>实时指标允许小范围迟到修正，结算账本保留最终事件。对质量标签使用明确 watermark，例如“只结算 <code>labeled_at &lt;= report_cutoff</code> 的标签”。每次回填生成 revision 和差异说明，不覆盖已作决策时的快照。</p>
+<h3 id="5-规则版本"><a href="#5-规则版本" class="headerlink" title="5. 规则版本"></a>5. 规则版本</h3><p>一条 reason code 从 bad 改为 excluded 会直接提高 SLI。此类变更必须像代码一样评审，并在历史固定样本上展示前后差异、受影响数量和业务理由。不能为了让预算恢复而临时改分母。</p>
+<h2 id="二十四、自动化策略：从事件单测到值班通知演练"><a href="#二十四、自动化策略：从事件单测到值班通知演练" class="headerlink" title="二十四、自动化策略：从事件单测到值班通知演练"></a>二十四、自动化策略：从事件单测到值班通知演练</h2><p>Google SRE Workbook 的 Monitoring 章节建议分三层测试监控：验证程序上报、验证规则计算、验证告警路由。AI 服务可以把它扩展成六层。</p>
+<h3 id="1-事件生产单测"><a href="#1-事件生产单测" class="headerlink" title="1. 事件生产单测"></a>1. 事件生产单测</h3><p>对每个终态验证 good&#x2F;bad&#x2F;unknown&#x2F;excluded 与 reason code。重点覆盖异常路径：连接中断、客户端取消、部分流、超时后迟到完成、人工接管、重复任务和策略拒绝。</p>
+<h3 id="2-分类器契约测试"><a href="#2-分类器契约测试" class="headerlink" title="2. 分类器契约测试"></a>2. 分类器契约测试</h3><p>使用固定原始事件夹具运行版本化分类器，断言每个 subject 只有一个最终分类；Unknown 不会误入 good；excluded 必须有允许的 reason 和批准来源。</p>
+<h3 id="3-聚合数学测试"><a href="#3-聚合数学测试" class="headerlink" title="3. 聚合数学测试"></a>3. 聚合数学测试</h3><p>验证窗口边界、时区、滚动删除、分数精度、无数据、目标为 100% 的非法 burn 计算、低流量标记和迟到修订。使用 <code>Fraction</code>、Decimal 或足够精确的计数比值，避免过早舍入。</p>
+<h3 id="4-合成时间序列测试"><a href="#4-合成时间序列测试" class="headerlink" title="4. 合成时间序列测试"></a>4. 合成时间序列测试</h3><p>构造正常、短尖峰、持续慢烧、故障恢复和交替抖动，断言 multi-window 何时触发、何时恢复以及哪个级别被抑制。每次修改阈值都要跑历史事件回放，估算 Page 数和漏检案例。</p>
+<h3 id="5-路由测试"><a href="#5-路由测试" class="headerlink" title="5. 路由测试"></a>5. 路由测试</h3><p>在非生产通知通道发送带真实标签结构的测试告警，确认团队、地区、服务和严重度能路由到预期队列；验证静默、维护窗、升级与恢复通知不会永久吞掉 Page。</p>
+<h3 id="6-发布政策演练"><a href="#6-发布政策演练" class="headerlink" title="6. 发布政策演练"></a>6. 发布政策演练</h3><p>在测试环境注入预算耗尽状态，确认发布控制器阻止受影响范围、允许经批准的修复路径、记录豁免并在过期后重新阻止。不要等真实事故才第一次验证 owner 是否有回滚权限。</p>
+<h2 id="二十五、故障注入：测试的是证据链和决策链"><a href="#二十五、故障注入：测试的是证据链和决策链" class="headerlink" title="二十五、故障注入：测试的是证据链和决策链"></a>二十五、故障注入：测试的是证据链和决策链</h2><h3 id="1-丢终态事件"><a href="#1-丢终态事件" class="headerlink" title="1. 丢终态事件"></a>1. 丢终态事件</h3><p>让入口事件正常、一个原本为 bad 的终态写入失败。期望：任务进入 unknown，known SLI 数值可能因 bad 离开分母而假性上升，但 unknown rate 上升；一旦严格超过 <code>max_unknown_rate</code>，发布门禁进入 HOLD&#x2F;BLOCK，决策不会随这个假性改善而放宽。</p>
+<h3 id="2-重复投递"><a href="#2-重复投递" class="headerlink" title="2. 重复投递"></a>2. 重复投递</h3><p>同一 <code>classification_id</code> 重放多次。期望：幂等去重，计数不增加；重复率有诊断指标。</p>
+<h3 id="3-时钟偏差"><a href="#3-时钟偏差" class="headerlink" title="3. 时钟偏差"></a>3. 时钟偏差</h3><p>把某节点墙钟拨快，制造 <code>completed_at &lt; accepted_at</code>。期望：样本拒绝并标记 telemetry invalid，不能取绝对值或截为零。</p>
+<h3 id="4-重试风暴"><a href="#4-重试风暴" class="headerlink" title="4. 重试风暴"></a>4. 重试风暴</h3><p>第一次 attempt 大量超时，第二次成功。期望：task delivery 可能保持，attempt availability 和 retry amplification 明显恶化，端到端时延从第一次接受开始。</p>
+<h3 id="5-标签全断"><a href="#5-标签全断" class="headerlink" title="5. 标签全断"></a>5. 标签全断</h3><p>停止标签导入。期望：质量状态是 insufficient data，coverage 降低；不能显示 100%，也不应因“质量下降”直接 Page 服务值班，除非标签系统本身属于立即恢复职责。</p>
+<h3 id="6-标签偏斜"><a href="#6-标签偏斜" class="headerlink" title="6. 标签偏斜"></a>6. 标签偏斜</h3><p>只让中文低风险样本到达，其他切片迟到。期望：总体 coverage 和必需切片 coverage 同时显示，发布门禁不能被总体样本量掩盖。</p>
+<h3 id="7-规则错误分类"><a href="#7-规则错误分类" class="headerlink" title="7. 规则错误分类"></a>7. 规则错误分类</h3><p>把内部容量 429 错误注入为 excluded。期望：历史夹具和 reason allowlist 测试失败；规则差异审计显示预算变化。</p>
+<h3 id="8-聚合器停滞"><a href="#8-聚合器停滞" class="headerlink" title="8. 聚合器停滞"></a>8. 聚合器停滞</h3><p>停止聚合但保留旧时序。期望：freshness 告警先触发，SLO 状态转 invalid；发布控制器不接受陈旧绿色。</p>
+<h3 id="9-告警路由故障"><a href="#9-告警路由故障" class="headerlink" title="9. 告警路由故障"></a>9. 告警路由故障</h3><p>让 Page endpoint 返回失败。期望：路由系统重试、切换备份并从外部探针发现“通知未送达”，不能只在自身失败日志中记录。</p>
+<h3 id="10-低流量单点失败"><a href="#10-低流量单点失败" class="headerlink" title="10. 低流量单点失败"></a>10. 低流量单点失败</h3><p>在十个请求中注入一个普通可重试失败。期望：显示高 burn 与 low-traffic 标记，按 runbook 核验；若该任务是不可逆高风险事件，则走事件级响应而非等待比例稳定。</p>
+<h2 id="二十六、只用-Python-标准库的-SLI、质量覆盖与多窗口门禁"><a href="#二十六、只用-Python-标准库的-SLI、质量覆盖与多窗口门禁" class="headerlink" title="二十六、只用 Python 标准库的 SLI、质量覆盖与多窗口门禁"></a>二十六、只用 Python 标准库的 SLI、质量覆盖与多窗口门禁</h2><p>下面代码是完整可运行的构造实现。它使用 <code>Fraction</code> 保留比值精度，显式拒绝无真值质量分母，长短窗必须同时超过阈值，并把遥测过期与 unknown coverage 超限作为发布阻断条件。保存为任意 <code>.py</code> 文件后直接运行即可执行确定性示例和全部 <code>unittest</code>，不需要网络或 API Key。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br><span class="line">146</span><br><span class="line">147</span><br><span class="line">148</span><br><span class="line">149</span><br><span class="line">150</span><br><span class="line">151</span><br><span class="line">152</span><br><span class="line">153</span><br><span class="line">154</span><br><span class="line">155</span><br><span class="line">156</span><br><span class="line">157</span><br><span class="line">158</span><br><span class="line">159</span><br><span class="line">160</span><br><span class="line">161</span><br><span class="line">162</span><br><span class="line">163</span><br><span class="line">164</span><br><span class="line">165</span><br><span class="line">166</span><br><span class="line">167</span><br><span class="line">168</span><br><span class="line">169</span><br><span class="line">170</span><br><span class="line">171</span><br><span class="line">172</span><br><span class="line">173</span><br><span class="line">174</span><br><span class="line">175</span><br><span class="line">176</span><br><span class="line">177</span><br><span class="line">178</span><br><span class="line">179</span><br><span class="line">180</span><br><span class="line">181</span><br><span class="line">182</span><br><span class="line">183</span><br><span class="line">184</span><br><span class="line">185</span><br><span class="line">186</span><br><span class="line">187</span><br><span class="line">188</span><br><span class="line">189</span><br><span class="line">190</span><br><span class="line">191</span><br><span class="line">192</span><br><span class="line">193</span><br><span class="line">194</span><br><span class="line">195</span><br><span class="line">196</span><br><span class="line">197</span><br><span class="line">198</span><br><span class="line">199</span><br><span class="line">200</span><br><span class="line">201</span><br><span class="line">202</span><br><span class="line">203</span><br><span class="line">204</span><br><span class="line">205</span><br><span class="line">206</span><br><span class="line">207</span><br><span class="line">208</span><br><span class="line">209</span><br><span class="line">210</span><br><span class="line">211</span><br><span class="line">212</span><br><span class="line">213</span><br><span class="line">214</span><br><span class="line">215</span><br><span class="line">216</span><br><span class="line">217</span><br><span class="line">218</span><br><span class="line">219</span><br><span class="line">220</span><br><span class="line">221</span><br><span class="line">222</span><br><span class="line">223</span><br><span class="line">224</span><br><span class="line">225</span><br><span class="line">226</span><br><span class="line">227</span><br><span class="line">228</span><br><span class="line">229</span><br><span class="line">230</span><br><span class="line">231</span><br><span class="line">232</span><br><span class="line">233</span><br><span class="line">234</span><br><span class="line">235</span><br><span class="line">236</span><br><span class="line">237</span><br><span class="line">238</span><br><span class="line">239</span><br><span class="line">240</span><br><span class="line">241</span><br><span class="line">242</span><br><span class="line">243</span><br><span class="line">244</span><br><span class="line">245</span><br><span class="line">246</span><br><span class="line">247</span><br><span class="line">248</span><br><span class="line">249</span><br><span class="line">250</span><br><span class="line">251</span><br><span class="line">252</span><br><span class="line">253</span><br><span class="line">254</span><br><span class="line">255</span><br><span class="line">256</span><br><span class="line">257</span><br><span class="line">258</span><br><span class="line">259</span><br><span class="line">260</span><br><span class="line">261</span><br><span class="line">262</span><br><span class="line">263</span><br><span class="line">264</span><br><span class="line">265</span><br><span class="line">266</span><br><span class="line">267</span><br><span class="line">268</span><br><span class="line">269</span><br><span class="line">270</span><br><span class="line">271</span><br><span class="line">272</span><br><span class="line">273</span><br><span class="line">274</span><br><span class="line">275</span><br><span class="line">276</span><br><span class="line">277</span><br><span class="line">278</span><br><span class="line">279</span><br><span class="line">280</span><br><span class="line">281</span><br><span class="line">282</span><br><span class="line">283</span><br><span class="line">284</span><br><span class="line">285</span><br><span class="line">286</span><br><span class="line">287</span><br><span class="line">288</span><br><span class="line">289</span><br><span class="line">290</span><br><span class="line">291</span><br><span class="line">292</span><br><span class="line">293</span><br><span class="line">294</span><br><span class="line">295</span><br><span class="line">296</span><br><span class="line">297</span><br><span class="line">298</span><br><span class="line">299</span><br><span class="line">300</span><br><span class="line">301</span><br><span class="line">302</span><br><span class="line">303</span><br><span class="line">304</span><br><span class="line">305</span><br><span class="line">306</span><br><span class="line">307</span><br><span class="line">308</span><br><span class="line">309</span><br><span class="line">310</span><br><span class="line">311</span><br><span class="line">312</span><br><span class="line">313</span><br><span class="line">314</span><br><span class="line">315</span><br><span class="line">316</span><br><span class="line">317</span><br><span class="line">318</span><br><span class="line">319</span><br><span class="line">320</span><br><span class="line">321</span><br><span class="line">322</span><br><span class="line">323</span><br><span class="line">324</span><br><span class="line">325</span><br><span class="line">326</span><br><span class="line">327</span><br><span class="line">328</span><br><span class="line">329</span><br><span class="line">330</span><br><span class="line">331</span><br><span class="line">332</span><br><span class="line">333</span><br><span class="line">334</span><br><span class="line">335</span><br><span class="line">336</span><br><span class="line">337</span><br><span class="line">338</span><br><span class="line">339</span><br><span class="line">340</span><br><span class="line">341</span><br><span class="line">342</span><br><span class="line">343</span><br><span class="line">344</span><br><span class="line">345</span><br><span class="line">346</span><br><span class="line">347</span><br><span class="line">348</span><br><span class="line">349</span><br><span class="line">350</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> __future__ <span class="keyword">import</span> annotations</span><br><span class="line"></span><br><span class="line"><span class="keyword">from</span> dataclasses <span class="keyword">import</span> dataclass, replace</span><br><span class="line"><span class="keyword">from</span> enum <span class="keyword">import</span> Enum</span><br><span class="line"><span class="keyword">from</span> fractions <span class="keyword">import</span> Fraction</span><br><span class="line"><span class="keyword">from</span> typing <span class="keyword">import</span> Iterable, Mapping</span><br><span class="line"><span class="keyword">import</span> unittest</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">InsufficientData</span>(<span class="title class_ inherited__">ValueError</span>):</span><br><span class="line">    <span class="string">&quot;&quot;&quot;The requested conclusion has no admissible denominator.&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">State</span>(<span class="built_in">str</span>, Enum):</span><br><span class="line">    GOOD = <span class="string">&quot;good&quot;</span></span><br><span class="line">    BAD = <span class="string">&quot;bad&quot;</span></span><br><span class="line">    UNKNOWN = <span class="string">&quot;unknown&quot;</span></span><br><span class="line">    EXCLUDED = <span class="string">&quot;excluded&quot;</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">ClassifiedEvent</span>:</span><br><span class="line">    subject_id: <span class="built_in">str</span></span><br><span class="line">    state: State</span><br><span class="line">    reason: <span class="built_in">str</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Counts</span>:</span><br><span class="line">    good: <span class="built_in">int</span> = <span class="number">0</span></span><br><span class="line">    bad: <span class="built_in">int</span> = <span class="number">0</span></span><br><span class="line">    unknown: <span class="built_in">int</span> = <span class="number">0</span></span><br><span class="line">    excluded: <span class="built_in">int</span> = <span class="number">0</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__post_init__</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="keyword">if</span> <span class="built_in">min</span>(<span class="variable language_">self</span>.good, <span class="variable language_">self</span>.bad, <span class="variable language_">self</span>.unknown, <span class="variable language_">self</span>.excluded) &lt; <span class="number">0</span>:</span><br><span class="line">            <span class="keyword">raise</span> ValueError(<span class="string">&quot;counts cannot be negative&quot;</span>)</span><br><span class="line"></span><br><span class="line"><span class="meta">    @classmethod</span></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">from_events</span>(<span class="params">cls, events: Iterable[ClassifiedEvent]</span>) -&gt; <span class="string">&quot;Counts&quot;</span>:</span><br><span class="line">        seen: <span class="built_in">set</span>[<span class="built_in">str</span>] = <span class="built_in">set</span>()</span><br><span class="line">        values = &#123;state: <span class="number">0</span> <span class="keyword">for</span> state <span class="keyword">in</span> State&#125;</span><br><span class="line">        <span class="keyword">for</span> event <span class="keyword">in</span> events:</span><br><span class="line">            <span class="keyword">if</span> event.subject_id <span class="keyword">in</span> seen:</span><br><span class="line">                <span class="keyword">raise</span> ValueError(<span class="string">f&quot;duplicate subject: <span class="subst">&#123;event.subject_id&#125;</span>&quot;</span>)</span><br><span class="line">            seen.add(event.subject_id)</span><br><span class="line">            values[event.state] += <span class="number">1</span></span><br><span class="line">        <span class="keyword">return</span> cls(</span><br><span class="line">            good=values[State.GOOD],</span><br><span class="line">            bad=values[State.BAD],</span><br><span class="line">            unknown=values[State.UNKNOWN],</span><br><span class="line">            excluded=values[State.EXCLUDED],</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line"><span class="meta">    @property</span></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">known</span>(<span class="params">self</span>) -&gt; <span class="built_in">int</span>:</span><br><span class="line">        <span class="keyword">return</span> <span class="variable language_">self</span>.good + <span class="variable language_">self</span>.bad</span><br><span class="line"></span><br><span class="line"><span class="meta">    @property</span></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">candidates</span>(<span class="params">self</span>) -&gt; <span class="built_in">int</span>:</span><br><span class="line">        <span class="keyword">return</span> <span class="variable language_">self</span>.known + <span class="variable language_">self</span>.unknown</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">sli</span>(<span class="params">self</span>) -&gt; Fraction:</span><br><span class="line">        <span class="keyword">if</span> <span class="variable language_">self</span>.known == <span class="number">0</span>:</span><br><span class="line">            <span class="keyword">raise</span> InsufficientData(<span class="string">&quot;SLI has no known good/bad events&quot;</span>)</span><br><span class="line">        <span class="keyword">return</span> Fraction(<span class="variable language_">self</span>.good, <span class="variable language_">self</span>.known)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">unknown_rate</span>(<span class="params">self</span>) -&gt; Fraction:</span><br><span class="line">        <span class="keyword">if</span> <span class="variable language_">self</span>.candidates == <span class="number">0</span>:</span><br><span class="line">            <span class="keyword">raise</span> InsufficientData(<span class="string">&quot;unknown rate has no candidates&quot;</span>)</span><br><span class="line">        <span class="keyword">return</span> Fraction(<span class="variable language_">self</span>.unknown, <span class="variable language_">self</span>.candidates)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">burn_rate</span>(<span class="params">self, target: Fraction</span>) -&gt; Fraction:</span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">not</span> Fraction(<span class="number">0</span>) &lt; target &lt; Fraction(<span class="number">1</span>):</span><br><span class="line">            <span class="keyword">raise</span> ValueError(<span class="string">&quot;burn-rate target must be between 0 and 1&quot;</span>)</span><br><span class="line">        <span class="keyword">if</span> <span class="variable language_">self</span>.known == <span class="number">0</span>:</span><br><span class="line">            <span class="keyword">raise</span> InsufficientData(<span class="string">&quot;burn rate has no known events&quot;</span>)</span><br><span class="line">        observed_bad = Fraction(<span class="variable language_">self</span>.bad, <span class="variable language_">self</span>.known)</span><br><span class="line">        <span class="keyword">return</span> observed_bad / (Fraction(<span class="number">1</span>) - target)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">QualitySummary</span>:</span><br><span class="line">    eligible: <span class="built_in">frozenset</span>[<span class="built_in">str</span>]</span><br><span class="line">    labels: Mapping[<span class="built_in">str</span>, <span class="built_in">bool</span>]</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__post_init__</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        outside = <span class="built_in">set</span>(<span class="variable language_">self</span>.labels) - <span class="built_in">set</span>(<span class="variable language_">self</span>.eligible)</span><br><span class="line">        <span class="keyword">if</span> outside:</span><br><span class="line">            <span class="keyword">raise</span> ValueError(<span class="string">f&quot;labels outside eligible cohort: <span class="subst">&#123;<span class="built_in">sorted</span>(outside)&#125;</span>&quot;</span>)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">quality</span>(<span class="params">self</span>) -&gt; Fraction:</span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">not</span> <span class="variable language_">self</span>.labels:</span><br><span class="line">            <span class="keyword">raise</span> InsufficientData(<span class="string">&quot;no admissible quality labels&quot;</span>)</span><br><span class="line">        passed = <span class="built_in">sum</span>(<span class="number">1</span> <span class="keyword">for</span> verdict <span class="keyword">in</span> <span class="variable language_">self</span>.labels.values() <span class="keyword">if</span> verdict)</span><br><span class="line">        <span class="keyword">return</span> Fraction(passed, <span class="built_in">len</span>(<span class="variable language_">self</span>.labels))</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">coverage</span>(<span class="params">self</span>) -&gt; Fraction:</span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">not</span> <span class="variable language_">self</span>.eligible:</span><br><span class="line">            <span class="keyword">raise</span> InsufficientData(<span class="string">&quot;quality cohort is empty&quot;</span>)</span><br><span class="line">        <span class="keyword">return</span> Fraction(<span class="built_in">len</span>(<span class="variable language_">self</span>.labels), <span class="built_in">len</span>(<span class="variable language_">self</span>.eligible))</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">known_good_share</span>(<span class="params">self</span>) -&gt; Fraction:</span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">not</span> <span class="variable language_">self</span>.eligible:</span><br><span class="line">            <span class="keyword">raise</span> InsufficientData(<span class="string">&quot;quality cohort is empty&quot;</span>)</span><br><span class="line">        passed = <span class="built_in">sum</span>(<span class="number">1</span> <span class="keyword">for</span> verdict <span class="keyword">in</span> <span class="variable language_">self</span>.labels.values() <span class="keyword">if</span> verdict)</span><br><span class="line">        <span class="keyword">return</span> Fraction(passed, <span class="built_in">len</span>(<span class="variable language_">self</span>.eligible))</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">MetricWindow</span>:</span><br><span class="line">    name: <span class="built_in">str</span></span><br><span class="line">    counts: Counts</span><br><span class="line">    age_minutes: <span class="built_in">int</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__post_init__</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="keyword">if</span> <span class="variable language_">self</span>.age_minutes &lt; <span class="number">0</span>:</span><br><span class="line">            <span class="keyword">raise</span> ValueError(<span class="string">&quot;metric age cannot be negative&quot;</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">AlertPair</span>:</span><br><span class="line">    long_window: MetricWindow</span><br><span class="line">    short_window: MetricWindow</span><br><span class="line">    threshold: Fraction</span><br><span class="line">    min_known: <span class="built_in">int</span> = <span class="number">1</span></span><br><span class="line">    max_age_minutes: <span class="built_in">int</span> = <span class="number">5</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">fires</span>(<span class="params">self, target: Fraction</span>) -&gt; <span class="built_in">bool</span>:</span><br><span class="line">        windows = (<span class="variable language_">self</span>.long_window, <span class="variable language_">self</span>.short_window)</span><br><span class="line">        <span class="keyword">if</span> <span class="built_in">any</span>(window.age_minutes &gt; <span class="variable language_">self</span>.max_age_minutes <span class="keyword">for</span> window <span class="keyword">in</span> windows):</span><br><span class="line">            <span class="keyword">raise</span> InsufficientData(<span class="string">&quot;alert input is stale&quot;</span>)</span><br><span class="line">        <span class="keyword">if</span> <span class="built_in">any</span>(window.counts.known &lt; <span class="variable language_">self</span>.min_known <span class="keyword">for</span> window <span class="keyword">in</span> windows):</span><br><span class="line">            <span class="keyword">raise</span> InsufficientData(<span class="string">&quot;alert input is low traffic&quot;</span>)</span><br><span class="line">        <span class="keyword">return</span> <span class="built_in">all</span>(</span><br><span class="line">            window.counts.burn_rate(target) &gt;= <span class="variable language_">self</span>.threshold</span><br><span class="line">            <span class="keyword">for</span> window <span class="keyword">in</span> windows</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">ReleaseDecision</span>(<span class="built_in">str</span>, Enum):</span><br><span class="line">    ALLOW = <span class="string">&quot;allow&quot;</span></span><br><span class="line">    FREEZE_RELIABILITY = <span class="string">&quot;freeze_reliability&quot;</span></span><br><span class="line">    FREEZE_QUALITY = <span class="string">&quot;freeze_quality&quot;</span></span><br><span class="line">    BLOCK_INSUFFICIENT_DATA = <span class="string">&quot;block_insufficient_data&quot;</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">GateInput</span>:</span><br><span class="line">    period: MetricWindow</span><br><span class="line">    reliability_target: Fraction</span><br><span class="line">    quality: QualitySummary</span><br><span class="line">    quality_target: Fraction</span><br><span class="line">    minimum_label_coverage: Fraction</span><br><span class="line">    max_unknown_rate: Fraction</span><br><span class="line">    maximum_metric_age_minutes: <span class="built_in">int</span> = <span class="number">5</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">release_gate</span>(<span class="params">value: GateInput</span>) -&gt; ReleaseDecision:</span><br><span class="line">    <span class="keyword">if</span> value.period.age_minutes &gt; value.maximum_metric_age_minutes:</span><br><span class="line">        <span class="keyword">return</span> ReleaseDecision.BLOCK_INSUFFICIENT_DATA</span><br><span class="line">    <span class="keyword">try</span>:</span><br><span class="line">        reliability = value.period.counts.sli()</span><br><span class="line">        unknown_rate = value.period.counts.unknown_rate()</span><br><span class="line">        quality = value.quality.quality()</span><br><span class="line">        coverage = value.quality.coverage()</span><br><span class="line">    <span class="keyword">except</span> InsufficientData:</span><br><span class="line">        <span class="keyword">return</span> ReleaseDecision.BLOCK_INSUFFICIENT_DATA</span><br><span class="line">    <span class="keyword">if</span> unknown_rate &gt; value.max_unknown_rate:</span><br><span class="line">        <span class="keyword">return</span> ReleaseDecision.BLOCK_INSUFFICIENT_DATA</span><br><span class="line">    <span class="keyword">if</span> reliability &lt; value.reliability_target:</span><br><span class="line">        <span class="keyword">return</span> ReleaseDecision.FREEZE_RELIABILITY</span><br><span class="line">    <span class="keyword">if</span> coverage &lt; value.minimum_label_coverage:</span><br><span class="line">        <span class="keyword">return</span> ReleaseDecision.BLOCK_INSUFFICIENT_DATA</span><br><span class="line">    <span class="keyword">if</span> quality &lt; value.quality_target:</span><br><span class="line">        <span class="keyword">return</span> ReleaseDecision.FREEZE_QUALITY</span><br><span class="line">    <span class="keyword">return</span> ReleaseDecision.ALLOW</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">inject_dropped_terminal</span>(<span class="params"></span></span><br><span class="line"><span class="params">    events: Iterable[ClassifiedEvent], subject_id: <span class="built_in">str</span></span></span><br><span class="line"><span class="params"></span>) -&gt; <span class="built_in">list</span>[ClassifiedEvent]:</span><br><span class="line">    <span class="string">&quot;&quot;&quot;Simulate an ingress candidate whose terminal evidence was lost.&quot;&quot;&quot;</span></span><br><span class="line">    result: <span class="built_in">list</span>[ClassifiedEvent] = []</span><br><span class="line">    found = <span class="literal">False</span></span><br><span class="line">    <span class="keyword">for</span> event <span class="keyword">in</span> events:</span><br><span class="line">        <span class="keyword">if</span> event.subject_id == subject_id:</span><br><span class="line">            found = <span class="literal">True</span></span><br><span class="line">            result.append(</span><br><span class="line">                ClassifiedEvent(subject_id, State.UNKNOWN, <span class="string">&quot;TERMINAL_EVENT_MISSING&quot;</span>)</span><br><span class="line">            )</span><br><span class="line">        <span class="keyword">else</span>:</span><br><span class="line">            result.append(event)</span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> found:</span><br><span class="line">        <span class="keyword">raise</span> KeyError(subject_id)</span><br><span class="line">    <span class="keyword">return</span> result</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">constructed_example</span>() -&gt; <span class="literal">None</span>:</span><br><span class="line">    events = [</span><br><span class="line">        ClassifiedEvent(<span class="string">f&quot;task-<span class="subst">&#123;number&#125;</span>&quot;</span>, State.GOOD, <span class="string">&quot;COMPLETED&quot;</span>)</span><br><span class="line">        <span class="keyword">for</span> number <span class="keyword">in</span> <span class="built_in">range</span>(<span class="number">995</span>)</span><br><span class="line">    ] + [</span><br><span class="line">        ClassifiedEvent(<span class="string">f&quot;task-<span class="subst">&#123;number&#125;</span>&quot;</span>, State.BAD, <span class="string">&quot;DEADLINE_EXCEEDED&quot;</span>)</span><br><span class="line">        <span class="keyword">for</span> number <span class="keyword">in</span> <span class="built_in">range</span>(<span class="number">995</span>, <span class="number">1000</span>)</span><br><span class="line">    ]</span><br><span class="line">    period = Counts.from_events(events)</span><br><span class="line">    target = Fraction(<span class="number">995</span>, <span class="number">1000</span>)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;构造示例 SLI:&quot;</span>, <span class="built_in">float</span>(period.sli()))</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;构造示例 burn rate:&quot;</span>, <span class="built_in">float</span>(period.burn_rate(target)))</span><br><span class="line"></span><br><span class="line">    eligible = <span class="built_in">frozenset</span>(<span class="string">f&quot;quality-<span class="subst">&#123;number&#125;</span>&quot;</span> <span class="keyword">for</span> number <span class="keyword">in</span> <span class="built_in">range</span>(<span class="number">100</span>))</span><br><span class="line">    labels = &#123;<span class="string">f&quot;quality-<span class="subst">&#123;number&#125;</span>&quot;</span>: number != <span class="number">19</span> <span class="keyword">for</span> number <span class="keyword">in</span> <span class="built_in">range</span>(<span class="number">20</span>)&#125;</span><br><span class="line">    quality = QualitySummary(eligible, labels)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;有标签质量:&quot;</span>, <span class="built_in">float</span>(quality.quality()))</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;标签覆盖率:&quot;</span>, <span class="built_in">float</span>(quality.coverage()))</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">SLOBudgetTests</span>(unittest.TestCase):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_counts_keep_unknown_out_of_sli_but_report_it</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        events = [</span><br><span class="line">            ClassifiedEvent(<span class="string">&quot;a&quot;</span>, State.GOOD, <span class="string">&quot;COMPLETED&quot;</span>),</span><br><span class="line">            ClassifiedEvent(<span class="string">&quot;b&quot;</span>, State.BAD, <span class="string">&quot;TIMEOUT&quot;</span>),</span><br><span class="line">            ClassifiedEvent(<span class="string">&quot;c&quot;</span>, State.UNKNOWN, <span class="string">&quot;MISSING&quot;</span>),</span><br><span class="line">            ClassifiedEvent(<span class="string">&quot;d&quot;</span>, State.EXCLUDED, <span class="string">&quot;APPROVED_DRILL&quot;</span>),</span><br><span class="line">        ]</span><br><span class="line">        counts = Counts.from_events(events)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(counts.sli(), Fraction(<span class="number">1</span>, <span class="number">2</span>))</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(counts.unknown_rate(), Fraction(<span class="number">1</span>, <span class="number">3</span>))</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_dropped_terminal_does_not_improve_sli</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        events = [</span><br><span class="line">            ClassifiedEvent(<span class="string">f&quot;task-<span class="subst">&#123;number&#125;</span>&quot;</span>, State.GOOD, <span class="string">&quot;COMPLETED&quot;</span>)</span><br><span class="line">            <span class="keyword">for</span> number <span class="keyword">in</span> <span class="built_in">range</span>(<span class="number">99</span>)</span><br><span class="line">        ] + [ClassifiedEvent(<span class="string">&quot;task-99&quot;</span>, State.BAD, <span class="string">&quot;TIMEOUT&quot;</span>)]</span><br><span class="line">        before = Counts.from_events(events)</span><br><span class="line">        after = Counts.from_events(inject_dropped_terminal(events, <span class="string">&quot;task-99&quot;</span>))</span><br><span class="line">        quality = QualitySummary(<span class="built_in">frozenset</span>(&#123;<span class="string">&quot;q&quot;</span>&#125;), &#123;<span class="string">&quot;q&quot;</span>: <span class="literal">True</span>&#125;)</span><br><span class="line">        gate = GateInput(</span><br><span class="line">            period=MetricWindow(<span class="string">&quot;30d&quot;</span>, before, <span class="number">1</span>),</span><br><span class="line">            reliability_target=Fraction(<span class="number">99</span>, <span class="number">100</span>),</span><br><span class="line">            quality=quality,</span><br><span class="line">            quality_target=Fraction(<span class="number">1</span>, <span class="number">1</span>),</span><br><span class="line">            minimum_label_coverage=Fraction(<span class="number">1</span>, <span class="number">1</span>),</span><br><span class="line">            max_unknown_rate=Fraction(<span class="number">1</span>, <span class="number">200</span>),</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line">        <span class="variable language_">self</span>.assertGreater(after.sli(), before.sli())</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(release_gate(gate), ReleaseDecision.ALLOW)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(</span><br><span class="line">            release_gate(</span><br><span class="line">                replace(gate, period=MetricWindow(<span class="string">&quot;30d&quot;</span>, after, <span class="number">1</span>))</span><br><span class="line">            ),</span><br><span class="line">            ReleaseDecision.BLOCK_INSUFFICIENT_DATA,</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_unknown_rate_gate_allows_boundary_and_blocks_above</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        value = GateInput(</span><br><span class="line">            period=MetricWindow(</span><br><span class="line">                <span class="string">&quot;30d&quot;</span>, Counts(good=<span class="number">99</span>, unknown=<span class="number">1</span>), age_minutes=<span class="number">1</span></span><br><span class="line">            ),</span><br><span class="line">            reliability_target=Fraction(<span class="number">99</span>, <span class="number">100</span>),</span><br><span class="line">            quality=QualitySummary(<span class="built_in">frozenset</span>(&#123;<span class="string">&quot;q&quot;</span>&#125;), &#123;<span class="string">&quot;q&quot;</span>: <span class="literal">True</span>&#125;),</span><br><span class="line">            quality_target=Fraction(<span class="number">1</span>, <span class="number">1</span>),</span><br><span class="line">            minimum_label_coverage=Fraction(<span class="number">1</span>, <span class="number">1</span>),</span><br><span class="line">            max_unknown_rate=Fraction(<span class="number">1</span>, <span class="number">100</span>),</span><br><span class="line">        )</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(release_gate(value), ReleaseDecision.ALLOW)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(</span><br><span class="line">            release_gate(</span><br><span class="line">                replace(value, max_unknown_rate=Fraction(<span class="number">1</span>, <span class="number">101</span>))</span><br><span class="line">            ),</span><br><span class="line">            ReleaseDecision.BLOCK_INSUFFICIENT_DATA,</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_no_labels_cannot_be_reported_as_perfect_quality</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        summary = QualitySummary(<span class="built_in">frozenset</span>(&#123;<span class="string">&quot;a&quot;</span>, <span class="string">&quot;b&quot;</span>&#125;), &#123;&#125;)</span><br><span class="line">        <span class="keyword">with</span> <span class="variable language_">self</span>.assertRaisesRegex(InsufficientData, <span class="string">&quot;no admissible&quot;</span>):</span><br><span class="line">            summary.quality()</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(summary.coverage(), Fraction(<span class="number">0</span>, <span class="number">1</span>))</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_quality_and_coverage_have_separate_denominators</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        summary = QualitySummary(</span><br><span class="line">            <span class="built_in">frozenset</span>(&#123;<span class="string">&quot;a&quot;</span>, <span class="string">&quot;b&quot;</span>, <span class="string">&quot;c&quot;</span>, <span class="string">&quot;d&quot;</span>&#125;),</span><br><span class="line">            &#123;<span class="string">&quot;a&quot;</span>: <span class="literal">True</span>, <span class="string">&quot;b&quot;</span>: <span class="literal">False</span>&#125;,</span><br><span class="line">        )</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(summary.quality(), Fraction(<span class="number">1</span>, <span class="number">2</span>))</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(summary.coverage(), Fraction(<span class="number">1</span>, <span class="number">2</span>))</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(summary.known_good_share(), Fraction(<span class="number">1</span>, <span class="number">4</span>))</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_multiwindow_requires_long_and_short_windows</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        target = Fraction(<span class="number">99</span>, <span class="number">100</span>)</span><br><span class="line">        long_window = MetricWindow(<span class="string">&quot;1h&quot;</span>, Counts(good=<span class="number">960</span>, bad=<span class="number">40</span>), <span class="number">1</span>)</span><br><span class="line">        quiet_short = MetricWindow(<span class="string">&quot;5m&quot;</span>, Counts(good=<span class="number">100</span>, bad=<span class="number">0</span>), <span class="number">1</span>)</span><br><span class="line">        hot_short = MetricWindow(<span class="string">&quot;5m&quot;</span>, Counts(good=<span class="number">96</span>, bad=<span class="number">4</span>), <span class="number">1</span>)</span><br><span class="line">        threshold = Fraction(<span class="number">3</span>, <span class="number">1</span>)</span><br><span class="line">        <span class="variable language_">self</span>.assertFalse(</span><br><span class="line">            AlertPair(long_window, quiet_short, threshold).fires(target)</span><br><span class="line">        )</span><br><span class="line">        <span class="variable language_">self</span>.assertTrue(</span><br><span class="line">            AlertPair(long_window, hot_short, threshold).fires(target)</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_stale_alert_input_is_not_treated_as_healthy</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        target = Fraction(<span class="number">99</span>, <span class="number">100</span>)</span><br><span class="line">        stale = MetricWindow(<span class="string">&quot;1h&quot;</span>, Counts(good=<span class="number">999</span>, bad=<span class="number">1</span>), <span class="number">20</span>)</span><br><span class="line">        fresh = MetricWindow(<span class="string">&quot;5m&quot;</span>, Counts(good=<span class="number">100</span>, bad=<span class="number">0</span>), <span class="number">1</span>)</span><br><span class="line">        <span class="keyword">with</span> <span class="variable language_">self</span>.assertRaisesRegex(InsufficientData, <span class="string">&quot;stale&quot;</span>):</span><br><span class="line">            AlertPair(stale, fresh, Fraction(<span class="number">1</span>, <span class="number">1</span>)).fires(target)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_release_gate_blocks_stale_or_unlabeled_evidence</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        eligible = <span class="built_in">frozenset</span>(&#123;<span class="string">&quot;q1&quot;</span>, <span class="string">&quot;q2&quot;</span>&#125;)</span><br><span class="line">        good_period = MetricWindow(<span class="string">&quot;28d&quot;</span>, Counts(good=<span class="number">999</span>, bad=<span class="number">1</span>), <span class="number">1</span>)</span><br><span class="line">        base = GateInput(</span><br><span class="line">            period=good_period,</span><br><span class="line">            reliability_target=Fraction(<span class="number">99</span>, <span class="number">100</span>),</span><br><span class="line">            quality=QualitySummary(eligible, &#123;<span class="string">&quot;q1&quot;</span>: <span class="literal">True</span>, <span class="string">&quot;q2&quot;</span>: <span class="literal">True</span>&#125;),</span><br><span class="line">            quality_target=Fraction(<span class="number">9</span>, <span class="number">10</span>),</span><br><span class="line">            minimum_label_coverage=Fraction(<span class="number">1</span>, <span class="number">2</span>),</span><br><span class="line">            max_unknown_rate=Fraction(<span class="number">1</span>, <span class="number">100</span>),</span><br><span class="line">        )</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(release_gate(base), ReleaseDecision.ALLOW)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(</span><br><span class="line">            release_gate(replace(base, period=replace(good_period, age_minutes=<span class="number">30</span>))),</span><br><span class="line">            ReleaseDecision.BLOCK_INSUFFICIENT_DATA,</span><br><span class="line">        )</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(</span><br><span class="line">            release_gate(replace(base, quality=QualitySummary(eligible, &#123;&#125;))),</span><br><span class="line">            ReleaseDecision.BLOCK_INSUFFICIENT_DATA,</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_release_gate_freezes_known_quality_regression</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        value = GateInput(</span><br><span class="line">            period=MetricWindow(<span class="string">&quot;28d&quot;</span>, Counts(good=<span class="number">999</span>, bad=<span class="number">1</span>), <span class="number">1</span>),</span><br><span class="line">            reliability_target=Fraction(<span class="number">99</span>, <span class="number">100</span>),</span><br><span class="line">            quality=QualitySummary(</span><br><span class="line">                <span class="built_in">frozenset</span>(&#123;<span class="string">&quot;q1&quot;</span>, <span class="string">&quot;q2&quot;</span>&#125;), &#123;<span class="string">&quot;q1&quot;</span>: <span class="literal">True</span>, <span class="string">&quot;q2&quot;</span>: <span class="literal">False</span>&#125;</span><br><span class="line">            ),</span><br><span class="line">            quality_target=Fraction(<span class="number">9</span>, <span class="number">10</span>),</span><br><span class="line">            minimum_label_coverage=Fraction(<span class="number">1</span>, <span class="number">1</span>),</span><br><span class="line">            max_unknown_rate=Fraction(<span class="number">1</span>, <span class="number">100</span>),</span><br><span class="line">        )</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(</span><br><span class="line">            release_gate(value), ReleaseDecision.FREEZE_QUALITY</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&quot;__main__&quot;</span>:</span><br><span class="line">    constructed_example()</span><br><span class="line">    unittest.main(verbosity=<span class="number">2</span>)</span><br></pre></td></tr></table></figure>
+
+<p>这段代码刻意没有自动把 unknown 算 bad，也没有为无标签质量返回默认值。<code>max_unknown_rate</code> 是独立硬门：实际值等于上限时继续评价其他 SLO，严格超过时返回 <code>BLOCK_INSUFFICIENT_DATA</code>。因此丢失 bad 可能让 known SLI 数值上升，却不能改善发布结论；系统仍保留 <code>insufficient_data</code> 原因，而不修改观测事实。</p>
+<p>这个 mock&#x2F;模拟不能证明真实模型的语义质量、真实监控后端的窗口语义、时钟同步、事件恰好一次交付、PromQL 实现正确、告警服务可达或值班人会采取正确行动。它只证明这里给出的分类、分母、burn 和门禁逻辑在确定性构造输入上满足单元测试。生产接入仍需事件契约测试、历史回放、监控规则测试、路由演练和真实发布审批。</p>
+<h2 id="二十七、完整发布决策案例：HTTP-全绿，Task-预算快速燃烧"><a href="#二十七、完整发布决策案例：HTTP-全绿，Task-预算快速燃烧" class="headerlink" title="二十七、完整发布决策案例：HTTP 全绿，Task 预算快速燃烧"></a>二十七、完整发布决策案例：HTTP 全绿，Task 预算快速燃烧</h2><p>下面是一个<strong>构造案例</strong>，数字、服务和时间线均为教学用途，不来自真实事故。</p>
+<h3 id="1-背景与预先政策"><a href="#1-背景与预先政策" class="headerlink" title="1. 背景与预先政策"></a>1. 背景与预先政策</h3><p>某退款审核助手把用户材料整理成资格判断，再调用内部工具写入退款队列。团队预先批准了四项规则：</p>
+<table>
+<thead>
+<tr>
+<th>对象</th>
+<th>目标与数据契约</th>
+<th>告警或门禁</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Request availability</td>
+<td>28 天 99.9%，从网关接受到完整协议响应</td>
+<td>自定义快速 Page 与慢速工单</td>
+</tr>
+<tr>
+<td>Task commit within 10 min</td>
+<td>28 天 99.5%，从材料接受到退款队列出现已提交记录</td>
+<td>1h&#x2F;10m 均超过 8 倍 burn 时 Page</td>
+</tr>
+<tr>
+<td>Labeled decision quality</td>
+<td>成熟、有裁决标签样本中 96% good</td>
+<td>工作时工单；关键错误事件级 Page</td>
+</tr>
+<tr>
+<td>Label coverage</td>
+<td>每个 24h 成熟 cohort 至少 20%，高风险切片至少 50 个</td>
+<td>不足时阻止继续扩量</td>
+</tr>
+</tbody></table>
+<p>发布政策规定：Task 快速 burn Page 触发后，由服务值班暂停扩量；若错误与当前 canary 高度相关且回滚风险较低，值班可先回滚。模型、Prompt、Workflow adapter 和工具 Schema 变更都属于同一发布单元。安全修复不受普通冻结机械阻止，但要由安全与服务 owner 联合批准。</p>
+<h3 id="2-发布前证据"><a href="#2-发布前证据" class="headerlink" title="2. 发布前证据"></a>2. 发布前证据</h3><p>版本 <code>R-217</code> 的离线集全部通过确定性 Schema、权限和幂等断言；1,200 个分层质量样本中通过率达到预设门槛。影子测试没有真实写队列权限，只验证了工具调用参数和模拟返回。发布评审记录明确写着：影子环境不能证明异步提交终态和生产队列延迟。</p>
+<p>这是一个已知剩余风险，不是遗漏说明。团队决定先放 10% canary，并让 <code>task_postcondition_committed</code> SLO 作为在线止损信号。</p>
+<h3 id="3-时间线与第一批观测"><a href="#3-时间线与第一批观测" class="headerlink" title="3. 时间线与第一批观测"></a>3. 时间线与第一批观测</h3><p>09:00，<code>R-217</code> 开始承接 10% 流量。</p>
+<p>09:12，网关 Request availability 为 99.97%，没有请求 SLO 告警。模型依赖延迟与错误率也在基线范围。</p>
+<p>09:18，Task SLO 的 1 小时窗口累计 3,000 个有效任务，其中 150 个超过十分钟仍未提交：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">bad_ratio_1h = 150 / 3000 = 5%</span><br><span class="line">allowed_bad  = 1 - 99.5% = 0.5%</span><br><span class="line">burn_1h      = 5% / 0.5% = 10</span><br></pre></td></tr></table></figure>
+
+<p>最近 10 分钟有 500 个有效任务，其中 30 个 bad：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">bad_ratio_10m = 30 / 500 = 6%</span><br><span class="line">burn_10m      = 6% / 0.5% = 12</span><br></pre></td></tr></table></figure>
+
+<p>长短窗都超过团队自定义阈值 8，SEV-1 Page 触发。通知中 <code>unknown=2</code>、遥测年龄 1 分钟，数据新鲜度通过。</p>
+<h3 id="4-当时可以说什么"><a href="#4-当时可以说什么" class="headerlink" title="4. 当时可以说什么"></a>4. 当时可以说什么</h3><p><strong>观测：</strong> Task 提交时限预算正在快速消耗；网关协议响应正常；失败任务高度集中在 <code>R-217</code> canary；队列消费者总体容量尚有余量；同一时刻没有全局依赖事故。</p>
+<p><strong>推断：</strong> 新发布是高优先级候选触发因素，且问题位于模型响应之后、业务提交之前。但这些事实还不能证明根因是 Prompt、adapter、队列还是事件分类。</p>
+<p><strong>决策：</strong> 09:21，服务值班依据预先政策停止扩量并回滚 <code>R-217</code>。这是为了减少继续暴露，不是宣告根因已经找到。发布 authority 同时冻结该发布单元的新功能变更，允许观测修复与针对此问题的最小可靠性修复进入审批。</p>
+<h3 id="5-为什么没有因-HTTP-99-97-继续发布"><a href="#5-为什么没有因-HTTP-99-97-继续发布" class="headerlink" title="5. 为什么没有因 HTTP 99.97% 继续发布"></a>5. 为什么没有因 HTTP 99.97% 继续发布</h3><p>HTTP 200 在该版本中只代表系统返回“已接受退款申请”。用户承诺是十分钟内出现可追踪的退款队列记录。Request 与 Task 的用户结果不同，Task SLO 应主导这次发布决策。</p>
+<p>如果把异步工具的 202 当 task good，Task 看板也会全绿。该团队提前把提交后置条件作为独立事件，才看见真实失败。</p>
+<h3 id="6-为什么没有等待-28-天窗口耗尽"><a href="#6-为什么没有等待-28-天窗口耗尽" class="headerlink" title="6. 为什么没有等待 28 天窗口耗尽"></a>6. 为什么没有等待 28 天窗口耗尽</h3><p>错误预算政策不是要求等 SLO 已经失败才行动。长短窗 burn 显示当前速率若持续会快速损害周期预算，并且回滚动作明确、可逆、风险较低。团队据此止损。是否回滚仍是政策决定，不是 burn 公式自动执行的物理定律。</p>
+<h3 id="7-根因证据"><a href="#7-根因证据" class="headerlink" title="7. 根因证据"></a>7. 根因证据</h3><p>回滚后 10 分钟短窗下降，说明发布相关性增强，但仍不是单独的因果证明。工程师重放失败 Trace 后发现：</p>
+<ol>
+<li><code>R-217</code> 的 workflow adapter 把写工具返回的 <code>accepted</code> 状态映射为 <code>completed</code>。</li>
+<li>新版随后关闭等待循环并向用户返回成功。</li>
+<li>生产队列在租户级限速下延迟，部分任务十分钟后仍未 committed。</li>
+<li>旧版等待明确的 <code>committed</code> 或到期失败。</li>
+<li>在隔离环境注入队列延迟，可稳定复现新版早退；恢复状态机检查后测试通过。</li>
+</ol>
+<p>此时可以把“终态映射错误在队列延迟条件下导致早退”记录为经复现支持的根因。队列延迟是触发条件，不等于队列服务是唯一责任方。</p>
+<h3 id="8-迟到质量标签怎样处理"><a href="#8-迟到质量标签怎样处理" class="headerlink" title="8. 迟到质量标签怎样处理"></a>8. 迟到质量标签怎样处理</h3><p>当天 16:00，首批成熟 cohort 有 600 个 eligible task，120 个完成裁决标签，覆盖率恰好 20%。其中 102 个通过，<code>quality_on_labeled=85%</code>，低于 96% 目标。失败集中在系统向用户声称“已提交”、实际仍排队的答案。</p>
+<p>质量结果生成 SEV-2 工单，并作为继续冻结的附加证据，没有再次 Page：事故已经被服务 Page 接管，风险不再快速扩散，值班动作也没有变化。其余 480 个无标签任务保持未知，不被算成质量成功。</p>
+<p>高风险切片只有 36 个标签，低于预先要求的 50 个，因此即使总体覆盖达到 20%，发布也不能进入再扩量。质量 owner追加分层抽样，而不是从低风险样本复制结论。</p>
+<h3 id="9-修复、复测与解冻"><a href="#9-修复、复测与解冻" class="headerlink" title="9. 修复、复测与解冻"></a>9. 修复、复测与解冻</h3><p>修复版本 <code>R-218</code> 完成以下证据：</p>
+<ul>
+<li>状态机只在 <code>committed</code> 后产生 task good；</li>
+<li>注入 <code>accepted</code> 长时间不变、队列限流、重复 callback 和 callback 丢失；</li>
+<li>验证用户超时后迟到提交仍保留原 deadline bad；</li>
+<li>历史失败 Trace 全部重放；</li>
+<li>合法快速提交对照集无回归；</li>
+<li>影子环境增加可控异步队列模拟；</li>
+<li>5% canary 的 Task 长短窗均低于门槛，unknown rate 正常；</li>
+<li>成熟质量样本和高风险切片达到覆盖要求。</li>
+</ul>
+<p>发布 authority 在证据包评审后解除该发布单元冻结。解冻记录没有删除 <code>R-217</code> 消耗的历史预算；滚动窗口恢复前，团队仍减少其他高风险变更，并跟踪行动项。</p>
+<h3 id="10-事故行动项"><a href="#10-事故行动项" class="headerlink" title="10. 事故行动项"></a>10. 事故行动项</h3><table>
+<thead>
+<tr>
+<th>行动</th>
+<th>验收证据</th>
+<th>Owner</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>统一工具状态枚举</td>
+<td>producer&#x2F;consumer 契约测试拒绝未知与降级映射</td>
+<td>Workflow owner</td>
+</tr>
+<tr>
+<td>Task good 后置校验</td>
+<td>每种副作用工具都有 committed 探针</td>
+<td>Service owner</td>
+</tr>
+<tr>
+<td>影子队列模拟</td>
+<td>可注入延迟、乱序、重复和丢 callback</td>
+<td>Test infrastructure owner</td>
+</tr>
+<tr>
+<td>SLO 规则差异测试</td>
+<td>旧新版分类器在历史夹具上生成差异报告</td>
+<td>SLI data owner</td>
+</tr>
+<tr>
+<td>标签切片门禁</td>
+<td>高风险样本不足时自动 <code>insufficient_data</code></td>
+<td>Quality owner</td>
+</tr>
+<tr>
+<td>发布政策演练</td>
+<td>每季度验证冻结、修复豁免、解冻权限</td>
+<td>Release authority</td>
+</tr>
+</tbody></table>
+<p>这个案例说明：Request 绿灯、Task 快速 burn、质量标签迟到可以同时成立。它们不是互相冲突的三个真相，而是不同对象、不同时间尺度的观测。</p>
+<h2 id="二十八、常见失败模式与反例"><a href="#二十八、常见失败模式与反例" class="headerlink" title="二十八、常见失败模式与反例"></a>二十八、常见失败模式与反例</h2><h3 id="1-用-HTTP-200-total-代表-AI-质量"><a href="#1-用-HTTP-200-total-代表-AI-质量" class="headerlink" title="1. 用 HTTP 200 / total 代表 AI 质量"></a>1. 用 <code>HTTP 200 / total</code> 代表 AI 质量</h3><p>协议完整不等于语义正确。应把 request、task 和 labeled quality 分开。</p>
+<h3 id="2-无标签样本默认正确"><a href="#2-无标签样本默认正确" class="headerlink" title="2. 无标签样本默认正确"></a>2. 无标签样本默认正确</h3><p>这会让停止标注成为提高质量的办法。无标签必须进入 coverage 缺口。</p>
+<h3 id="3-只报质量、不报覆盖"><a href="#3-只报质量、不报覆盖" class="headerlink" title="3. 只报质量、不报覆盖"></a>3. 只报质量、不报覆盖</h3><p>10&#x2F;10 的 100% 与 10,000&#x2F;10,000 的 100% 证据量不同；更重要的是样本策略和切片代表性可能不同。</p>
+<h3 id="4-从服务端模型开始计用户延迟"><a href="#4-从服务端模型开始计用户延迟" class="headerlink" title="4. 从服务端模型开始计用户延迟"></a>4. 从服务端模型开始计用户延迟</h3><p>排队、网关、网络和重试全部消失。应保留客户端端到端与服务端阶段两个视图。</p>
+<h3 id="5-只看成功请求的延迟"><a href="#5-只看成功请求的延迟" class="headerlink" title="5. 只看成功请求的延迟"></a>5. 只看成功请求的延迟</h3><p>最慢的请求往往超时并被删除，条件延迟变好。用户 SLO 应把未在时限内成功的有效任务记 bad。</p>
+<h3 id="6-所有异常都-Page"><a href="#6-所有异常都-Page" class="headerlink" title="6. 所有异常都 Page"></a>6. 所有异常都 Page</h3><p>没有即时动作的批量质量波动会消耗值班注意力。按用户影响可信度、响应时限和可操作性分级。</p>
+<h3 id="7-Page-名称写根因"><a href="#7-Page-名称写根因" class="headerlink" title="7. Page 名称写根因"></a>7. Page 名称写根因</h3><p>“模型退化”可能只是推断。通知应命名受影响 SLO，并附候选关联变更。</p>
+<h3 id="8-复制-Google-14-4-6-1"><a href="#8-复制-Google-14-4-6-1" class="headerlink" title="8. 复制 Google 14.4&#x2F;6&#x2F;1"></a>8. 复制 Google 14.4&#x2F;6&#x2F;1</h3><p>这些值来自文档中的特定 99.9%、30 天设计示例。实际系统必须按自己的周期、阈值、流量和响应能力推导并回放。</p>
+<h3 id="9-预算耗尽后口头冻结"><a href="#9-预算耗尽后口头冻结" class="headerlink" title="9. 预算耗尽后口头冻结"></a>9. 预算耗尽后口头冻结</h3><p>没有范围、owner、豁免和解冻条件的冻结会被绕过。政策必须版本化并接入发布控制器。</p>
+<h3 id="10-SLO-规则在事故中临时改分母"><a href="#10-SLO-规则在事故中临时改分母" class="headerlink" title="10. SLO 规则在事故中临时改分母"></a>10. SLO 规则在事故中临时改分母</h3><p>这会改变历史事实并破坏信任。可以修正错误分类，但要发布新版本、回放差异并保留决策快照。</p>
+<h2 id="二十九、从零落地的四个阶段"><a href="#二十九、从零落地的四个阶段" class="headerlink" title="二十九、从零落地的四个阶段"></a>二十九、从零落地的四个阶段</h2><h3 id="阶段一：先建立-Task-身份与入口-终态对账"><a href="#阶段一：先建立-Task-身份与入口-终态对账" class="headerlink" title="阶段一：先建立 Task 身份与入口&#x2F;终态对账"></a>阶段一：先建立 Task 身份与入口&#x2F;终态对账</h3><ul>
+<li>选一个关键用户旅程；</li>
+<li>定义 request、run、task 和 attempt；</li>
+<li>在承诺入口与业务后置条件各写事件；</li>
+<li>先展示 good、bad、unknown、excluded 原始计数；</li>
+<li>对重试、取消、超时和人工接管做夹具测试。</li>
+</ul>
+<h3 id="阶段二：发布第一版-SLO-文档"><a href="#阶段二：发布第一版-SLO-文档" class="headerlink" title="阶段二：发布第一版 SLO 文档"></a>阶段二：发布第一版 SLO 文档</h3><ul>
+<li>与产品确认 population、good 和用户时限；</li>
+<li>选择滚动窗口和数据新鲜度；</li>
+<li>指定 owner 与复审日期；</li>
+<li>把分类器、聚合规则和 dashboard 配置纳入评审；</li>
+<li>先观察历史基线，不立即接 Page。</li>
+</ul>
+<h3 id="阶段三：引入预算与告警"><a href="#阶段三：引入预算与告警" class="headerlink" title="阶段三：引入预算与告警"></a>阶段三：引入预算与告警</h3><ul>
+<li>从用户结果 SLO 推导 burn 候选；</li>
+<li>用历史事件和合成序列调节长短窗；</li>
+<li>演练通知路由、抑制、恢复和 runbook；</li>
+<li>统计每周 Page 数、可操作率和漏检事件；</li>
+<li>低流量与无数据走单独状态。</li>
+</ul>
+<h3 id="阶段四：连接质量与发布治理"><a href="#阶段四：连接质量与发布治理" class="headerlink" title="阶段四：连接质量与发布治理"></a>阶段四：连接质量与发布治理</h3><ul>
+<li>建立版本化标签、抽样和裁决；</li>
+<li>同时报质量、覆盖、时延与切片；</li>
+<li>将离线、影子、canary 和迟到生产结果串联；</li>
+<li>让预算政策控制扩量、冻结、修复豁免与解冻；</li>
+<li>定期故障注入并复审目标是否仍反映用户需求。</li>
+</ul>
+<h2 id="三十、上线与运维可执行清单"><a href="#三十、上线与运维可执行清单" class="headerlink" title="三十、上线与运维可执行清单"></a>三十、上线与运维可执行清单</h2><h3 id="边界与身份"><a href="#边界与身份" class="headerlink" title="边界与身份"></a>边界与身份</h3><ul>
+<li><input disabled="" type="checkbox"> 每个 SLO 明确用户、旅程、scope、population 与风险层</li>
+<li><input disabled="" type="checkbox"> Request、attempt、run、task 使用稳定 ID 关联</li>
+<li><input disabled="" type="checkbox"> 入口 candidate 与终态 result 可独立计数并对账</li>
+<li><input disabled="" type="checkbox"> 重试不会覆盖失败 attempt，也不会重置用户时钟</li>
+<li><input disabled="" type="checkbox"> 业务后置条件而非模型输出决定 Task good</li>
+</ul>
+<h3 id="分类与分母"><a href="#分类与分母" class="headerlink" title="分类与分母"></a>分类与分母</h3><ul>
+<li><input disabled="" type="checkbox"> good、bad、unknown、excluded 四态有版本化 reason 映射</li>
+<li><input disabled="" type="checkbox"> Unknown 不会静默变 good 或 bad</li>
+<li><input disabled="" type="checkbox"> Excluded 仅允许预先批准原因，并持续报告排除率</li>
+<li><input disabled="" type="checkbox"> 取消、限流、部分流、迟到完成和人工接管语义明确</li>
+<li><input disabled="" type="checkbox"> 规则变更会在固定夹具和历史数据上输出差异</li>
+</ul>
+<h3 id="质量与标签"><a href="#质量与标签" class="headerlink" title="质量与标签"></a>质量与标签</h3><ul>
+<li><input disabled="" type="checkbox"> 无可接受真值时质量状态为 insufficient data</li>
+<li><input disabled="" type="checkbox"> quality_on_labeled 与 label_coverage 分开显示</li>
+<li><input disabled="" type="checkbox"> 抽样策略、rubric、真值来源与裁决版本可追溯</li>
+<li><input disabled="" type="checkbox"> 必需 task type、语言、风险与版本切片有覆盖门</li>
+<li><input disabled="" type="checkbox"> 模型自评、相似度和未校准 Judge 不冒充真值</li>
+<li><input disabled="" type="checkbox"> 迟到标签追加修订，不覆盖历史发布证据快照</li>
+</ul>
+<h3 id="延迟"><a href="#延迟" class="headerlink" title="延迟"></a>延迟</h3><ul>
+<li><input disabled="" type="checkbox"> client send、首个有意义内容、完整内容和后置提交边界明确</li>
+<li><input disabled="" type="checkbox"> 心跳、header 和隐藏 token 不冒充首个可用内容</li>
+<li><input disabled="" type="checkbox"> 失败与超时任务不会从用户延迟 SLO 删除</li>
+<li><input disabled="" type="checkbox"> 成功条件延迟只作为诊断指标</li>
+<li><input disabled="" type="checkbox"> 跨机器墙钟不直接相减，负持续时间会被拒绝</li>
+<li><input disabled="" type="checkbox"> 未决任务按成熟截止处理，不暂算成功</li>
+</ul>
+<h3 id="预算与告警"><a href="#预算与告警" class="headerlink" title="预算与告警"></a>预算与告警</h3><ul>
+<li><input disabled="" type="checkbox"> 每个 SLO 独立计算目标、预算和 burn rate</li>
+<li><input disabled="" type="checkbox"> 多窗口条件、最小流量与数据新鲜度经过回放</li>
+<li><input disabled="" type="checkbox"> Google 示例参数没有被包装成通用标准</li>
+<li><input disabled="" type="checkbox"> Page、工单、看板按响应紧迫度和可操作性分级</li>
+<li><input disabled="" type="checkbox"> 语义质量异常只有在证据及时、影响紧急且有动作时 Page</li>
+<li><input disabled="" type="checkbox"> 告警载荷包含计数、窗口、版本、freshness、runbook 与 owner</li>
+<li><input disabled="" type="checkbox"> 同一事故的 fast、slow、ticket 能去重并正确恢复</li>
+</ul>
+<h3 id="发布政策与-owner"><a href="#发布政策与-owner" class="headerlink" title="发布政策与 owner"></a>发布政策与 owner</h3><ul>
+<li><input disabled="" type="checkbox"> Service、Product、SLI data、Quality、Alert、Release owner 明确</li>
+<li><input disabled="" type="checkbox"> 预算耗尽后的冻结范围、豁免、到期与解冻条件已批准</li>
+<li><input disabled="" type="checkbox"> 修复发布仍有最小差异、复测、灰度和回滚</li>
+<li><input disabled="" type="checkbox"> 安全修复由安全与服务 owner 联合评估</li>
+<li><input disabled="" type="checkbox"> 所有风险接受都有 owner、期限、证据和复审</li>
+<li><input disabled="" type="checkbox"> 发布控制器对 stale、unknown 和覆盖不足采取批准过的保守动作</li>
+</ul>
+<h3 id="自动化与故障注入"><a href="#自动化与故障注入" class="headerlink" title="自动化与故障注入"></a>自动化与故障注入</h3><ul>
+<li><input disabled="" type="checkbox"> 事件生产、分类器、聚合数学、时间序列和路由逐层测试</li>
+<li><input disabled="" type="checkbox"> 已注入丢终态、重复、乱序、时钟偏差与聚合停滞</li>
+<li><input disabled="" type="checkbox"> 已注入重试风暴、标签中断、切片偏斜与规则误分类</li>
+<li><input disabled="" type="checkbox"> 告警传输失败能被独立发现并升级</li>
+<li><input disabled="" type="checkbox"> 发布冻结、修复豁免和解冻权限已演练</li>
+<li><input disabled="" type="checkbox"> 事故记录明确区分观测、推断、根因证据和决策</li>
+</ul>
+<h2 id="三十一、总结"><a href="#三十一、总结" class="headerlink" title="三十一、总结"></a>三十一、总结</h2><p>AI 服务可靠性不能压缩成一个 HTTP 成功率，也不能把少量人工标签外推成全量质量。可执行的方法是从用户旅程出发，把 request、task 和 semantic quality 分开建模，并让每个指标拥有稳定身份、明确分母、证据截止时间和独立 owner。</p>
+<p>完整闭环可以归纳为十步：</p>
+<ol>
+<li>在用户承诺入口建立 candidate，并在业务后置条件建立终态。</li>
+<li>保留 request attempt、workflow run 与 business task 的层级关系。</li>
+<li>用 good、bad、unknown、excluded 防止缺失证据污染分母。</li>
+<li>从客户端可观察时间建立延迟真值，重试不重置时钟。</li>
+<li>质量只在有可接受真值的样本上计算，并单报标签覆盖与切片。</li>
+<li>将 SLO 目标、窗口、规则、freshness、owner 和政策版本化。</li>
+<li>用错误预算表达允许坏结果，用 burn rate 表达消耗速度。</li>
+<li>通过长短窗、低流量处理和告警分级减少漏检与噪声。</li>
+<li>让错误预算政策真正控制扩量、冻结、修复豁免和解冻。</li>
+<li>用故障注入、历史回放、路由演练和事故复盘持续验证整条链路。</li>
+</ol>
+<p>最终应能证明的不是“看板今天是绿色”，而是：</p>
+<p><strong>每一个进入 SLO 的好坏结论都有可回放证据；没有真值的样本不会伪装成质量成功；预算危险消耗时通知能在合适时限到达有权限行动的人；发布速度与用户可靠性之间的取舍由预先批准、可审计的政策完成。</strong></p>
+<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><p>以下资料均早于本文发布日期。Google SRE 中的比例、窗口和政策均按其原文上下文引用，仅作为设计方法与示例，不视为跨组织标准。</p>
+<ul>
+<li><a target="_blank" rel="noopener" href="https://sre.google/workbook/implementing-slos/">Google SRE Workbook：Implementing SLOs</a></li>
+<li><a target="_blank" rel="noopener" href="https://sre.google/workbook/monitoring/">Google SRE Workbook：Monitoring</a></li>
+<li><a target="_blank" rel="noopener" href="https://sre.google/workbook/alerting-on-slos/">Google SRE Workbook：Alerting on SLOs</a></li>
+<li><a target="_blank" rel="noopener" href="https://sre.google/workbook/error-budget-policy/">Google SRE Workbook：Example Error Budget Policy</a></li>
+<li><a target="_blank" rel="noopener" href="https://sre.google/sre-book/service-level-objectives/">Google SRE Book：Service Level Objectives</a></li>
+<li><a target="_blank" rel="noopener" href="https://www.w3.org/TR/2021/REC-trace-context-1-20211123/">W3C Recommendation：Trace Context，2021-11-23</a></li>
+</ul>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/AI%E6%B5%8B%E8%AF%95/" rel="tag"># AI测试</a>
+              <a href="/tags/%E5%8F%AF%E8%A7%82%E6%B5%8B%E6%80%A7/" rel="tag"># 可观测性</a>
+              <a href="/tags/%E9%94%99%E8%AF%AF%E9%A2%84%E7%AE%97/" rel="tag"># 错误预算</a>
+              <a href="/tags/SLI/" rel="tag"># SLI</a>
+              <a href="/tags/SLO/" rel="tag"># SLO</a>
+              <a href="/tags/Burn-Rate/" rel="tag"># Burn Rate</a>
+              <a href="/tags/%E5%91%8A%E8%AD%A6%E5%88%86%E7%BA%A7/" rel="tag"># 告警分级</a>
+              <a href="/tags/%E8%AF%AD%E4%B9%89%E8%B4%A8%E9%87%8F/" rel="tag"># 语义质量</a>
+              <a href="/tags/%E5%8F%91%E5%B8%83%E6%B2%BB%E7%90%86/" rel="tag"># 发布治理</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2026/05/16/AI%E6%B5%8B%E8%AF%95-45-%E6%A8%A1%E5%9E%8B%E6%BC%82%E7%A7%BBPrompt%E6%BC%82%E7%A7%BB%E5%92%8C%E7%9F%A5%E8%AF%86%E6%BC%82%E7%A7%BB%E6%80%8E%E4%B9%88%E7%9B%91%E6%8E%A7%E4%B8%8E%E5%BD%92%E5%9B%A0/" rel="prev" title="AI测试-45-模型漂移Prompt漂移和知识漂移怎么监控与归因">
+                  <i class="fa fa-angle-left"></i> AI测试-45-模型漂移Prompt漂移和知识漂移怎么监控与归因
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2026/05/20/AI%E6%B5%8B%E8%AF%95-47-AI%E7%BA%A2%E9%98%9F%E6%B5%8B%E8%AF%95%E6%80%8E%E4%B9%88%E8%AE%BE%E8%AE%A1%E6%94%BB%E5%87%BB%E9%9D%A2%E5%9C%BA%E6%99%AF%E5%BA%93%E8%AF%81%E6%8D%AE%E5%92%8C%E5%A4%8D%E6%B5%8B%E9%97%AD%E7%8E%AF/" rel="next" title="AI测试-47-AI红队测试怎么设计攻击面场景库证据和复测闭环">
+                  AI测试-47-AI红队测试怎么设计攻击面场景库证据和复测闭环 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">2.1m</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">129:05</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

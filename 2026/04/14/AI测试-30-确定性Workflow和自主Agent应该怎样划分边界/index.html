@@ -1,0 +1,1694 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="Agent 项目最容易在命名阶段就失去边界。 只要系统里有一次模型调用、一个工具接口和一段循环，方案文档就可能把它称为“自主 Agent”；只要画出几个固定方框，另一份文档又可能把同一套系统称为“Workflow”。命名本身不是主要风险，真正危险的是控制权没有被说清：  谁决定下一步做什么 谁能扩大工具和数据权限 谁判断业务前置条件已经满足 谁允许产生写入、发布、付款或删除等副作用 进程崩溃后从哪">
+<meta property="og:type" content="article">
+<meta property="og:title" content="AI测试-30-确定性Workflow和自主Agent应该怎样划分边界">
+<meta property="og:url" content="https://paynewinnt.github.io/2026/04/14/AI%E6%B5%8B%E8%AF%95-30-%E7%A1%AE%E5%AE%9A%E6%80%A7Workflow%E5%92%8C%E8%87%AA%E4%B8%BBAgent%E5%BA%94%E8%AF%A5%E6%80%8E%E6%A0%B7%E5%88%92%E5%88%86%E8%BE%B9%E7%95%8C/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="Agent 项目最容易在命名阶段就失去边界。 只要系统里有一次模型调用、一个工具接口和一段循环，方案文档就可能把它称为“自主 Agent”；只要画出几个固定方框，另一份文档又可能把同一套系统称为“Workflow”。命名本身不是主要风险，真正危险的是控制权没有被说清：  谁决定下一步做什么 谁能扩大工具和数据权限 谁判断业务前置条件已经满足 谁允许产生写入、发布、付款或删除等副作用 进程崩溃后从哪">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://paynewinnt.github.io/images/ai-quality/ai-30-decision-spectrum.svg">
+<meta property="og:image" content="https://paynewinnt.github.io/images/ai-quality/ai-30-recovery-state.svg">
+<meta property="article:published_time" content="2026-04-14T12:30:00.000Z">
+<meta property="article:modified_time" content="2026-04-14T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="AI测试">
+<meta property="article:tag" content="质量工程">
+<meta property="article:tag" content="Workflow">
+<meta property="article:tag" content="AI Agent">
+<meta property="article:tag" content="状态机">
+<meta property="article:tag" content="故障恢复">
+<meta property="article:tag" content="幂等与补偿">
+<meta property="article:tag" content="Human-in-the-loop">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://paynewinnt.github.io/images/ai-quality/ai-30-decision-spectrum.svg">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2026/04/14/AI%E6%B5%8B%E8%AF%95-30-%E7%A1%AE%E5%AE%9A%E6%80%A7Workflow%E5%92%8C%E8%87%AA%E4%B8%BBAgent%E5%BA%94%E8%AF%A5%E6%80%8E%E6%A0%B7%E5%88%92%E5%88%86%E8%BE%B9%E7%95%8C/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2026/04/14/AI%E6%B5%8B%E8%AF%95-30-%E7%A1%AE%E5%AE%9A%E6%80%A7Workflow%E5%92%8C%E8%87%AA%E4%B8%BBAgent%E5%BA%94%E8%AF%A5%E6%80%8E%E6%A0%B7%E5%88%92%E5%88%86%E8%BE%B9%E7%95%8C/","path":"2026/04/14/AI测试-30-确定性Workflow和自主Agent应该怎样划分边界/","title":"AI测试-30-确定性Workflow和自主Agent应该怎样划分边界"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>AI测试-30-确定性Workflow和自主Agent应该怎样划分边界 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E5%85%88%E6%8A%8A%E4%B8%89%E4%B8%AA%E5%AE%B9%E6%98%93%E6%B7%B7%E6%B7%86%E7%9A%84%E6%A6%82%E5%BF%B5%E6%8B%86%E5%BC%80"><span class="nav-number">1.</span> <span class="nav-text">一、先把三个容易混淆的概念拆开</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E2%80%9C%E7%94%A8%E4%BA%86-LLM%E2%80%9D%E4%B8%8D%E7%AD%89%E4%BA%8E%E2%80%9C%E7%94%A8%E4%BA%86-Agent%E2%80%9D"><span class="nav-number">1.1.</span> <span class="nav-text">1. “用了 LLM”不等于“用了 Agent”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E2%80%9C%E5%8A%A8%E6%80%81%E5%88%86%E6%94%AF%E2%80%9D%E4%B8%8D%E4%B8%80%E5%AE%9A%E6%98%AF-Agent"><span class="nav-number">1.2.</span> <span class="nav-text">2. “动态分支”不一定是 Agent</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E2%80%9C%E6%9C%89%E5%A4%96%E5%B1%82%E7%8A%B6%E6%80%81%E6%9C%BA%E2%80%9D%E4%B9%9F%E4%B8%8D%E4%BB%A3%E8%A1%A8%E5%86%85%E9%83%A8%E4%B8%8D%E6%98%AF-Agent"><span class="nav-number">1.3.</span> <span class="nav-text">3. “有外层状态机”也不代表内部不是 Agent</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E5%A4%8D%E6%9D%82%E5%BA%A6%E9%98%B6%E6%A2%AF%EF%BC%9A%E4%BB%8E%E4%B8%80%E6%AC%A1%E8%B0%83%E7%94%A8%E5%88%B0%E8%87%AA%E6%B2%BB-Agent"><span class="nav-number">2.</span> <span class="nav-text">二、复杂度阶梯：从一次调用到自治 Agent</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#L0%EF%BC%9A%E5%8D%95%E6%AC%A1%E6%A8%A1%E5%9E%8B%E8%B0%83%E7%94%A8"><span class="nav-number">2.1.</span> <span class="nav-text">L0：单次模型调用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#L1%EF%BC%9APrompt-Chaining"><span class="nav-number">2.2.</span> <span class="nav-text">L1：Prompt Chaining</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#L2%EF%BC%9ARouting"><span class="nav-number">2.3.</span> <span class="nav-text">L2：Routing</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#L3%EF%BC%9AParallelization"><span class="nav-number">2.4.</span> <span class="nav-text">L3：Parallelization</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#L4%EF%BC%9AOrchestrator-Workers"><span class="nav-number">2.5.</span> <span class="nav-text">L4：Orchestrator-Workers</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#L5%EF%BC%9AEvaluator-Optimizer"><span class="nav-number">2.6.</span> <span class="nav-text">L5：Evaluator-Optimizer</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#L6%EF%BC%9A%E8%87%AA%E6%B2%BB-Agent"><span class="nav-number">2.7.</span> <span class="nav-text">L6：自治 Agent</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E9%80%89%E6%8B%A9%E7%9F%A9%E9%98%B5%EF%BC%9A%E5%85%88%E9%97%AE%E4%BB%BB%E5%8A%A1%E5%B1%9E%E6%80%A7%EF%BC%8C%E5%86%8D%E9%80%89%E6%9E%B6%E6%9E%84%E5%90%8D%E7%A7%B0"><span class="nav-number">3.</span> <span class="nav-text">三、选择矩阵：先问任务属性，再选架构名称</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%94%A8%E5%A2%9E%E9%87%8F%E6%94%B6%E7%9B%8A%E8%A6%86%E7%9B%96%E5%A2%9E%E9%87%8F%E5%A4%8D%E6%9D%82%E5%BA%A6"><span class="nav-number">3.1.</span> <span class="nav-text">用增量收益覆盖增量复杂度</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E7%9C%9F%E6%AD%A3%E7%9A%84%E8%BE%B9%E7%95%8C%E4%B8%8D%E6%98%AF-Prompt%EF%BC%8C%E8%80%8C%E6%98%AF%E6%8E%A7%E5%88%B6%E9%9D%A2%E4%B8%8E%E6%89%A7%E8%A1%8C%E9%9D%A2"><span class="nav-number">4.</span> <span class="nav-text">四、真正的边界不是 Prompt，而是控制面与执行面</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%9B%AE%E6%A0%87%E4%B8%8E%E7%AD%96%E7%95%A5%E9%9D%A2"><span class="nav-number">4.1.</span> <span class="nav-text">1. 目标与策略面</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Agent-%E5%86%B3%E7%AD%96%E9%9D%A2"><span class="nav-number">4.2.</span> <span class="nav-text">2. Agent 决策面</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%A1%AE%E5%AE%9A%E6%80%A7%E6%8E%A7%E5%88%B6%E9%9D%A2"><span class="nav-number">4.3.</span> <span class="nav-text">3. 确定性控制面</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%B7%A5%E5%85%B7%E4%B8%8E%E7%8E%AF%E5%A2%83%E9%9D%A2"><span class="nav-number">4.4.</span> <span class="nav-text">4. 工具与环境面</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E5%93%AA%E4%BA%9B%E5%86%B3%E7%AD%96%E5%8F%AF%E4%BB%A5%E4%BA%A4%E7%BB%99%E6%A8%A1%E5%9E%8B%EF%BC%8C%E5%93%AA%E4%BA%9B%E5%BF%85%E9%A1%BB%E7%95%99%E5%9C%A8%E4%BB%A3%E7%A0%81%E9%87%8C"><span class="nav-number">5.</span> <span class="nav-text">五、哪些决策可以交给模型，哪些必须留在代码里</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E7%8A%B6%E6%80%81%E6%A8%A1%E5%9E%8B%EF%BC%9A%E4%B8%8D%E8%A6%81%E6%8A%8A%E5%AF%B9%E8%AF%9D%E5%8E%86%E5%8F%B2%E5%BD%93%E4%BD%9C%E4%BB%BB%E5%8A%A1%E7%8A%B6%E6%80%81"><span class="nav-number">6.</span> <span class="nav-text">六、状态模型：不要把对话历史当作任务状态</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%8E%A7%E5%88%B6%E7%8A%B6%E6%80%81"><span class="nav-number">6.1.</span> <span class="nav-text">1. 控制状态</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%B8%9A%E5%8A%A1%E7%8A%B6%E6%80%81"><span class="nav-number">6.2.</span> <span class="nav-text">2. 业务状态</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Agent-%E5%B7%A5%E4%BD%9C%E7%8A%B6%E6%80%81"><span class="nav-number">6.3.</span> <span class="nav-text">3. Agent 工作状态</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E4%B8%80%E4%B8%AA%E4%BB%BB%E5%8A%A1%E6%89%A7%E8%A1%8C%E5%99%A8%E7%9A%84%E6%8C%81%E4%B9%85%E5%8C%96%E7%8A%B6%E6%80%81%E6%9C%BA"><span class="nav-number">7.</span> <span class="nav-text">七、一个任务执行器的持久化状态机</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%AF%8F%E4%B8%AA%E7%8A%B6%E6%80%81%E5%BF%85%E9%A1%BB%E5%9B%9E%E7%AD%94%E5%9B%9B%E4%BB%B6%E4%BA%8B"><span class="nav-number">7.1.</span> <span class="nav-text">每个状态必须回答四件事</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BB%88%E6%80%81%E4%B9%9F%E8%A6%81%E6%9C%89%E4%B8%9A%E5%8A%A1%E5%90%AB%E4%B9%89"><span class="nav-number">7.2.</span> <span class="nav-text">终态也要有业务含义</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E6%A3%80%E6%9F%A5%E7%82%B9%EF%BC%9A%E4%BF%9D%E5%AD%98%E5%8F%AF%E7%BB%A7%E7%BB%AD%E6%89%A7%E8%A1%8C%E7%9A%84%E4%BA%8B%E5%AE%9E%EF%BC%8C%E4%B8%8D%E6%98%AF%E4%BF%9D%E5%AD%98%E4%B8%80%E6%AE%B5%E8%81%8A%E5%A4%A9"><span class="nav-number">8.</span> <span class="nav-text">八、检查点：保存可继续执行的事实，不是保存一段聊天</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A3%80%E6%9F%A5%E7%82%B9%E9%A2%91%E7%8E%87%E4%B8%8D%E8%83%BD%E5%8F%AA%E6%8C%89%E6%97%B6%E9%97%B4"><span class="nav-number">8.1.</span> <span class="nav-text">检查点频率不能只按时间</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81Write-ahead-Intent%EF%BC%9A%E5%85%88%E7%99%BB%E8%AE%B0%E5%8A%A8%E4%BD%9C%EF%BC%8C%E5%86%8D%E4%BA%A7%E7%94%9F%E5%89%AF%E4%BD%9C%E7%94%A8"><span class="nav-number">9.</span> <span class="nav-text">九、Write-ahead Intent：先登记动作，再产生副作用</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E9%87%8D%E8%AF%95%EF%BC%9A%E5%BF%85%E9%A1%BB%E6%8C%89%E5%A4%B1%E8%B4%A5%E8%AF%AD%E4%B9%89%E5%88%86%E6%B5%81"><span class="nav-number">10.</span> <span class="nav-text">十、重试：必须按失败语义分流</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E8%A1%A5%E5%81%BF%E4%B8%8D%E6%98%AF%E6%95%B0%E6%8D%AE%E5%BA%93%E5%9B%9E%E6%BB%9A"><span class="nav-number">11.</span> <span class="nav-text">十一、补偿不是数据库回滚</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81Replay%EF%BC%9A%E5%85%88%E8%AF%B4%E6%98%8E%E9%87%8D%E6%94%BE%E7%9A%84%E6%98%AF%E5%93%AA%E4%B8%80%E5%B1%82"><span class="nav-number">12.</span> <span class="nav-text">十二、Replay：先说明重放的是哪一层</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%BA%8B%E4%BB%B6%E9%87%8D%E6%94%BE"><span class="nav-number">12.1.</span> <span class="nav-text">1. 事件重放</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Observation-Replay"><span class="nav-number">12.2.</span> <span class="nav-text">2. Observation Replay</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Decision-Replay"><span class="nav-number">12.3.</span> <span class="nav-text">3. Decision Replay</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-Resume"><span class="nav-number">12.4.</span> <span class="nav-text">4. Resume</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81%E8%B6%85%E6%97%B6%E8%A6%81%E5%88%86%E5%9B%9B%E5%B1%82%EF%BC%8C%E4%B8%8D%E8%A6%81%E5%8F%AA%E8%AE%BE%E4%B8%80%E4%B8%AA-HTTP-timeout"><span class="nav-number">13.</span> <span class="nav-text">十三、超时要分四层，不要只设一个 HTTP timeout</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%B7%A5%E5%85%B7%E8%B0%83%E7%94%A8%E6%88%AA%E6%AD%A2%E6%97%B6%E9%97%B4"><span class="nav-number">13.1.</span> <span class="nav-text">1. 工具调用截止时间</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%8D%95%E6%AD%A5%E6%88%AA%E6%AD%A2%E6%97%B6%E9%97%B4"><span class="nav-number">13.2.</span> <span class="nav-text">2. 单步截止时间</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E9%98%B6%E6%AE%B5%E6%88%AA%E6%AD%A2%E6%97%B6%E9%97%B4"><span class="nav-number">13.3.</span> <span class="nav-text">3. 阶段截止时间</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%85%A8%E4%BB%BB%E5%8A%A1%E6%88%AA%E6%AD%A2%E6%97%B6%E9%97%B4"><span class="nav-number">13.4.</span> <span class="nav-text">4. 全任务截止时间</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81%E5%BE%AA%E7%8E%AF%E9%A2%84%E7%AE%97%EF%BC%9A%E9%99%90%E5%88%B6%E6%AC%A1%E6%95%B0%E8%BF%98%E4%B8%8D%E5%A4%9F%EF%BC%8C%E8%BF%98%E8%A6%81%E9%99%90%E5%88%B6%E2%80%9C%E6%B2%A1%E6%9C%89%E8%BF%9B%E5%B1%95%E2%80%9D"><span class="nav-number">14.</span> <span class="nav-text">十四、循环预算：限制次数还不够，还要限制“没有进展”</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%94%E3%80%81%E4%BA%BA%E5%B7%A5%E5%8D%87%E7%BA%A7%E4%B8%8D%E6%98%AF%E5%A4%B1%E8%B4%A5%E5%85%9C%E5%BA%95%EF%BC%8C%E8%80%8C%E6%98%AF%E6%AD%A3%E5%B8%B8%E7%BB%88%E6%80%81"><span class="nav-number">15.</span> <span class="nav-text">十五、人工升级不是失败兜底，而是正常终态</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AD%E3%80%81%E5%AE%9E%E7%8E%B0%E9%AA%A8%E6%9E%B6%EF%BC%9A%E6%A8%A1%E5%9E%8B%E5%8F%AA%E8%BF%94%E5%9B%9E%E6%8F%90%E6%A1%88%EF%BC%8C%E6%89%A7%E8%A1%8C%E5%99%A8%E6%8B%A5%E6%9C%89%E7%8A%B6%E6%80%81%E8%BD%AC%E6%8D%A2%E6%9D%83"><span class="nav-number">16.</span> <span class="nav-text">十六、实现骨架：模型只返回提案，执行器拥有状态转换权</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%83%E3%80%81%E7%8A%B6%E6%80%81%E6%9C%BA%E6%9C%AC%E8%BA%AB%E5%BA%94%E8%AF%A5%E6%80%8E%E6%A0%B7%E6%B5%8B%E8%AF%95"><span class="nav-number">17.</span> <span class="nav-text">十七、状态机本身应该怎样测试</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%BD%AC%E6%8D%A2%E8%A1%A8%E5%8D%95%E5%85%83%E6%B5%8B%E8%AF%95"><span class="nav-number">17.1.</span> <span class="nav-text">1. 转换表单元测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%B1%9E%E6%80%A7%E6%B5%8B%E8%AF%95"><span class="nav-number">17.2.</span> <span class="nav-text">2. 属性测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%A8%A1%E5%9E%8B%E6%8F%90%E6%A1%88%E5%A5%91%E7%BA%A6%E6%B5%8B%E8%AF%95"><span class="nav-number">17.3.</span> <span class="nav-text">3. 模型提案契约测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%B7%A5%E5%85%B7%E5%A5%91%E7%BA%A6%E6%B5%8B%E8%AF%95"><span class="nav-number">17.4.</span> <span class="nav-text">4. 工具契约测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E7%89%88%E6%9C%AC%E8%BF%81%E7%A7%BB%E6%B5%8B%E8%AF%95"><span class="nav-number">17.5.</span> <span class="nav-text">5. 版本迁移测试</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AB%E3%80%81%E6%95%85%E9%9A%9C%E6%B3%A8%E5%85%A5%E7%9F%A9%E9%98%B5%EF%BC%9A%E5%9C%A8%E7%B2%BE%E7%A1%AE%E6%97%B6%E9%97%B4%E7%82%B9%E6%9D%80%E6%8E%89%E6%89%A7%E8%A1%8C%E5%99%A8"><span class="nav-number">18.</span> <span class="nav-text">十八、故障注入矩阵：在精确时间点杀掉执行器</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%80%E4%B8%AA%E6%81%A2%E5%A4%8D%E6%B5%8B%E8%AF%95%E7%A4%BA%E4%BE%8B"><span class="nav-number">18.1.</span> <span class="nav-text">一个恢复测试示例</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B9%9D%E3%80%81%E5%AE%8C%E6%95%B4%E6%A1%88%E4%BE%8B%EF%BC%9AAI-%E5%9B%9E%E5%BD%92%E5%A4%B1%E8%B4%A5%E8%87%AA%E5%8A%A8%E4%BF%AE%E5%A4%8D%E6%89%A7%E8%A1%8C%E5%99%A8"><span class="nav-number">19.</span> <span class="nav-text">十九、完整案例：AI 回归失败自动修复执行器</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%9C%BA%E6%99%AF"><span class="nav-number">19.1.</span> <span class="nav-text">1. 场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E7%AC%AC%E4%B8%80%E7%89%88%E9%94%99%E8%AF%AF%E8%AE%BE%E8%AE%A1"><span class="nav-number">19.2.</span> <span class="nav-text">2. 第一版错误设计</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E9%87%8D%E6%9E%84%E5%90%8E%E7%9A%84%E4%BB%BB%E5%8A%A1%E5%90%88%E5%90%8C"><span class="nav-number">19.3.</span> <span class="nav-text">3. 重构后的任务合同</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%95%85%E9%9A%9C%E5%8F%91%E7%94%9F%E5%90%8E%E7%9A%84%E7%9C%9F%E5%AE%9E%E6%97%B6%E9%97%B4%E7%BA%BF"><span class="nav-number">19.4.</span> <span class="nav-text">4. 故障发生后的真实时间线</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%8E%92%E6%9F%A5%E8%AF%81%E6%8D%AE"><span class="nav-number">19.5.</span> <span class="nav-text">5. 排查证据</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E4%BF%AE%E5%A4%8D%E5%90%8E%E7%9A%84%E8%BE%B9%E7%95%8C"><span class="nav-number">19.6.</span> <span class="nav-text">6. 修复后的边界</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E3%80%81%E9%87%8F%E5%8C%96%E7%BB%93%E6%9E%9C%E5%BA%94%E8%AF%A5%E6%80%8E%E6%A0%B7%E6%8A%A5%E5%91%8A"><span class="nav-number">20.</span> <span class="nav-text">二十、量化结果应该怎样报告</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%80%E3%80%81%E5%8F%AF%E8%A7%82%E6%B5%8B%E6%80%A7%EF%BC%9A%E8%A6%81%E8%83%BD%E8%AF%81%E6%98%8E%E6%8E%A7%E5%88%B6%E5%99%A8%E5%AE%88%E4%BD%8F%E4%BA%86%E8%BE%B9%E7%95%8C"><span class="nav-number">21.</span> <span class="nav-text">二十一、可观测性：要能证明控制器守住了边界</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Trace-%E4%B8%8D%E8%83%BD%E5%8F%AA%E6%9C%89%E6%A8%A1%E5%9E%8B-Span"><span class="nav-number">21.1.</span> <span class="nav-text">1. Trace 不能只有模型 Span</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%BF%9D%E5%AD%98%E5%86%B3%E7%AD%96%E6%91%98%E8%A6%81%EF%BC%8C%E4%B8%8D%E4%BF%9D%E5%AD%98%E6%88%96%E4%BE%9D%E8%B5%96%E7%A7%81%E6%9C%89%E6%80%9D%E7%BB%B4%E9%93%BE"><span class="nav-number">21.2.</span> <span class="nav-text">2. 保存决策摘要，不保存或依赖私有思维链</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%8E%A7%E5%88%B6%E5%99%A8%E6%8C%87%E6%A0%87%E8%A6%81%E4%B8%8E%E9%80%9A%E7%94%A8-Agent-%E6%8C%87%E6%A0%87%E5%88%86%E5%BC%80"><span class="nav-number">21.3.</span> <span class="nav-text">3. 控制器指标要与通用 Agent 指标分开</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%91%8A%E8%AD%A6%E8%A6%81%E6%8C%87%E5%90%91%E5%8F%AF%E6%89%A7%E8%A1%8C%E5%A4%84%E7%BD%AE"><span class="nav-number">21.4.</span> <span class="nav-text">4. 告警要指向可执行处置</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E4%B8%80%E6%AC%A1%E5%80%BC%E7%8F%AD%E6%8E%92%E6%9F%A5%E7%9A%84%E5%88%A4%E6%96%AD%E9%A1%BA%E5%BA%8F"><span class="nav-number">21.5.</span> <span class="nav-text">5. 一次值班排查的判断顺序</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E9%9A%90%E7%A7%81%E5%92%8C%E8%AF%81%E6%8D%AE%E5%AE%8C%E6%95%B4%E6%80%A7%E8%A6%81%E5%90%8C%E6%97%B6%E6%BB%A1%E8%B6%B3"><span class="nav-number">21.6.</span> <span class="nav-text">6. 隐私和证据完整性要同时满足</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%8C%E3%80%81%E6%9C%80%E5%AE%B9%E6%98%93%E5%A4%B1%E6%8E%A7%E7%9A%84%E5%8D%81%E4%BA%8C%E7%A7%8D%E8%AE%BE%E8%AE%A1"><span class="nav-number">22.</span> <span class="nav-text">二十二、最容易失控的十二种设计</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%94%A8-Prompt-%E5%86%99%E6%9D%83%E9%99%90"><span class="nav-number">22.1.</span> <span class="nav-text">1. 用 Prompt 写权限</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%A8%A1%E5%9E%8B%E5%8F%AF%E4%BB%A5%E8%87%AA%E8%A1%8C%E6%B7%BB%E5%8A%A0%E5%B7%A5%E5%85%B7"><span class="nav-number">22.2.</span> <span class="nav-text">2. 模型可以自行添加工具</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%8A%8A%E5%B7%A5%E5%85%B7%E8%B6%85%E6%97%B6%E5%BD%93%E6%88%90%E6%9C%AA%E6%89%A7%E8%A1%8C"><span class="nav-number">22.3.</span> <span class="nav-text">3. 把工具超时当成未执行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%AF%8F%E6%AC%A1%E9%87%8D%E8%AF%95%E7%94%9F%E6%88%90%E6%96%B0%E5%B9%82%E7%AD%89%E9%94%AE"><span class="nav-number">22.4.</span> <span class="nav-text">4. 每次重试生成新幂等键</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%8F%AA%E4%BF%9D%E5%AD%98%E6%9C%80%E6%96%B0%E5%BF%AB%E7%85%A7"><span class="nav-number">22.5.</span> <span class="nav-text">5. 只保存最新快照</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E6%81%A2%E5%A4%8D%E6%97%B6%E9%87%8D%E6%96%B0%E9%97%AE%E6%A8%A1%E5%9E%8B%E2%80%9C%E5%88%9A%E6%89%8D%E5%81%9A%E5%88%B0%E5%93%AA%E9%87%8C%E2%80%9D"><span class="nav-number">22.6.</span> <span class="nav-text">6. 恢复时重新问模型“刚才做到哪里”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-%E6%A8%A1%E5%9E%8B%E8%87%AA%E5%B7%B1%E5%88%A4%E6%96%AD%E2%80%9C%E6%B5%8B%E8%AF%95%E9%80%9A%E8%BF%87%E2%80%9D"><span class="nav-number">22.7.</span> <span class="nav-text">7. 模型自己判断“测试通过”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-%E8%AF%84%E4%BC%B0%E8%80%85-%E4%BC%98%E5%8C%96%E8%80%85%E6%B2%A1%E6%9C%89%E5%BE%AA%E7%8E%AF%E4%B8%8A%E9%99%90"><span class="nav-number">22.8.</span> <span class="nav-text">8. 评估者-优化者没有循环上限</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-%E6%89%80%E6%9C%89%E9%94%99%E8%AF%AF%E9%83%BD%E8%BF%9B%E5%85%A5%E8%A1%A5%E5%81%BF"><span class="nav-number">22.9.</span> <span class="nav-text">9. 所有错误都进入补偿</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-%E4%BA%BA%E5%B7%A5%E5%AE%A1%E6%89%B9%E5%8F%AA%E7%BB%91%E5%AE%9A%E4%B8%80%E5%8F%A5%E8%87%AA%E7%84%B6%E8%AF%AD%E8%A8%80"><span class="nav-number">22.10.</span> <span class="nav-text">10. 人工审批只绑定一句自然语言</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-%E9%83%A8%E7%BD%B2%E6%97%B6%E7%9B%B4%E6%8E%A5%E5%8D%87%E7%BA%A7%E6%89%80%E6%9C%89%E5%9C%A8%E9%80%94%E4%BB%BB%E5%8A%A1"><span class="nav-number">22.11.</span> <span class="nav-text">11. 部署时直接升级所有在途任务</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-%E5%8F%AA%E6%B5%8B%E6%AD%A3%E5%B8%B8%E9%80%80%E5%87%BA%EF%BC%8C%E4%B8%8D%E5%9C%A8%E7%BC%9D%E9%9A%99%E4%B8%AD%E6%9D%80%E8%BF%9B%E7%A8%8B"><span class="nav-number">22.12.</span> <span class="nav-text">12. 只测正常退出，不在缝隙中杀进程</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%89%E3%80%81%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E4%B8%8D%E5%BA%94%E8%AF%A5%E7%BB%A7%E7%BB%AD%E5%8D%87%E7%BA%A7%E4%B8%BA-Agent"><span class="nav-number">23.</span> <span class="nav-text">二十三、什么时候不应该继续升级为 Agent</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%9B%9B%E3%80%81%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E5%8F%AF%E4%BB%A5%E6%89%A9%E5%A4%A7-Agent-%E8%87%AA%E6%B2%BB%E8%8C%83%E5%9B%B4"><span class="nav-number">24.</span> <span class="nav-text">二十四、什么时候可以扩大 Agent 自治范围</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%94%A8%E2%80%9C%E5%BD%B1%E5%AD%90%E6%8F%90%E6%A1%88%E2%80%9D%E9%80%90%E7%BA%A7%E9%AA%8C%E8%AF%81%E6%94%BE%E6%9D%83"><span class="nav-number">24.1.</span> <span class="nav-text">用“影子提案”逐级验证放权</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%94%BE%E6%9D%83%E5%AE%9E%E9%AA%8C%E5%BF%85%E9%A1%BB%E8%83%BD%E5%A4%9F%E4%B8%80%E9%94%AE%E6%94%B6%E5%9B%9E"><span class="nav-number">24.2.</span> <span class="nav-text">放权实验必须能够一键收回</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%84%E5%AE%A1%E8%AE%B0%E5%BD%95%E8%A6%81%E4%BF%9D%E5%AD%98%E5%8F%8D%E4%BA%8B%E5%AE%9E"><span class="nav-number">24.3.</span> <span class="nav-text">评审记录要保存反事实</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%94%E3%80%81%E8%90%BD%E5%9C%B0%E6%A3%80%E6%9F%A5%E8%A1%A8"><span class="nav-number">25.</span> <span class="nav-text">二十五、落地检查表</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9E%B6%E6%9E%84%E9%80%89%E6%8B%A9"><span class="nav-number">25.1.</span> <span class="nav-text">架构选择</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%A7%E5%88%B6%E6%9D%83"><span class="nav-number">25.2.</span> <span class="nav-text">控制权</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8A%B6%E6%80%81%E4%B8%8E%E6%A3%80%E6%9F%A5%E7%82%B9"><span class="nav-number">25.3.</span> <span class="nav-text">状态与检查点</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%89%AF%E4%BD%9C%E7%94%A8%E4%B8%8E%E6%81%A2%E5%A4%8D"><span class="nav-number">25.4.</span> <span class="nav-text">副作用与恢复</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%B6%85%E6%97%B6%E4%B8%8E%E9%A2%84%E7%AE%97"><span class="nav-number">25.5.</span> <span class="nav-text">超时与预算</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%B5%8B%E8%AF%95%E4%B8%8E%E8%AF%81%E6%8D%AE"><span class="nav-number">25.6.</span> <span class="nav-text">测试与证据</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BA%BA%E5%B7%A5%E6%8E%A5%E7%AE%A1"><span class="nav-number">25.7.</span> <span class="nav-text">人工接管</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%85%AD%E3%80%81%E6%80%BB%E7%BB%93"><span class="nav-number">26.</span> <span class="nav-text">二十六、总结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8F%82%E8%80%83%E8%B5%84%E6%96%99"><span class="nav-number">27.</span> <span class="nav-text">参考资料</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">358</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">27</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">796</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2026/04/14/AI%E6%B5%8B%E8%AF%95-30-%E7%A1%AE%E5%AE%9A%E6%80%A7Workflow%E5%92%8C%E8%87%AA%E4%B8%BBAgent%E5%BA%94%E8%AF%A5%E6%80%8E%E6%A0%B7%E5%88%92%E5%88%86%E8%BE%B9%E7%95%8C/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="AI测试-30-确定性Workflow和自主Agent应该怎样划分边界 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          AI测试-30-确定性Workflow和自主Agent应该怎样划分边界
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2026-04-14 20:30:00" itemprop="dateCreated datePublished" datetime="2026-04-14T20:30:00+08:00">2026-04-14</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/AI%E6%B5%8B%E8%AF%95/" itemprop="url" rel="index"><span itemprop="name">AI测试</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>17k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>1:03</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>Agent 项目最容易在命名阶段就失去边界。</p>
+<p>只要系统里有一次模型调用、一个工具接口和一段循环，方案文档就可能把它称为“自主 Agent”；只要画出几个固定方框，另一份文档又可能把同一套系统称为“Workflow”。命名本身不是主要风险，真正危险的是控制权没有被说清：</p>
+<ul>
+<li>谁决定下一步做什么</li>
+<li>谁能扩大工具和数据权限</li>
+<li>谁判断业务前置条件已经满足</li>
+<li>谁允许产生写入、发布、付款或删除等副作用</li>
+<li>进程崩溃后从哪里继续</li>
+<li>同一步被重复投递时如何避免重复执行</li>
+<li>任务何时停止、何时转人工、何时补偿</li>
+<li>模型输出与业务事实冲突时听谁的</li>
+</ul>
+<p>如果这些问题的答案都是“让模型根据上下文判断”，系统就不只是灵活，而是把流程控制、权限控制和事务语义一起交给了概率组件。</p>
+<p>如果这些问题的答案全部被硬编码，系统又可能退化成一条不能适应未知输入的流水线：模型只负责填空，遇到任何未预设分支就失败。</p>
+<p>更可执行的做法不是在 Workflow 和 Agent 之间选一个标签，而是先确定每一种控制权应该落在哪一层，再选择最简单且足够的复杂度。</p>
+<p>Anthropic 在 <a target="_blank" rel="noopener" href="https://www.anthropic.com/engineering/building-effective-agents">Building effective agents</a> 中给出了一个非常有用的架构区分：</p>
+<ul>
+<li><strong>Workflow</strong>：模型和工具沿预定义的代码路径被编排。</li>
+<li><strong>Agent</strong>：模型动态决定过程和工具使用方式，并控制如何完成任务。</li>
+</ul>
+<p>这个定义关注的是“过程由谁决定”，不是模型调用次数，也不是有没有工具。一个包含十次模型调用的固定链仍然是 Workflow；一个只有三步、但由模型根据环境动态选择下一步的系统，已经具有 Agent 属性。</p>
+<p>本文沿用这一区分，但把它进一步落到测试和生产控制层。重点不是重复 <code>AI测试-19</code> 中的任务完成率、工具正确率等通用 Agent 指标，而是回答另一个问题：</p>
+<blockquote>
+<p>如何选择单次调用、链式 Workflow、路由、并行、编排者-工作者、评估者-优化者或自治 Agent；如何把关键业务约束、权限、副作用、恢复和终止留在确定性控制层；以及怎样证明这个边界在崩溃、超时和重复执行时仍然成立。</p>
+</blockquote>
+<h2 id="一、先把三个容易混淆的概念拆开"><a href="#一、先把三个容易混淆的概念拆开" class="headerlink" title="一、先把三个容易混淆的概念拆开"></a>一、先把三个容易混淆的概念拆开</h2><h3 id="1-“用了-LLM”不等于“用了-Agent”"><a href="#1-“用了-LLM”不等于“用了-Agent”" class="headerlink" title="1. “用了 LLM”不等于“用了 Agent”"></a>1. “用了 LLM”不等于“用了 Agent”</h3><p>下面的系统只做一次模型调用：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">输入工单 -&gt; 模型提取字段 -&gt; JSON Schema 校验 -&gt; 写入工单系统</span><br></pre></td></tr></table></figure>
+
+<p>模型可能负责理解自然语言，但它没有决定流程，也没有自行选择工具。只要写入条件、目标系统和失败处理都由代码定义，这仍然是一个带模型节点的确定性应用。</p>
+<p>再看另一条链：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">输入文档</span><br><span class="line">  -&gt; 模型生成摘要</span><br><span class="line">  -&gt; 规则检查字数和必填章节</span><br><span class="line">  -&gt; 模型翻译</span><br><span class="line">  -&gt; 术语表校验</span><br><span class="line">  -&gt; 发布前人工确认</span><br></pre></td></tr></table></figure>
+
+<p>它包含多个模型调用，但步骤、门禁和终止条件都预先确定，属于 Prompt Chaining Workflow。</p>
+<p>真正跨入 Agent 区域的是下面这种控制：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">给定目标和工具集合</span><br><span class="line">  -&gt; 模型观察当前环境</span><br><span class="line">  -&gt; 模型决定下一项调查或修改动作</span><br><span class="line">  -&gt; 执行工具并返回结果</span><br><span class="line">  -&gt; 模型根据新证据改写计划</span><br><span class="line">  -&gt; 直到完成、受阻或预算耗尽</span><br></pre></td></tr></table></figure>
+
+<p>此时所需步骤无法提前完整枚举，模型拥有局部过程决策权。</p>
+<h3 id="2-“动态分支”不一定是-Agent"><a href="#2-“动态分支”不一定是-Agent" class="headerlink" title="2. “动态分支”不一定是 Agent"></a>2. “动态分支”不一定是 Agent</h3><p>普通代码同样可以动态分支：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> payload[<span class="string">&quot;risk&quot;</span>] == <span class="string">&quot;high&quot;</span>:</span><br><span class="line">    require_human_approval()</span><br><span class="line"><span class="keyword">elif</span> payload[<span class="string">&quot;language&quot;</span>] == <span class="string">&quot;zh-CN&quot;</span>:</span><br><span class="line">    run_chinese_pipeline()</span><br><span class="line"><span class="keyword">else</span>:</span><br><span class="line">    run_default_pipeline()</span><br></pre></td></tr></table></figure>
+
+<p>路由结果依赖输入，但所有分支都由代码和规则定义。这是确定性 Workflow。</p>
+<p>即使路由分类由模型完成，只要模型只能从受限枚举中选择，而代码负责校验类别、映射流程和处理未知值，整个系统的控制骨架仍然是 Workflow。模型在其中承担一个概率分类器角色，不拥有任意行动权。</p>
+<h3 id="3-“有外层状态机”也不代表内部不是-Agent"><a href="#3-“有外层状态机”也不代表内部不是-Agent" class="headerlink" title="3. “有外层状态机”也不代表内部不是 Agent"></a>3. “有外层状态机”也不代表内部不是 Agent</h3><p>一个系统完全可以同时包含两者：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">确定性控制层：接单 -&gt; 隔离环境 -&gt; 授权 -&gt; 执行 -&gt; 验收 -&gt; 审批 -&gt; 发布/回滚</span><br><span class="line">                                  |</span><br><span class="line">                                  +-&gt; Agent 区域：诊断问题、选择只读工具、提出修改、分析测试失败</span><br></pre></td></tr></table></figure>
+
+<p>外层状态机限定 Agent 能在什么阶段做什么，Agent 在阶段内部动态探索。这样的混合架构通常比“全流程自治”更容易审计，也比“全部写死”更能处理开放问题。</p>
+<p>边界判断不能只看架构图上是否画了循环，而要逐项检查：</p>
+<ul>
+<li>下一步候选集合是否有限</li>
+<li>分支条件由规则还是模型决定</li>
+<li>模型能否创建新的子目标</li>
+<li>模型能否增加工具、权限或预算</li>
+<li>模型输出是否可直接产生副作用</li>
+<li>模型能否宣布任务成功</li>
+<li>代码能否在任何一步强制停止</li>
+</ul>
+<h2 id="二、复杂度阶梯：从一次调用到自治-Agent"><a href="#二、复杂度阶梯：从一次调用到自治-Agent" class="headerlink" title="二、复杂度阶梯：从一次调用到自治 Agent"></a>二、复杂度阶梯：从一次调用到自治 Agent</h2><p><img src="/images/ai-quality/ai-30-decision-spectrum.svg" alt="从单次调用到自治Agent的复杂度与控制权谱系"></p>
+<p>复杂度不是成熟度。层级越高，通常意味着可处理的问题更开放，同时也增加状态、延迟、成本和失败组合。选择时应从最低层开始，只有低层方案在冻结评测集上明确达不到目标，才向上升级。</p>
+<h3 id="L0：单次模型调用"><a href="#L0：单次模型调用" class="headerlink" title="L0：单次模型调用"></a>L0：单次模型调用</h3><p>结构：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">输入 + 上下文 -&gt; LLM -&gt; 结构化输出 -&gt; 确定性校验</span><br></pre></td></tr></table></figure>
+
+<p>适合：</p>
+<ul>
+<li>分类、抽取、改写、摘要</li>
+<li>输入和输出边界清楚</li>
+<li>一次上下文能容纳必要证据</li>
+<li>结果可以由 Schema、规则或人工快速验证</li>
+</ul>
+<p>主要优点是链路短、延迟低、证据简单。主要限制是复杂任务被压进一个 Prompt 后，模型同时承担理解、规划和生成，错误难以定位。</p>
+<p>不要因为输出偶尔不稳定就立即增加 Agent。先检查输入质量、上下文选择、示例、工具接口和评测 Oracle。Anthropic 的官方工程文同样强调先使用能够满足需求的最简单方案；这是架构经验，不是对某个模型或业务的性能保证。</p>
+<h3 id="L1：Prompt-Chaining"><a href="#L1：Prompt-Chaining" class="headerlink" title="L1：Prompt Chaining"></a>L1：Prompt Chaining</h3><p>结构：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">步骤 A -&gt; 程序门禁 -&gt; 步骤 B -&gt; 程序门禁 -&gt; 步骤 C</span><br></pre></td></tr></table></figure>
+
+<p>适合任务可以稳定拆成固定阶段，并且每个中间产物都有清楚验收标准的场景。例如：</p>
+<ul>
+<li>先生成测试点，再按风险覆盖规则检查，再生成用例</li>
+<li>先抽取事实，再验证来源，再生成报告</li>
+<li>先生成大纲，再检查章节契约，再写正文</li>
+</ul>
+<p>它用更多调用和延迟换取更小的单步难度。失败可以定位到具体阶段，也可以在门禁处提前停止。</p>
+<p>不适合的问题是：执行前无法知道要经历哪些阶段，或者下一步强依赖调查中才发现的新线索。为了覆盖所有可能性而写出几十个条件分支，通常说明任务已经超过固定链的舒适区。</p>
+<h3 id="L2：Routing"><a href="#L2：Routing" class="headerlink" title="L2：Routing"></a>L2：Routing</h3><p>结构：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">输入 -&gt; 分类/规则路由 -&gt; 专用流程 A / B / C</span><br></pre></td></tr></table></figure>
+
+<p>适合输入天然分成几个稳定域，每个域需要不同 Prompt、模型、工具或风险策略。例如：</p>
+<ul>
+<li>普通咨询、退款、技术支持进入不同处理链</li>
+<li>代码、日志、文档进入不同分析器</li>
+<li>低风险只读任务与高风险写任务采用不同审批级别</li>
+</ul>
+<p>路由器可以是规则、传统分类器或 LLM，但类别集合、默认分支、置信不足处理和权限映射应由代码控制。</p>
+<p>路由最常见的错误不是分类准确率低，而是未知类别被默认送进高权限通道。安全默认值应是拒绝、降级到只读流程或转人工，而不是“选一个最接近的工具继续”。</p>
+<h3 id="L3：Parallelization"><a href="#L3：Parallelization" class="headerlink" title="L3：Parallelization"></a>L3：Parallelization</h3><p>结构有两类：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">Sectioning：独立子任务并行执行 -&gt; 程序聚合</span><br><span class="line">Voting：同一任务多次独立执行 -&gt; 规则/裁判聚合</span><br></pre></td></tr></table></figure>
+
+<p>适合子任务真正独立，或者需要多个互补视角的场景。例如：</p>
+<ul>
+<li>分别检查安全、事实、格式和引用</li>
+<li>对互不依赖的文档分片并行抽取</li>
+<li>用多个固定检查器审查一段代码</li>
+</ul>
+<p>并行不等于多 Agent。子任务如果在启动前已经确定，每个工作单元只是一次受限调用，它仍然是 Workflow。</p>
+<p>并行化前必须识别共享状态。如果两个分支会修改同一文件、同一订单或同一发布状态，简单并行会把模型问题升级为并发一致性问题。此时要么隔离工作区并在后面确定性合并，要么保持串行。</p>
+<h3 id="L4：Orchestrator-Workers"><a href="#L4：Orchestrator-Workers" class="headerlink" title="L4：Orchestrator-Workers"></a>L4：Orchestrator-Workers</h3><p>结构：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">编排模型动态拆分任务 -&gt; 多个工作单元 -&gt; 编排模型综合</span><br></pre></td></tr></table></figure>
+
+<p>它与固定并行最大的区别，是子任务在运行时由编排者根据输入动态产生。复杂代码修改、开放检索和未知文件范围的调查常适合这一模式。</p>
+<p>Anthropic 把它列为一种 Workflow 模式，是因为外部控制拓扑仍然预定义：先拆分、再执行工作单元、再综合。模型在“如何拆”上拥有动态决策权，但不能因此自动获得无限委派、任意权限和任意终止权。</p>
+<p>这一层已经需要任务合同、子任务去重、数量预算、结果 Schema 和聚合验收。第 31 篇会专门讨论多 Agent 调度；本文只强调，动态拆分不应该绕过外层控制器。</p>
+<h3 id="L5：Evaluator-Optimizer"><a href="#L5：Evaluator-Optimizer" class="headerlink" title="L5：Evaluator-Optimizer"></a>L5：Evaluator-Optimizer</h3><p>结构：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">生成 -&gt; 评估 -&gt; 带反馈优化 -&gt; 再评估 -&gt; 满足标准或预算终止</span><br></pre></td></tr></table></figure>
+
+<p>适合同时满足两个条件的任务：</p>
+<ol>
+<li>质量标准能够明确表达。</li>
+<li>根据具体反馈进行迭代确实能改善结果。</li>
+</ol>
+<p>例如代码生成后运行测试、报告生成后核对引用、翻译后检查术语一致性。</p>
+<p>如果循环次数、通过阈值、允许修改范围和终止原因由代码规定，它仍可以是受控 Workflow。评估者即使也是 LLM，也只能提出评分和反馈，最终验收应优先使用测试结果、Schema、业务状态和可核验证据。</p>
+<p>最危险的写法是“直到评估者满意”。它没有最大迭代次数，也没有进展定义。生成者和评估者可能反复改写措辞，持续消耗 Token，却没有业务质量增量。</p>
+<h3 id="L6：自治-Agent"><a href="#L6：自治-Agent" class="headerlink" title="L6：自治 Agent"></a>L6：自治 Agent</h3><p>结构：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">目标 -&gt; 观察 -&gt; 规划 -&gt; 选择工具 -&gt; 行动 -&gt; 再观察 -&gt; 动态调整 -&gt; 终止</span><br></pre></td></tr></table></figure>
+
+<p>适合：</p>
+<ul>
+<li>所需步骤和分支无法提前枚举</li>
+<li>环境会在执行中提供新证据</li>
+<li>任务有可观察的进展和成功条件</li>
+<li>工具结果能够提供环境真值</li>
+<li>错误动作可被限制、验证或恢复</li>
+<li>任务价值足以支付更高延迟和成本</li>
+</ul>
+<p>自治 Agent 不适合把模糊目标直接接到不可逆高权限工具上。开放探索和高风险执行应拆开：Agent 可以调查并提出行动计划，确定性控制层负责校验、审批和提交。</p>
+<h2 id="三、选择矩阵：先问任务属性，再选架构名称"><a href="#三、选择矩阵：先问任务属性，再选架构名称" class="headerlink" title="三、选择矩阵：先问任务属性，再选架构名称"></a>三、选择矩阵：先问任务属性，再选架构名称</h2><p>下面的矩阵不是通用评分公式，而是一份设计评审模板。每个结论都要在本系统评测集上验证。</p>
+<table>
+<thead>
+<tr>
+<th>判断维度</th>
+<th>低复杂度信号</th>
+<th>升级 Workflow 的信号</th>
+<th>升级 Agent 的信号</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>路径可预测性</td>
+<td>一次调用可完成</td>
+<td>阶段固定、分支有限</td>
+<td>步骤数和工具序列无法预知</td>
+</tr>
+<tr>
+<td>输入分布</td>
+<td>单一且稳定</td>
+<td>可分成少量稳定类别</td>
+<td>新线索持续改变任务边界</td>
+</tr>
+<tr>
+<td>子任务关系</td>
+<td>无需拆分</td>
+<td>可提前拆分、依赖清楚</td>
+<td>必须运行后才能决定如何拆</td>
+</tr>
+<tr>
+<td>结果 Oracle</td>
+<td>Schema 或规则可判</td>
+<td>每阶段都有程序门禁</td>
+<td>终态可判，但中间路径开放</td>
+</tr>
+<tr>
+<td>环境反馈</td>
+<td>不需要</td>
+<td>固定节点读取</td>
+<td>每一步都可能改变下一计划</td>
+</tr>
+<tr>
+<td>权限与副作用</td>
+<td>无或只读</td>
+<td>固定动作、可校验</td>
+<td>探索开放但执行仍需受控</td>
+</tr>
+<tr>
+<td>可恢复性</td>
+<td>重做成本低</td>
+<td>可按阶段重试</td>
+<td>需长期状态、检查点和接管</td>
+</tr>
+<tr>
+<td>延迟与成本</td>
+<td>要求严格</td>
+<td>能接受有限多次调用</td>
+<td>任务价值覆盖长循环成本</td>
+</tr>
+<tr>
+<td>可审计性</td>
+<td>保存输入输出即可</td>
+<td>保存阶段产物和门禁</td>
+<td>保存事件、状态、工具和决策摘要</td>
+</tr>
+<tr>
+<td>不确定性来源</td>
+<td>主要是生成</td>
+<td>主要是单步质量</td>
+<td>路径、工具和环境共同变化</td>
+</tr>
+</tbody></table>
+<p>一个实用的决策顺序如下：</p>
+<ol>
+<li>单次调用加检索和示例是否已经达到质量底线。</li>
+<li>如果没有，失败是否能通过固定阶段拆分解决。</li>
+<li>输入是否存在稳定类别，可以路由到专用链。</li>
+<li>独立工作是否能并行，聚合规则是否清楚。</li>
+<li>子任务是否必须动态生成，但外部拓扑仍可固定。</li>
+<li>反馈是否能形成有界优化循环。</li>
+<li>只有路径确实无法硬编码时，才扩大 Agent 的过程决策权。</li>
+</ol>
+<h3 id="用增量收益覆盖增量复杂度"><a href="#用增量收益覆盖增量复杂度" class="headerlink" title="用增量收益覆盖增量复杂度"></a>用增量收益覆盖增量复杂度</h3><p>架构升级至少要比较四类变化：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">净收益 = 任务质量增量</span><br><span class="line">       - 延迟代价</span><br><span class="line">       - 计算与工具成本</span><br><span class="line">       - 新增失败和运维成本</span><br></pre></td></tr></table></figure>
+
+<p>这里不能把不同单位硬加成一个漂亮总分。更合适的做法是建立 Pareto 比较：在满足安全、任务完成和证据完整硬门禁后，观察质量、时延和成本是否存在不可替代的改善。</p>
+<p>例如 Orchestrator-Workers 相比固定并行只提升 0.5 个百分点，却把 P95 时延提高两倍、失败归因时间提高三倍，就没有足够证据证明升级合理。反过来，如果固定链在开放任务上持续遗漏未知分支，而 Agent 把关键覆盖率从不可用提升到发布底线，复杂度可能值得承担。</p>
+<p>所有数字都应来自同一任务集、同一版本合同和同一评测口径，不能拿厂商案例数字替代本系统实验。</p>
+<h2 id="四、真正的边界不是-Prompt，而是控制面与执行面"><a href="#四、真正的边界不是-Prompt，而是控制面与执行面" class="headerlink" title="四、真正的边界不是 Prompt，而是控制面与执行面"></a>四、真正的边界不是 Prompt，而是控制面与执行面</h2><p>可靠的混合架构通常至少分成四个面。</p>
+<h3 id="1-目标与策略面"><a href="#1-目标与策略面" class="headerlink" title="1. 目标与策略面"></a>1. 目标与策略面</h3><p>负责定义：</p>
+<ul>
+<li>任务目标与非目标</li>
+<li>允许的数据范围</li>
+<li>允许工具和参数边界</li>
+<li>风险等级</li>
+<li>审批要求</li>
+<li>成本、时延、步骤和委派预算</li>
+<li>成功、失败、转人工和取消条件</li>
+</ul>
+<p>这些内容应版本化，并由代码读取。Prompt 可以向模型解释规则，但不能成为唯一执法点。</p>
+<h3 id="2-Agent-决策面"><a href="#2-Agent-决策面" class="headerlink" title="2. Agent 决策面"></a>2. Agent 决策面</h3><p>负责处理无法预先硬编码的部分：</p>
+<ul>
+<li>根据当前证据形成调查计划</li>
+<li>在允许集合中选择下一个只读或可逆动作</li>
+<li>提出修改方案</li>
+<li>分析工具错误和测试失败</li>
+<li>判断还缺少什么信息</li>
+</ul>
+<p>模型输出在这一层只是<strong>提案</strong>。提案必须是结构化的，并带上动作目的、证据引用和预期后置条件。</p>
+<h3 id="3-确定性控制面"><a href="#3-确定性控制面" class="headerlink" title="3. 确定性控制面"></a>3. 确定性控制面</h3><p>负责：</p>
+<ul>
+<li>校验动作 Schema</li>
+<li>重新执行身份与权限检查</li>
+<li>检查业务前置条件</li>
+<li>绑定稳定幂等键</li>
+<li>检查预算和循环进展</li>
+<li>写入待执行事件与检查点</li>
+<li>调用工具代理</li>
+<li>核对权威后置状态</li>
+<li>决定重试、补偿、暂停或转人工</li>
+<li>宣布最终终态</li>
+</ul>
+<p>模型不能通过输出“已经审批”让控制器跳过审批，也不能通过输出“任务完成”替代终态 Oracle。</p>
+<h3 id="4-工具与环境面"><a href="#4-工具与环境面" class="headerlink" title="4. 工具与环境面"></a>4. 工具与环境面</h3><p>工具服务本身还要执行最小权限和业务约束。</p>
+<p>即使控制器有缺陷，工具端也不应接受：</p>
+<ul>
+<li>跨租户资源 ID</li>
+<li>超出角色范围的动作</li>
+<li>缺少版本号的并发写入</li>
+<li>缺少幂等键的关键写请求</li>
+<li>未经批准的高风险动作</li>
+<li>已过期或范围不匹配的批准令牌</li>
+</ul>
+<p>这不是重复校验，而是纵深控制。Agent、控制器和工具服务处在不同信任边界，任何一层都不能把上游自然语言当作授权事实。</p>
+<h2 id="五、哪些决策可以交给模型，哪些必须留在代码里"><a href="#五、哪些决策可以交给模型，哪些必须留在代码里" class="headerlink" title="五、哪些决策可以交给模型，哪些必须留在代码里"></a>五、哪些决策可以交给模型，哪些必须留在代码里</h2><table>
+<thead>
+<tr>
+<th>决策</th>
+<th>建议所有者</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>选择调查方向</td>
+<td>Agent</td>
+<td>开放问题需要语义判断和适应</td>
+</tr>
+<tr>
+<td>在允许集合中选择只读工具</td>
+<td>Agent 提案、控制器批准</td>
+<td>保留灵活性，同时限制数据边界</td>
+</tr>
+<tr>
+<td>生成查询、补丁或候选方案</td>
+<td>Agent</td>
+<td>内容空间开放，可通过后续验证收敛</td>
+</tr>
+<tr>
+<td>判断 Schema 是否合法</td>
+<td>确定性控制器</td>
+<td>规则可执行，不应交给概率判断</td>
+</tr>
+<tr>
+<td>身份、租户、RBAC&#x2F;ABAC 授权</td>
+<td>策略与工具服务</td>
+<td>授权必须基于可信主体和资源事实</td>
+</tr>
+<tr>
+<td>生成幂等键</td>
+<td>控制器</td>
+<td>必须跨重试和恢复稳定复用</td>
+</tr>
+<tr>
+<td>是否允许不可逆副作用</td>
+<td>策略 + 人工审批</td>
+<td>风险不能由模型自我授权</td>
+</tr>
+<tr>
+<td>当前状态是否已提交</td>
+<td>权威查询或事务回执</td>
+<td>模型只能看到 observation，不能猜事实</td>
+</tr>
+<tr>
+<td>是否满足业务终态</td>
+<td>程序 Oracle + 必要人工验收</td>
+<td>自报完成不能证明目标实现</td>
+</tr>
+<tr>
+<td>是否还有调查价值</td>
+<td>Agent 建议、预算控制器决定</td>
+<td>语义进展与硬预算要同时满足</td>
+</tr>
+<tr>
+<td>是否重试</td>
+<td>控制器按错误语义决定</td>
+<td>提交前、提交后和永久错误策略不同</td>
+</tr>
+<tr>
+<td>是否补偿</td>
+<td>控制器&#x2F;人工依据效果登记决定</td>
+<td>补偿有业务语义，不能统一“反向调用”</td>
+</tr>
+<tr>
+<td>是否升级人工</td>
+<td>控制器触发，Agent 提供摘要</td>
+<td>升级条件应稳定，交接内容可由模型整理</td>
+</tr>
+</tbody></table>
+<p>一个简单原则是：</p>
+<blockquote>
+<p>越接近权限、资金、数据边界、不可逆副作用和最终承诺，越应该由可执行规则和权威状态控制；越接近开放调查、候选生成和语义归纳，越适合让模型发挥动态能力。</p>
+</blockquote>
+<h2 id="六、状态模型：不要把对话历史当作任务状态"><a href="#六、状态模型：不要把对话历史当作任务状态" class="headerlink" title="六、状态模型：不要把对话历史当作任务状态"></a>六、状态模型：不要把对话历史当作任务状态</h2><p>对话上下文只能帮助模型继续推理，不能承担持久化工作流状态。</p>
+<p>生产任务至少需要三类状态：</p>
+<h3 id="1-控制状态"><a href="#1-控制状态" class="headerlink" title="1. 控制状态"></a>1. 控制状态</h3><ul>
+<li>当前阶段</li>
+<li>状态版本</li>
+<li>下一步允许转换</li>
+<li>已消耗步骤、Token、费用和时长</li>
+<li>当前审批、租约和截止时间</li>
+<li>控制器与策略版本</li>
+</ul>
+<h3 id="2-业务状态"><a href="#2-业务状态" class="headerlink" title="2. 业务状态"></a>2. 业务状态</h3><ul>
+<li>被操作资源身份和版本</li>
+<li>已完成目标</li>
+<li>未完成目标</li>
+<li>已产生副作用</li>
+<li>可用补偿及执行结果</li>
+<li>权威系统回执</li>
+</ul>
+<h3 id="3-Agent-工作状态"><a href="#3-Agent-工作状态" class="headerlink" title="3. Agent 工作状态"></a>3. Agent 工作状态</h3><ul>
+<li>当前计划摘要</li>
+<li>已确认事实和证据引用</li>
+<li>未解决问题</li>
+<li>最近一次动作提案</li>
+<li>可丢弃的临时推理上下文</li>
+</ul>
+<p>三者不能混成一段“memory”。控制状态和业务状态必须能够在不调用模型的情况下读取、校验和恢复。Agent 工作状态可以被压缩，但压缩不能删除权限、审批、未决副作用和预算等控制事实。</p>
+<h2 id="七、一个任务执行器的持久化状态机"><a href="#七、一个任务执行器的持久化状态机" class="headerlink" title="七、一个任务执行器的持久化状态机"></a>七、一个任务执行器的持久化状态机</h2><p><img src="/images/ai-quality/ai-30-recovery-state.svg" alt="混合Agent任务执行器的状态机与崩溃恢复路径"></p>
+<p>下面是一组适合长任务执行器的状态。名称可以按业务调整，但语义必须互斥且可审计。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">CREATED</span><br><span class="line">  -&gt; VALIDATING</span><br><span class="line">  -&gt; READY</span><br><span class="line">  -&gt; RUNNING</span><br><span class="line">  -&gt; WAITING_TOOL</span><br><span class="line">  -&gt; CHECKPOINTING</span><br><span class="line">  -&gt; RUNNING</span><br><span class="line">  -&gt; WAITING_APPROVAL</span><br><span class="line">  -&gt; RUNNING</span><br><span class="line">  -&gt; COMPENSATING</span><br><span class="line">  -&gt; SUCCEEDED / FAILED / MANUAL_REVIEW / CANCELLED</span><br></pre></td></tr></table></figure>
+
+<p>另外保留 <code>RETRY_WAIT</code> 表示已明确可重试、正在等待退避时间；保留 <code>RECOVERING</code> 表示新进程正在根据事件和权威状态恢复，而不是继续普通执行。</p>
+<h3 id="每个状态必须回答四件事"><a href="#每个状态必须回答四件事" class="headerlink" title="每个状态必须回答四件事"></a>每个状态必须回答四件事</h3><ol>
+<li>允许进入它的前置状态是什么。</li>
+<li>进入时必须持久化哪些事实。</li>
+<li>在该状态允许哪些动作。</li>
+<li>离开时必须满足什么后置条件。</li>
+</ol>
+<p>例如 <code>WAITING_TOOL</code> 不是“正在等 HTTP 返回”这么简单。进入前至少要保存：</p>
+<ul>
+<li><code>action_id</code></li>
+<li>工具名和标准化参数摘要</li>
+<li>稳定幂等键</li>
+<li>预期副作用类型</li>
+<li>调用截止时间</li>
+<li>提交结果不明确时的权威查询方法</li>
+<li>对应补偿定义</li>
+</ul>
+<p>如果进程在请求发出后、响应写入前崩溃，新进程才能判断下一步应该查询、重试还是转人工。</p>
+<h3 id="终态也要有业务含义"><a href="#终态也要有业务含义" class="headerlink" title="终态也要有业务含义"></a>终态也要有业务含义</h3><ul>
+<li><code>SUCCEEDED</code>：所有目标和不变量由独立 Oracle 验证通过。</li>
+<li><code>FAILED</code>：任务未完成，但没有未决副作用，失败原因完整。</li>
+<li><code>MANUAL_REVIEW</code>：存在需要人判断的冲突、未知提交结果或补偿风险，交接包完整。</li>
+<li><code>CANCELLED</code>：收到有效取消请求，所有可取消操作已停止，不能遗留无人管理的在途写入。</li>
+</ul>
+<p>不能把“循环结束”直接映射为 <code>SUCCEEDED</code>，也不能把“达到 Token 上限”写成普通 <code>FAILED</code> 后丢掉现场。</p>
+<h2 id="八、检查点：保存可继续执行的事实，不是保存一段聊天"><a href="#八、检查点：保存可继续执行的事实，不是保存一段聊天" class="headerlink" title="八、检查点：保存可继续执行的事实，不是保存一段聊天"></a>八、检查点：保存可继续执行的事实，不是保存一段聊天</h2><p>一个可恢复检查点至少包含：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;run_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;repair-20260414-0042&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;state&quot;</span><span class="punctuation">:</span> <span class="string">&quot;WAITING_TOOL&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;state_version&quot;</span><span class="punctuation">:</span> <span class="number">17</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;controller_version&quot;</span><span class="punctuation">:</span> <span class="string">&quot;executor-v8&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;policy_version&quot;</span><span class="punctuation">:</span> <span class="string">&quot;repair-policy-v5&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;tool_registry_digest&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sha256:...&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;input_artifact_ref&quot;</span><span class="punctuation">:</span> <span class="string">&quot;artifact://eval/failure-8821&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;workspace_ref&quot;</span><span class="punctuation">:</span> <span class="string">&quot;workspace://repair-0042&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;budget&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;steps_used&quot;</span><span class="punctuation">:</span> <span class="number">6</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;steps_limit&quot;</span><span class="punctuation">:</span> <span class="number">18</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;model_calls_used&quot;</span><span class="punctuation">:</span> <span class="number">4</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;model_calls_limit&quot;</span><span class="punctuation">:</span> <span class="number">10</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;write_actions_used&quot;</span><span class="punctuation">:</span> <span class="number">1</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;write_actions_limit&quot;</span><span class="punctuation">:</span> <span class="number">3</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;wall_deadline&quot;</span><span class="punctuation">:</span> <span class="string">&quot;2026-04-14T13:10:00Z&quot;</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;pending_action&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;action_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;act-007&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;tool&quot;</span><span class="punctuation">:</span> <span class="string">&quot;run_eval_suite&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;arguments_digest&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sha256:...&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;idempotency_key&quot;</span><span class="punctuation">:</span> <span class="string">&quot;repair-0042:eval:attempt-2&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;effect_kind&quot;</span><span class="punctuation">:</span> <span class="string">&quot;eval-run&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;status_query&quot;</span><span class="punctuation">:</span> <span class="string">&quot;get_eval_run_by_key&quot;</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;completed_effects&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;effect_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;effect-003&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;kind&quot;</span><span class="punctuation">:</span> <span class="string">&quot;workspace-patch&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;receipt_ref&quot;</span><span class="punctuation">:</span> <span class="string">&quot;artifact://receipts/effect-003&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;compensation&quot;</span><span class="punctuation">:</span> <span class="string">&quot;restore-workspace-snapshot&quot;</span></span><br><span class="line">    <span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;approval&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">null</span></span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;plan_summary_ref&quot;</span><span class="punctuation">:</span> <span class="string">&quot;artifact://plans/repair-0042-v3&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;evidence_refs&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;event://repair-0042/1..97&quot;</span><span class="punctuation">]</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>检查点要使用乐观版本或事务写入。旧进程不能在新进程已经推进到版本 18 后，再把版本 16 的快照覆盖回来。</p>
+<h3 id="检查点频率不能只按时间"><a href="#检查点频率不能只按时间" class="headerlink" title="检查点频率不能只按时间"></a>检查点频率不能只按时间</h3><p>固定每 30 秒保存一次无法保护关键副作用边界。更稳的触发点包括：</p>
+<ul>
+<li>每次模型提案被接受后</li>
+<li>每次工具调用准备完成、请求发出前</li>
+<li>每次工具回执写入后</li>
+<li>每次业务后置条件验证后</li>
+<li>每次审批状态变化后</li>
+<li>每次预算或阶段变化后</li>
+<li>进入任何终态前</li>
+</ul>
+<p>时间周期检查点可以作为补充，但不能替代这些语义检查点。</p>
+<h2 id="九、Write-ahead-Intent：先登记动作，再产生副作用"><a href="#九、Write-ahead-Intent：先登记动作，再产生副作用" class="headerlink" title="九、Write-ahead Intent：先登记动作，再产生副作用"></a>九、Write-ahead Intent：先登记动作，再产生副作用</h2><p>关键写操作建议采用下面的顺序：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">1. Agent 提出结构化动作</span><br><span class="line">2. 控制器校验权限、参数、预算和前置条件</span><br><span class="line">3. 分配 action_id 与稳定 idempotency_key</span><br><span class="line">4. 持久化 ACTION_PREPARED 事件和检查点</span><br><span class="line">5. 调用工具</span><br><span class="line">6. 持久化工具回执与权威状态</span><br><span class="line">7. 验证后置条件</span><br><span class="line">8. 标记 ACTION_CONFIRMED 或 ACTION_UNCERTAIN</span><br></pre></td></tr></table></figure>
+
+<p>第 4 步是恢复边界。</p>
+<p>如果先调用工具、后记录动作，进程恰好在两者之间崩溃，恢复进程只看到“没有记录”，很可能再次执行同一副作用。</p>
+<p>写前登记也不是完整事务。事件存储和外部工具通常不能共享同一个数据库事务，因此仍要依靠：</p>
+<ul>
+<li>稳定幂等键</li>
+<li>按幂等键查询结果</li>
+<li>工具端去重</li>
+<li>权威后置状态验证</li>
+<li>必要时补偿或人工确认</li>
+</ul>
+<p>这是一种“把不确定窗口显式化”的设计，不是宣称实现了跨系统 exactly-once。</p>
+<h2 id="十、重试：必须按失败语义分流"><a href="#十、重试：必须按失败语义分流" class="headerlink" title="十、重试：必须按失败语义分流"></a>十、重试：必须按失败语义分流</h2><p>统一的 <code>except Exception: retry()</code> 会制造最难排查的重复副作用。</p>
+<p>至少区分以下情况：</p>
+<table>
+<thead>
+<tr>
+<th>失败类型</th>
+<th>可观察事实</th>
+<th>建议动作</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>调用前失败</td>
+<td>请求确定未发出</td>
+<td>在预算内退避重试</td>
+</tr>
+<tr>
+<td>提交前拒绝</td>
+<td>服务确认没有提交</td>
+<td>修正可修参数或按策略重试</td>
+</tr>
+<tr>
+<td>提交后响应丢失</td>
+<td>副作用可能已经发生</td>
+<td>先按幂等键或业务键查询，禁止盲重试</td>
+</tr>
+<tr>
+<td>限流或短暂不可用</td>
+<td>服务明确可重试</td>
+<td>遵守 Retry-After，并使用有上限退避</td>
+</tr>
+<tr>
+<td>参数永久错误</td>
+<td>Schema&#x2F;业务规则拒绝</td>
+<td>返回 Agent 修正一次或直接失败，不原样重试</td>
+</tr>
+<tr>
+<td>权限拒绝</td>
+<td>当前主体无权</td>
+<td>不重试，不让 Agent更换身份，转人工或终止</td>
+</tr>
+<tr>
+<td>版本冲突</td>
+<td>资源已被并发修改</td>
+<td>重新读取权威状态，再重新规划</td>
+</tr>
+<tr>
+<td>部分成功</td>
+<td>一部分效果已提交</td>
+<td>对照效果登记逐项确认、补偿或接管</td>
+</tr>
+</tbody></table>
+<p>超时本身不能说明请求失败。HTTP 客户端看到超时，只能说明它没有在截止时间内获得确定响应。业务事务可能尚未开始、正在执行、已提交或回执丢失。</p>
+<p>因此关键写工具必须提供至少一种可恢复能力：</p>
+<ul>
+<li>服务端幂等键</li>
+<li>按请求 ID 查询</li>
+<li>条件写和资源版本</li>
+<li>可验证的业务唯一键</li>
+<li>明确的事务回执</li>
+</ul>
+<p>如果这些能力都没有，高风险写动作不适合交给长循环 Agent 自动执行。</p>
+<h2 id="十一、补偿不是数据库回滚"><a href="#十一、补偿不是数据库回滚" class="headerlink" title="十一、补偿不是数据库回滚"></a>十一、补偿不是数据库回滚</h2><p>长任务跨越多个系统时，通常无法依赖一个全局 ACID 事务。补偿的作用是执行一个新的业务动作，尽量抵消已经提交的效果。</p>
+<p>例如：</p>
+<ul>
+<li>创建临时工作区的补偿是删除隔离工作区</li>
+<li>部署金丝雀的补偿是回滚到已知稳定版本</li>
+<li>预留资源的补偿是释放预留</li>
+<li>创建草稿工单的补偿是关闭草稿并标记原因</li>
+</ul>
+<p>但以下动作并不一定可完全补偿：</p>
+<ul>
+<li>已发送的外部邮件无法真正“撤回”收件人已读内容</li>
+<li>已泄露的数据无法通过删除日志恢复秘密性</li>
+<li>已触发的第三方 Webhook 可能继续产生下游效果</li>
+<li>删除后重建资源未必保留原身份、时间和引用关系</li>
+</ul>
+<p>所以每种副作用都要在工具注册表中声明：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">tool:</span> <span class="string">deploy_canary</span></span><br><span class="line"><span class="attr">effect:</span> <span class="string">release_state_change</span></span><br><span class="line"><span class="attr">reversibility:</span> <span class="string">compensatable</span></span><br><span class="line"><span class="attr">idempotency:</span> <span class="string">required</span></span><br><span class="line"><span class="attr">preconditions:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">approved_release_digest_matches</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">rollback_target_exists</span></span><br><span class="line"><span class="attr">postconditions:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">canary_release_digest_matches</span></span><br><span class="line"><span class="attr">compensation:</span></span><br><span class="line">  <span class="attr">tool:</span> <span class="string">rollback_canary</span></span><br><span class="line">  <span class="attr">requires:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">original_release_digest</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">deployment_receipt</span></span><br><span class="line"><span class="attr">compensation_deadline:</span> <span class="string">15m</span></span><br></pre></td></tr></table></figure>
+
+<p>补偿顺序通常与效果顺序相反，但不能只根据栈机械倒放。系统要考虑依赖关系、外部状态变化和补偿本身失败。经典 Saga 论文提供了长事务拆分与补偿思路；将其用于 Agent 时仍要按实际业务重新定义补偿语义，不能把论文模型直接当成所有外部 API 的一致性保证。</p>
+<h2 id="十二、Replay：先说明重放的是哪一层"><a href="#十二、Replay：先说明重放的是哪一层" class="headerlink" title="十二、Replay：先说明重放的是哪一层"></a>十二、Replay：先说明重放的是哪一层</h2><p>“支持重放”至少有四种不同含义。</p>
+<h3 id="1-事件重放"><a href="#1-事件重放" class="headerlink" title="1. 事件重放"></a>1. 事件重放</h3><p>从不可变事件重建控制状态，不重新调用模型和工具。</p>
+<p>用途：</p>
+<ul>
+<li>检查快照是否正确</li>
+<li>修复投影或报表</li>
+<li>定位状态转换错误</li>
+</ul>
+<h3 id="2-Observation-Replay"><a href="#2-Observation-Replay" class="headerlink" title="2. Observation Replay"></a>2. Observation Replay</h3><p>固定历史工具结果，让新模型或新 Prompt 在同样观察下重新决策。</p>
+<p>用途：</p>
+<ul>
+<li>隔离模型变化</li>
+<li>复现某一步为什么选择错误</li>
+<li>比较决策策略</li>
+</ul>
+<p>它不能证明新模型在真实环境里会收到同样 observation。</p>
+<h3 id="3-Decision-Replay"><a href="#3-Decision-Replay" class="headerlink" title="3. Decision Replay"></a>3. Decision Replay</h3><p>固定历史动作提案，在隔离模拟器中重新执行控制器和工具代理。</p>
+<p>用途：</p>
+<ul>
+<li>验证权限和状态机升级</li>
+<li>验证故障注入</li>
+<li>检查幂等与补偿</li>
+</ul>
+<p>写动作只能进入可重置环境，不能直接对生产重放。</p>
+<h3 id="4-Resume"><a href="#4-Resume" class="headerlink" title="4. Resume"></a>4. Resume</h3><p>从最近安全检查点继续真实任务。</p>
+<p>Resume 不是把最后一句对话重新发给模型。恢复器必须先：</p>
+<ol>
+<li>获取运行租约，阻止两个恢复进程并行推进。</li>
+<li>重放检查点后的事件。</li>
+<li>查询所有未确认动作的权威状态。</li>
+<li>校验控制器、策略和工具版本兼容性。</li>
+<li>重新计算剩余预算和截止时间。</li>
+<li>决定继续、迁移、补偿或转人工。</li>
+</ol>
+<p>只要存在 <code>ACTION_PREPARED</code> 但没有 <code>ACTION_CONFIRMED</code>，恢复器就不能直接再次调用工具。</p>
+<h2 id="十三、超时要分四层，不要只设一个-HTTP-timeout"><a href="#十三、超时要分四层，不要只设一个-HTTP-timeout" class="headerlink" title="十三、超时要分四层，不要只设一个 HTTP timeout"></a>十三、超时要分四层，不要只设一个 HTTP timeout</h2><h3 id="1-工具调用截止时间"><a href="#1-工具调用截止时间" class="headerlink" title="1. 工具调用截止时间"></a>1. 工具调用截止时间</h3><p>限制一次外部调用等待多久。达到截止时间后得到的是“不确定 observation”，不是自动得到“未提交”。</p>
+<h3 id="2-单步截止时间"><a href="#2-单步截止时间" class="headerlink" title="2. 单步截止时间"></a>2. 单步截止时间</h3><p>限制一次 Agent 决策、工具执行和后置校验总共多久。工具很快，但模型反复修参数也可能超出单步预算。</p>
+<h3 id="3-阶段截止时间"><a href="#3-阶段截止时间" class="headerlink" title="3. 阶段截止时间"></a>3. 阶段截止时间</h3><p>例如调查阶段最多 10 分钟、自动修改阶段最多 15 分钟、审批等待最多 2 小时。阶段过期后的处置不同。</p>
+<h3 id="4-全任务截止时间"><a href="#4-全任务截止时间" class="headerlink" title="4. 全任务截止时间"></a>4. 全任务截止时间</h3><p>超过用户承诺时间或业务窗口后，即使还有 Token，也不应继续执行。控制器要停止新动作、处理在途副作用并生成交接包。</p>
+<p>超时规则需要与取消传播结合。父任务取消后：</p>
+<ul>
+<li>未启动动作不再启动</li>
+<li>可取消的只读调用发送取消</li>
+<li>已提交写操作进入确认或补偿</li>
+<li>不可取消的外部任务继续被观察，不能成为孤儿</li>
+<li>Agent 获得的是受控的取消事实，不是自行决定忽略取消</li>
+</ul>
+<h2 id="十四、循环预算：限制次数还不够，还要限制“没有进展”"><a href="#十四、循环预算：限制次数还不够，还要限制“没有进展”" class="headerlink" title="十四、循环预算：限制次数还不够，还要限制“没有进展”"></a>十四、循环预算：限制次数还不够，还要限制“没有进展”</h2><p>至少建立以下预算：</p>
+<ul>
+<li>最大模型调用数</li>
+<li>最大工具调用数</li>
+<li>最大写动作数</li>
+<li>最大同类错误重试数</li>
+<li>最大连续无进展步骤数</li>
+<li>最大 Token 和费用</li>
+<li>最大墙钟时间</li>
+<li>最大审批等待时间</li>
+<li>最大子任务数量和委派深度</li>
+</ul>
+<p>其中“无进展”需要可执行定义。例如 AI 回归修复任务可以把进展定义为：</p>
+<ul>
+<li>新增了已验证证据</li>
+<li>缩小了根因候选集合</li>
+<li>改变了失败测试集合</li>
+<li>通过了一个此前失败的硬门禁</li>
+<li>产生了可验收的新补丁</li>
+</ul>
+<p>下面这些不算进展：</p>
+<ul>
+<li>用不同措辞重复同一计划</li>
+<li>对同一错误原样重试</li>
+<li>重复读取相同版本文件</li>
+<li>评估者只改写反馈但没有新增断言</li>
+<li>子任务返回已有证据的摘要</li>
+</ul>
+<p>当连续无进展达到阈值时，控制器应停止循环，保存证据并转人工。不能让 Agent 自己通过“这次可能会不同”扩大预算。</p>
+<h2 id="十五、人工升级不是失败兜底，而是正常终态"><a href="#十五、人工升级不是失败兜底，而是正常终态" class="headerlink" title="十五、人工升级不是失败兜底，而是正常终态"></a>十五、人工升级不是失败兜底，而是正常终态</h2><p>适合人工接管的条件包括：</p>
+<ul>
+<li>业务目标存在无法消解的歧义</li>
+<li>工具提交状态无法权威确认</li>
+<li>策略版本变化导致旧任务不能安全迁移</li>
+<li>补偿可能造成更大损失</li>
+<li>需要新增权限或扩大数据范围</li>
+<li>达到循环、成本或时间预算</li>
+<li>关键证据冲突且没有程序 Oracle</li>
+<li>高风险动作等待明确批准</li>
+</ul>
+<p>交接包至少包含：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">任务目标与当前终态</span><br><span class="line">已完成和未完成的目标</span><br><span class="line">最新权威状态</span><br><span class="line">全部已产生副作用及回执</span><br><span class="line">未确认动作及查询结果</span><br><span class="line">失败时间线和第一次分叉</span><br><span class="line">Agent 的候选根因，但明确标注为推断</span><br><span class="line">可选处置及各自风险</span><br><span class="line">剩余补偿窗口和截止时间</span><br><span class="line">恢复入口与所需审批</span><br></pre></td></tr></table></figure>
+
+<p>如果人工只能看到“Agent 执行失败，请处理”，就不算可接管。</p>
+<h2 id="十六、实现骨架：模型只返回提案，执行器拥有状态转换权"><a href="#十六、实现骨架：模型只返回提案，执行器拥有状态转换权" class="headerlink" title="十六、实现骨架：模型只返回提案，执行器拥有状态转换权"></a>十六、实现骨架：模型只返回提案，执行器拥有状态转换权</h2><p>下面给出一个删去存储和网络细节的 Python 骨架。它不是某个 Agent 框架的封装，而是展示几个必须存在的接口边界：</p>
+<ul>
+<li>模型端只能返回 <code>ActionProposal</code></li>
+<li>策略端根据可信身份、状态和资源重新授权</li>
+<li>事件先于副作用持久化</li>
+<li>工具端接收稳定幂等键</li>
+<li>恢复器先确认未决动作，再决定是否继续</li>
+<li>终态由 Oracle 而不是模型声明</li>
+</ul>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br><span class="line">146</span><br><span class="line">147</span><br><span class="line">148</span><br><span class="line">149</span><br><span class="line">150</span><br><span class="line">151</span><br><span class="line">152</span><br><span class="line">153</span><br><span class="line">154</span><br><span class="line">155</span><br><span class="line">156</span><br><span class="line">157</span><br><span class="line">158</span><br><span class="line">159</span><br><span class="line">160</span><br><span class="line">161</span><br><span class="line">162</span><br><span class="line">163</span><br><span class="line">164</span><br><span class="line">165</span><br><span class="line">166</span><br><span class="line">167</span><br><span class="line">168</span><br><span class="line">169</span><br><span class="line">170</span><br><span class="line">171</span><br><span class="line">172</span><br><span class="line">173</span><br><span class="line">174</span><br><span class="line">175</span><br><span class="line">176</span><br><span class="line">177</span><br><span class="line">178</span><br><span class="line">179</span><br><span class="line">180</span><br><span class="line">181</span><br><span class="line">182</span><br><span class="line">183</span><br><span class="line">184</span><br><span class="line">185</span><br><span class="line">186</span><br><span class="line">187</span><br><span class="line">188</span><br><span class="line">189</span><br><span class="line">190</span><br><span class="line">191</span><br><span class="line">192</span><br><span class="line">193</span><br><span class="line">194</span><br><span class="line">195</span><br><span class="line">196</span><br><span class="line">197</span><br><span class="line">198</span><br><span class="line">199</span><br><span class="line">200</span><br><span class="line">201</span><br><span class="line">202</span><br><span class="line">203</span><br><span class="line">204</span><br><span class="line">205</span><br><span class="line">206</span><br><span class="line">207</span><br><span class="line">208</span><br><span class="line">209</span><br><span class="line">210</span><br><span class="line">211</span><br><span class="line">212</span><br><span class="line">213</span><br><span class="line">214</span><br><span class="line">215</span><br><span class="line">216</span><br><span class="line">217</span><br><span class="line">218</span><br><span class="line">219</span><br><span class="line">220</span><br><span class="line">221</span><br><span class="line">222</span><br><span class="line">223</span><br><span class="line">224</span><br><span class="line">225</span><br><span class="line">226</span><br><span class="line">227</span><br><span class="line">228</span><br><span class="line">229</span><br><span class="line">230</span><br><span class="line">231</span><br><span class="line">232</span><br><span class="line">233</span><br><span class="line">234</span><br><span class="line">235</span><br><span class="line">236</span><br><span class="line">237</span><br><span class="line">238</span><br><span class="line">239</span><br><span class="line">240</span><br><span class="line">241</span><br><span class="line">242</span><br><span class="line">243</span><br><span class="line">244</span><br><span class="line">245</span><br><span class="line">246</span><br><span class="line">247</span><br><span class="line">248</span><br><span class="line">249</span><br><span class="line">250</span><br><span class="line">251</span><br><span class="line">252</span><br><span class="line">253</span><br><span class="line">254</span><br><span class="line">255</span><br><span class="line">256</span><br><span class="line">257</span><br><span class="line">258</span><br><span class="line">259</span><br><span class="line">260</span><br><span class="line">261</span><br><span class="line">262</span><br><span class="line">263</span><br><span class="line">264</span><br><span class="line">265</span><br><span class="line">266</span><br><span class="line">267</span><br><span class="line">268</span><br><span class="line">269</span><br><span class="line">270</span><br><span class="line">271</span><br><span class="line">272</span><br><span class="line">273</span><br><span class="line">274</span><br><span class="line">275</span><br><span class="line">276</span><br><span class="line">277</span><br><span class="line">278</span><br><span class="line">279</span><br><span class="line">280</span><br><span class="line">281</span><br><span class="line">282</span><br><span class="line">283</span><br><span class="line">284</span><br><span class="line">285</span><br><span class="line">286</span><br><span class="line">287</span><br><span class="line">288</span><br><span class="line">289</span><br><span class="line">290</span><br><span class="line">291</span><br><span class="line">292</span><br><span class="line">293</span><br><span class="line">294</span><br><span class="line">295</span><br><span class="line">296</span><br><span class="line">297</span><br><span class="line">298</span><br><span class="line">299</span><br><span class="line">300</span><br><span class="line">301</span><br><span class="line">302</span><br><span class="line">303</span><br><span class="line">304</span><br><span class="line">305</span><br><span class="line">306</span><br><span class="line">307</span><br><span class="line">308</span><br><span class="line">309</span><br><span class="line">310</span><br><span class="line">311</span><br><span class="line">312</span><br><span class="line">313</span><br><span class="line">314</span><br><span class="line">315</span><br><span class="line">316</span><br><span class="line">317</span><br><span class="line">318</span><br><span class="line">319</span><br><span class="line">320</span><br><span class="line">321</span><br><span class="line">322</span><br><span class="line">323</span><br><span class="line">324</span><br><span class="line">325</span><br><span class="line">326</span><br><span class="line">327</span><br><span class="line">328</span><br><span class="line">329</span><br><span class="line">330</span><br><span class="line">331</span><br><span class="line">332</span><br><span class="line">333</span><br><span class="line">334</span><br><span class="line">335</span><br><span class="line">336</span><br><span class="line">337</span><br><span class="line">338</span><br><span class="line">339</span><br><span class="line">340</span><br><span class="line">341</span><br><span class="line">342</span><br><span class="line">343</span><br><span class="line">344</span><br><span class="line">345</span><br><span class="line">346</span><br><span class="line">347</span><br><span class="line">348</span><br><span class="line">349</span><br><span class="line">350</span><br><span class="line">351</span><br><span class="line">352</span><br><span class="line">353</span><br><span class="line">354</span><br><span class="line">355</span><br><span class="line">356</span><br><span class="line">357</span><br><span class="line">358</span><br><span class="line">359</span><br><span class="line">360</span><br><span class="line">361</span><br><span class="line">362</span><br><span class="line">363</span><br><span class="line">364</span><br><span class="line">365</span><br><span class="line">366</span><br><span class="line">367</span><br><span class="line">368</span><br><span class="line">369</span><br><span class="line">370</span><br><span class="line">371</span><br><span class="line">372</span><br><span class="line">373</span><br><span class="line">374</span><br><span class="line">375</span><br><span class="line">376</span><br><span class="line">377</span><br><span class="line">378</span><br><span class="line">379</span><br><span class="line">380</span><br><span class="line">381</span><br><span class="line">382</span><br><span class="line">383</span><br><span class="line">384</span><br><span class="line">385</span><br><span class="line">386</span><br><span class="line">387</span><br><span class="line">388</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> __future__ <span class="keyword">import</span> annotations</span><br><span class="line"></span><br><span class="line"><span class="keyword">from</span> dataclasses <span class="keyword">import</span> dataclass, field</span><br><span class="line"><span class="keyword">from</span> datetime <span class="keyword">import</span> datetime, timezone</span><br><span class="line"><span class="keyword">from</span> enum <span class="keyword">import</span> Enum</span><br><span class="line"><span class="keyword">from</span> typing <span class="keyword">import</span> <span class="type">Any</span>, Protocol</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">RunState</span>(<span class="built_in">str</span>, Enum):</span><br><span class="line">    CREATED = <span class="string">&quot;created&quot;</span></span><br><span class="line">    VALIDATING = <span class="string">&quot;validating&quot;</span></span><br><span class="line">    READY = <span class="string">&quot;ready&quot;</span></span><br><span class="line">    RUNNING = <span class="string">&quot;running&quot;</span></span><br><span class="line">    WAITING_TOOL = <span class="string">&quot;waiting_tool&quot;</span></span><br><span class="line">    RETRY_WAIT = <span class="string">&quot;retry_wait&quot;</span></span><br><span class="line">    WAITING_APPROVAL = <span class="string">&quot;waiting_approval&quot;</span></span><br><span class="line">    CHECKPOINTING = <span class="string">&quot;checkpointing&quot;</span></span><br><span class="line">    RECOVERING = <span class="string">&quot;recovering&quot;</span></span><br><span class="line">    COMPENSATING = <span class="string">&quot;compensating&quot;</span></span><br><span class="line">    SUCCEEDED = <span class="string">&quot;succeeded&quot;</span></span><br><span class="line">    FAILED = <span class="string">&quot;failed&quot;</span></span><br><span class="line">    MANUAL_REVIEW = <span class="string">&quot;manual_review&quot;</span></span><br><span class="line">    CANCELLED = <span class="string">&quot;cancelled&quot;</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line">TERMINAL_STATES = &#123;</span><br><span class="line">    RunState.SUCCEEDED,</span><br><span class="line">    RunState.FAILED,</span><br><span class="line">    RunState.MANUAL_REVIEW,</span><br><span class="line">    RunState.CANCELLED,</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Budget</span>:</span><br><span class="line">    max_steps: <span class="built_in">int</span></span><br><span class="line">    max_model_calls: <span class="built_in">int</span></span><br><span class="line">    max_tool_calls: <span class="built_in">int</span></span><br><span class="line">    max_write_actions: <span class="built_in">int</span></span><br><span class="line">    max_no_progress_steps: <span class="built_in">int</span></span><br><span class="line">    deadline: datetime</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">ActionProposal</span>:</span><br><span class="line">    kind: <span class="built_in">str</span></span><br><span class="line">    tool: <span class="built_in">str</span> | <span class="literal">None</span></span><br><span class="line">    arguments: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>]</span><br><span class="line">    purpose: <span class="built_in">str</span></span><br><span class="line">    evidence_refs: <span class="built_in">tuple</span>[<span class="built_in">str</span>, ...]</span><br><span class="line">    expected_postconditions: <span class="built_in">tuple</span>[<span class="built_in">str</span>, ...]</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">ToolReceipt</span>:</span><br><span class="line">    action_id: <span class="built_in">str</span></span><br><span class="line">    idempotency_key: <span class="built_in">str</span></span><br><span class="line">    status: <span class="built_in">str</span></span><br><span class="line">    effect_id: <span class="built_in">str</span> | <span class="literal">None</span></span><br><span class="line">    result_ref: <span class="built_in">str</span> | <span class="literal">None</span></span><br><span class="line">    retry_class: <span class="built_in">str</span></span><br><span class="line">    committed: <span class="built_in">bool</span> | <span class="literal">None</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Snapshot</span>:</span><br><span class="line">    run_id: <span class="built_in">str</span></span><br><span class="line">    state: RunState</span><br><span class="line">    version: <span class="built_in">int</span></span><br><span class="line">    controller_version: <span class="built_in">str</span></span><br><span class="line">    policy_version: <span class="built_in">str</span></span><br><span class="line">    steps: <span class="built_in">int</span> = <span class="number">0</span></span><br><span class="line">    model_calls: <span class="built_in">int</span> = <span class="number">0</span></span><br><span class="line">    tool_calls: <span class="built_in">int</span> = <span class="number">0</span></span><br><span class="line">    write_actions: <span class="built_in">int</span> = <span class="number">0</span></span><br><span class="line">    no_progress_steps: <span class="built_in">int</span> = <span class="number">0</span></span><br><span class="line">    pending_action_id: <span class="built_in">str</span> | <span class="literal">None</span> = <span class="literal">None</span></span><br><span class="line">    pending_idempotency_key: <span class="built_in">str</span> | <span class="literal">None</span> = <span class="literal">None</span></span><br><span class="line">    pending_tool: <span class="built_in">str</span> | <span class="literal">None</span> = <span class="literal">None</span></span><br><span class="line">    completed_effect_ids: <span class="built_in">list</span>[<span class="built_in">str</span>] = field(default_factory=<span class="built_in">list</span>)</span><br><span class="line">    evidence_refs: <span class="built_in">list</span>[<span class="built_in">str</span>] = field(default_factory=<span class="built_in">list</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">EventStore</span>(<span class="title class_ inherited__">Protocol</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">acquire_lease</span>(<span class="params">self, run_id: <span class="built_in">str</span>, owner: <span class="built_in">str</span>, ttl_seconds: <span class="built_in">int</span></span>) -&gt; <span class="built_in">bool</span>: ...</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">append</span>(<span class="params">self, run_id: <span class="built_in">str</span>, expected_version: <span class="built_in">int</span>, event: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>]</span>) -&gt; <span class="built_in">int</span>: ...</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">load_snapshot</span>(<span class="params">self, run_id: <span class="built_in">str</span></span>) -&gt; Snapshot: ...</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">save_snapshot</span>(<span class="params">self, snapshot: Snapshot, expected_version: <span class="built_in">int</span></span>) -&gt; <span class="literal">None</span>: ...</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">AgentPort</span>(<span class="title class_ inherited__">Protocol</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">propose</span>(<span class="params">self, snapshot: Snapshot</span>) -&gt; ActionProposal: ...</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">PolicyEngine</span>(<span class="title class_ inherited__">Protocol</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">validate_proposal</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        snapshot: Snapshot,</span></span><br><span class="line"><span class="params">        proposal: ActionProposal,</span></span><br><span class="line"><span class="params">    </span>) -&gt; <span class="built_in">tuple</span>[<span class="built_in">bool</span>, <span class="built_in">str</span>]: ...</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">requires_approval</span>(<span class="params">self, proposal: ActionProposal</span>) -&gt; <span class="built_in">bool</span>: ...</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">ToolGateway</span>(<span class="title class_ inherited__">Protocol</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">invoke</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        tool: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">        arguments: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>],</span></span><br><span class="line"><span class="params">        idempotency_key: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">        deadline: datetime,</span></span><br><span class="line"><span class="params">    </span>) -&gt; ToolReceipt: ...</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">query_by_idempotency_key</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        tool: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">        idempotency_key: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">    </span>) -&gt; ToolReceipt | <span class="literal">None</span>: ...</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">GoalOracle</span>(<span class="title class_ inherited__">Protocol</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">evaluate</span>(<span class="params">self, snapshot: Snapshot</span>) -&gt; <span class="built_in">tuple</span>[<span class="built_in">bool</span>, <span class="built_in">list</span>[<span class="built_in">str</span>]]: ...</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Clock</span>(<span class="title class_ inherited__">Protocol</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">now</span>(<span class="params">self</span>) -&gt; datetime: ...</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">ALLOWED_TRANSITIONS = &#123;</span><br><span class="line">    RunState.CREATED: &#123;RunState.VALIDATING&#125;,</span><br><span class="line">    RunState.VALIDATING: &#123;RunState.READY, RunState.FAILED&#125;,</span><br><span class="line">    RunState.READY: &#123;RunState.RUNNING, RunState.CANCELLED&#125;,</span><br><span class="line">    RunState.RUNNING: &#123;</span><br><span class="line">        RunState.WAITING_TOOL,</span><br><span class="line">        RunState.WAITING_APPROVAL,</span><br><span class="line">        RunState.CHECKPOINTING,</span><br><span class="line">        RunState.SUCCEEDED,</span><br><span class="line">        RunState.FAILED,</span><br><span class="line">        RunState.MANUAL_REVIEW,</span><br><span class="line">        RunState.CANCELLED,</span><br><span class="line">    &#125;,</span><br><span class="line">    RunState.WAITING_TOOL: &#123;</span><br><span class="line">        RunState.RUNNING,</span><br><span class="line">        RunState.RETRY_WAIT,</span><br><span class="line">        RunState.COMPENSATING,</span><br><span class="line">        RunState.MANUAL_REVIEW,</span><br><span class="line">    &#125;,</span><br><span class="line">    RunState.RETRY_WAIT: &#123;RunState.RUNNING, RunState.MANUAL_REVIEW&#125;,</span><br><span class="line">    RunState.WAITING_APPROVAL: &#123;</span><br><span class="line">        RunState.RUNNING,</span><br><span class="line">        RunState.CANCELLED,</span><br><span class="line">        RunState.MANUAL_REVIEW,</span><br><span class="line">    &#125;,</span><br><span class="line">    RunState.CHECKPOINTING: &#123;RunState.RUNNING, RunState.MANUAL_REVIEW&#125;,</span><br><span class="line">    RunState.RECOVERING: &#123;</span><br><span class="line">        RunState.RUNNING,</span><br><span class="line">        RunState.RETRY_WAIT,</span><br><span class="line">        RunState.COMPENSATING,</span><br><span class="line">        RunState.MANUAL_REVIEW,</span><br><span class="line">    &#125;,</span><br><span class="line">    RunState.COMPENSATING: &#123;</span><br><span class="line">        RunState.FAILED,</span><br><span class="line">        RunState.CANCELLED,</span><br><span class="line">        RunState.MANUAL_REVIEW,</span><br><span class="line">    &#125;,</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Executor</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        store: EventStore,</span></span><br><span class="line"><span class="params">        agent: AgentPort,</span></span><br><span class="line"><span class="params">        policy: PolicyEngine,</span></span><br><span class="line"><span class="params">        tools: ToolGateway,</span></span><br><span class="line"><span class="params">        oracle: GoalOracle,</span></span><br><span class="line"><span class="params">        clock: Clock,</span></span><br><span class="line"><span class="params">        budget: Budget,</span></span><br><span class="line"><span class="params">        owner_id: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">    </span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.store = store</span><br><span class="line">        <span class="variable language_">self</span>.agent = agent</span><br><span class="line">        <span class="variable language_">self</span>.policy = policy</span><br><span class="line">        <span class="variable language_">self</span>.tools = tools</span><br><span class="line">        <span class="variable language_">self</span>.oracle = oracle</span><br><span class="line">        <span class="variable language_">self</span>.clock = clock</span><br><span class="line">        <span class="variable language_">self</span>.budget = budget</span><br><span class="line">        <span class="variable language_">self</span>.owner_id = owner_id</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">transition</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        snapshot: Snapshot,</span></span><br><span class="line"><span class="params">        target: RunState,</span></span><br><span class="line"><span class="params">        reason: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">        details: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>] | <span class="literal">None</span> = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">    </span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="keyword">if</span> target <span class="keyword">not</span> <span class="keyword">in</span> ALLOWED_TRANSITIONS.get(snapshot.state, <span class="built_in">set</span>()):</span><br><span class="line">            <span class="keyword">raise</span> ValueError(<span class="string">f&quot;illegal transition: <span class="subst">&#123;snapshot.state&#125;</span> -&gt; <span class="subst">&#123;target&#125;</span>&quot;</span>)</span><br><span class="line">        old_version = snapshot.version</span><br><span class="line">        new_version = <span class="variable language_">self</span>.store.append(</span><br><span class="line">            snapshot.run_id,</span><br><span class="line">            expected_version=old_version,</span><br><span class="line">            event=&#123;</span><br><span class="line">                <span class="string">&quot;type&quot;</span>: <span class="string">&quot;STATE_TRANSITION&quot;</span>,</span><br><span class="line">                <span class="string">&quot;from&quot;</span>: snapshot.state.value,</span><br><span class="line">                <span class="string">&quot;to&quot;</span>: target.value,</span><br><span class="line">                <span class="string">&quot;reason&quot;</span>: reason,</span><br><span class="line">                <span class="string">&quot;details&quot;</span>: details <span class="keyword">or</span> &#123;&#125;,</span><br><span class="line">                <span class="string">&quot;occurred_at&quot;</span>: <span class="variable language_">self</span>.clock.now().isoformat(),</span><br><span class="line">            &#125;,</span><br><span class="line">        )</span><br><span class="line">        snapshot.state = target</span><br><span class="line">        snapshot.version = new_version</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">budget_reason</span>(<span class="params">self, snapshot: Snapshot</span>) -&gt; <span class="built_in">str</span> | <span class="literal">None</span>:</span><br><span class="line">        <span class="keyword">if</span> <span class="variable language_">self</span>.clock.now() &gt;= <span class="variable language_">self</span>.budget.deadline:</span><br><span class="line">            <span class="keyword">return</span> <span class="string">&quot;run_deadline_reached&quot;</span></span><br><span class="line">        <span class="keyword">if</span> snapshot.steps &gt;= <span class="variable language_">self</span>.budget.max_steps:</span><br><span class="line">            <span class="keyword">return</span> <span class="string">&quot;step_budget_exhausted&quot;</span></span><br><span class="line">        <span class="keyword">if</span> snapshot.model_calls &gt;= <span class="variable language_">self</span>.budget.max_model_calls:</span><br><span class="line">            <span class="keyword">return</span> <span class="string">&quot;model_budget_exhausted&quot;</span></span><br><span class="line">        <span class="keyword">if</span> snapshot.tool_calls &gt;= <span class="variable language_">self</span>.budget.max_tool_calls:</span><br><span class="line">            <span class="keyword">return</span> <span class="string">&quot;tool_budget_exhausted&quot;</span></span><br><span class="line">        <span class="keyword">if</span> snapshot.write_actions &gt;= <span class="variable language_">self</span>.budget.max_write_actions:</span><br><span class="line">            <span class="keyword">return</span> <span class="string">&quot;write_budget_exhausted&quot;</span></span><br><span class="line">        <span class="keyword">if</span> snapshot.no_progress_steps &gt;= <span class="variable language_">self</span>.budget.max_no_progress_steps:</span><br><span class="line">            <span class="keyword">return</span> <span class="string">&quot;no_progress_budget_exhausted&quot;</span></span><br><span class="line">        <span class="keyword">return</span> <span class="literal">None</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">prepare_action</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        snapshot: Snapshot,</span></span><br><span class="line"><span class="params">        proposal: ActionProposal,</span></span><br><span class="line"><span class="params">    </span>) -&gt; <span class="built_in">tuple</span>[<span class="built_in">str</span>, <span class="built_in">str</span>]:</span><br><span class="line">        action_id = <span class="string">f&quot;<span class="subst">&#123;snapshot.run_id&#125;</span>:action:<span class="subst">&#123;snapshot.steps + <span class="number">1</span>&#125;</span>&quot;</span></span><br><span class="line">        idempotency_key = <span class="string">f&quot;<span class="subst">&#123;snapshot.run_id&#125;</span>:<span class="subst">&#123;proposal.tool&#125;</span>:<span class="subst">&#123;snapshot.steps + <span class="number">1</span>&#125;</span>&quot;</span></span><br><span class="line">        new_version = <span class="variable language_">self</span>.store.append(</span><br><span class="line">            snapshot.run_id,</span><br><span class="line">            expected_version=snapshot.version,</span><br><span class="line">            event=&#123;</span><br><span class="line">                <span class="string">&quot;type&quot;</span>: <span class="string">&quot;ACTION_PREPARED&quot;</span>,</span><br><span class="line">                <span class="string">&quot;action_id&quot;</span>: action_id,</span><br><span class="line">                <span class="string">&quot;tool&quot;</span>: proposal.tool,</span><br><span class="line">                <span class="string">&quot;arguments&quot;</span>: proposal.arguments,</span><br><span class="line">                <span class="string">&quot;purpose&quot;</span>: proposal.purpose,</span><br><span class="line">                <span class="string">&quot;evidence_refs&quot;</span>: <span class="built_in">list</span>(proposal.evidence_refs),</span><br><span class="line">                <span class="string">&quot;expected_postconditions&quot;</span>: <span class="built_in">list</span>(proposal.expected_postconditions),</span><br><span class="line">                <span class="string">&quot;idempotency_key&quot;</span>: idempotency_key,</span><br><span class="line">            &#125;,</span><br><span class="line">        )</span><br><span class="line">        snapshot.version = new_version</span><br><span class="line">        snapshot.pending_action_id = action_id</span><br><span class="line">        snapshot.pending_idempotency_key = idempotency_key</span><br><span class="line">        snapshot.pending_tool = proposal.tool</span><br><span class="line">        <span class="keyword">return</span> action_id, idempotency_key</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">recover_pending_action</span>(<span class="params">self, snapshot: Snapshot</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">not</span> snapshot.pending_action_id:</span><br><span class="line">            <span class="variable language_">self</span>.transition(snapshot, RunState.RUNNING, <span class="string">&quot;no_pending_action&quot;</span>)</span><br><span class="line">            <span class="keyword">return</span></span><br><span class="line"></span><br><span class="line">        receipt = <span class="variable language_">self</span>.tools.query_by_idempotency_key(</span><br><span class="line">            snapshot.pending_tool <span class="keyword">or</span> <span class="string">&quot;&quot;</span>,</span><br><span class="line">            snapshot.pending_idempotency_key <span class="keyword">or</span> <span class="string">&quot;&quot;</span>,</span><br><span class="line">        )</span><br><span class="line">        <span class="keyword">if</span> receipt <span class="keyword">is</span> <span class="literal">None</span>:</span><br><span class="line">            <span class="variable language_">self</span>.transition(snapshot, RunState.RETRY_WAIT, <span class="string">&quot;confirmed_not_committed&quot;</span>)</span><br><span class="line">            <span class="keyword">return</span></span><br><span class="line">        <span class="keyword">if</span> receipt.committed <span class="keyword">is</span> <span class="literal">True</span>:</span><br><span class="line">            <span class="variable language_">self</span>.record_receipt(snapshot, receipt, recovered=<span class="literal">True</span>)</span><br><span class="line">            <span class="variable language_">self</span>.transition(snapshot, RunState.RUNNING, <span class="string">&quot;committed_action_recovered&quot;</span>)</span><br><span class="line">            <span class="keyword">return</span></span><br><span class="line"></span><br><span class="line">        <span class="variable language_">self</span>.transition(</span><br><span class="line">            snapshot,</span><br><span class="line">            RunState.MANUAL_REVIEW,</span><br><span class="line">            <span class="string">&quot;pending_action_commit_unknown&quot;</span>,</span><br><span class="line">            &#123;<span class="string">&quot;action_id&quot;</span>: snapshot.pending_action_id&#125;,</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">record_receipt</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        snapshot: Snapshot,</span></span><br><span class="line"><span class="params">        receipt: ToolReceipt,</span></span><br><span class="line"><span class="params">        recovered: <span class="built_in">bool</span> = <span class="literal">False</span>,</span></span><br><span class="line"><span class="params">    </span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        new_version = <span class="variable language_">self</span>.store.append(</span><br><span class="line">            snapshot.run_id,</span><br><span class="line">            expected_version=snapshot.version,</span><br><span class="line">            event=&#123;</span><br><span class="line">                <span class="string">&quot;type&quot;</span>: <span class="string">&quot;ACTION_RECEIPT_RECORDED&quot;</span>,</span><br><span class="line">                <span class="string">&quot;action_id&quot;</span>: receipt.action_id,</span><br><span class="line">                <span class="string">&quot;idempotency_key&quot;</span>: receipt.idempotency_key,</span><br><span class="line">                <span class="string">&quot;status&quot;</span>: receipt.status,</span><br><span class="line">                <span class="string">&quot;effect_id&quot;</span>: receipt.effect_id,</span><br><span class="line">                <span class="string">&quot;result_ref&quot;</span>: receipt.result_ref,</span><br><span class="line">                <span class="string">&quot;committed&quot;</span>: receipt.committed,</span><br><span class="line">                <span class="string">&quot;recovered&quot;</span>: recovered,</span><br><span class="line">            &#125;,</span><br><span class="line">        )</span><br><span class="line">        snapshot.version = new_version</span><br><span class="line">        <span class="keyword">if</span> receipt.effect_id <span class="keyword">and</span> receipt.effect_id <span class="keyword">not</span> <span class="keyword">in</span> snapshot.completed_effect_ids:</span><br><span class="line">            snapshot.completed_effect_ids.append(receipt.effect_id)</span><br><span class="line">        snapshot.pending_action_id = <span class="literal">None</span></span><br><span class="line">        snapshot.pending_idempotency_key = <span class="literal">None</span></span><br><span class="line">        snapshot.pending_tool = <span class="literal">None</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">run</span>(<span class="params">self, run_id: <span class="built_in">str</span></span>) -&gt; RunState:</span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">not</span> <span class="variable language_">self</span>.store.acquire_lease(run_id, <span class="variable language_">self</span>.owner_id, ttl_seconds=<span class="number">30</span>):</span><br><span class="line">            <span class="keyword">raise</span> RuntimeError(<span class="string">&quot;run is owned by another executor&quot;</span>)</span><br><span class="line"></span><br><span class="line">        snapshot = <span class="variable language_">self</span>.store.load_snapshot(run_id)</span><br><span class="line">        <span class="keyword">if</span> snapshot.state <span class="keyword">in</span> TERMINAL_STATES:</span><br><span class="line">            <span class="keyword">return</span> snapshot.state</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> snapshot.pending_action_id:</span><br><span class="line">            <span class="keyword">if</span> snapshot.state != RunState.RECOVERING:</span><br><span class="line">                <span class="variable language_">self</span>.transition(snapshot, RunState.RECOVERING, <span class="string">&quot;resume_with_pending_action&quot;</span>)</span><br><span class="line">            <span class="variable language_">self</span>.recover_pending_action(snapshot)</span><br><span class="line">            <span class="keyword">if</span> snapshot.state <span class="keyword">in</span> TERMINAL_STATES:</span><br><span class="line">                <span class="keyword">return</span> snapshot.state</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> snapshot.state <span class="keyword">in</span> &#123;RunState.READY, RunState.RECOVERING, RunState.RETRY_WAIT&#125;:</span><br><span class="line">            <span class="variable language_">self</span>.transition(snapshot, RunState.RUNNING, <span class="string">&quot;execution_started&quot;</span>)</span><br><span class="line"></span><br><span class="line">        <span class="keyword">while</span> snapshot.state == RunState.RUNNING:</span><br><span class="line">            reason = <span class="variable language_">self</span>.budget_reason(snapshot)</span><br><span class="line">            <span class="keyword">if</span> reason:</span><br><span class="line">                <span class="variable language_">self</span>.transition(snapshot, RunState.MANUAL_REVIEW, reason)</span><br><span class="line">                <span class="keyword">break</span></span><br><span class="line"></span><br><span class="line">            goal_satisfied, missing = <span class="variable language_">self</span>.oracle.evaluate(snapshot)</span><br><span class="line">            <span class="keyword">if</span> goal_satisfied:</span><br><span class="line">                <span class="variable language_">self</span>.transition(snapshot, RunState.SUCCEEDED, <span class="string">&quot;goal_oracle_passed&quot;</span>)</span><br><span class="line">                <span class="keyword">break</span></span><br><span class="line"></span><br><span class="line">            proposal = <span class="variable language_">self</span>.agent.propose(snapshot)</span><br><span class="line">            snapshot.model_calls += <span class="number">1</span></span><br><span class="line">            allowed, policy_reason = <span class="variable language_">self</span>.policy.validate_proposal(snapshot, proposal)</span><br><span class="line">            <span class="keyword">if</span> <span class="keyword">not</span> allowed:</span><br><span class="line">                snapshot.no_progress_steps += <span class="number">1</span></span><br><span class="line">                <span class="variable language_">self</span>.store.append(</span><br><span class="line">                    snapshot.run_id,</span><br><span class="line">                    expected_version=snapshot.version,</span><br><span class="line">                    event=&#123;</span><br><span class="line">                        <span class="string">&quot;type&quot;</span>: <span class="string">&quot;PROPOSAL_REJECTED&quot;</span>,</span><br><span class="line">                        <span class="string">&quot;reason&quot;</span>: policy_reason,</span><br><span class="line">                        <span class="string">&quot;proposal&quot;</span>: proposal.kind,</span><br><span class="line">                    &#125;,</span><br><span class="line">                )</span><br><span class="line">                snapshot = <span class="variable language_">self</span>.store.load_snapshot(run_id)</span><br><span class="line">                <span class="keyword">continue</span></span><br><span class="line"></span><br><span class="line">            <span class="keyword">if</span> <span class="variable language_">self</span>.policy.requires_approval(proposal):</span><br><span class="line">                <span class="variable language_">self</span>.transition(</span><br><span class="line">                    snapshot,</span><br><span class="line">                    RunState.WAITING_APPROVAL,</span><br><span class="line">                    <span class="string">&quot;approval_required&quot;</span>,</span><br><span class="line">                    &#123;<span class="string">&quot;proposal&quot;</span>: proposal.kind&#125;,</span><br><span class="line">                )</span><br><span class="line">                <span class="keyword">break</span></span><br><span class="line"></span><br><span class="line">            action_id, key = <span class="variable language_">self</span>.prepare_action(snapshot, proposal)</span><br><span class="line">            <span class="variable language_">self</span>.transition(snapshot, RunState.WAITING_TOOL, <span class="string">&quot;action_persisted&quot;</span>)</span><br><span class="line">            receipt = <span class="variable language_">self</span>.tools.invoke(</span><br><span class="line">                tool=proposal.tool <span class="keyword">or</span> <span class="string">&quot;&quot;</span>,</span><br><span class="line">                arguments=proposal.arguments,</span><br><span class="line">                idempotency_key=key,</span><br><span class="line">                deadline=<span class="variable language_">self</span>.budget.deadline,</span><br><span class="line">            )</span><br><span class="line">            snapshot.tool_calls += <span class="number">1</span></span><br><span class="line"></span><br><span class="line">            <span class="keyword">if</span> receipt.committed <span class="keyword">is</span> <span class="literal">None</span>:</span><br><span class="line">                <span class="variable language_">self</span>.transition(</span><br><span class="line">                    snapshot,</span><br><span class="line">                    RunState.MANUAL_REVIEW,</span><br><span class="line">                    <span class="string">&quot;ambiguous_commit_requires_query_or_handoff&quot;</span>,</span><br><span class="line">                    &#123;<span class="string">&quot;action_id&quot;</span>: action_id&#125;,</span><br><span class="line">                )</span><br><span class="line">                <span class="keyword">break</span></span><br><span class="line"></span><br><span class="line">            <span class="variable language_">self</span>.record_receipt(snapshot, receipt)</span><br><span class="line">            snapshot.steps += <span class="number">1</span></span><br><span class="line">            snapshot.no_progress_steps = <span class="number">0</span></span><br><span class="line">            <span class="variable language_">self</span>.transition(snapshot, RunState.RUNNING, <span class="string">&quot;action_confirmed&quot;</span>)</span><br><span class="line"></span><br><span class="line">        <span class="variable language_">self</span>.store.save_snapshot(snapshot, expected_version=snapshot.version)</span><br><span class="line">        <span class="keyword">return</span> snapshot.state</span><br></pre></td></tr></table></figure>
+
+<p>这段骨架故意没有让 Agent 返回 <code>succeeded=true</code>。成功需要 <code>GoalOracle</code> 读取测试结果、工作区摘要、发布状态等权威事实。</p>
+<p>它也没有把 <code>committed=None</code> 直接重试。实际实现应先调用工具注册的状态查询器；只有能够证明未提交，才能复用原幂等键重试。查询仍无法确认时，转人工比猜测更安全。</p>
+<p>生产实现还需要补充：</p>
+<ul>
+<li>租约续期和 fencing token，防止旧执行器恢复写入</li>
+<li>参数标准化与摘要，避免等价参数生成不同幂等键</li>
+<li>事件与快照原子写入或可修复投影</li>
+<li>凭据引用而非凭据内容持久化</li>
+<li>审批令牌绑定动作摘要、主体、期限和次数</li>
+<li>工具级截止时间与取消传播</li>
+<li>补偿图和补偿失败接管</li>
+<li>控制器版本迁移策略</li>
+<li>Trace、Metric 和审计日志关联</li>
+</ul>
+<h2 id="十七、状态机本身应该怎样测试"><a href="#十七、状态机本身应该怎样测试" class="headerlink" title="十七、状态机本身应该怎样测试"></a>十七、状态机本身应该怎样测试</h2><p>Agent 的非确定性不影响控制器做确定性测试。最底层应使用固定模型替身，让每条状态转换都可精确复现。</p>
+<h3 id="1-转换表单元测试"><a href="#1-转换表单元测试" class="headerlink" title="1. 转换表单元测试"></a>1. 转换表单元测试</h3><p>对每个状态覆盖：</p>
+<ul>
+<li>所有允许转换能够成功</li>
+<li>所有未声明转换都被拒绝</li>
+<li>终态不能再次进入运行态</li>
+<li><code>WAITING_TOOL</code> 没有待执行动作时判为损坏状态</li>
+<li><code>SUCCEEDED</code> 前必须有最新 Oracle 通过事件</li>
+<li><code>CANCELLED</code> 前所有在途动作都有确认或接管记录</li>
+</ul>
+<p>示例：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> pytest</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@pytest.mark.parametrize(<span class="params"></span></span></span><br><span class="line"><span class="params"><span class="meta">    (<span class="params"><span class="string">&quot;source&quot;</span>, <span class="string">&quot;target&quot;</span></span>),</span></span></span><br><span class="line"><span class="params"><span class="meta">    [</span></span></span><br><span class="line"><span class="params"><span class="meta">        (<span class="params">RunState.RUNNING, RunState.WAITING_TOOL</span>),</span></span></span><br><span class="line"><span class="params"><span class="meta">        (<span class="params">RunState.WAITING_TOOL, RunState.RETRY_WAIT</span>),</span></span></span><br><span class="line"><span class="params"><span class="meta">        (<span class="params">RunState.RECOVERING, RunState.MANUAL_REVIEW</span>),</span></span></span><br><span class="line"><span class="params"><span class="meta">        (<span class="params">RunState.COMPENSATING, RunState.FAILED</span>),</span></span></span><br><span class="line"><span class="params"><span class="meta">    ],</span></span></span><br><span class="line"><span class="params"><span class="meta"></span>)</span></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">test_declared_transition_is_allowed</span>(<span class="params">source, target</span>):</span><br><span class="line">    <span class="keyword">assert</span> target <span class="keyword">in</span> ALLOWED_TRANSITIONS[source]</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@pytest.mark.parametrize(<span class="params"></span></span></span><br><span class="line"><span class="params"><span class="meta">    (<span class="params"><span class="string">&quot;source&quot;</span>, <span class="string">&quot;target&quot;</span></span>),</span></span></span><br><span class="line"><span class="params"><span class="meta">    [</span></span></span><br><span class="line"><span class="params"><span class="meta">        (<span class="params">RunState.CREATED, RunState.SUCCEEDED</span>),</span></span></span><br><span class="line"><span class="params"><span class="meta">        (<span class="params">RunState.WAITING_TOOL, RunState.SUCCEEDED</span>),</span></span></span><br><span class="line"><span class="params"><span class="meta">        (<span class="params">RunState.SUCCEEDED, RunState.RUNNING</span>),</span></span></span><br><span class="line"><span class="params"><span class="meta">        (<span class="params">RunState.MANUAL_REVIEW, RunState.SUCCEEDED</span>),</span></span></span><br><span class="line"><span class="params"><span class="meta">    ],</span></span></span><br><span class="line"><span class="params"><span class="meta"></span>)</span></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">test_undeclared_transition_is_rejected</span>(<span class="params">source, target</span>):</span><br><span class="line">    <span class="keyword">assert</span> target <span class="keyword">not</span> <span class="keyword">in</span> ALLOWED_TRANSITIONS.get(source, <span class="built_in">set</span>())</span><br></pre></td></tr></table></figure>
+
+<h3 id="2-属性测试"><a href="#2-属性测试" class="headerlink" title="2. 属性测试"></a>2. 属性测试</h3><p>随机生成合法和非法事件序列，持续验证不变量：</p>
+<ul>
+<li>每个 <code>ACTION_CONFIRMED</code> 都能追到唯一 <code>ACTION_PREPARED</code></li>
+<li>同一幂等键最多对应一个业务 effect</li>
+<li>写动作数永远不超过预算</li>
+<li>未审批动作不能出现执行回执</li>
+<li>状态版本严格单调递增</li>
+<li>任一终态不存在无所有者的待执行动作</li>
+<li>补偿只引用已确认 effect</li>
+</ul>
+<p>属性测试比只写几个 Happy Path 更容易发现组合错误。例如“恢复后批准刚好过期”和“旧执行器迟到写入”常不会出现在普通用例里。</p>
+<h3 id="3-模型提案契约测试"><a href="#3-模型提案契约测试" class="headerlink" title="3. 模型提案契约测试"></a>3. 模型提案契约测试</h3><p>用模型替身依次返回：</p>
+<ul>
+<li>合法只读动作</li>
+<li>未知工具</li>
+<li>越权资源 ID</li>
+<li>缺少证据引用</li>
+<li>试图扩大预算</li>
+<li>伪造审批字段</li>
+<li>原样重复上一动作</li>
+<li>宣称任务已完成但 Oracle 未通过</li>
+</ul>
+<p>断言控制器只接受第一类，以及经过明确修正后仍符合策略的提案。测试目标不是模型会不会听 Prompt，而是模型不听时控制层仍然守住边界。</p>
+<h3 id="4-工具契约测试"><a href="#4-工具契约测试" class="headerlink" title="4. 工具契约测试"></a>4. 工具契约测试</h3><p>每个关键工具至少验证：</p>
+<ul>
+<li>相同幂等键和等价参数不会重复产生效果</li>
+<li>相同幂等键配不同参数会明确冲突</li>
+<li>按幂等键可以查询提交结果</li>
+<li>权限在服务端重新校验</li>
+<li>版本冲突不会被最后写入覆盖</li>
+<li>回执能够关联 effect、资源版本和审计主体</li>
+<li>超时发生在提交前和提交后时可区分或可查询</li>
+</ul>
+<h3 id="5-版本迁移测试"><a href="#5-版本迁移测试" class="headerlink" title="5. 版本迁移测试"></a>5. 版本迁移测试</h3><p>长任务可能跨越部署。要保存旧版快照，验证新控制器：</p>
+<ul>
+<li>能读取并迁移允许迁移的状态</li>
+<li>遇到策略语义变化时暂停，而不是猜测字段</li>
+<li>不会用新工具 Schema 重放旧动作</li>
+<li>保持原审批范围和幂等键</li>
+<li>迁移失败能生成完整人工接管包</li>
+</ul>
+<h2 id="十八、故障注入矩阵：在精确时间点杀掉执行器"><a href="#十八、故障注入矩阵：在精确时间点杀掉执行器" class="headerlink" title="十八、故障注入矩阵：在精确时间点杀掉执行器"></a>十八、故障注入矩阵：在精确时间点杀掉执行器</h2><p>恢复测试不能只模拟“工具返回 500”。真正危险的是状态与副作用之间的时间窗口。</p>
+<table>
+<thead>
+<tr>
+<th>注入点</th>
+<th>注入方式</th>
+<th>关键断言</th>
+<th>错误实现的表现</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>ACTION_PREPARED</code> 写入前</td>
+<td>杀进程</td>
+<td>没有工具调用，恢复后可重新提案</td>
+<td>工具被旁路调用，事件缺失</td>
+</tr>
+<tr>
+<td>写入后、工具调用前</td>
+<td>杀进程</td>
+<td>查询确认未提交后复用原键执行</td>
+<td>产生新键或任务永久卡住</td>
+</tr>
+<tr>
+<td>工具提交前</td>
+<td>连接中断</td>
+<td>明确未提交后受控重试</td>
+<td>把所有超时都转人工</td>
+</tr>
+<tr>
+<td>工具提交后、响应前</td>
+<td>丢弃响应</td>
+<td>先查询，最终只有一个 effect</td>
+<td>盲重试产生重复写</td>
+</tr>
+<tr>
+<td>收到响应后、回执落库前</td>
+<td>杀进程</td>
+<td>恢复按幂等键找回同一回执</td>
+<td>再次调用或丢失副作用</td>
+</tr>
+<tr>
+<td>回执落库后、快照前</td>
+<td>杀进程</td>
+<td>事件重放重建一致快照</td>
+<td>快照旧值覆盖新事件</td>
+</tr>
+<tr>
+<td>审批签发后、执行前</td>
+<td>推进时钟使其过期</td>
+<td>过期审批不执行，重新申请</td>
+<td>只检查“曾经批准”</td>
+</tr>
+<tr>
+<td>补偿执行中</td>
+<td>返回部分成功</td>
+<td>已补偿项不重复，未决项转人工</td>
+<td>机械重放全部补偿</td>
+</tr>
+<tr>
+<td>租约续期时</td>
+<td>隔离旧执行器</td>
+<td>新旧执行器不能同时推进</td>
+<td>双执行器重复写入</td>
+</tr>
+<tr>
+<td>事件存储写入</td>
+<td>超时但实际成功</td>
+<td>通过事件 ID 去重确认</td>
+<td>重试写出重复事件</td>
+</tr>
+<tr>
+<td>策略服务</td>
+<td>不可用</td>
+<td>高风险动作 fail closed</td>
+<td>为保证可用性默认放行</td>
+</tr>
+<tr>
+<td>Agent 循环</td>
+<td>连续返回同一提案</td>
+<td>无进展预算触发接管</td>
+<td>无限消耗 Token</td>
+</tr>
+</tbody></table>
+<p>每项故障要记录真实命中点。仅在客户端返回一个 <code>TimeoutError</code>，却不能证明工具是在提交前还是提交后超时，无法验证重复副作用保护。</p>
+<h3 id="一个恢复测试示例"><a href="#一个恢复测试示例" class="headerlink" title="一个恢复测试示例"></a>一个恢复测试示例</h3><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">test_crash_after_commit_does_not_duplicate_effect</span>(<span class="params">harness</span>):</span><br><span class="line">    harness.tool.inject(</span><br><span class="line">        tool=<span class="string">&quot;run_eval_suite&quot;</span>,</span><br><span class="line">        occurrence=<span class="number">1</span>,</span><br><span class="line">        phase=<span class="string">&quot;after_commit_before_response&quot;</span>,</span><br><span class="line">        effect=<span class="string">&quot;drop_response_and_kill_executor&quot;</span>,</span><br><span class="line">    )</span><br><span class="line"></span><br><span class="line">    first = harness.start(<span class="string">&quot;repair-42&quot;</span>)</span><br><span class="line">    <span class="keyword">assert</span> first.process_exited_abnormally</span><br><span class="line"></span><br><span class="line">    recovered = harness.resume(<span class="string">&quot;repair-42&quot;</span>)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">assert</span> recovered.terminal_state == RunState.SUCCEEDED</span><br><span class="line">    <span class="keyword">assert</span> harness.tool.effect_count(</span><br><span class="line">        idempotency_key=<span class="string">&quot;repair-42:run_eval_suite:7&quot;</span></span><br><span class="line">    ) == <span class="number">1</span></span><br><span class="line">    <span class="keyword">assert</span> harness.events.count(<span class="built_in">type</span>=<span class="string">&quot;ACTION_PREPARED&quot;</span>) == <span class="number">1</span></span><br><span class="line">    <span class="keyword">assert</span> harness.events.count(<span class="built_in">type</span>=<span class="string">&quot;ACTION_RECEIPT_RECORDED&quot;</span>) == <span class="number">1</span></span><br><span class="line">    <span class="keyword">assert</span> harness.events.exists(</span><br><span class="line">        <span class="built_in">type</span>=<span class="string">&quot;STATE_TRANSITION&quot;</span>,</span><br><span class="line">        reason=<span class="string">&quot;committed_action_recovered&quot;</span>,</span><br><span class="line">    )</span><br></pre></td></tr></table></figure>
+
+<p>这个断言同时检查业务效果、事件数量和恢复原因。只检查最终 <code>SUCCEEDED</code> 会漏掉“先重复执行、后碰巧合并”的错误。</p>
+<h2 id="十九、完整案例：AI-回归失败自动修复执行器"><a href="#十九、完整案例：AI-回归失败自动修复执行器" class="headerlink" title="十九、完整案例：AI 回归失败自动修复执行器"></a>十九、完整案例：AI 回归失败自动修复执行器</h2><blockquote>
+<p>本节是为了说明架构和验收方法而构造的完整工程案例，不代表真实生产事故，也不代表 Anthropic 或任何模型供应商的性能数据。</p>
+</blockquote>
+<h3 id="1-场景"><a href="#1-场景" class="headerlink" title="1. 场景"></a>1. 场景</h3><p>某客服 Agent 的候选版本在“混合支付退款”切片出现回退。目标不是让自治 Agent 直接改生产 Prompt，而是建立一条受控修复链：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">接收失败证据包</span><br><span class="line">  -&gt; 创建隔离工作区</span><br><span class="line">  -&gt; Agent 调查 Trace、Prompt 和工具定义</span><br><span class="line">  -&gt; Agent 提出限定路径内的补丁</span><br><span class="line">  -&gt; 确定性执行静态检查和专项评测</span><br><span class="line">  -&gt; Agent 分析失败并在预算内迭代</span><br><span class="line">  -&gt; 完整质量门禁</span><br><span class="line">  -&gt; 人工批准指定制品摘要</span><br><span class="line">  -&gt; 5% 金丝雀</span><br><span class="line">  -&gt; 指标满足后提升，否则自动回滚</span><br></pre></td></tr></table></figure>
+
+<p>开放部分包括：</p>
+<ul>
+<li>根因可能在 Prompt、上下文模板、工具描述或测试数据</li>
+<li>需要检查哪些文件无法提前确定</li>
+<li>第一次补丁可能失败，需要根据评测证据调整</li>
+</ul>
+<p>确定部分包括：</p>
+<ul>
+<li>只允许读取指定仓库和失败证据包</li>
+<li>只允许修改 <code>prompts/refund/</code> 与 <code>tools/refund.yaml</code></li>
+<li>禁止访问生产用户数据和生产写工具</li>
+<li>每次补丁后必须运行格式、Schema、专项与安全测试</li>
+<li>硬门禁失败不能进入审批</li>
+<li>人工批准绑定 Git tree 摘要和评测制品摘要</li>
+<li>部署、观察、提升和回滚由发布控制器执行</li>
+</ul>
+<h3 id="2-第一版错误设计"><a href="#2-第一版错误设计" class="headerlink" title="2. 第一版错误设计"></a>2. 第一版错误设计</h3><p>第一版把整个流程交给一个 Agent 循环：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">“分析失败，必要时修改代码、运行测试并部署；确认修复后结束。”</span><br></pre></td></tr></table></figure>
+
+<p>工具包括读文件、写文件、运行评测和部署。</p>
+<p>这条 Prompt 看起来给了目标，实际缺少：</p>
+<ul>
+<li>文件范围的强制控制</li>
+<li>评测任务幂等键</li>
+<li>“通过”的权威 Oracle</li>
+<li>部署审批</li>
+<li>进程恢复协议</li>
+<li>最大循环与写动作预算</li>
+<li>回滚目标</li>
+</ul>
+<p>故障注入中，评测服务已创建任务但响应超时。Agent 推断“执行失败”，再次提交了一个新评测任务。随后它只读取第二个较小套件的通过结果，宣布修复完成，并调用部署工具。</p>
+<p>表面日志是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">12:03:11 run_eval -&gt; timeout</span><br><span class="line">12:03:46 run_eval -&gt; passed</span><br><span class="line">12:04:10 deploy -&gt; success</span><br></pre></td></tr></table></figure>
+
+<p>权威证据却显示：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">eval-run-881：完整套件，仍在运行，后来发现 7 个安全回退</span><br><span class="line">eval-run-882：快速套件，通过</span><br><span class="line">deployment：没有绑定获批 tree digest</span><br></pre></td></tr></table></figure>
+
+<p>问题不是模型“少看了一条日志”，而是控制层允许它把未知提交状态当失败、把局部测试当完整门禁、把自然语言判断当发布批准。</p>
+<h3 id="3-重构后的任务合同"><a href="#3-重构后的任务合同" class="headerlink" title="3. 重构后的任务合同"></a>3. 重构后的任务合同</h3><figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">task_id:</span> <span class="string">repair-refund-20260414-42</span></span><br><span class="line"><span class="attr">goal:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">full_gate_decision</span> <span class="string">==</span> <span class="string">PASS</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">candidate_tree_digest</span> <span class="string">==</span> <span class="string">approved_tree_digest</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">canary_release_digest</span> <span class="string">==</span> <span class="string">approved_release_digest</span></span><br><span class="line"><span class="attr">allowed_read_scopes:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">artifact://eval/failure-8821</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">repo://support-agent@candidate-17</span></span><br><span class="line"><span class="attr">allowed_write_paths:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">prompts/refund/**</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">tools/refund.yaml</span></span><br><span class="line"><span class="attr">forbidden_tools:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">production_customer_query</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">direct_production_deploy</span></span><br><span class="line"><span class="attr">budgets:</span></span><br><span class="line">  <span class="attr">model_calls:</span> <span class="number">10</span></span><br><span class="line">  <span class="attr">tool_calls:</span> <span class="number">24</span></span><br><span class="line">  <span class="attr">write_actions:</span> <span class="number">3</span></span><br><span class="line">  <span class="attr">no_progress_steps:</span> <span class="number">2</span></span><br><span class="line">  <span class="attr">wall_time:</span> <span class="string">45m</span></span><br><span class="line"><span class="attr">required_gates:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">format</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">schema</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">refund_targeted</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">critical_safety</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">full_release</span></span><br><span class="line"><span class="attr">approval:</span></span><br><span class="line">  <span class="attr">required_for:</span> <span class="string">canary_deploy</span></span><br><span class="line">  <span class="attr">bind:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">candidate_tree_digest</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">full_release_artifact_digest</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">rollback_release_digest</span></span><br><span class="line"><span class="attr">terminal_states:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">succeeded</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">failed</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">manual_review</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">cancelled</span></span><br></pre></td></tr></table></figure>
+
+<p>Agent 可以提出修改，但控制器会拒绝范围外路径。Agent 可以请求运行评测，但控制器根据套件、代码摘要和尝试号生成幂等键。Agent 可以建议“可以发布”，但只有完整门禁产物和有效批准令牌才能触发发布控制器。</p>
+<h3 id="4-故障发生后的真实时间线"><a href="#4-故障发生后的真实时间线" class="headerlink" title="4. 故障发生后的真实时间线"></a>4. 故障发生后的真实时间线</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line">20:31:02  ACTION_PREPARED</span><br><span class="line">            action=run_full_release_eval</span><br><span class="line">            key=repair-42:full-release:tree-a91f</span><br><span class="line"></span><br><span class="line">20:31:03  评测服务创建 eval-run-901，随后响应链路被注入中断</span><br><span class="line"></span><br><span class="line">20:31:04  执行器进程被故障注入器终止</span><br><span class="line"></span><br><span class="line">20:31:19  新执行器取得 fencing token=74</span><br><span class="line">20:31:19  状态进入 RECOVERING</span><br><span class="line">20:31:20  按 idempotency_key 查询到 eval-run-901=RUNNING</span><br><span class="line">20:31:20  写入 ACTION_RECEIPT_RECORDED，不再创建任务</span><br><span class="line"></span><br><span class="line">20:35:46  eval-run-901=PASS，产物 digest=sha256:6d...</span><br><span class="line">20:35:47  Oracle 核对 tree digest、套件版本、硬门禁和证据完整性</span><br><span class="line">20:35:48  状态进入 WAITING_APPROVAL</span><br><span class="line"></span><br><span class="line">20:41:12  收到绑定 tree-a91f、artifact-6d、rollback-r16 的一次性批准</span><br><span class="line">20:41:13  部署控制器创建 5% 金丝雀</span><br><span class="line">20:56:13  观察窗口结束，硬护栏为 0，质量与成本在阈值内</span><br><span class="line">20:56:14  状态进入 SUCCEEDED</span><br></pre></td></tr></table></figure>
+
+<h3 id="5-排查证据"><a href="#5-排查证据" class="headerlink" title="5. 排查证据"></a>5. 排查证据</h3><p>一次恢复成功不能只看最终状态，需要核对：</p>
+<ol>
+<li><code>ACTION_PREPARED</code> 先于评测任务创建。</li>
+<li>故障命中点是“服务端创建后、客户端收到响应前”。</li>
+<li>恢复进程与旧进程的 fencing token 不同，旧进程后续写被拒绝。</li>
+<li>评测服务中该幂等键只有一个任务。</li>
+<li>完整门禁读取的是 <code>tree-a91f</code>，没有混用第二次修改。</li>
+<li>批准令牌绑定同一 tree、评测产物和回滚目标。</li>
+<li>发布工具没有暴露给 Agent，而是由控制器按状态调用。</li>
+<li>终态 Oracle 读取了金丝雀权威状态和观察窗口，而不是 Agent 回复。</li>
+</ol>
+<p>证据路径示例：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line">runs/repair-42/</span><br><span class="line">  manifest.json</span><br><span class="line">  policy-v5.json</span><br><span class="line">  events.jsonl</span><br><span class="line">  snapshots/</span><br><span class="line">    v17.json</span><br><span class="line">    v24.json</span><br><span class="line">  actions/</span><br><span class="line">    run-full-release.json</span><br><span class="line">    run-full-release-receipt.json</span><br><span class="line">  artifacts/</span><br><span class="line">    failure-input.manifest.json</span><br><span class="line">    patch-tree-a91f.diff</span><br><span class="line">    eval-run-901.manifest.json</span><br><span class="line">    gate-decision.json</span><br><span class="line">  approvals/</span><br><span class="line">    canary-approval.json</span><br><span class="line">  rollout/</span><br><span class="line">    canary-receipt.json</span><br><span class="line">    observation.json</span><br></pre></td></tr></table></figure>
+
+<h3 id="6-修复后的边界"><a href="#6-修复后的边界" class="headerlink" title="6. 修复后的边界"></a>6. 修复后的边界</h3><p>Agent 仍然拥有足够的动态空间：</p>
+<ul>
+<li>自己决定先看哪条 Trace</li>
+<li>自己选择读取哪个允许文件</li>
+<li>根据测试反馈调整补丁</li>
+<li>识别证据冲突并请求更多上下文</li>
+</ul>
+<p>但它不再拥有：</p>
+<ul>
+<li>修改允许路径的权力</li>
+<li>提高预算的权力</li>
+<li>判断超时是否未提交的权力</li>
+<li>跳过测试的权力</li>
+<li>批准发布的权力</li>
+<li>选择未知回滚目标的权力</li>
+<li>宣布权威终态的权力</li>
+</ul>
+<p>这就是 Workflow 与 Agent 的实际边界：不是把模型关进一个完全固定脚本，而是让动态决策发生在可观察、可验证、可停止的区域内。</p>
+<h2 id="二十、量化结果应该怎样报告"><a href="#二十、量化结果应该怎样报告" class="headerlink" title="二十、量化结果应该怎样报告"></a>二十、量化结果应该怎样报告</h2><blockquote>
+<p>下表是基于本文状态模型和确定性模拟器构造的<strong>演示测试数据</strong>，用于展示统计口径，不是生产实测，不是模型能力结论，也不能外推为 Anthropic 官方案例或任何框架的普遍性能保证。</p>
+</blockquote>
+<p>演示故障集包含 8 类场景，每类 30 次，共 240 次：正常执行、提交前中断、提交后丢响应、效果后进程崩溃、快照写入失败、旧执行器迟到、审批过期和补偿部分失败。</p>
+<p>预期终态根据场景预先定义：可恢复故障应成功，不可自动恢复故障应安全进入人工接管，任何场景都不允许重复副作用和越权执行。</p>
+<table>
+<thead>
+<tr>
+<th>演示指标</th>
+<th align="right">第一版全自治循环</th>
+<th align="right">混合控制器版本</th>
+<th>解释</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>预期终态匹配</td>
+<td align="right">187&#x2F;240（77.9%）</td>
+<td align="right">236&#x2F;240（98.3%）</td>
+<td>4 次未匹配均保留为待修复状态机缺陷</td>
+</tr>
+<tr>
+<td>可恢复故障正确恢复</td>
+<td align="right">91&#x2F;150（60.7%）</td>
+<td align="right">146&#x2F;150（97.3%）</td>
+<td>分母只含预先标注为可恢复的注入</td>
+</tr>
+<tr>
+<td>不可恢复故障安全收口</td>
+<td align="right">49&#x2F;60（81.7%）</td>
+<td align="right">60&#x2F;60（100%）</td>
+<td>正确结果可为人工接管，不要求强行成功</td>
+</tr>
+<tr>
+<td>重复副作用运行数</td>
+<td align="right">17&#x2F;240（7.1%）</td>
+<td align="right">0&#x2F;240（0%）</td>
+<td>检查权威 effect，不只检查工具调用日志</td>
+</tr>
+<tr>
+<td>未批准高风险动作</td>
+<td align="right">3&#x2F;240（1.3%）</td>
+<td align="right">0&#x2F;240（0%）</td>
+<td>硬门禁，不能被总体成功率抵消</td>
+</tr>
+<tr>
+<td>无明确归因的终态</td>
+<td align="right">21&#x2F;240（8.8%）</td>
+<td align="right">0&#x2F;240（0%）</td>
+<td>每次失败均有状态、首错事件和接管原因</td>
+</tr>
+<tr>
+<td>单次恢复的模型重调用中位数</td>
+<td align="right">2</td>
+<td align="right">0</td>
+<td>未决动作先查权威状态，不先让模型重新判断</td>
+</tr>
+</tbody></table>
+<p>这组演示数据要注意四个边界。</p>
+<p>第一，它测的是控制器协议，不是模型在真实任务上的语义能力，因此大部分测试使用固定 Agent 替身。</p>
+<p>第二，<code>SUCCEEDED</code> 不是唯一合格终态。审批过期和补偿风险场景进入 <code>MANUAL_REVIEW</code>，只要副作用受控、证据完整，就属于预期收口。</p>
+<p>第三，样本量很小，只适合验证实现和报表结构。真实发布应按业务风险、历史故障分布和置信要求重新设计样本。</p>
+<p>第四，零次重复副作用只说明这 240 次注入没有观察到重复，不能证明所有未来环境下的重复概率为零。报告应保留分子、分母、场景版本和置信边界，避免把“未观察到”写成“绝不发生”。</p>
+<h2 id="二十一、可观测性：要能证明控制器守住了边界"><a href="#二十一、可观测性：要能证明控制器守住了边界" class="headerlink" title="二十一、可观测性：要能证明控制器守住了边界"></a>二十一、可观测性：要能证明控制器守住了边界</h2><p>状态机能够恢复，不等于现场能够排查。长任务跨越模型、工具、事件存储、审批和发布系统后，同一个动作至少会出现四个时间：</p>
+<ul>
+<li>控制器准备动作的时间</li>
+<li>工具服务接收请求的时间</li>
+<li>业务副作用真正提交的时间</li>
+<li>回执被执行器持久化的时间</li>
+</ul>
+<p>只记录一条“工具调用耗时 8 秒”，无法判断超时发生在提交前还是提交后。事件结构应分别保存 <code>occurred_at</code>、<code>observed_at</code> 和 <code>recorded_at</code>，并保留来源系统时钟、请求 ID、动作 ID、幂等键、资源版本和 effect ID。跨系统时钟可能存在偏差，所以因果关系优先依靠事件关联和版本，而不是仅靠毫秒时间排序。</p>
+<h3 id="1-Trace-不能只有模型-Span"><a href="#1-Trace-不能只有模型-Span" class="headerlink" title="1. Trace 不能只有模型 Span"></a>1. Trace 不能只有模型 Span</h3><p>一次动作至少需要下面的关联结构：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">run span</span><br><span class="line">  -&gt; decision span</span><br><span class="line">       -&gt; proposal validation span</span><br><span class="line">       -&gt; action preparation event</span><br><span class="line">       -&gt; tool invocation span</span><br><span class="line">            -&gt; policy decision event</span><br><span class="line">            -&gt; effect receipt event</span><br><span class="line">       -&gt; postcondition verification span</span><br><span class="line">       -&gt; checkpoint span</span><br></pre></td></tr></table></figure>
+
+<p><code>trace_id</code> 用于串起技术调用，<code>run_id</code> 用于标识业务任务，<code>action_id</code> 用于标识一次逻辑动作，<code>attempt_id</code> 用于区分网络尝试，<code>effect_id</code> 用于标识实际副作用。四者不能合并成一个 ID。</p>
+<p>同一逻辑动作可能有三次网络尝试，但只能对应一个副作用；同一次运行可能有多个动作；一次工具调用也可能产生多个需要分别登记的效果。ID 层级混乱时，重复调用、重复效果和正常重试会被报表混成同一件事。</p>
+<h3 id="2-保存决策摘要，不保存或依赖私有思维链"><a href="#2-保存决策摘要，不保存或依赖私有思维链" class="headerlink" title="2. 保存决策摘要，不保存或依赖私有思维链"></a>2. 保存决策摘要，不保存或依赖私有思维链</h3><p>控制器需要的是可审计提案：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;proposal&quot;</span><span class="punctuation">:</span> <span class="string">&quot;run_refund_targeted_eval&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;reason_code&quot;</span><span class="punctuation">:</span> <span class="string">&quot;PATCH_CHANGED_REFUND_TOOL_DESCRIPTION&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;evidence_refs&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">    <span class="string">&quot;artifact://trace/failure-8821&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="string">&quot;repo://support-agent/tools/refund.yaml@tree-a91f&quot;</span></span><br><span class="line">  <span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;expected_postconditions&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">    <span class="string">&quot;targeted_suite_completed&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="string">&quot;no_critical_policy_regression&quot;</span></span><br><span class="line">  <span class="punctuation">]</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>这类摘要能够验证提案是否引用了存在的证据、是否与当前状态一致。长篇模型推理文本既可能包含敏感数据，也不能作为授权或事实依据。排查时应优先读取输入版本、提案、策略判定、工具回执和状态差异。</p>
+<h3 id="3-控制器指标要与通用-Agent-指标分开"><a href="#3-控制器指标要与通用-Agent-指标分开" class="headerlink" title="3. 控制器指标要与通用 Agent 指标分开"></a>3. 控制器指标要与通用 Agent 指标分开</h3><p>第 19 篇已经讨论任务完成、工具参数、轨迹和恢复等 Agent 评测指标。这里不重复计算同一套总分，而是监控控制层是否按协议运行：</p>
+<table>
+<thead>
+<tr>
+<th>控制器指标</th>
+<th>定义</th>
+<th>主要风险信号</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>checkpoint_lag_seconds</code></td>
+<td>最新确认事件到可恢复快照的时间差</td>
+<td>快照落后，崩溃后重放窗口扩大</td>
+</tr>
+<tr>
+<td><code>pending_action_age</code></td>
+<td>动作准备后尚未确认的持续时间</td>
+<td>工具卡住、回执丢失或查询器失效</td>
+</tr>
+<tr>
+<td><code>ambiguous_commit_count</code></td>
+<td>提交状态未知的动作数</td>
+<td>工具恢复合同不足</td>
+</tr>
+<tr>
+<td><code>duplicate_effect_suppressed</code></td>
+<td>工具端识别并抑制的重复尝试数</td>
+<td>上游重试过多，虽未事故但协议在承压</td>
+</tr>
+<tr>
+<td><code>lease_fencing_rejects</code></td>
+<td>旧执行器写入被拒绝的次数</td>
+<td>租约抖动、长停顿或双执行器竞争</td>
+</tr>
+<tr>
+<td><code>illegal_transition_count</code></td>
+<td>被状态机拒绝的转换数</td>
+<td>代码缺陷、迟到事件或版本不兼容</td>
+</tr>
+<tr>
+<td><code>approval_digest_mismatch</code></td>
+<td>批准对象与待执行制品不一致次数</td>
+<td>审批复用或任务状态已变化</td>
+</tr>
+<tr>
+<td><code>recovery_query_failures</code></td>
+<td>未决动作权威查询失败数</td>
+<td>恢复能力正在退化</td>
+</tr>
+<tr>
+<td><code>compensation_deadline_risk</code></td>
+<td>即将超过补偿窗口的效果数</td>
+<td>需要提前人工介入</td>
+</tr>
+<tr>
+<td><code>orphan_effect_count</code></td>
+<td>有 effect 但没有运行所有者的数量</td>
+<td>取消、崩溃或事件关联失败</td>
+</tr>
+</tbody></table>
+<p>这些指标不能只做总量。至少按控制器版本、策略版本、工具、错误阶段和任务风险分层。<code>duplicate_effect_suppressed</code> 上升虽然没有产生重复副作用，也不应被解释成系统完全正常；它说明幂等保护正在频繁兜底，需要继续定位为何发生重复尝试。</p>
+<h3 id="4-告警要指向可执行处置"><a href="#4-告警要指向可执行处置" class="headerlink" title="4. 告警要指向可执行处置"></a>4. 告警要指向可执行处置</h3><p>可以按风险建立告警：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">alerts:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">high_risk_pending_action</span></span><br><span class="line">    <span class="attr">when:</span> <span class="string">pending_action_age</span> <span class="string">&gt;</span> <span class="string">120s</span> <span class="string">and</span> <span class="string">risk</span> <span class="string">==</span> <span class="string">&quot;high&quot;</span></span><br><span class="line">    <span class="attr">action:</span> <span class="string">freeze_new_writes_and_page_owner</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">recovery_query_unavailable</span></span><br><span class="line">    <span class="attr">when:</span> <span class="string">recovery_query_failures</span> <span class="string">&gt;=</span> <span class="number">3</span> <span class="string">within</span> <span class="string">5m</span></span><br><span class="line">    <span class="attr">action:</span> <span class="string">pause_affected_tool_and_route_to_manual_review</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">orphan_effect_detected</span></span><br><span class="line">    <span class="attr">when:</span> <span class="string">orphan_effect_count</span> <span class="string">&gt;</span> <span class="number">0</span></span><br><span class="line">    <span class="attr">action:</span> <span class="string">block_release_and_start_effect_reconciliation</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">approval_binding_violation</span></span><br><span class="line">    <span class="attr">when:</span> <span class="string">approval_digest_mismatch</span> <span class="string">&gt;</span> <span class="number">0</span></span><br><span class="line">    <span class="attr">action:</span> <span class="string">revoke_approval_and_open_security_incident</span></span><br></pre></td></tr></table></figure>
+
+<p>“Agent 错误率升高”无法直接指导值班动作。上面的告警分别告诉值班人员应该冻结什么、查询什么以及是否阻断发布。</p>
+<h3 id="5-一次值班排查的判断顺序"><a href="#5-一次值班排查的判断顺序" class="headerlink" title="5. 一次值班排查的判断顺序"></a>5. 一次值班排查的判断顺序</h3><p>假设出现“任务一直停在 <code>WAITING_TOOL</code>”告警，排查顺序可以固定为：</p>
+<ol>
+<li>确认当前运行租约和 fencing token，排除双执行器。</li>
+<li>读取最后一个 <code>ACTION_PREPARED</code>，核对动作、工具和幂等键。</li>
+<li>在工具端按请求 ID 与幂等键查询，判断是否已有 effect。</li>
+<li>对齐工具接收时间、业务提交时间和回执记录时间。</li>
+<li>若已提交，补记可验证回执并执行后置 Oracle；不得再次写入。</li>
+<li>若确认未提交，检查错误分类、截止时间和剩余重试预算。</li>
+<li>若仍未知，停止该工具的新高风险动作，保存证据并转人工。</li>
+<li>修复后用同一故障阶段重跑恢复测试，而不是只跑正常路径。</li>
+</ol>
+<p>这个顺序先处理副作用事实，再处理模型为何选择该动作。反过来先阅读 Agent 文本，很容易花时间讨论计划是否合理，却忽略外部系统已经提交。</p>
+<h3 id="6-隐私和证据完整性要同时满足"><a href="#6-隐私和证据完整性要同时满足" class="headerlink" title="6. 隐私和证据完整性要同时满足"></a>6. 隐私和证据完整性要同时满足</h3><p>可观测性不意味着把完整 Prompt、凭据和业务数据写进每条日志。建议把内容与元数据分开：</p>
+<ul>
+<li>Trace 保存摘要、引用、版本和策略结果</li>
+<li>敏感原文进入受控 Artifact 存储</li>
+<li>凭据只保存不可逆指纹或密钥引用</li>
+<li>参数日志执行字段级分类和脱敏</li>
+<li>人工接管按任务临时授权读取必要原文</li>
+<li>证据有保留期限、删除流程和访问审计</li>
+</ul>
+<p>如果脱敏后无法判断资源绑定是否正确，可以保存稳定的测试别名或带权限控制的加密引用，而不是直接记录个人信息。证据必须足以验证边界，又不能因为排查系统本身扩大泄漏面。</p>
+<h2 id="二十二、最容易失控的十二种设计"><a href="#二十二、最容易失控的十二种设计" class="headerlink" title="二十二、最容易失控的十二种设计"></a>二十二、最容易失控的十二种设计</h2><h3 id="1-用-Prompt-写权限"><a href="#1-用-Prompt-写权限" class="headerlink" title="1. 用 Prompt 写权限"></a>1. 用 Prompt 写权限</h3><p>“不要访问其他租户”只能帮助模型理解意图，不能替代服务端授权。测试要直接伪造越权提案，确认控制器和工具都拒绝。</p>
+<h3 id="2-模型可以自行添加工具"><a href="#2-模型可以自行添加工具" class="headerlink" title="2. 模型可以自行添加工具"></a>2. 模型可以自行添加工具</h3><p>动态发现工具可以改善可用性，但发现结果必须进入受限注册表和审批策略。模型不能根据工具描述自行获得新权限。</p>
+<h3 id="3-把工具超时当成未执行"><a href="#3-把工具超时当成未执行" class="headerlink" title="3. 把工具超时当成未执行"></a>3. 把工具超时当成未执行</h3><p>这是重复付款、重复创建和重复部署的直接来源。提交状态不明必须先查询。</p>
+<h3 id="4-每次重试生成新幂等键"><a href="#4-每次重试生成新幂等键" class="headerlink" title="4. 每次重试生成新幂等键"></a>4. 每次重试生成新幂等键</h3><p>幂等键绑定业务意图，不绑定某一次网络尝试。同一意图的恢复和重试必须复用稳定键。</p>
+<h3 id="5-只保存最新快照"><a href="#5-只保存最新快照" class="headerlink" title="5. 只保存最新快照"></a>5. 只保存最新快照</h3><p>快照损坏或被旧进程覆盖后没有重建依据。事件日志与快照应能互相校验。</p>
+<h3 id="6-恢复时重新问模型“刚才做到哪里”"><a href="#6-恢复时重新问模型“刚才做到哪里”" class="headerlink" title="6. 恢复时重新问模型“刚才做到哪里”"></a>6. 恢复时重新问模型“刚才做到哪里”</h3><p>模型只能根据残缺上下文推断，无法知道外部事务真相。恢复先读事件和权威状态，再构建必要上下文。</p>
+<h3 id="7-模型自己判断“测试通过”"><a href="#7-模型自己判断“测试通过”" class="headerlink" title="7. 模型自己判断“测试通过”"></a>7. 模型自己判断“测试通过”</h3><p>测试进程退出码、报告摘要、样本级硬门禁和制品摘要应由程序读取。模型可以分析失败，不能伪造通过。</p>
+<h3 id="8-评估者-优化者没有循环上限"><a href="#8-评估者-优化者没有循环上限" class="headerlink" title="8. 评估者-优化者没有循环上限"></a>8. 评估者-优化者没有循环上限</h3><p>两个模型可能持续互相提出风格建议。每轮必须检查可量化进展和预算。</p>
+<h3 id="9-所有错误都进入补偿"><a href="#9-所有错误都进入补偿" class="headerlink" title="9. 所有错误都进入补偿"></a>9. 所有错误都进入补偿</h3><p>补偿本身也是副作用。只有已确认效果、定义了业务补偿且风险可接受时才执行。</p>
+<h3 id="10-人工审批只绑定一句自然语言"><a href="#10-人工审批只绑定一句自然语言" class="headerlink" title="10. 人工审批只绑定一句自然语言"></a>10. 人工审批只绑定一句自然语言</h3><p>“同意发布”如果没有绑定动作摘要、制品、主体、期限和次数，可能被复用到另一个版本。</p>
+<h3 id="11-部署时直接升级所有在途任务"><a href="#11-部署时直接升级所有在途任务" class="headerlink" title="11. 部署时直接升级所有在途任务"></a>11. 部署时直接升级所有在途任务</h3><p>状态 Schema、工具语义或策略变化可能破坏恢复。长任务需要版本固定、兼容迁移或新旧执行器并存。</p>
+<h3 id="12-只测正常退出，不在缝隙中杀进程"><a href="#12-只测正常退出，不在缝隙中杀进程" class="headerlink" title="12. 只测正常退出，不在缝隙中杀进程"></a>12. 只测正常退出，不在缝隙中杀进程</h3><p>最危险的错误发生在“已经产生效果但尚未记账”的几毫秒。故障注入必须命中这些语义边界。</p>
+<h2 id="二十三、什么时候不应该继续升级为-Agent"><a href="#二十三、什么时候不应该继续升级为-Agent" class="headerlink" title="二十三、什么时候不应该继续升级为 Agent"></a>二十三、什么时候不应该继续升级为 Agent</h2><p>出现以下条件时，固定 Workflow 通常更合适：</p>
+<ul>
+<li>流程来自法规、审计或明确 SOP，分支必须可证明</li>
+<li>输入类别稳定，路由后步骤清楚</li>
+<li>每一步都有高风险副作用，开放探索价值很低</li>
+<li>低延迟要求无法容纳多轮观察与规划</li>
+<li>任务一次调用已达到质量和成本目标</li>
+<li>工具没有幂等、查询和隔离能力</li>
+<li>环境无法安全模拟或重置</li>
+<li>没有可靠终态 Oracle</li>
+<li>无法提供人工接管和运行可观测性</li>
+</ul>
+<p>此时可以让模型负责理解、生成候选或解释错误，但不必让它控制过程。</p>
+<h2 id="二十四、什么时候可以扩大-Agent-自治范围"><a href="#二十四、什么时候可以扩大-Agent-自治范围" class="headerlink" title="二十四、什么时候可以扩大 Agent 自治范围"></a>二十四、什么时候可以扩大 Agent 自治范围</h2><p>满足下面条件后，才有证据逐步扩大：</p>
+<ul>
+<li>固定链在真实任务上持续遗漏无法枚举的分支</li>
+<li>Agent 在隔离环境中显著改善关键任务结果</li>
+<li>工具接口清楚、权限最小、错误语义可区分</li>
+<li>副作用可验证、幂等或可安全补偿</li>
+<li>全过程有事件、状态和成本 Trace</li>
+<li>循环、时间、Token、写动作和委派都有硬预算</li>
+<li>关键动作有独立策略与必要审批</li>
+<li>故障注入证明崩溃恢复不会重复或越权</li>
+<li>终态由独立 Oracle 验证</li>
+<li>人工接管能够从保存的事实继续</li>
+</ul>
+<p>自治范围也不必一次放开。可以按顺序演进：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">只读调查</span><br><span class="line">  -&gt; 隔离环境中的可逆修改</span><br><span class="line">  -&gt; 受限工具的低风险写入</span><br><span class="line">  -&gt; 经审批的高风险动作提案</span><br><span class="line">  -&gt; 在严格策略下自动执行少量可补偿动作</span><br></pre></td></tr></table></figure>
+
+<p>每次扩大都应形成新的威胁模型、故障矩阵和回归基线。</p>
+<h3 id="用“影子提案”逐级验证放权"><a href="#用“影子提案”逐级验证放权" class="headerlink" title="用“影子提案”逐级验证放权"></a>用“影子提案”逐级验证放权</h3><p>扩大自治范围时，可以先让 Agent 生成提案，但不执行动作。控制器同时运行原 Workflow，把两者放在相同任务和状态上比较：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">阶段 A：Agent 只观察，记录它会选择的下一步</span><br><span class="line">阶段 B：允许执行只读工具，写动作仍只记录提案</span><br><span class="line">阶段 C：允许在每次可重置的隔离环境中执行可逆修改</span><br><span class="line">阶段 D：低风险写动作经规则批准后自动执行</span><br><span class="line">阶段 E：高风险动作仍要求绑定制品和期限的人工审批</span><br></pre></td></tr></table></figure>
+
+<p>每个阶段都应预先定义晋级和回退条件。例如只读阶段不仅看任务完成，还要检查是否读取了不必要数据、是否反复查询相同内容、是否在预算内停止。隔离写阶段要注入提交后丢响应、重复恢复和并发版本冲突。只有当前阶段在多个发布周期内稳定满足硬门禁，才进入下一阶段。</p>
+<p>影子提案还有一个重要价值：它能够发现 Workflow 中没有覆盖的新路径，而不立刻承担副作用风险。可以统计 Agent 提出的合法新动作中，有多少确实带来新的已验证证据；如果大部分提案都被策略拒绝、与固定流程重复或没有新增进展，说明扩大自治的收益尚未成立。</p>
+<h3 id="放权实验必须能够一键收回"><a href="#放权实验必须能够一键收回" class="headerlink" title="放权实验必须能够一键收回"></a>放权实验必须能够一键收回</h3><p>每一级自治能力都应有独立 Feature Flag 和工具策略版本，回退不是只改一句 Prompt。发生以下信号时，控制器应自动收回到上一层：</p>
+<ul>
+<li>越权或未批准动作出现一次</li>
+<li>重复副作用超过零容忍门禁</li>
+<li>未决动作积压超过恢复时限</li>
+<li>无进展循环显著增加</li>
+<li>人工接管包缺少权威状态</li>
+<li>成本或 P95 时延持续超过预算</li>
+<li>新控制器版本无法安全恢复旧任务</li>
+</ul>
+<p>收回后，已启动任务不能被粗暴清空。执行器要冻结新动作，逐项确认在途副作用，把兼容任务交给旧控制器继续，不能兼容的任务进入人工接管。这样“关闭 Agent”才是一个有状态的运行操作，而不是前端按钮消失后让后台任务继续失控。</p>
+<h3 id="评审记录要保存反事实"><a href="#评审记录要保存反事实" class="headerlink" title="评审记录要保存反事实"></a>评审记录要保存反事实</h3><p>架构评审除保存最终选择，还应保存被拒绝方案和证据：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">为什么单次调用不足</span><br><span class="line">固定链在哪些 case 上稳定遗漏</span><br><span class="line">Routing 和固定并行是否已经尝试</span><br><span class="line">Agent 新增了哪些有效路径</span><br><span class="line">新增路径付出了多少成本与故障复杂度</span><br><span class="line">哪些权限明确没有放开</span><br><span class="line">下一次扩大范围需要满足什么条件</span><br></pre></td></tr></table></figure>
+
+<p>这些记录能避免半年后只看到“这里用了 Agent”，却不知道它解决过什么问题、哪些安全边界不能删除。</p>
+<h2 id="二十五、落地检查表"><a href="#二十五、落地检查表" class="headerlink" title="二十五、落地检查表"></a>二十五、落地检查表</h2><h3 id="架构选择"><a href="#架构选择" class="headerlink" title="架构选择"></a>架构选择</h3><ul>
+<li><input disabled="" type="checkbox"> 是否先验证单次调用能够达到什么水平</li>
+<li><input disabled="" type="checkbox"> 失败是否可以通过固定阶段、路由或并行解决</li>
+<li><input disabled="" type="checkbox"> 动态拆分是否真的需要运行时模型决策</li>
+<li><input disabled="" type="checkbox"> 评估者-优化者是否有清楚 Rubric 和进展定义</li>
+<li><input disabled="" type="checkbox"> Agent 带来的质量增量是否覆盖延迟、成本和运维复杂度</li>
+<li><input disabled="" type="checkbox"> 厂商案例是否只作为架构经验，没有被当作本系统性能保证</li>
+</ul>
+<h3 id="控制权"><a href="#控制权" class="headerlink" title="控制权"></a>控制权</h3><ul>
+<li><input disabled="" type="checkbox"> 模型输出是否被定义为提案而不是授权</li>
+<li><input disabled="" type="checkbox"> 权限、租户和资源范围是否由可信策略重新校验</li>
+<li><input disabled="" type="checkbox"> 模型是否不能增加自己的工具、凭据和预算</li>
+<li><input disabled="" type="checkbox"> 高风险副作用是否需要确定性条件与必要审批</li>
+<li><input disabled="" type="checkbox"> 成功终态是否由独立 Oracle 验证</li>
+<li><input disabled="" type="checkbox"> fail-open 和 fail-closed 策略是否按风险明确</li>
+</ul>
+<h3 id="状态与检查点"><a href="#状态与检查点" class="headerlink" title="状态与检查点"></a>状态与检查点</h3><ul>
+<li><input disabled="" type="checkbox"> 控制状态、业务状态和 Agent 工作状态是否分开</li>
+<li><input disabled="" type="checkbox"> 每个状态的进入条件、允许动作和离开条件是否明确</li>
+<li><input disabled="" type="checkbox"> 检查点是否保存控制器、策略和工具版本</li>
+<li><input disabled="" type="checkbox"> 未决动作是否保存幂等键、查询方式和效果类型</li>
+<li><input disabled="" type="checkbox"> 状态版本是否防止旧执行器覆盖新状态</li>
+<li><input disabled="" type="checkbox"> 事件能否重建快照并解释第一次分叉</li>
+</ul>
+<h3 id="副作用与恢复"><a href="#副作用与恢复" class="headerlink" title="副作用与恢复"></a>副作用与恢复</h3><ul>
+<li><input disabled="" type="checkbox"> 关键动作是否先持久化 intent 再调用工具</li>
+<li><input disabled="" type="checkbox"> 同一业务意图的重试是否复用稳定幂等键</li>
+<li><input disabled="" type="checkbox"> 提交状态不明时是否先查询而不是盲重试</li>
+<li><input disabled="" type="checkbox"> 每种副作用是否声明可逆性和补偿语义</li>
+<li><input disabled="" type="checkbox"> 补偿失败是否有人工接管和截止时间</li>
+<li><input disabled="" type="checkbox"> 取消后是否没有无人管理的在途动作</li>
+</ul>
+<h3 id="超时与预算"><a href="#超时与预算" class="headerlink" title="超时与预算"></a>超时与预算</h3><ul>
+<li><input disabled="" type="checkbox"> 工具、单步、阶段和全任务截止时间是否分开</li>
+<li><input disabled="" type="checkbox"> 是否限制模型、工具、写动作、Token、费用和委派</li>
+<li><input disabled="" type="checkbox"> 是否定义连续无进展而不只定义最大轮次</li>
+<li><input disabled="" type="checkbox"> 预算耗尽时是否停止新副作用并保存现场</li>
+<li><input disabled="" type="checkbox"> 审批过期后是否需要重新批准</li>
+<li><input disabled="" type="checkbox"> Agent 是否不能自行扩大预算</li>
+</ul>
+<h3 id="测试与证据"><a href="#测试与证据" class="headerlink" title="测试与证据"></a>测试与证据</h3><ul>
+<li><input disabled="" type="checkbox"> 状态转换表是否有正反单元测试</li>
+<li><input disabled="" type="checkbox"> 不变量是否通过属性测试覆盖随机事件序列</li>
+<li><input disabled="" type="checkbox"> 模型越权、伪造审批和假完成提案是否被注入</li>
+<li><input disabled="" type="checkbox"> 是否在提交前后、回执前后和快照前后杀进程</li>
+<li><input disabled="" type="checkbox"> 是否验证双执行器、迟到响应和事件重复</li>
+<li><input disabled="" type="checkbox"> 量化结果是否明确标注数据来源、样本量和适用边界</li>
+</ul>
+<h3 id="人工接管"><a href="#人工接管" class="headerlink" title="人工接管"></a>人工接管</h3><ul>
+<li><input disabled="" type="checkbox"> 接管条件是否是稳定规则而不是 Agent 自由选择</li>
+<li><input disabled="" type="checkbox"> 交接包是否包含权威状态、副作用、未决动作和截止时间</li>
+<li><input disabled="" type="checkbox"> 推断与已验证事实是否明确分开</li>
+<li><input disabled="" type="checkbox"> 人工决定是否绑定具体动作和制品摘要</li>
+<li><input disabled="" type="checkbox"> 接管后恢复是否继续沿用原幂等键和状态版本</li>
+<li><input disabled="" type="checkbox"> 人工处理结果是否回写事件和回归样本</li>
+</ul>
+<h2 id="二十六、总结"><a href="#二十六、总结" class="headerlink" title="二十六、总结"></a>二十六、总结</h2><p>Workflow 和 Agent 的差异不在于调用了几次模型，而在于过程控制权由预定义代码还是模型动态决定。</p>
+<p>复杂度阶梯可以从单次调用逐步上升到：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">单次调用</span><br><span class="line">  -&gt; Prompt Chaining</span><br><span class="line">  -&gt; Routing</span><br><span class="line">  -&gt; Parallelization</span><br><span class="line">  -&gt; Orchestrator-Workers</span><br><span class="line">  -&gt; Evaluator-Optimizer</span><br><span class="line">  -&gt; 自治 Agent</span><br></pre></td></tr></table></figure>
+
+<p>每升一级，都应该由同一评测合同证明简单方案确实不足，而不是因为更复杂的名称听起来更先进。</p>
+<p>即使任务需要 Agent，关键控制仍应留在确定性层：</p>
+<ul>
+<li>策略和权限</li>
+<li>工具与参数边界</li>
+<li>幂等键</li>
+<li>写前登记</li>
+<li>状态转换</li>
+<li>检查点和恢复</li>
+<li>超时与预算</li>
+<li>补偿与取消</li>
+<li>人工审批</li>
+<li>最终成功 Oracle</li>
+</ul>
+<p>Agent 最适合处理的是开放调查、候选生成、动态计划和失败分析。确定性控制器负责把这些提案限制在可观察、可验证、可停止、可接管的边界内。</p>
+<p>最后的验收标准不是“Agent 大多数时候会遵守 Prompt”，而是：</p>
+<blockquote>
+<p>即使模型提出错误动作、工具在提交后丢失响应、执行器在任意检查点崩溃、审批过期或循环失去进展，系统仍不会扩大权限、重复关键副作用或伪造成功，并且能够用完整证据恢复、补偿或转人工。</p>
+</blockquote>
+<p>达到这个标准，Workflow 才真正承担了控制面，Agent 的自主性也才有可靠的工程边界。</p>
+<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><ol>
+<li>Anthropic Engineering，<a target="_blank" rel="noopener" href="https://www.anthropic.com/engineering/building-effective-agents">Building effective agents</a>。本文采用其中对 Workflow 与 Agent 的架构区分，以及 Prompt Chaining、Routing、Parallelization、Orchestrator-Workers、Evaluator-Optimizer 和 Agent 等模式；这些是官方工程经验，不是本文业务的性能保证。</li>
+<li>Anthropic Engineering，<a target="_blank" rel="noopener" href="https://www.anthropic.com/engineering/multi-agent-research-system">How we built our multi-agent research system</a>。其中关于长任务状态、检查点、确定性重试保护和恢复的内容来自 Anthropic 特定 Research 系统，本文只将其作为架构经验。</li>
+<li>Hector Garcia-Molina、Kenneth Salem，<a target="_blank" rel="noopener" href="https://doi.org/10.1145/38713.38742">Sagas</a>，ACM SIGMOD 1987。长事务拆分和补偿事务的原始论文。</li>
+<li>K. Mani Chandy、Leslie Lamport，<a target="_blank" rel="noopener" href="https://doi.org/10.1145/214451.214456">Distributed Snapshots: Determining Global States of Distributed Systems</a>，ACM TOCS 1985。分布式系统一致状态与快照的原始论文。</li>
+<li>IETF，<a target="_blank" rel="noopener" href="https://www.rfc-editor.org/rfc/rfc9110">RFC 9110: HTTP Semantics</a>。HTTP 方法、幂等语义与请求处理边界的正式标准；应用级幂等仍需由业务实现定义。</li>
+<li>Amazon Builders’ Library，<a target="_blank" rel="noopener" href="https://aws.amazon.com/builders-library/timeouts-retries-and-backoff-with-jitter/">Timeouts, retries, and backoff with jitter</a>。关于超时、重试、退避、幂等和过载控制的官方工程资料。</li>
+<li>OpenTelemetry，<a target="_blank" rel="noopener" href="https://opentelemetry.io/docs/specs/otel/trace/api/">Tracing API Specification</a>。Trace、Span、事件与上下文关联的官方规范，可用于执行器证据设计。</li>
+</ol>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/AI%E6%B5%8B%E8%AF%95/" rel="tag"># AI测试</a>
+              <a href="/tags/%E8%B4%A8%E9%87%8F%E5%B7%A5%E7%A8%8B/" rel="tag"># 质量工程</a>
+              <a href="/tags/Workflow/" rel="tag"># Workflow</a>
+              <a href="/tags/AI-Agent/" rel="tag"># AI Agent</a>
+              <a href="/tags/%E7%8A%B6%E6%80%81%E6%9C%BA/" rel="tag"># 状态机</a>
+              <a href="/tags/%E6%95%85%E9%9A%9C%E6%81%A2%E5%A4%8D/" rel="tag"># 故障恢复</a>
+              <a href="/tags/%E5%B9%82%E7%AD%89%E4%B8%8E%E8%A1%A5%E5%81%BF/" rel="tag"># 幂等与补偿</a>
+              <a href="/tags/Human-in-the-loop/" rel="tag"># Human-in-the-loop</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2026/04/12/AI%E6%B5%8B%E8%AF%95-29-MCP%E5%B7%A5%E5%85%B7%E6%8E%A5%E5%85%A5%E6%80%8E%E4%B9%88%E6%B5%8B%E8%AF%95Schema%E8%83%BD%E5%8A%9B%E5%8F%91%E7%8E%B0%E6%9D%83%E9%99%90%E5%92%8C%E4%BF%A1%E4%BB%BB%E8%BE%B9%E7%95%8C/" rel="prev" title="AI测试-29-MCP工具接入怎么测试Schema能力发现权限和信任边界">
+                  <i class="fa fa-angle-left"></i> AI测试-29-MCP工具接入怎么测试Schema能力发现权限和信任边界
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2026/04/16/Linux%E8%BF%90%E7%BB%B4-09-Barrier%20KVM%20%E9%83%A8%E7%BD%B2/" rel="next" title="Barrier：Rocky Linux + Windows 双机 KVM 部署">
+                  Barrier：Rocky Linux + Windows 双机 KVM 部署 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">2.1m</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">129:05</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

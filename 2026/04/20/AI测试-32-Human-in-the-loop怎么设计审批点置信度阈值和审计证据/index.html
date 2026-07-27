@@ -1,0 +1,1663 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="给 Agent 加一个“执行前请确认”的弹窗，并不等于完成了 Human-in-the-loop 设计。 如果所有请求都要求人工确认，系统很快会变成一条昂贵、拥堵而且没有判断力的审批队列。审核人连续看到几百个相似请求后，最常见的动作不是逐项核实证据，而是机械点击“同意”。低风险请求被无意义地阻塞，高风险请求反而淹没在噪声里。 如果只在模型“置信度低”时转人工，问题同样没有解决。分类分数、Token">
+<meta property="og:type" content="article">
+<meta property="og:title" content="AI测试-32-Human-in-the-loop怎么设计审批点置信度阈值和审计证据">
+<meta property="og:url" content="https://paynewinnt.github.io/2026/04/20/AI%E6%B5%8B%E8%AF%95-32-Human-in-the-loop%E6%80%8E%E4%B9%88%E8%AE%BE%E8%AE%A1%E5%AE%A1%E6%89%B9%E7%82%B9%E7%BD%AE%E4%BF%A1%E5%BA%A6%E9%98%88%E5%80%BC%E5%92%8C%E5%AE%A1%E8%AE%A1%E8%AF%81%E6%8D%AE/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="给 Agent 加一个“执行前请确认”的弹窗，并不等于完成了 Human-in-the-loop 设计。 如果所有请求都要求人工确认，系统很快会变成一条昂贵、拥堵而且没有判断力的审批队列。审核人连续看到几百个相似请求后，最常见的动作不是逐项核实证据，而是机械点击“同意”。低风险请求被无意义地阻塞，高风险请求反而淹没在噪声里。 如果只在模型“置信度低”时转人工，问题同样没有解决。分类分数、Token">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://paynewinnt.github.io/images/ai-quality/ai-32-risk-approval.svg">
+<meta property="og:image" content="https://paynewinnt.github.io/images/ai-quality/ai-32-audit-state.svg">
+<meta property="article:published_time" content="2026-04-20T12:30:00.000Z">
+<meta property="article:modified_time" content="2026-04-20T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="AI测试">
+<meta property="article:tag" content="风险控制">
+<meta property="article:tag" content="质量工程">
+<meta property="article:tag" content="状态机">
+<meta property="article:tag" content="Human-in-the-loop">
+<meta property="article:tag" content="Agent审批">
+<meta property="article:tag" content="置信度校准">
+<meta property="article:tag" content="审计证据">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://paynewinnt.github.io/images/ai-quality/ai-32-risk-approval.svg">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2026/04/20/AI%E6%B5%8B%E8%AF%95-32-Human-in-the-loop%E6%80%8E%E4%B9%88%E8%AE%BE%E8%AE%A1%E5%AE%A1%E6%89%B9%E7%82%B9%E7%BD%AE%E4%BF%A1%E5%BA%A6%E9%98%88%E5%80%BC%E5%92%8C%E5%AE%A1%E8%AE%A1%E8%AF%81%E6%8D%AE/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2026/04/20/AI%E6%B5%8B%E8%AF%95-32-Human-in-the-loop%E6%80%8E%E4%B9%88%E8%AE%BE%E8%AE%A1%E5%AE%A1%E6%89%B9%E7%82%B9%E7%BD%AE%E4%BF%A1%E5%BA%A6%E9%98%88%E5%80%BC%E5%92%8C%E5%AE%A1%E8%AE%A1%E8%AF%81%E6%8D%AE/","path":"2026/04/20/AI测试-32-Human-in-the-loop怎么设计审批点置信度阈值和审计证据/","title":"AI测试-32-Human-in-the-loop怎么设计审批点置信度阈值和审计证据"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>AI测试-32-Human-in-the-loop怎么设计审批点置信度阈值和审计证据 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E5%85%88%E7%BB%99%E7%BB%93%E8%AE%BA%EF%BC%9AHuman-in-the-loop-%E4%B8%8D%E6%98%AF%E8%AE%A9%E4%BA%BA%E7%A1%AE%E8%AE%A4%E6%89%80%E6%9C%89%E8%AF%B7%E6%B1%82"><span class="nav-number">1.</span> <span class="nav-text">一、先给结论：Human-in-the-loop 不是让人确认所有请求</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E8%B4%AF%E7%A9%BF%E5%9C%BA%E6%99%AF%EF%BC%9A%E4%B8%80%E4%B8%AA%E5%AE%A2%E6%9C%8D-Agent-%E5%AE%9E%E9%99%85%E4%BC%9A%E9%81%87%E5%88%B0%E5%93%AA%E4%BA%9B%E5%8A%A8%E4%BD%9C"><span class="nav-number">2.</span> <span class="nav-text">二、贯穿场景：一个客服 Agent 实际会遇到哪些动作</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81Human-in-command%E3%80%81on-the-loop-%E5%92%8C-in-the-loop-%E5%88%86%E5%88%AB%E8%A7%A3%E5%86%B3%E4%BB%80%E4%B9%88"><span class="nav-number">3.</span> <span class="nav-text">三、Human-in-command、on-the-loop 和 in-the-loop 分别解决什么</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Human-in-command%EF%BC%9A%E4%BA%BA%E5%86%B3%E5%AE%9A%E7%B3%BB%E7%BB%9F%E8%83%BD%E4%B8%8D%E8%83%BD%E5%81%9A%E8%BF%99%E7%B1%BB%E4%BA%8B"><span class="nav-number">3.1.</span> <span class="nav-text">1. Human-in-command：人决定系统能不能做这类事</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Human-on-the-loop%EF%BC%9A%E4%BA%BA%E6%8C%81%E7%BB%AD%E8%A7%82%E5%AF%9F%E5%B9%B6%E8%83%BD%E6%8E%A5%E7%AE%A1%E8%BF%90%E8%A1%8C%E7%B3%BB%E7%BB%9F"><span class="nav-number">3.2.</span> <span class="nav-text">2. Human-on-the-loop：人持续观察并能接管运行系统</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Human-in-the-loop%EF%BC%9A%E4%BA%BA%E5%9C%A8%E7%89%B9%E5%AE%9A%E5%86%B3%E7%AD%96%E5%91%A8%E6%9C%9F%E5%86%85%E4%BD%9C%E5%87%BA%E6%98%8E%E7%A1%AE%E5%86%B3%E5%AE%9A"><span class="nav-number">3.3.</span> <span class="nav-text">3. Human-in-the-loop：人在特定决策周期内作出明确决定</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%B8%89%E8%80%85%E4%B8%8D%E6%98%AF%E6%88%90%E7%86%9F%E5%BA%A6%E7%9A%84%E9%AB%98%E4%BD%8E%E5%85%B3%E7%B3%BB"><span class="nav-number">3.4.</span> <span class="nav-text">4. 三者不是成熟度的高低关系</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E5%9B%9B%E7%B1%BB%E5%AE%A1%E6%89%B9%E7%82%B9%EF%BC%9APlan%E3%80%81Tool%E3%80%81Result-%E5%92%8C-Exception"><span class="nav-number">4.</span> <span class="nav-text">四、四类审批点：Plan、Tool、Result 和 Exception</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Plan-approval%EF%BC%9A%E5%85%88%E6%89%B9%E5%87%86%E8%8C%83%E5%9B%B4%EF%BC%8C%E4%B8%8D%E6%89%B9%E5%87%86%E6%9C%AA%E7%9F%A5%E5%8A%A8%E4%BD%9C"><span class="nav-number">4.1.</span> <span class="nav-text">1. Plan approval：先批准范围，不批准未知动作</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Tool-approval%EF%BC%9A%E5%89%AF%E4%BD%9C%E7%94%A8%E6%89%A7%E8%A1%8C%E5%89%8D%E7%BB%91%E5%AE%9A%E8%A7%84%E8%8C%83%E5%8C%96%E5%8F%82%E6%95%B0"><span class="nav-number">4.2.</span> <span class="nav-text">2. Tool approval：副作用执行前绑定规范化参数</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Result-review%EF%BC%9A%E6%A3%80%E6%9F%A5%E8%A6%81%E5%8F%91%E5%B8%83%E6%88%96%E4%BA%A4%E4%BB%98%E7%9A%84%E7%BB%93%E6%9E%9C"><span class="nav-number">4.3.</span> <span class="nav-text">3. Result review：检查要发布或交付的结果</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-Exception-escalation%EF%BC%9A%E5%BC%82%E5%B8%B8%E5%8D%87%E7%BA%A7%E4%B8%8D%E6%98%AF%E6%97%A0%E9%99%90%E9%87%8D%E8%AF%95%E5%90%8E%E7%9A%84%E5%9E%83%E5%9C%BE%E6%A1%B6"><span class="nav-number">4.4.</span> <span class="nav-text">4. Exception escalation：异常升级不是无限重试后的垃圾桶</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E5%85%88%E7%94%BB%E9%A3%8E%E9%99%A9%E5%9B%BE%EF%BC%8C%E5%86%8D%E5%86%99%E9%98%88%E5%80%BC"><span class="nav-number">5.</span> <span class="nav-text">五、先画风险图，再写阈值</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%85%88%E5%86%99%E4%B8%8D%E5%8F%AF%E8%B6%8A%E8%BF%87%E7%9A%84%E7%A1%AC%E8%A7%84%E5%88%99"><span class="nav-number">5.1.</span> <span class="nav-text">1. 先写不可越过的硬规则</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%86%8D%E7%94%A8%E9%A3%8E%E9%99%A9%E5%88%86%E5%86%B3%E5%AE%9A%E4%BA%BA%E5%B7%A5%E4%BB%8B%E5%85%A5%E5%BC%BA%E5%BA%A6"><span class="nav-number">5.2.</span> <span class="nav-text">2. 再用风险分决定人工介入强度</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E9%98%88%E5%80%BC%E8%A6%81%E6%8C%89%E4%B8%9A%E5%8A%A1%E5%88%87%E7%89%87%EF%BC%8C%E8%80%8C%E4%B8%8D%E6%98%AF%E5%85%A8%E5%B1%80%E4%B8%80%E5%A5%97"><span class="nav-number">5.3.</span> <span class="nav-text">3. 阈值要按业务切片，而不是全局一套</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E7%BD%AE%E4%BF%A1%E5%BA%A6%E4%B8%8D%E8%83%BD%E7%9B%B4%E6%8E%A5%E7%AD%89%E4%BA%8E%E6%AD%A3%E7%A1%AE%E6%A6%82%E7%8E%87"><span class="nav-number">6.</span> <span class="nav-text">六、置信度不能直接等于正确概率</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%B8%B8%E8%A7%81%E5%88%86%E6%95%B0%E8%A1%A8%E8%BE%BE%E7%9A%84%E6%98%AF%E4%B8%8D%E5%90%8C%E5%AF%B9%E8%B1%A1"><span class="nav-number">6.1.</span> <span class="nav-text">1. 常见分数表达的是不同对象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%85%88%E5%AE%9A%E4%B9%89%E9%9C%80%E8%A6%81%E6%A0%A1%E5%87%86%E7%9A%84%E4%BA%8B%E4%BB%B6"><span class="nav-number">6.2.</span> <span class="nav-text">2. 先定义需要校准的事件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%A0%A1%E5%87%86%E9%9B%86%E5%BF%85%E9%A1%BB%E6%8E%A5%E8%BF%91%E9%83%A8%E7%BD%B2%E6%9D%A1%E4%BB%B6"><span class="nav-number">6.3.</span> <span class="nav-text">3. 校准集必须接近部署条件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E9%98%88%E5%80%BC%E6%9D%A5%E8%87%AA%E9%94%99%E8%AF%AF%E6%88%90%E6%9C%AC%E5%92%8C%E5%AE%B9%E9%87%8F%E7%BA%A6%E6%9D%9F"><span class="nav-number">6.4.</span> <span class="nav-text">4. 阈值来自错误成本和容量约束</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E4%BD%BF%E7%94%A8%E6%8B%92%E7%AD%94%E5%8C%BA%E5%92%8C%E7%81%B0%E5%8C%BA%EF%BC%8C%E4%B8%8D%E5%BC%BA%E8%BF%AB%E6%AF%8F%E4%B8%AA%E8%AF%B7%E6%B1%82%E4%BA%8C%E9%80%89%E4%B8%80"><span class="nav-number">6.5.</span> <span class="nav-text">5. 使用拒答区和灰区，不强迫每个请求二选一</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E6%BC%82%E7%A7%BB%E5%90%8E%E6%97%A7%E9%98%88%E5%80%BC%E8%A6%81%E5%A4%B1%E6%95%88"><span class="nav-number">6.6.</span> <span class="nav-text">6. 漂移后旧阈值要失效</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E6%8A%8A%E7%BD%AE%E4%BF%A1%E5%BA%A6%E3%80%81%E8%A7%84%E5%88%99%E5%92%8C%E8%AF%81%E6%8D%AE%E5%AE%8C%E6%95%B4%E5%BA%A6%E7%BB%84%E5%90%88%E8%B5%B7%E6%9D%A5"><span class="nav-number">7.</span> <span class="nav-text">七、把置信度、规则和证据完整度组合起来</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%B8%80%E5%B1%82%EF%BC%9A%E7%A1%AE%E5%AE%9A%E6%80%A7%E8%B5%84%E6%A0%BC%E6%A3%80%E6%9F%A5"><span class="nav-number">7.1.</span> <span class="nav-text">第一层：确定性资格检查</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%BA%8C%E5%B1%82%EF%BC%9A%E8%AF%81%E6%8D%AE%E5%85%85%E5%88%86%E6%80%A7%E6%A3%80%E6%9F%A5"><span class="nav-number">7.2.</span> <span class="nav-text">第二层：证据充分性检查</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%B8%89%E5%B1%82%EF%BC%9A%E7%BB%9F%E8%AE%A1%E4%B8%8D%E7%A1%AE%E5%AE%9A%E6%80%A7%E4%B8%8E%E4%BB%BB%E5%8A%A1%E5%8F%AF%E9%9D%A0%E6%80%A7"><span class="nav-number">7.3.</span> <span class="nav-text">第三层：统计不确定性与任务可靠性</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E5%AE%A1%E6%89%B9%E7%95%8C%E9%9D%A2%E4%B9%9F%E5%B1%9E%E4%BA%8E%E5%AE%89%E5%85%A8%E6%8E%A7%E5%88%B6"><span class="nav-number">8.</span> <span class="nav-text">八、审批界面也属于安全控制</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%B1%95%E7%A4%BA%E5%B7%AE%E5%BC%82%E5%92%8C%E8%AF%81%E6%8D%AE%EF%BC%8C%E4%B8%8D%E5%B1%95%E7%A4%BA%E5%86%97%E9%95%BF%E6%8E%A8%E7%90%86"><span class="nav-number">8.1.</span> <span class="nav-text">1. 展示差异和证据，不展示冗长推理</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E9%81%BF%E5%85%8D-Automation-Bias"><span class="nav-number">8.2.</span> <span class="nav-text">2. 避免 Automation Bias</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%8E%A7%E5%88%B6%E5%AE%A1%E6%89%B9%E7%96%B2%E5%8A%B3"><span class="nav-number">8.3.</span> <span class="nav-text">3. 控制审批疲劳</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%89%B9%E9%87%8F%E5%AE%A1%E6%89%B9%E5%8F%AA%E9%80%82%E5%90%88%E5%90%8C%E8%B4%A8%E3%80%81%E5%8F%AF%E7%95%8C%E5%AE%9A%E7%9A%84%E5%AF%B9%E8%B1%A1"><span class="nav-number">8.4.</span> <span class="nav-text">4. 批量审批只适合同质、可界定的对象</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E5%AE%A1%E6%89%B9%E4%B8%8D%E6%98%AF%E4%B8%80%E4%B8%AA%E5%B8%83%E5%B0%94%E5%AD%97%E6%AE%B5%EF%BC%8C%E8%80%8C%E6%98%AF%E4%B8%80%E5%8F%B0%E7%8A%B6%E6%80%81%E6%9C%BA"><span class="nav-number">9.</span> <span class="nav-text">九、审批不是一个布尔字段，而是一台状态机</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%85%81%E8%AE%B8%E7%9A%84%E7%8A%B6%E6%80%81%E8%BF%81%E7%A7%BB"><span class="nav-number">9.1.</span> <span class="nav-text">1. 允许的状态迁移</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%8F%8C%E4%BA%BA%E5%AE%A1%E6%89%B9%E4%B8%8D%E8%83%BD%E7%94%A8%E4%B8%80%E4%B8%AA%E8%AE%A1%E6%95%B0%E5%99%A8%E4%BB%A3%E6%9B%BF"><span class="nav-number">9.2.</span> <span class="nav-text">2. 双人审批不能用一个计数器代替</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%8B%92%E7%BB%9D%E5%BF%85%E9%A1%BB%E6%88%90%E4%B8%BA%E6%A8%A1%E5%9E%8B%E5%8F%AF%E7%90%86%E8%A7%A3%E4%BD%86%E4%B8%8D%E5%8F%AF%E7%BB%95%E8%BF%87%E7%9A%84%E7%BB%93%E6%9E%9C"><span class="nav-number">9.3.</span> <span class="nav-text">3. 拒绝必须成为模型可理解但不可绕过的结果</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E5%AE%A1%E6%89%B9%E6%95%B0%E6%8D%AE%E6%A8%A1%E5%9E%8B%EF%BC%9A%E6%9C%80%E5%B0%91%E8%A6%81%E4%BF%9D%E5%AD%98%E5%93%AA%E4%BA%9B%E5%AD%97%E6%AE%B5"><span class="nav-number">10.</span> <span class="nav-text">十、审批数据模型：最少要保存哪些字段</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%95%8F%E6%84%9F%E5%86%85%E5%AE%B9%E4%B8%8D%E8%A6%81%E5%85%A8%E9%83%A8%E5%A4%8D%E5%88%B6%E8%BF%9B%E5%AE%A1%E6%89%B9%E8%A1%A8"><span class="nav-number">10.1.</span> <span class="nav-text">1. 敏感内容不要全部复制进审批表</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%93%88%E5%B8%8C%E8%AF%81%E6%98%8E%E7%9A%84%E6%98%AF%E4%B8%80%E8%87%B4%E6%80%A7%EF%BC%8C%E4%B8%8D%E8%87%AA%E5%8A%A8%E8%AF%81%E6%98%8E%E7%9C%9F%E5%AE%9E%E6%80%A7"><span class="nav-number">10.2.</span> <span class="nav-text">2. 哈希证明的是一致性，不自动证明真实性</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81TOCTOU%EF%BC%9A%E6%89%B9%E5%87%86%E6%97%B6%E6%AD%A3%E7%A1%AE%EF%BC%8C%E4%B8%8D%E4%BB%A3%E8%A1%A8%E6%89%A7%E8%A1%8C%E6%97%B6%E4%BB%8D%E7%84%B6%E6%AD%A3%E7%A1%AE"><span class="nav-number">11.</span> <span class="nav-text">十一、TOCTOU：批准时正确，不代表执行时仍然正确</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%B8%80%E4%B8%AA%E5%85%B8%E5%9E%8B%E7%AB%9E%E6%80%81"><span class="nav-number">11.1.</span> <span class="nav-text">1. 一个典型竞态</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%AE%A1%E6%89%B9%E5%BF%AB%E7%85%A7%E8%A6%81%E7%BB%91%E5%AE%9A%E4%B8%9A%E5%8A%A1%E5%89%8D%E7%BD%AE%E6%9D%A1%E4%BB%B6"><span class="nav-number">11.2.</span> <span class="nav-text">2. 审批快照要绑定业务前置条件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%89%A7%E8%A1%8C%E5%89%8D%E5%81%9A%E6%9C%80%E7%BB%88%E5%8E%9F%E5%AD%90%E6%A3%80%E6%9F%A5"><span class="nav-number">11.3.</span> <span class="nav-text">3. 执行前做最终原子检查</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E9%98%B2%E9%87%8D%E6%94%BE%EF%BC%9A%E6%89%B9%E5%87%86%E4%B8%80%E6%AC%A1%E5%8F%AA%E8%83%BD%E6%89%A7%E8%A1%8C%E7%BB%91%E5%AE%9A%E5%8A%A8%E4%BD%9C%E4%B8%80%E6%AC%A1"><span class="nav-number">12.</span> <span class="nav-text">十二、防重放：批准一次只能执行绑定动作一次</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%94%A8%E6%88%B7%E9%87%8D%E5%A4%8D%E7%82%B9%E5%87%BB"><span class="nav-number">12.1.</span> <span class="nav-text">1. 用户重复点击</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E7%BD%91%E7%BB%9C%E8%B6%85%E6%97%B6%E5%90%8E%E5%AE%A2%E6%88%B7%E7%AB%AF%E9%87%8D%E8%AF%95"><span class="nav-number">12.2.</span> <span class="nav-text">2. 网络超时后客户端重试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%97%A7%E5%AE%A1%E6%89%B9%E8%A2%AB%E5%A4%8D%E5%88%B6%E5%88%B0%E6%96%B0%E8%AF%B7%E6%B1%82"><span class="nav-number">12.3.</span> <span class="nav-text">3. 旧审批被复制到新请求</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%B7%B2%E6%89%A7%E8%A1%8C%E8%AE%B0%E5%BD%95%E8%A2%AB%E5%86%8D%E6%AC%A1%E6%81%A2%E5%A4%8D"><span class="nav-number">12.4.</span> <span class="nav-text">4. 已执行记录被再次恢复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81%E4%B8%80%E4%B8%AA%E5%8F%AF%E8%BF%90%E8%A1%8C%E7%9A%84%E5%AE%A1%E6%89%B9%E7%AD%96%E7%95%A5%E5%BC%95%E6%93%8E%E4%B8%8E%E7%8A%B6%E6%80%81%E6%9C%BA"><span class="nav-number">13.</span> <span class="nav-text">十三、一个可运行的审批策略引擎与状态机</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81%E7%AD%96%E7%95%A5%E5%BC%95%E6%93%8E%E6%9C%AC%E8%BA%AB%E5%BA%94%E8%AF%A5%E6%80%8E%E4%B9%88%E6%B5%8B%E8%AF%95"><span class="nav-number">14.</span> <span class="nav-text">十四、策略引擎本身应该怎么测试</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%86%B3%E7%AD%96%E8%A1%A8%E6%B5%8B%E8%AF%95"><span class="nav-number">14.1.</span> <span class="nav-text">1. 决策表测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%8D%95%E8%B0%83%E6%80%A7%E6%B5%8B%E8%AF%95"><span class="nav-number">14.2.</span> <span class="nav-text">2. 单调性测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%8F%98%E5%BD%A2%E6%B5%8B%E8%AF%95"><span class="nav-number">14.3.</span> <span class="nav-text">3. 变形测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E7%8A%B6%E6%80%81%E6%9C%BA%E6%B5%8B%E8%AF%95"><span class="nav-number">14.4.</span> <span class="nav-text">4. 状态机测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%BD%B1%E5%AD%90%E7%AD%96%E7%95%A5%E6%AF%94%E8%BE%83"><span class="nav-number">14.5.</span> <span class="nav-text">5. 影子策略比较</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%94%E3%80%81%E5%AE%A1%E8%AE%A1%E8%AF%81%E6%8D%AE%EF%BC%9A%E8%A6%81%E9%87%8D%E5%BB%BA%E4%B8%80%E6%AC%A1%E5%86%B3%E5%AE%9A%EF%BC%8C%E8%80%8C%E4%B8%8D%E6%98%AF%E5%A0%86%E6%97%A5%E5%BF%97"><span class="nav-number">15.</span> <span class="nav-text">十五、审计证据：要重建一次决定，而不是堆日志</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%BA%8B%E4%BB%B6%E8%80%8C%E4%B8%8D%E6%98%AF%E8%A6%86%E7%9B%96%E5%BC%8F%E5%AD%97%E6%AE%B5"><span class="nav-number">15.1.</span> <span class="nav-text">1. 事件而不是覆盖式字段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%AE%A1%E6%89%B9%E8%AF%81%E6%8D%AE%E5%92%8C%E6%89%A7%E8%A1%8C%E8%AF%81%E6%8D%AE%E5%88%86%E5%BC%80"><span class="nav-number">15.2.</span> <span class="nav-text">2. 审批证据和执行证据分开</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%AE%A1%E6%A0%B8%E4%BA%BA%E7%9C%8B%E5%88%B0%E7%9A%84%E9%A1%B5%E9%9D%A2%E4%B9%9F%E8%A6%81%E7%89%88%E6%9C%AC%E5%8C%96"><span class="nav-number">15.3.</span> <span class="nav-text">3. 审核人看到的页面也要版本化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%BF%9D%E7%95%99%E6%9C%9F%E8%A6%81%E6%8C%89%E8%AF%81%E6%8D%AE%E7%B1%BB%E5%9E%8B%E5%8C%BA%E5%88%86"><span class="nav-number">15.4.</span> <span class="nav-text">4. 保留期要按证据类型区分</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AD%E3%80%81%E8%B6%85%E6%97%B6%E3%80%81%E5%8F%96%E6%B6%88%E5%92%8C%E9%95%BF%E6%97%B6%E9%97%B4%E5%AE%A1%E6%89%B9"><span class="nav-number">16.</span> <span class="nav-text">十六、超时、取消和长时间审批</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E8%B6%85%E6%97%B6%E4%B8%8D%E6%98%AF%E8%87%AA%E5%8A%A8%E6%8B%92%E7%BB%9D%E7%9A%84%E5%90%8C%E4%B9%89%E8%AF%8D"><span class="nav-number">16.1.</span> <span class="nav-text">1. 超时不是自动拒绝的同义词</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%8F%96%E6%B6%88%E8%A6%81%E4%BC%A0%E6%92%AD%E5%88%B0%E6%89%80%E6%9C%89%E8%BF%90%E8%A1%8C%E5%88%86%E6%94%AF"><span class="nav-number">16.2.</span> <span class="nav-text">2. 取消要传播到所有运行分支</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E9%95%BF%E6%97%B6%E9%97%B4%E5%AE%A1%E6%89%B9%E5%BF%85%E9%A1%BB%E9%87%8D%E6%96%B0%E9%AA%8C%E8%AF%81%E7%8E%AF%E5%A2%83"><span class="nav-number">16.3.</span> <span class="nav-text">3. 长时间审批必须重新验证环境</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%83%E3%80%81%E8%B4%A3%E4%BB%BB%E8%BE%B9%E7%95%8C%EF%BC%9A%E4%BA%BA%E6%89%B9%E5%87%86%E4%BA%86%EF%BC%8C%E4%B8%8D%E7%AD%89%E4%BA%8E%E7%B3%BB%E7%BB%9F%E5%85%8D%E8%B4%A3"><span class="nav-number">17.</span> <span class="nav-text">十七、责任边界：人批准了，不等于系统免责</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AB%E3%80%81%E4%B8%89%E4%B8%AA%E5%AE%8C%E6%95%B4%E5%A4%B1%E8%B4%A5%E6%A1%88%E4%BE%8B%E4%B8%8E%E6%8E%92%E6%9F%A5"><span class="nav-number">18.</span> <span class="nav-text">十八、三个完整失败案例与排查</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A1%88%E4%BE%8B%E4%B8%80%EF%BC%9A%E5%AE%A1%E6%89%B9-800-%E5%85%83%EF%BC%8C%E5%AE%9E%E9%99%85%E6%89%A7%E8%A1%8C-8000-%E5%85%83"><span class="nav-number">18.1.</span> <span class="nav-text">案例一：审批 800 元，实际执行 8000 元</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A1%88%E4%BE%8B%E4%BA%8C%EF%BC%9A%E6%89%B9%E5%87%86%E7%8E%87-99-7-%EF%BC%8C%E4%BD%86%E9%A3%8E%E9%99%A9%E6%B2%A1%E6%9C%89%E4%B8%8B%E9%99%8D"><span class="nav-number">18.2.</span> <span class="nav-text">案例二：批准率 99.7%，但风险没有下降</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A1%88%E4%BE%8B%E4%B8%89%EF%BC%9A%E4%B8%A4%E4%B8%AA%E4%BA%BA%E6%89%B9%E5%87%86%EF%BC%8C%E5%AE%9E%E9%99%85%E6%98%AF%E5%90%8C%E4%B8%80%E8%B4%A3%E4%BB%BB%E4%B8%BB%E4%BD%93"><span class="nav-number">18.3.</span> <span class="nav-text">案例三：两个人批准，实际是同一责任主体</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B9%9D%E3%80%81%E9%87%8F%E5%8C%96%E7%BB%93%E6%9E%9C%E5%BA%94%E8%AF%A5%E5%90%8C%E6%97%B6%E7%9C%8B%E6%95%88%E7%8E%87%E5%92%8C%E6%8E%A7%E5%88%B6%E6%9C%89%E6%95%88%E6%80%A7"><span class="nav-number">19.</span> <span class="nav-text">十九、量化结果应该同时看效率和控制有效性</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%8E%A8%E8%8D%90%E7%9A%84%E8%BF%90%E8%A1%8C%E6%8C%87%E6%A0%87"><span class="nav-number">19.1.</span> <span class="nav-text">1. 推荐的运行指标</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%8C%87%E6%A0%87%E4%B8%8D%E8%83%BD%E6%BF%80%E5%8A%B1%E9%94%99%E8%AF%AF%E8%A1%8C%E4%B8%BA"><span class="nav-number">19.2.</span> <span class="nav-text">2. 指标不能激励错误行为</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E3%80%81%E4%BA%BA%E5%B7%A5%E5%86%B3%E5%AE%9A%E4%B8%8D%E6%98%AF%E5%A4%A9%E7%84%B6%E7%9C%9F%E5%80%BC%EF%BC%9A%E5%8F%8D%E9%A6%88%E9%97%AD%E7%8E%AF%E6%80%8E%E4%B9%88%E5%BB%BA%E7%AB%8B"><span class="nav-number">20.</span> <span class="nav-text">二十、人工决定不是天然真值：反馈闭环怎么建立</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%8A%8A%E4%B8%89%E7%B1%BB%E6%A0%87%E7%AD%BE%E5%88%86%E5%BC%80"><span class="nav-number">20.1.</span> <span class="nav-text">1. 把三类标签分开</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E8%AE%B0%E5%BD%95%E5%86%B3%E5%AE%9A%E7%90%86%E7%94%B1%EF%BC%8C%E4%BD%86%E4%B8%8D%E8%A6%81%E8%AE%A9%E7%90%86%E7%94%B1%E7%A0%81%E6%9B%BF%E4%BB%A3%E8%AF%81%E6%8D%AE"><span class="nav-number">20.2.</span> <span class="nav-text">2. 记录决定理由，但不要让理由码替代证据</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%A4%84%E7%90%86%E9%80%89%E6%8B%A9%E5%81%8F%E5%B7%AE"><span class="nav-number">20.3.</span> <span class="nav-text">3. 处理选择偏差</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%A4%84%E7%90%86%E5%AE%A1%E6%A0%B8%E4%BA%BA%E5%88%86%E6%AD%A7"><span class="nav-number">20.4.</span> <span class="nav-text">4. 处理审核人分歧</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%BB%B6%E8%BF%9F%E7%9C%9F%E5%80%BC%E8%A6%81%E8%83%BD%E5%9B%9E%E5%A1%AB%E5%8E%9F%E8%BF%90%E8%A1%8C"><span class="nav-number">20.5.</span> <span class="nav-text">5. 延迟真值要能回填原运行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E5%8F%8D%E9%A6%88%E6%95%B0%E6%8D%AE%E4%B9%9F%E8%A6%81%E7%BB%8F%E8%BF%87%E9%9A%90%E7%A7%81%E4%B8%8E%E5%AE%89%E5%85%A8%E6%B2%BB%E7%90%86"><span class="nav-number">20.6.</span> <span class="nav-text">6. 反馈数据也要经过隐私与安全治理</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%80%E3%80%81%E6%95%85%E9%9A%9C%E6%BC%94%E7%BB%83%EF%BC%9A%E4%BA%BA%E5%B7%A5%E4%BB%8B%E5%85%A5%E9%93%BE%E8%B7%AF%E4%B9%9F%E8%A6%81%E5%AE%9A%E6%9C%9F%E6%B3%A8%E5%85%A5%E6%95%85%E9%9A%9C"><span class="nav-number">21.</span> <span class="nav-text">二十一、故障演练：人工介入链路也要定期注入故障</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%BC%94%E7%BB%83%E4%B8%80%EF%BC%9A%E7%AD%96%E7%95%A5%E6%9C%8D%E5%8A%A1%E4%B8%8D%E5%8F%AF%E7%94%A8"><span class="nav-number">21.1.</span> <span class="nav-text">演练一：策略服务不可用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%BC%94%E7%BB%83%E4%BA%8C%EF%BC%9A%E5%AE%A1%E6%89%B9%E6%9C%9F%E9%97%B4%E8%B5%84%E6%BA%90%E5%8F%98%E5%8C%96"><span class="nav-number">21.2.</span> <span class="nav-text">演练二：审批期间资源变化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%BC%94%E7%BB%83%E4%B8%89%EF%BC%9A%E5%AE%A1%E8%AE%A1%E5%AD%98%E5%82%A8%E4%B8%8D%E5%8F%AF%E7%94%A8"><span class="nav-number">21.3.</span> <span class="nav-text">演练三：审计存储不可用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%BC%94%E7%BB%83%E5%9B%9B%EF%BC%9A%E5%AE%A1%E6%A0%B8%E9%98%9F%E5%88%97%E8%B6%85%E8%BD%BD"><span class="nav-number">21.4.</span> <span class="nav-text">演练四：审核队列超载</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%BC%94%E7%BB%83%E4%BA%94%EF%BC%9A%E6%97%A7%E5%AE%A1%E6%89%B9%E9%87%8D%E6%94%BE"><span class="nav-number">21.5.</span> <span class="nav-text">演练五：旧审批重放</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%BC%94%E7%BB%83%E5%85%AD%EF%BC%9A%E6%A0%A1%E5%87%86%E6%BC%82%E7%A7%BB"><span class="nav-number">21.6.</span> <span class="nav-text">演练六：校准漂移</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%8C%E3%80%81%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E4%B8%8D%E5%BA%94%E8%AF%A5%E5%BC%BA%E8%A1%8C%E5%8A%A0%E5%85%A5%E5%90%8C%E6%AD%A5%E4%BA%BA%E5%B7%A5%E5%AE%A1%E6%89%B9"><span class="nav-number">22.</span> <span class="nav-text">二十二、什么时候不应该强行加入同步人工审批</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%BA%BA%E6%97%A0%E6%B3%95%E5%9C%A8%E6%97%B6%E9%97%B4%E7%AA%97%E5%8F%A3%E5%86%85%E4%BD%9C%E5%87%BA%E6%9B%B4%E5%A5%BD%E5%88%A4%E6%96%AD"><span class="nav-number">22.1.</span> <span class="nav-text">1. 人无法在时间窗口内作出更好判断</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%AE%A1%E6%A0%B8%E4%BA%BA%E6%8B%BF%E4%B8%8D%E5%88%B0%E7%8B%AC%E7%AB%8B%E8%AF%81%E6%8D%AE"><span class="nav-number">22.2.</span> <span class="nav-text">2. 审核人拿不到独立证据</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E7%A1%AC%E7%A6%81%E6%AD%A2%E5%8F%AF%E4%BB%A5%E7%9B%B4%E6%8E%A5%E8%87%AA%E5%8A%A8%E6%8B%92%E7%BB%9D"><span class="nav-number">22.3.</span> <span class="nav-text">3. 硬禁止可以直接自动拒绝</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%8F%AF%E9%80%86%E4%BD%8E%E9%A3%8E%E9%99%A9%E5%8A%A8%E4%BD%9C%E9%80%82%E5%90%88%E8%87%AA%E5%8A%A8%E5%8A%A0%E6%8A%BD%E6%A0%B7"><span class="nav-number">22.4.</span> <span class="nav-text">4. 可逆低风险动作适合自动加抽样</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E9%AB%98%E9%A3%8E%E9%99%A9%E9%A2%86%E5%9F%9F%E4%B8%8D%E8%83%BD%E5%8F%AA%E4%BE%9D%E8%B5%96%E9%80%9A%E7%94%A8%E5%AE%A1%E6%A0%B8%E4%BA%BA"><span class="nav-number">22.5.</span> <span class="nav-text">5. 高风险领域不能只依赖通用审核人</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%89%E3%80%81%E4%BB%8E-0-%E5%88%B0-1-%E7%9A%84%E8%90%BD%E5%9C%B0%E9%A1%BA%E5%BA%8F"><span class="nav-number">23.</span> <span class="nav-text">二十三、从 0 到 1 的落地顺序</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5%E4%B8%80%EF%BC%9A%E5%85%88%E6%94%B6%E7%B4%A7%E9%AB%98%E9%A3%8E%E9%99%A9%E5%8A%A8%E4%BD%9C"><span class="nav-number">23.1.</span> <span class="nav-text">阶段一：先收紧高风险动作</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5%E4%BA%8C%EF%BC%9A%E5%BB%BA%E7%AB%8B%E8%AF%81%E6%8D%AE%E5%92%8C%E7%8A%B6%E6%80%81%E6%9C%BA"><span class="nav-number">23.2.</span> <span class="nav-text">阶段二：建立证据和状态机</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5%E4%B8%89%EF%BC%9A%E6%A0%A1%E5%87%86%E5%B9%B6%E9%87%8A%E6%94%BE%E4%BD%8E%E9%A3%8E%E9%99%A9%E6%B5%81%E9%87%8F"><span class="nav-number">23.3.</span> <span class="nav-text">阶段三：校准并释放低风险流量</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5%E5%9B%9B%EF%BC%9A%E6%8C%81%E7%BB%AD%E6%B2%BB%E7%90%86"><span class="nav-number">23.4.</span> <span class="nav-text">阶段四：持续治理</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E5%9B%9B%E3%80%81%E4%B8%8A%E7%BA%BF%E5%89%8D%E6%A3%80%E6%9F%A5%E6%B8%85%E5%8D%95"><span class="nav-number">24.</span> <span class="nav-text">二十四、上线前检查清单</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9C%BA%E6%99%AF%E4%B8%8E%E9%A3%8E%E9%99%A9"><span class="nav-number">24.1.</span> <span class="nav-text">场景与风险</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BD%AE%E4%BF%A1%E5%BA%A6%E4%B8%8E%E8%AF%81%E6%8D%AE"><span class="nav-number">24.2.</span> <span class="nav-text">置信度与证据</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AE%A1%E6%89%B9%E7%82%B9%E4%B8%8E%E7%95%8C%E9%9D%A2"><span class="nav-number">24.3.</span> <span class="nav-text">审批点与界面</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8A%B6%E6%80%81%E4%B8%8E%E5%B9%B6%E5%8F%91"><span class="nav-number">24.4.</span> <span class="nav-text">状态与并发</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#TOCTOU-%E4%B8%8E%E9%98%B2%E9%87%8D%E6%94%BE"><span class="nav-number">24.5.</span> <span class="nav-text">TOCTOU 与防重放</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AE%A1%E8%AE%A1%E4%B8%8E%E8%B4%A3%E4%BB%BB"><span class="nav-number">24.6.</span> <span class="nav-text">审计与责任</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%B5%8B%E8%AF%95%E4%B8%8E%E6%BC%94%E7%BB%83"><span class="nav-number">24.7.</span> <span class="nav-text">测试与演练</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%BA%94%E3%80%81%E5%B0%8F%E7%BB%93"><span class="nav-number">25.</span> <span class="nav-text">二十五、小结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8F%82%E8%80%83%E8%B5%84%E6%96%99"><span class="nav-number">26.</span> <span class="nav-text">参考资料</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">358</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">27</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">796</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2026/04/20/AI%E6%B5%8B%E8%AF%95-32-Human-in-the-loop%E6%80%8E%E4%B9%88%E8%AE%BE%E8%AE%A1%E5%AE%A1%E6%89%B9%E7%82%B9%E7%BD%AE%E4%BF%A1%E5%BA%A6%E9%98%88%E5%80%BC%E5%92%8C%E5%AE%A1%E8%AE%A1%E8%AF%81%E6%8D%AE/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="AI测试-32-Human-in-the-loop怎么设计审批点置信度阈值和审计证据 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          AI测试-32-Human-in-the-loop怎么设计审批点置信度阈值和审计证据
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2026-04-20 20:30:00" itemprop="dateCreated datePublished" datetime="2026-04-20T20:30:00+08:00">2026-04-20</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/AI%E6%B5%8B%E8%AF%95/" itemprop="url" rel="index"><span itemprop="name">AI测试</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>17k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>1:01</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>给 Agent 加一个“执行前请确认”的弹窗，并不等于完成了 Human-in-the-loop 设计。</p>
+<p>如果所有请求都要求人工确认，系统很快会变成一条昂贵、拥堵而且没有判断力的审批队列。审核人连续看到几百个相似请求后，最常见的动作不是逐项核实证据，而是机械点击“同意”。低风险请求被无意义地阻塞，高风险请求反而淹没在噪声里。</p>
+<p>如果只在模型“置信度低”时转人工，问题同样没有解决。分类分数、Token 概率、模型自报的“90% 确定”都不天然等于答案正确概率；即使某个分数经过校准，它也只对校准数据、模型版本、任务切片和时间窗口成立。一个高置信度动作仍可能越权、不可逆、金额过高，或者缺少完成判断所必需的证据。</p>
+<p>真正需要设计的是一套控制面：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">业务影响与动作风险</span><br><span class="line">  + 身份、权限和数据敏感度</span><br><span class="line">  + 证据完整度与不确定性</span><br><span class="line">  + 可逆性和补偿能力</span><br><span class="line">  -&gt; 决定在哪里暂停、由谁审批、看什么证据、审批多久有效</span><br><span class="line">  -&gt; 执行前重新校验当前状态</span><br><span class="line">  -&gt; 保存可以复核的决策与执行证据</span><br></pre></td></tr></table></figure>
+
+<p>这篇文章以“客服 Agent 处理退款、修改地址和发送通知”为贯穿场景，讨论怎样选择审批点、怎样使用置信度、怎样实现审批状态机，以及怎样测试 TOCTOU、防重放、双人审批、超时和审计证据。</p>
+<p>本文讨论的是工程控制和测试方法，不替代具体行业的法律、合规或内部授权要求。文中阈值与量化结果用于展示设计和验收方法，不是可以直接复制到生产环境的通用标准。</p>
+<h2 id="一、先给结论：Human-in-the-loop-不是让人确认所有请求"><a href="#一、先给结论：Human-in-the-loop-不是让人确认所有请求" class="headerlink" title="一、先给结论：Human-in-the-loop 不是让人确认所有请求"></a>一、先给结论：Human-in-the-loop 不是让人确认所有请求</h2><p>一套可用的人工介入机制，至少要满足下面七个条件。</p>
+<ol>
+<li><strong>介入强度由风险决定。</strong> 只读查询、可撤销草稿和不可逆付款不应该使用同一种审批方式。</li>
+<li><strong>审批点放在风险产生之前。</strong> 已经完成外发、删除或扣款后再让人看结果，只能叫事后复核，不能阻止该次伤害。</li>
+<li><strong>审批对象是确定动作快照。</strong> 审核人批准的是“为订单 A 退款 800 元到原支付渠道”，不是“允许 Agent 继续运行”。</li>
+<li><strong>审批不是长期授权。</strong> 执行时仍要检查身份、权限、资源版本、额度、策略和幂等状态。</li>
+<li><strong>置信度只是证据之一。</strong> 它必须经过校准，并与硬规则、证据完整度、任务外分布信号共同使用。</li>
+<li><strong>拒绝、过期和取消都是正常终态。</strong> 系统不能把它们包装成工具报错后自动换一种方式继续执行。</li>
+<li><strong>人也会犯错。</strong> 界面、队列、排班和指标要主动控制自动化偏见、审批疲劳和橡皮图章行为。</li>
+</ol>
+<p>NIST AI RMF 的 <code>GOVERN 3.2</code> 要求定义并区分人机配置与监督角色，<code>MAP 3.5</code> 要求依据组织政策定义、评估并记录人工监督过程。这个要求的重点不是“页面上出现一个人”，而是角色、过程、证据和责任边界能够被验证。</p>
+<p>OpenAI 的 Agent 构建实践指南把“超过失败阈值”和“高风险动作”列为两类典型人工介入触发器，并用敏感、不可逆或高影响动作说明风险维度。这个框架比“模型不确定就找人”更完整，因为风险既来自模型能力，也来自动作本身。</p>
+<h2 id="二、贯穿场景：一个客服-Agent-实际会遇到哪些动作"><a href="#二、贯穿场景：一个客服-Agent-实际会遇到哪些动作" class="headerlink" title="二、贯穿场景：一个客服 Agent 实际会遇到哪些动作"></a>二、贯穿场景：一个客服 Agent 实际会遇到哪些动作</h2><p>假设客服 Agent 能处理以下任务：</p>
+<ul>
+<li>查询订单、物流和会员信息</li>
+<li>根据政策计算可退金额</li>
+<li>生成退款方案</li>
+<li>调用支付服务发起退款</li>
+<li>修改尚未出库订单的收货地址</li>
+<li>给客户发送邮件或短信</li>
+<li>遇到政策例外时创建人工工单</li>
+</ul>
+<p>这些动作不能简单分成“模型回答”和“人工审批”两类。更有用的拆分是观察影响、权限和可逆性。</p>
+<table>
+<thead>
+<tr>
+<th>动作</th>
+<th>主要影响</th>
+<th>可逆性</th>
+<th>权限与数据</th>
+<th>合适的控制</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>查询公开物流节点</td>
+<td>只读</td>
+<td>无副作用</td>
+<td>低敏感</td>
+<td>自动执行，保留访问日志</td>
+</tr>
+<tr>
+<td>查询完整地址和电话</td>
+<td>隐私暴露</td>
+<td>读取本身不可撤回</td>
+<td>个人数据</td>
+<td>权限与目的校验，必要时脱敏</td>
+</tr>
+<tr>
+<td>生成退款草案</td>
+<td>不直接改变业务状态</td>
+<td>可删除</td>
+<td>内部数据</td>
+<td>自动生成，结果校验</td>
+</tr>
+<tr>
+<td>退款 30 元且政策证据完整</td>
+<td>财务写入</td>
+<td>可通过冲正补偿但有成本</td>
+<td>支付权限</td>
+<td>可按额度与历史可靠性自动执行</td>
+</tr>
+<tr>
+<td>退款 800 元</td>
+<td>明显财务影响</td>
+<td>补偿复杂</td>
+<td>高权限</td>
+<td>工具执行前单人审批</td>
+</tr>
+<tr>
+<td>退款 8 万元</td>
+<td>高额财务影响</td>
+<td>高成本且可能触发合规流程</td>
+<td>高权限</td>
+<td>双人审批或转专门系统</td>
+</tr>
+<tr>
+<td>修改已出库地址</td>
+<td>可能误投和泄露</td>
+<td>很难恢复</td>
+<td>地址、物流权限</td>
+<td>硬规则拒绝，不给人工按钮绕过</td>
+</tr>
+<tr>
+<td>向外部地址发送订单明细</td>
+<td>数据外发</td>
+<td>无法真正召回</td>
+<td>个人数据、外部通道</td>
+<td>收件人与内容快照审批，DLP 再检查</td>
+</tr>
+</tbody></table>
+<p>表中“自动执行”不表示没有控制，只表示不进入同步人工队列。它仍需要认证、授权、策略、数据最小化、幂等和审计。</p>
+<p>同样，“人工审批”也不表示人可以突破所有硬规则。如果订单已出库，业务系统明确禁止修改地址，那么审批页面不应该提供“仍然同意”的后门。人工只能在组织预先授予的裁量空间里作决定。</p>
+<h2 id="三、Human-in-command、on-the-loop-和-in-the-loop-分别解决什么"><a href="#三、Human-in-command、on-the-loop-和-in-the-loop-分别解决什么" class="headerlink" title="三、Human-in-command、on-the-loop 和 in-the-loop 分别解决什么"></a>三、Human-in-command、on-the-loop 和 in-the-loop 分别解决什么</h2><p>欧洲委员会发布的可信 AI 伦理指南使用了 Human-in-the-loop、Human-on-the-loop 和 Human-in-command 三种监督方式。工程实现中可以按下面的操作边界理解，但仍应在本组织策略里写出自己的精确定义。</p>
+<h3 id="1-Human-in-command：人决定系统能不能做这类事"><a href="#1-Human-in-command：人决定系统能不能做这类事" class="headerlink" title="1. Human-in-command：人决定系统能不能做这类事"></a>1. Human-in-command：人决定系统能不能做这类事</h3><p>Human-in-command 关注系统级控制权，例如：</p>
+<ul>
+<li>哪些业务可以使用 Agent</li>
+<li>哪些工具永远不向模型开放</li>
+<li>自动退款最高额度是多少</li>
+<li>哪些地区、用户或数据类别禁止自动处理</li>
+<li>何时暂停某个模型、某个策略或整个 AI 功能</li>
+<li>谁承担残余风险并批准上线</li>
+</ul>
+<p>它通常落在产品治理、风险委员会、服务所有者和事件指挥流程中，不要求某个人逐条批准每个请求。</p>
+<p>如果系统没有 Human-in-command，前线审核人即使能拒绝单次动作，也无法处理“这个系统根本不应该继续用于该场景”的问题。</p>
+<h3 id="2-Human-on-the-loop：人持续观察并能接管运行系统"><a href="#2-Human-on-the-loop：人持续观察并能接管运行系统" class="headerlink" title="2. Human-on-the-loop：人持续观察并能接管运行系统"></a>2. Human-on-the-loop：人持续观察并能接管运行系统</h3><p>Human-on-the-loop 关注运行监督，例如：</p>
+<ul>
+<li>监控自动执行比例、失败率、人工接管率和风险切片</li>
+<li>抽样复核已自动执行的低风险动作</li>
+<li>观察模型、证据和业务分布漂移</li>
+<li>在异常趋势出现时收紧阈值、降低额度或暂停能力</li>
+<li>在事故中执行 kill switch、隔离队列和回滚</li>
+</ul>
+<p>它适合高频但单次低风险、可观测且可补偿的动作。关键前提是监控信号足够快，接管动作确实能限制后续影响。若损害在监控发现前已经不可逆地扩散，只靠 on-the-loop 不够。</p>
+<h3 id="3-Human-in-the-loop：人在特定决策周期内作出明确决定"><a href="#3-Human-in-the-loop：人在特定决策周期内作出明确决定" class="headerlink" title="3. Human-in-the-loop：人在特定决策周期内作出明确决定"></a>3. Human-in-the-loop：人在特定决策周期内作出明确决定</h3><p>Human-in-the-loop 关注单次运行中的暂停和恢复：</p>
+<ul>
+<li>Agent 提交一份计划，等待人确认范围</li>
+<li>工具即将产生副作用，等待人批准具体参数</li>
+<li>结果准备外发，等待人检查内容</li>
+<li>异常超出自动恢复范围，转交人处理</li>
+</ul>
+<p>它不是“人重新完成全部工作”，而是把最需要判断或授权的节点交给具备责任和证据的人。</p>
+<h3 id="4-三者不是成熟度的高低关系"><a href="#4-三者不是成熟度的高低关系" class="headerlink" title="4. 三者不是成熟度的高低关系"></a>4. 三者不是成熟度的高低关系</h3><p>一个退款 Agent 可以同时具备：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">Human-in-command：规定退款 Agent 只能处理消费订单，自动额度最高 100 元</span><br><span class="line">Human-on-the-loop：质量运营每天抽样 2%，异常时一键停用自动退款</span><br><span class="line">Human-in-the-loop：800 元退款在工具执行前由有额度的审核人批准</span><br></pre></td></tr></table></figure>
+
+<p>缺少任何一层都会留下不同缺口。逐条审批不能替代系统治理；运营看板不能替代高风险动作前的授权；上线委员会也不能替代运行中的异常接管。</p>
+<h2 id="四、四类审批点：Plan、Tool、Result-和-Exception"><a href="#四、四类审批点：Plan、Tool、Result-和-Exception" class="headerlink" title="四、四类审批点：Plan、Tool、Result 和 Exception"></a>四、四类审批点：Plan、Tool、Result 和 Exception</h2><p>审批点应围绕风险首次变得具体的位置设计，而不是统一塞在对话结束前。</p>
+<h3 id="1-Plan-approval：先批准范围，不批准未知动作"><a href="#1-Plan-approval：先批准范围，不批准未知动作" class="headerlink" title="1. Plan approval：先批准范围，不批准未知动作"></a>1. Plan approval：先批准范围，不批准未知动作</h3><p>计划审批适合长任务、多步骤任务和会访问多个系统的任务，例如：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">目标：处理工单 CS-20260420-1842</span><br><span class="line">计划：</span><br><span class="line">1. 读取订单 O-9137 的支付和物流状态</span><br><span class="line">2. 读取退款政策 policy-refund-v12</span><br><span class="line">3. 计算可退金额</span><br><span class="line">4. 如金额不超过 100 元，创建退款草案</span><br><span class="line">5. 发送结果给当前登录客户</span><br><span class="line"></span><br><span class="line">明确不做：修改地址、联系第三方、实际退款</span><br></pre></td></tr></table></figure>
+
+<p>审核人批准的是目标、数据范围、工具范围和预算。计划后来新增“实际退款”时，原计划批准不能自动覆盖新增动作。</p>
+<p>计划审批的测试重点包括：</p>
+<ul>
+<li>Agent 是否在批准后悄悄扩展工具集合</li>
+<li>计划摘要是否遗漏高风险步骤</li>
+<li>模糊描述能否掩盖真实参数</li>
+<li>批准的租户、用户和资源范围是否传递到每个子步骤</li>
+<li>重新规划后是否重新计算风险</li>
+</ul>
+<h3 id="2-Tool-approval：副作用执行前绑定规范化参数"><a href="#2-Tool-approval：副作用执行前绑定规范化参数" class="headerlink" title="2. Tool approval：副作用执行前绑定规范化参数"></a>2. Tool approval：副作用执行前绑定规范化参数</h3><p>工具审批是最关键的一层。页面要展示规范化后的真实调用参数，而不是模型生成的自然语言摘要。</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;tool&quot;</span><span class="punctuation">:</span> <span class="string">&quot;payment.refund.v3&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;arguments&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;order_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;O-9137&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;amount_minor&quot;</span><span class="punctuation">:</span> <span class="number">80000</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;currency&quot;</span><span class="punctuation">:</span> <span class="string">&quot;CNY&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;destination&quot;</span><span class="punctuation">:</span> <span class="string">&quot;ORIGINAL_PAYMENT_METHOD&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;reason_code&quot;</span><span class="punctuation">:</span> <span class="string">&quot;DUPLICATE_CHARGE&quot;</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;side_effect&quot;</span><span class="punctuation">:</span> <span class="string">&quot;FINANCIAL_WRITE&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;idempotency_key&quot;</span><span class="punctuation">:</span> <span class="string">&quot;refund:O-9137:case-CS-20260420-1842&quot;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>如果模型摘要写“退款 800 元”，参数却是 <code>80000</code> 美元分单位，审核人必须看到货币、最小金额单位和目标渠道。前端友好文案可以存在，但不能代替机器实际执行的字段。</p>
+<h3 id="3-Result-review：检查要发布或交付的结果"><a href="#3-Result-review：检查要发布或交付的结果" class="headerlink" title="3. Result review：检查要发布或交付的结果"></a>3. Result review：检查要发布或交付的结果</h3><p>结果复核适合：</p>
+<ul>
+<li>对外发送的法律、医疗、财务或高声誉风险内容</li>
+<li>大规模批量生成结果</li>
+<li>需要领域专家确认的判断</li>
+<li>工具已完成只读分析，但结论可能影响后续人工决策</li>
+</ul>
+<p>结果复核不能弥补执行前控制。先退款再检查退款说明，无法阻止错误退款。它应该保护“发布结果”这个动作，而不是用来解释已经发生的副作用。</p>
+<p>结果页面需要同时展示：</p>
+<ul>
+<li>最终输出</li>
+<li>关键来源和引用位置</li>
+<li>缺失或冲突的证据</li>
+<li>使用的模型、Prompt、检索与政策版本</li>
+<li>与输入数据相关的限制</li>
+<li>审核人可以执行的修订、拒绝和升级动作</li>
+</ul>
+<h3 id="4-Exception-escalation：异常升级不是无限重试后的垃圾桶"><a href="#4-Exception-escalation：异常升级不是无限重试后的垃圾桶" class="headerlink" title="4. Exception escalation：异常升级不是无限重试后的垃圾桶"></a>4. Exception escalation：异常升级不是无限重试后的垃圾桶</h3><p>异常升级适合系统不能安全自动收敛的情况：</p>
+<ul>
+<li>连续多次无法确认客户身份</li>
+<li>工具返回“提交状态未知”</li>
+<li>证据互相冲突</li>
+<li>政策没有覆盖当前例外</li>
+<li>风险评分超出自动策略范围</li>
+<li>审批超时但业务仍需要处理</li>
+</ul>
+<p>异常包应包含已经做过什么、哪些动作可能已产生副作用、当前资源状态、剩余预算和下一步可选动作。只发一句“Agent 失败，请人工处理”，会迫使人工从头排查，也容易重复执行未知状态的操作。</p>
+<h2 id="五、先画风险图，再写阈值"><a href="#五、先画风险图，再写阈值" class="headerlink" title="五、先画风险图，再写阈值"></a>五、先画风险图，再写阈值</h2><p>下面这张图展示一个请求如何从业务事实进入不同介入路径。</p>
+<p><img src="/images/ai-quality/ai-32-risk-approval.svg" alt="Human-in-the-loop风险分层与审批点"></p>
+<p>风险模型至少要覆盖六类维度。</p>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>需要问的问题</th>
+<th>高风险信号示例</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>影响 <code>impact</code></td>
+<td>错了会影响谁、多少对象、持续多久</td>
+<td>批量操作、外部传播、关键业务中断</td>
+</tr>
+<tr>
+<td>可逆性 <code>reversibility</code></td>
+<td>是否能完整、及时、低成本恢复</td>
+<td>删除、付款、公开发布、凭据泄露</td>
+</tr>
+<tr>
+<td>权限 <code>privilege</code></td>
+<td>需要什么主体和系统权限</td>
+<td>管理员、跨租户、生产写权限</td>
+</tr>
+<tr>
+<td>金额与数据 <code>sensitivity</code></td>
+<td>财务和信息敏感度如何</td>
+<td>高额交易、身份信息、医疗或密钥</td>
+</tr>
+<tr>
+<td>证据 <code>evidence</code></td>
+<td>决策所需事实是否齐全且新鲜</td>
+<td>来源缺失、状态冲突、数据过期</td>
+</tr>
+<tr>
+<td>不确定性 <code>uncertainty</code></td>
+<td>输入是否在已知分布内，判断是否稳定</td>
+<td>校准置信度低、多模型分歧、异常输入</td>
+</tr>
+</tbody></table>
+<p>这里故意把“证据不完整”和“模型不确定”分开。模型可以非常确信地基于一份过期物流状态作出错误决定；也可能在证据完整时因为表达差异给出较低分数。两者需要不同修复动作。</p>
+<h3 id="1-先写不可越过的硬规则"><a href="#1-先写不可越过的硬规则" class="headerlink" title="1. 先写不可越过的硬规则"></a>1. 先写不可越过的硬规则</h3><p>以下条件不适合进入加权平均：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">目标租户与当前主体不一致                 -&gt; DENY</span><br><span class="line">缺少支付写权限                           -&gt; DENY</span><br><span class="line">订单资源版本发生变化                     -&gt; 重新取数和重新评估</span><br><span class="line">退款金额超过当前审核人的授权额度         -&gt; 升级到更高权限或双人审批</span><br><span class="line">目的账户不是原支付渠道且没有专门流程     -&gt; DENY</span><br><span class="line">动作命中法定或内部禁止场景               -&gt; DENY</span><br><span class="line">策略服务或身份服务不可用                 -&gt; 高风险动作失败关闭</span><br></pre></td></tr></table></figure>
+
+<p>硬规则是安全性质，不应该因为模型置信度高或综合分低而被抵消。</p>
+<h3 id="2-再用风险分决定人工介入强度"><a href="#2-再用风险分决定人工介入强度" class="headerlink" title="2. 再用风险分决定人工介入强度"></a>2. 再用风险分决定人工介入强度</h3><p>对于组织允许裁量的区域，可以使用配置化分数。下面只是示例：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">base_risk =</span><br><span class="line">    3 * impact</span><br><span class="line">  + 3 * irreversibility</span><br><span class="line">  + 2 * privilege</span><br><span class="line">  + 2 * sensitivity</span><br><span class="line"></span><br><span class="line">uncertainty_penalty =</span><br><span class="line">    2 * (1 - calibrated_confidence)</span><br><span class="line">  + 2 * (1 - evidence_completeness)</span><br><span class="line">  + out_of_distribution_penalty</span><br><span class="line"></span><br><span class="line">effective_risk = base_risk + uncertainty_penalty - control_credit</span><br></pre></td></tr></table></figure>
+
+<p><code>control_credit</code> 只能来自可验证控制，例如事务性幂等、可靠补偿、严格额度、收件人白名单和执行前状态比较。不能因为“审核人经验丰富”或“模型最近表现不错”随意减分。</p>
+<p>一个可执行的决策表可以是：</p>
+<table>
+<thead>
+<tr>
+<th>条件</th>
+<th>决策</th>
+<th>典型动作</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>命中禁止规则</td>
+<td><code>DENY</code></td>
+<td>拒绝并给出规则证据</td>
+</tr>
+<tr>
+<td>低风险、证据完整、模型在已校准范围内</td>
+<td><code>AUTO</code></td>
+<td>自动执行并抽样复核</td>
+</tr>
+<tr>
+<td>中低风险但证据轻微缺失</td>
+<td><code>RESULT_REVIEW</code></td>
+<td>允许生成，不允许外发</td>
+</tr>
+<tr>
+<td>中高风险或单次高权限动作</td>
+<td><code>SINGLE_APPROVAL</code></td>
+<td>一名具备额度的审核人</td>
+</tr>
+<tr>
+<td>高金额、高敏感或职责分离要求</td>
+<td><code>DUAL_APPROVAL</code></td>
+<td>两个独立主体审批同一快照</td>
+</tr>
+<tr>
+<td>无法形成可靠判断</td>
+<td><code>ESCALATE</code></td>
+<td>转专门队列，不继续自动尝试</td>
+</tr>
+</tbody></table>
+<h3 id="3-阈值要按业务切片，而不是全局一套"><a href="#3-阈值要按业务切片，而不是全局一套" class="headerlink" title="3. 阈值要按业务切片，而不是全局一套"></a>3. 阈值要按业务切片，而不是全局一套</h3><p>退款、地址修改、营销文案和内部摘要的错误成本不同。即使都输出 <code>0.82</code>，也不能使用同一个动作阈值。</p>
+<p>至少要按这些字段版本化阈值：</p>
+<ul>
+<li><code>use_case</code></li>
+<li><code>action_type</code></li>
+<li><code>tenant_tier</code></li>
+<li><code>data_classification</code></li>
+<li><code>amount_band</code></li>
+<li><code>jurisdiction</code></li>
+<li><code>model_revision</code></li>
+<li><code>calibration_version</code></li>
+<li><code>policy_version</code></li>
+</ul>
+<p>策略命中时需要保存实际使用的阈值和版本，不能只存最终结论。</p>
+<h2 id="六、置信度不能直接等于正确概率"><a href="#六、置信度不能直接等于正确概率" class="headerlink" title="六、置信度不能直接等于正确概率"></a>六、置信度不能直接等于正确概率</h2><p>“模型置信度 0.9”这句话必须继续追问：</p>
+<ol>
+<li>这个数从哪里来？</li>
+<li>它预测的事件是什么？</li>
+<li>在什么数据上校准？</li>
+<li>哪个模型和 Prompt 版本产生？</li>
+<li>对当前业务切片是否仍有效？</li>
+</ol>
+<h3 id="1-常见分数表达的是不同对象"><a href="#1-常见分数表达的是不同对象" class="headerlink" title="1. 常见分数表达的是不同对象"></a>1. 常见分数表达的是不同对象</h3><table>
+<thead>
+<tr>
+<th>分数来源</th>
+<th>它实际表达什么</th>
+<th>不能直接推导什么</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>分类器 softmax 最大值</td>
+<td>类别分布中的相对分数</td>
+<td>该业务决策正确概率</td>
+</tr>
+<tr>
+<td>Token log probability</td>
+<td>给定上下文时某个 Token 的条件概率</td>
+<td>整个答案事实正确率</td>
+</tr>
+<tr>
+<td>多次采样一致率</td>
+<td>在当前采样配置下输出是否一致</td>
+<td>一致答案一定正确</td>
+</tr>
+<tr>
+<td>LLM 自报“90%”</td>
+<td>模型生成的一段文本</td>
+<td>经过统计校准的概率</td>
+</tr>
+<tr>
+<td>Judge 分数</td>
+<td>某评测器按某量表的判断</td>
+<td>真实业务结果概率</td>
+</tr>
+<tr>
+<td>检索相似度</td>
+<td>查询与片段在某表示空间的接近程度</td>
+<td>片段足以支持结论</td>
+</tr>
+</tbody></table>
+<p>Guo 等人在《On Calibration of Modern Neural Networks》中把校准问题表述为：预测的概率估计应当代表真实正确可能性，并展示了现代神经网络可能校准不良。这个结论不能机械外推到所有生成式任务，但足以说明一个工程原则：<strong>未经目标事件和部署数据验证的分数，不应被命名为“正确概率”。</strong></p>
+<h3 id="2-先定义需要校准的事件"><a href="#2-先定义需要校准的事件" class="headerlink" title="2. 先定义需要校准的事件"></a>2. 先定义需要校准的事件</h3><p>退款场景可以分别校准：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">P(intent_is_refund | request)</span><br><span class="line">P(policy_clause_is_applicable | evidence)</span><br><span class="line">P(refund_amount_is_correct | normalized_state)</span><br><span class="line">P(task_can_be_auto_executed | all_controls)</span><br></pre></td></tr></table></figure>
+
+<p>这四个事件不能混成一个“总置信度”。意图识别正确，不代表金额计算正确；金额正确，也不代表当前主体有权执行。</p>
+<h3 id="3-校准集必须接近部署条件"><a href="#3-校准集必须接近部署条件" class="headerlink" title="3. 校准集必须接近部署条件"></a>3. 校准集必须接近部署条件</h3><p>校准数据至少按以下切片检查可靠性图、Brier Score 或 Expected Calibration Error：</p>
+<ul>
+<li>语言和地区</li>
+<li>新老客户</li>
+<li>正常订单和异常订单</li>
+<li>金额区间</li>
+<li>文本、图片、语音转写等输入渠道</li>
+<li>证据完整与证据冲突</li>
+<li>模型、Prompt 和检索版本</li>
+</ul>
+<p>ECE 对分桶方式和样本量敏感，不适合单独做上线门禁。更重要的是观察每个实际决策区间的覆盖量和错误成本。例如 <code>0.80-0.85</code> 区间只有 12 个高额退款样本，就不能据此宣称高额退款已经可靠校准。</p>
+<h3 id="4-阈值来自错误成本和容量约束"><a href="#4-阈值来自错误成本和容量约束" class="headerlink" title="4. 阈值来自错误成本和容量约束"></a>4. 阈值来自错误成本和容量约束</h3><p>假设自动执行错误的平均损失为 <code>C_error</code>，转人工成本为 <code>C_review</code>，延迟损失为 <code>C_delay</code>，那么阈值设计要比较的是期望损失，而不是追求一个好看的整数：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">auto_expected_cost = P(error | score, slice) * C_error</span><br><span class="line">review_expected_cost = C_review + C_delay + P(human_error) * C_human_error</span><br></pre></td></tr></table></figure>
+
+<p>只有当自动路径的风险低于组织容忍度，并且证据与控制完整时，才考虑自动执行。高风险动作即使校准置信度很高，也可以因为不可逆性或职责分离要求继续强制审批。</p>
+<h3 id="5-使用拒答区和灰区，不强迫每个请求二选一"><a href="#5-使用拒答区和灰区，不强迫每个请求二选一" class="headerlink" title="5. 使用拒答区和灰区，不强迫每个请求二选一"></a>5. 使用拒答区和灰区，不强迫每个请求二选一</h3><p>一种更稳的分区是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">高置信 + 证据完整 + 低动作风险     -&gt; AUTO</span><br><span class="line">中间区域                           -&gt; REVIEW / APPROVAL</span><br><span class="line">低置信或分布外                     -&gt; ABSTAIN / ESCALATE</span><br><span class="line">硬规则失败                         -&gt; DENY</span><br></pre></td></tr></table></figure>
+
+<p>Selective Prediction 的核心思想是允许模型只覆盖一部分样本，并对其余样本放弃自动判断。工程上需要同时报告覆盖率和选择性风险：阈值提高后错误率可能下降，但人工队列和处理延迟会上升。</p>
+<h3 id="6-漂移后旧阈值要失效"><a href="#6-漂移后旧阈值要失效" class="headerlink" title="6. 漂移后旧阈值要失效"></a>6. 漂移后旧阈值要失效</h3><p>发生以下变化时，至少要触发重新验证：</p>
+<ul>
+<li>模型或服务修订变化</li>
+<li>System Prompt、工具描述或输出 Schema 变化</li>
+<li>检索语料和政策版本变化</li>
+<li>输入渠道或客户分布明显变化</li>
+<li>人工标签定义变化</li>
+<li>线上可靠性图持续偏离离线区间</li>
+</ul>
+<p>阈值记录应包含 <code>valid_from</code>、<code>valid_until</code>、<code>calibration_dataset</code>、<code>model_revision</code> 和 <code>slice_scope</code>。超出适用范围时进入复核，而不是静默沿用。</p>
+<h2 id="七、把置信度、规则和证据完整度组合起来"><a href="#七、把置信度、规则和证据完整度组合起来" class="headerlink" title="七、把置信度、规则和证据完整度组合起来"></a>七、把置信度、规则和证据完整度组合起来</h2><p>一个容易落地的方式是把决策拆成三层。</p>
+<h3 id="第一层：确定性资格检查"><a href="#第一层：确定性资格检查" class="headerlink" title="第一层：确定性资格检查"></a>第一层：确定性资格检查</h3><p>回答“系统是否允许考虑自动执行”：</p>
+<ul>
+<li>身份是否已验证</li>
+<li>主体是否有当前权限</li>
+<li>工具是否在任务允许清单</li>
+<li>金额、地区、数据类型是否在自动范围</li>
+<li>动作是否可幂等或可靠补偿</li>
+<li>关键资源是否有版本号</li>
+</ul>
+<p>任一硬条件失败，不进入置信度计算。</p>
+<h3 id="第二层：证据充分性检查"><a href="#第二层：证据充分性检查" class="headerlink" title="第二层：证据充分性检查"></a>第二层：证据充分性检查</h3><p>回答“是否具备作出该判断的事实”：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">required_evidence:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">order.payment_status</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">order.fulfillment_status</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">policy.refund_clause</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">customer.identity_assurance</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">previous_refund_state</span></span><br><span class="line"><span class="attr">freshness:</span></span><br><span class="line">  <span class="attr">order_state_max_age_seconds:</span> <span class="number">30</span></span><br><span class="line">  <span class="attr">policy_version_must_be_active:</span> <span class="literal">true</span></span><br><span class="line"><span class="attr">conflicts:</span></span><br><span class="line">  <span class="attr">allowed:</span> <span class="literal">false</span></span><br></pre></td></tr></table></figure>
+
+<p>证据完整度不应该由模型凭感觉打分，而应尽可能由字段存在性、来源、签名、版本、新鲜度和冲突规则计算。</p>
+<h3 id="第三层：统计不确定性与任务可靠性"><a href="#第三层：统计不确定性与任务可靠性" class="headerlink" title="第三层：统计不确定性与任务可靠性"></a>第三层：统计不确定性与任务可靠性</h3><p>只有前两层通过后，才使用经过校准的任务分数、分布外检测、采样分歧和历史切片表现决定自动、复核或升级。</p>
+<p>这种顺序能避免两个错误：</p>
+<ul>
+<li>用高置信度覆盖权限失败</li>
+<li>用低置信度掩盖证据管道缺陷</li>
+</ul>
+<h2 id="八、审批界面也属于安全控制"><a href="#八、审批界面也属于安全控制" class="headerlink" title="八、审批界面也属于安全控制"></a>八、审批界面也属于安全控制</h2><p>人工审核不是把 JSON 扔给运营人员。界面决定了审核人是否有机会发现问题。</p>
+<h3 id="1-展示差异和证据，不展示冗长推理"><a href="#1-展示差异和证据，不展示冗长推理" class="headerlink" title="1. 展示差异和证据，不展示冗长推理"></a>1. 展示差异和证据，不展示冗长推理</h3><p>审批页应优先展示：</p>
+<ul>
+<li>将要发生的动作和副作用</li>
+<li>与现状相比会改变什么</li>
+<li>金额、货币、对象、收件人和数据范围</li>
+<li>关键证据原文与来源</li>
+<li>缺失、过期或冲突项</li>
+<li>命中的策略和需要人工判断的原因</li>
+<li>回滚或补偿方式</li>
+</ul>
+<p>不需要展示模型私有思维链。自然语言理由可以作为摘要，但决定性事实要来自结构化证据和业务系统。</p>
+<h3 id="2-避免-Automation-Bias"><a href="#2-避免-Automation-Bias" class="headerlink" title="2. 避免 Automation Bias"></a>2. 避免 Automation Bias</h3><p>自动化偏见会让审核人过度依赖系统建议，并忽略冲突证据。Skitka、Mosier 和 Burdick 的原始研究讨论了自动化建议如何影响决策。落实到界面，可以采用以下控制：</p>
+<ul>
+<li>高风险场景先要求审核人选择结论，再显示模型建议</li>
+<li>把支持证据和反对证据并列展示</li>
+<li>不用醒目的绿色默认选中“批准”</li>
+<li>批准和拒绝都要求选择结构化原因，高风险批准补充说明</li>
+<li>随机插入经过标记的校验样本，测量审核质量而非只测速度</li>
+<li>定期让审核人处理无模型建议的对照样本</li>
+</ul>
+<p>“隐藏建议”不适合所有场景。它会增加处理时长，也可能让新手缺少支持。是否使用应通过对照实验比较准确率、漏审率和时延，而不是当成固定教条。</p>
+<h3 id="3-控制审批疲劳"><a href="#3-控制审批疲劳" class="headerlink" title="3. 控制审批疲劳"></a>3. 控制审批疲劳</h3><p>需要监控：</p>
+<ul>
+<li>每人每小时审批量</li>
+<li>连续工作时长</li>
+<li>单条停留时间分布</li>
+<li>批准率是否异常接近 100%</li>
+<li>同类风险下不同审核人的分歧</li>
+<li>被后续事实推翻的比例</li>
+<li>队列等待时间和超时率</li>
+</ul>
+<p>若一个审核人在 90 秒内批准 50 个复杂退款，请求都“合法通过”并不能证明控制有效。系统应触发速率限制、二次抽样或轮换，而不是奖励吞吐量。</p>
+<h3 id="4-批量审批只适合同质、可界定的对象"><a href="#4-批量审批只适合同质、可界定的对象" class="headerlink" title="4. 批量审批只适合同质、可界定的对象"></a>4. 批量审批只适合同质、可界定的对象</h3><p>批量审批必须保证：</p>
+<ul>
+<li>每项动作属于同一策略和风险等级</li>
+<li>审核人看得到总金额、最大金额和异常项</li>
+<li>每项仍有独立快照和审计记录</li>
+<li>任一项参数变化只使该项失效</li>
+<li>高风险或异常项自动从批次剥离</li>
+</ul>
+<p>把 999 个低额退款和 1 个高额退款折叠成“批准 1000 项”，会把最需要关注的风险隐藏起来。</p>
+<h2 id="九、审批不是一个布尔字段，而是一台状态机"><a href="#九、审批不是一个布尔字段，而是一台状态机" class="headerlink" title="九、审批不是一个布尔字段，而是一台状态机"></a>九、审批不是一个布尔字段，而是一台状态机</h2><p>下面这张图展示审批状态与证据流。</p>
+<p><img src="/images/ai-quality/ai-32-audit-state.svg" alt="Human-in-the-loop审批状态机与审计证据"></p>
+<p>本文使用六个业务状态：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">PENDING    等待有效审核决定</span><br><span class="line">APPROVED   已满足审批要求，但尚未执行</span><br><span class="line">REJECTED   被明确拒绝，不允许执行</span><br><span class="line">EXPIRED    超过有效期，必须重新生成快照和审批</span><br><span class="line">CANCELLED  请求方、系统或事件指挥主动取消</span><br><span class="line">EXECUTED   已用该审批成功提交绑定动作</span><br></pre></td></tr></table></figure>
+
+<h3 id="1-允许的状态迁移"><a href="#1-允许的状态迁移" class="headerlink" title="1. 允许的状态迁移"></a>1. 允许的状态迁移</h3><table>
+<thead>
+<tr>
+<th>当前状态</th>
+<th>目标状态</th>
+<th>触发条件</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>PENDING</code></td>
+<td><code>APPROVED</code></td>
+<td>达到审批人数、权限和职责分离要求</td>
+</tr>
+<tr>
+<td><code>PENDING</code></td>
+<td><code>REJECTED</code></td>
+<td>任一具有否决权的审核人拒绝</td>
+</tr>
+<tr>
+<td><code>PENDING</code></td>
+<td><code>EXPIRED</code></td>
+<td>当前时间超过 <code>expires_at</code></td>
+</tr>
+<tr>
+<td><code>PENDING</code></td>
+<td><code>CANCELLED</code></td>
+<td>请求撤销、上游终止或风险事件暂停</td>
+</tr>
+<tr>
+<td><code>APPROVED</code></td>
+<td><code>EXECUTED</code></td>
+<td>快照、权限、资源版本和幂等检查全部通过</td>
+</tr>
+<tr>
+<td><code>APPROVED</code></td>
+<td><code>EXPIRED</code></td>
+<td>执行前已超过有效期</td>
+</tr>
+<tr>
+<td><code>APPROVED</code></td>
+<td><code>CANCELLED</code></td>
+<td>执行前主动取消或策略紧急撤销</td>
+</tr>
+</tbody></table>
+<p><code>REJECTED</code>、<code>EXPIRED</code>、<code>CANCELLED</code> 和 <code>EXECUTED</code> 都是终态。若需要再次尝试，应创建新的 <code>approval_id</code> 和动作快照，而不是把旧记录改回 <code>PENDING</code>。</p>
+<h3 id="2-双人审批不能用一个计数器代替"><a href="#2-双人审批不能用一个计数器代替" class="headerlink" title="2. 双人审批不能用一个计数器代替"></a>2. 双人审批不能用一个计数器代替</h3><p><code>approval_count &gt;= 2</code> 不足以证明双人审批。还要验证：</p>
+<ul>
+<li>两个决定来自不同稳定主体</li>
+<li>主体不属于同一个被禁止的职责组合</li>
+<li>请求发起人不能批准自己的请求</li>
+<li>两人都具备该动作和金额的授权</li>
+<li>两人看到并批准完全相同的快照摘要</li>
+<li>决定都在有效期内</li>
+<li>任一拒绝是否具有否决权由策略明确规定</li>
+</ul>
+<p>账号别名、共享账号和服务账号都可能让“两个用户 ID”实际上来自同一责任主体。身份系统需要提供稳定人员标识和组织属性。</p>
+<h3 id="3-拒绝必须成为模型可理解但不可绕过的结果"><a href="#3-拒绝必须成为模型可理解但不可绕过的结果" class="headerlink" title="3. 拒绝必须成为模型可理解但不可绕过的结果"></a>3. 拒绝必须成为模型可理解但不可绕过的结果</h3><p>Agent 可以收到：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;approval_status&quot;</span><span class="punctuation">:</span> <span class="string">&quot;REJECTED&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;reason_code&quot;</span><span class="punctuation">:</span> <span class="string">&quot;AMOUNT_NOT_SUPPORTED_BY_EVIDENCE&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;allowed_next_actions&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;REQUEST_MORE_EVIDENCE&quot;</span><span class="punctuation">,</span> <span class="string">&quot;CLOSE_WITHOUT_REFUND&quot;</span><span class="punctuation">]</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>它不能把拒绝当成一次临时工具失败，然后改用另一个同义工具完成退款。所有产生相同业务副作用的工具都要受统一策略约束。</p>
+<h2 id="十、审批数据模型：最少要保存哪些字段"><a href="#十、审批数据模型：最少要保存哪些字段" class="headerlink" title="十、审批数据模型：最少要保存哪些字段"></a>十、审批数据模型：最少要保存哪些字段</h2><p>一条审批记录可以分成身份、动作、风险、证据、决定和执行六组字段。</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">approval:</span></span><br><span class="line">  <span class="attr">approval_id:</span> <span class="string">apr_01JQ9Y7R6M</span></span><br><span class="line">  <span class="attr">tenant_id:</span> <span class="string">tenant_cn_01</span></span><br><span class="line">  <span class="attr">request_id:</span> <span class="string">req_20260420_1842</span></span><br><span class="line">  <span class="attr">trace_id:</span> <span class="string">4fd0c6d2a0d24e33a4d6e95cb89ad128</span></span><br><span class="line">  <span class="attr">status:</span> <span class="string">PENDING</span></span><br><span class="line">  <span class="attr">created_at:</span> <span class="number">2026-04-20T12:30:00Z</span></span><br><span class="line">  <span class="attr">expires_at:</span> <span class="number">2026-04-20T12:40:00Z</span></span><br><span class="line"></span><br><span class="line">  <span class="attr">requester:</span></span><br><span class="line">    <span class="attr">actor_id:</span> <span class="string">agent_service</span></span><br><span class="line">    <span class="attr">on_behalf_of:</span> <span class="string">user_7193</span></span><br><span class="line">    <span class="attr">auth_context_id:</span> <span class="string">authctx_8871</span></span><br><span class="line"></span><br><span class="line">  <span class="attr">action:</span></span><br><span class="line">    <span class="attr">tool_name:</span> <span class="string">payment.refund.v3</span></span><br><span class="line">    <span class="attr">tool_schema_version:</span> <span class="string">&quot;3.4&quot;</span></span><br><span class="line">    <span class="attr">normalized_arguments:</span></span><br><span class="line">      <span class="attr">order_id:</span> <span class="string">O-9137</span></span><br><span class="line">      <span class="attr">amount_minor:</span> <span class="number">80000</span></span><br><span class="line">      <span class="attr">currency:</span> <span class="string">CNY</span></span><br><span class="line">      <span class="attr">destination:</span> <span class="string">ORIGINAL_PAYMENT_METHOD</span></span><br><span class="line">    <span class="attr">action_digest:</span> <span class="string">sha256:4b54...</span></span><br><span class="line">    <span class="attr">idempotency_key:</span> <span class="string">refund:O-9137:CS-20260420-1842</span></span><br><span class="line">    <span class="attr">resource_versions:</span></span><br><span class="line">      <span class="attr">order:</span> <span class="string">&quot;rv-188&quot;</span></span><br><span class="line">      <span class="attr">refund_ledger:</span> <span class="string">&quot;rv-31&quot;</span></span><br><span class="line"></span><br><span class="line">  <span class="attr">policy:</span></span><br><span class="line">    <span class="attr">policy_version:</span> <span class="string">hitl-refund-2026-04-18.3</span></span><br><span class="line">    <span class="attr">decision:</span> <span class="string">DUAL_APPROVAL</span></span><br><span class="line">    <span class="attr">matched_rules:</span> [<span class="string">REFUND_AMOUNT_L3</span>, <span class="string">FINANCIAL_WRITE</span>]</span><br><span class="line">    <span class="attr">required_approvals:</span> <span class="number">2</span></span><br><span class="line">    <span class="attr">separation_rule:</span> <span class="string">DIFFERENT_MANAGER_CHAIN</span></span><br><span class="line"></span><br><span class="line">  <span class="attr">risk:</span></span><br><span class="line">    <span class="attr">impact:</span> <span class="number">3</span></span><br><span class="line">    <span class="attr">irreversibility:</span> <span class="number">2</span></span><br><span class="line">    <span class="attr">privilege:</span> <span class="number">3</span></span><br><span class="line">    <span class="attr">sensitivity:</span> <span class="number">2</span></span><br><span class="line">    <span class="attr">effective_risk:</span> <span class="number">23.6</span></span><br><span class="line">    <span class="attr">calibration_version:</span> <span class="string">refund-cal-2026-04-a</span></span><br><span class="line">    <span class="attr">calibrated_confidence:</span> <span class="number">0.84</span></span><br><span class="line">    <span class="attr">evidence_completeness:</span> <span class="number">1.0</span></span><br><span class="line">    <span class="attr">out_of_distribution:</span> <span class="literal">false</span></span><br><span class="line"></span><br><span class="line">  <span class="attr">evidence:</span></span><br><span class="line">    <span class="attr">manifest_digest:</span> <span class="string">sha256:9a12...</span></span><br><span class="line">    <span class="attr">items:</span></span><br><span class="line">      <span class="bullet">-</span> <span class="attr">type:</span> <span class="string">ORDER_STATE</span></span><br><span class="line">        <span class="attr">source:</span> <span class="string">order-service</span></span><br><span class="line">        <span class="attr">version:</span> <span class="string">rv-188</span></span><br><span class="line">        <span class="attr">observed_at:</span> <span class="number">2026-04-20T12:29:54Z</span></span><br><span class="line">        <span class="attr">content_digest:</span> <span class="string">sha256:0ef1...</span></span><br><span class="line">      <span class="bullet">-</span> <span class="attr">type:</span> <span class="string">REFUND_POLICY</span></span><br><span class="line">        <span class="attr">source:</span> <span class="string">policy-registry</span></span><br><span class="line">        <span class="attr">version:</span> <span class="string">refund-v12</span></span><br><span class="line">        <span class="attr">content_digest:</span> <span class="string">sha256:7d83...</span></span><br><span class="line"></span><br><span class="line">  <span class="attr">decisions:</span> []</span><br><span class="line">  <span class="attr">execution:</span> <span class="literal">null</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="1-敏感内容不要全部复制进审批表"><a href="#1-敏感内容不要全部复制进审批表" class="headerlink" title="1. 敏感内容不要全部复制进审批表"></a>1. 敏感内容不要全部复制进审批表</h3><p>审批记录可以保存 Artifact 引用、内容摘要、数据分类和受控访问位置。完整身份证、地址、对话和支付信息应按最小化原则存放在适当的数据域中，并设置独立权限、保留期和访问审计。</p>
+<h3 id="2-哈希证明的是一致性，不自动证明真实性"><a href="#2-哈希证明的是一致性，不自动证明真实性" class="headerlink" title="2. 哈希证明的是一致性，不自动证明真实性"></a>2. 哈希证明的是一致性，不自动证明真实性</h3><p><code>action_digest</code> 能帮助判断审核后动作是否变化，但前提是规范化算法稳定、摘要来源可信、记录没有被整体替换。单纯给 JSON 做 SHA-256 不能证明记录由谁创建，也不能阻止拥有数据库写权限的人同时改内容和摘要。</p>
+<p>更强的证据需要组合：</p>
+<ul>
+<li>RFC 8785 一类确定性 JSON 规范化</li>
+<li>服务身份签名或受控 MAC</li>
+<li>追加写事件存储</li>
+<li>独立审计域或 WORM 保留</li>
+<li>密钥轮换和签名验证记录</li>
+<li>数据库与对象存储访问审计</li>
+</ul>
+<h2 id="十一、TOCTOU：批准时正确，不代表执行时仍然正确"><a href="#十一、TOCTOU：批准时正确，不代表执行时仍然正确" class="headerlink" title="十一、TOCTOU：批准时正确，不代表执行时仍然正确"></a>十一、TOCTOU：批准时正确，不代表执行时仍然正确</h2><p>TOCTOU 是 Time of Check to Time of Use。审批发生在检查时，工具执行发生在使用时，两者之间的世界可能已经变化。</p>
+<h3 id="1-一个典型竞态"><a href="#1-一个典型竞态" class="headerlink" title="1. 一个典型竞态"></a>1. 一个典型竞态</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">12:30:00  Agent 读取订单：已支付、未退款、版本 rv-188</span><br><span class="line">12:30:03  创建 800 元退款审批</span><br><span class="line">12:34:10  审核人批准</span><br><span class="line">12:34:12  另一个客服已经手工退款，订单变成 rv-189</span><br><span class="line">12:34:15  Agent 使用旧批准再次退款</span><br></pre></td></tr></table></figure>
+
+<p>如果执行器只检查 <code>status == APPROVED</code>，就会产生重复退款。</p>
+<h3 id="2-审批快照要绑定业务前置条件"><a href="#2-审批快照要绑定业务前置条件" class="headerlink" title="2. 审批快照要绑定业务前置条件"></a>2. 审批快照要绑定业务前置条件</h3><p>动作摘要至少覆盖：</p>
+<ul>
+<li>工具名称和 Schema 版本</li>
+<li>规范化参数</li>
+<li>租户与代表用户</li>
+<li>关键资源版本或 ETag</li>
+<li>金额、货币和目的地</li>
+<li>证据清单摘要</li>
+<li>策略版本和授权上下文</li>
+<li>有效期、随机 nonce 和审批用途 audience</li>
+</ul>
+<p>审核人决定也要绑定该摘要。任一字段变化都需要新审批。</p>
+<h3 id="3-执行前做最终原子检查"><a href="#3-执行前做最终原子检查" class="headerlink" title="3. 执行前做最终原子检查"></a>3. 执行前做最终原子检查</h3><p>执行器应完成：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">1. 原子领取 approval_id，确认尚未消费</span><br><span class="line">2. 确认状态 APPROVED 且未过期、未撤销</span><br><span class="line">3. 重算 action_digest 并与审批快照比较</span><br><span class="line">4. 重新验证调用主体与 on_behalf_of 身份</span><br><span class="line">5. 重新执行当前授权、额度和紧急禁用策略</span><br><span class="line">6. 比较关键资源版本和业务不变量</span><br><span class="line">7. 使用稳定 idempotency_key 提交副作用</span><br><span class="line">8. 查询或确认最终业务状态</span><br><span class="line">9. 写入 execution 证据并迁移到 EXECUTED</span><br></pre></td></tr></table></figure>
+
+<p>步骤 7 与步骤 9 跨系统时通常无法放进同一个数据库事务，因此还要依靠下游幂等契约、事务性发件箱、状态对账或 Saga 补偿。不能用本地状态机假装已经获得分布式 exactly-once。</p>
+<h2 id="十二、防重放：批准一次只能执行绑定动作一次"><a href="#十二、防重放：批准一次只能执行绑定动作一次" class="headerlink" title="十二、防重放：批准一次只能执行绑定动作一次"></a>十二、防重放：批准一次只能执行绑定动作一次</h2><p>防重放至少要处理四条路径。</p>
+<h3 id="1-用户重复点击"><a href="#1-用户重复点击" class="headerlink" title="1. 用户重复点击"></a>1. 用户重复点击</h3><p>前端禁用按钮只能改善体验，不能形成安全保证。后端要用比较并交换或唯一约束，保证一个审批只能从 <code>APPROVED</code> 被一个执行者领取。</p>
+<h3 id="2-网络超时后客户端重试"><a href="#2-网络超时后客户端重试" class="headerlink" title="2. 网络超时后客户端重试"></a>2. 网络超时后客户端重试</h3><p>重试必须携带同一 <code>idempotency_key</code>。如果第一次可能已经提交，客户端应先查询结果，不能生成新键再次写入。</p>
+<h3 id="3-旧审批被复制到新请求"><a href="#3-旧审批被复制到新请求" class="headerlink" title="3. 旧审批被复制到新请求"></a>3. 旧审批被复制到新请求</h3><p>审批令牌或内部引用应绑定：</p>
+<ul>
+<li><code>approval_id</code></li>
+<li><code>action_digest</code></li>
+<li><code>tenant_id</code></li>
+<li><code>audience</code></li>
+<li><code>expires_at</code></li>
+<li>一次性 nonce</li>
+</ul>
+<p>服务端从数据库读取真实记录，不能只相信客户端传来的“approved&#x3D;true”。高风险审批对象不适合放在可分享 URL 或浏览器本地存储中。</p>
+<h3 id="4-已执行记录被再次恢复"><a href="#4-已执行记录被再次恢复" class="headerlink" title="4. 已执行记录被再次恢复"></a>4. 已执行记录被再次恢复</h3><p>运行状态恢复时，Agent 必须读取审批终态和下游业务结果。<code>EXECUTED</code> 不能恢复成 <code>APPROVED</code>，也不能因为对话重放再次发起工具调用。</p>
+<h2 id="十三、一个可运行的审批策略引擎与状态机"><a href="#十三、一个可运行的审批策略引擎与状态机" class="headerlink" title="十三、一个可运行的审批策略引擎与状态机"></a>十三、一个可运行的审批策略引擎与状态机</h2><p>下面的示例只依赖 Python 标准库。它刻意把策略判定与状态迁移放在同一个最小程序里，以便验证以下性质：</p>
+<ul>
+<li>禁止规则优先于风险分</li>
+<li>高额退款要求双人审批</li>
+<li>发起人不能自批</li>
+<li>两个审核人必须属于不同管理链</li>
+<li>审批绑定动作摘要</li>
+<li>过期、参数变化和重复执行都会失败</li>
+</ul>
+<p>生产实现还需要数据库事务、服务身份、可靠时间源、密钥管理和下游幂等契约；内存字典只用于演示决策边界。</p>
+<!-- hitl_example_start -->
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br><span class="line">146</span><br><span class="line">147</span><br><span class="line">148</span><br><span class="line">149</span><br><span class="line">150</span><br><span class="line">151</span><br><span class="line">152</span><br><span class="line">153</span><br><span class="line">154</span><br><span class="line">155</span><br><span class="line">156</span><br><span class="line">157</span><br><span class="line">158</span><br><span class="line">159</span><br><span class="line">160</span><br><span class="line">161</span><br><span class="line">162</span><br><span class="line">163</span><br><span class="line">164</span><br><span class="line">165</span><br><span class="line">166</span><br><span class="line">167</span><br><span class="line">168</span><br><span class="line">169</span><br><span class="line">170</span><br><span class="line">171</span><br><span class="line">172</span><br><span class="line">173</span><br><span class="line">174</span><br><span class="line">175</span><br><span class="line">176</span><br><span class="line">177</span><br><span class="line">178</span><br><span class="line">179</span><br><span class="line">180</span><br><span class="line">181</span><br><span class="line">182</span><br><span class="line">183</span><br><span class="line">184</span><br><span class="line">185</span><br><span class="line">186</span><br><span class="line">187</span><br><span class="line">188</span><br><span class="line">189</span><br><span class="line">190</span><br><span class="line">191</span><br><span class="line">192</span><br><span class="line">193</span><br><span class="line">194</span><br><span class="line">195</span><br><span class="line">196</span><br><span class="line">197</span><br><span class="line">198</span><br><span class="line">199</span><br><span class="line">200</span><br><span class="line">201</span><br><span class="line">202</span><br><span class="line">203</span><br><span class="line">204</span><br><span class="line">205</span><br><span class="line">206</span><br><span class="line">207</span><br><span class="line">208</span><br><span class="line">209</span><br><span class="line">210</span><br><span class="line">211</span><br><span class="line">212</span><br><span class="line">213</span><br><span class="line">214</span><br><span class="line">215</span><br><span class="line">216</span><br><span class="line">217</span><br><span class="line">218</span><br><span class="line">219</span><br><span class="line">220</span><br><span class="line">221</span><br><span class="line">222</span><br><span class="line">223</span><br><span class="line">224</span><br><span class="line">225</span><br><span class="line">226</span><br><span class="line">227</span><br><span class="line">228</span><br><span class="line">229</span><br><span class="line">230</span><br><span class="line">231</span><br><span class="line">232</span><br><span class="line">233</span><br><span class="line">234</span><br><span class="line">235</span><br><span class="line">236</span><br><span class="line">237</span><br><span class="line">238</span><br><span class="line">239</span><br><span class="line">240</span><br><span class="line">241</span><br><span class="line">242</span><br><span class="line">243</span><br><span class="line">244</span><br><span class="line">245</span><br><span class="line">246</span><br><span class="line">247</span><br><span class="line">248</span><br><span class="line">249</span><br><span class="line">250</span><br><span class="line">251</span><br><span class="line">252</span><br><span class="line">253</span><br><span class="line">254</span><br><span class="line">255</span><br><span class="line">256</span><br><span class="line">257</span><br><span class="line">258</span><br><span class="line">259</span><br><span class="line">260</span><br><span class="line">261</span><br><span class="line">262</span><br><span class="line">263</span><br><span class="line">264</span><br><span class="line">265</span><br><span class="line">266</span><br><span class="line">267</span><br><span class="line">268</span><br><span class="line">269</span><br><span class="line">270</span><br><span class="line">271</span><br><span class="line">272</span><br><span class="line">273</span><br><span class="line">274</span><br><span class="line">275</span><br><span class="line">276</span><br><span class="line">277</span><br><span class="line">278</span><br><span class="line">279</span><br><span class="line">280</span><br><span class="line">281</span><br><span class="line">282</span><br><span class="line">283</span><br><span class="line">284</span><br><span class="line">285</span><br><span class="line">286</span><br><span class="line">287</span><br><span class="line">288</span><br><span class="line">289</span><br><span class="line">290</span><br><span class="line">291</span><br><span class="line">292</span><br><span class="line">293</span><br><span class="line">294</span><br><span class="line">295</span><br><span class="line">296</span><br><span class="line">297</span><br><span class="line">298</span><br><span class="line">299</span><br><span class="line">300</span><br><span class="line">301</span><br><span class="line">302</span><br><span class="line">303</span><br><span class="line">304</span><br><span class="line">305</span><br><span class="line">306</span><br><span class="line">307</span><br><span class="line">308</span><br><span class="line">309</span><br><span class="line">310</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> __future__ <span class="keyword">import</span> annotations</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> hashlib</span><br><span class="line"><span class="keyword">import</span> json</span><br><span class="line"><span class="keyword">import</span> unittest</span><br><span class="line"><span class="keyword">from</span> dataclasses <span class="keyword">import</span> dataclass, field</span><br><span class="line"><span class="keyword">from</span> datetime <span class="keyword">import</span> datetime, timedelta, timezone</span><br><span class="line"><span class="keyword">from</span> enum <span class="keyword">import</span> Enum</span><br><span class="line"><span class="keyword">from</span> typing <span class="keyword">import</span> <span class="type">Any</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Status</span>(<span class="built_in">str</span>, Enum):</span><br><span class="line">    PENDING = <span class="string">&quot;PENDING&quot;</span></span><br><span class="line">    APPROVED = <span class="string">&quot;APPROVED&quot;</span></span><br><span class="line">    REJECTED = <span class="string">&quot;REJECTED&quot;</span></span><br><span class="line">    EXPIRED = <span class="string">&quot;EXPIRED&quot;</span></span><br><span class="line">    CANCELLED = <span class="string">&quot;CANCELLED&quot;</span></span><br><span class="line">    EXECUTED = <span class="string">&quot;EXECUTED&quot;</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Decision</span>(<span class="built_in">str</span>, Enum):</span><br><span class="line">    AUTO = <span class="string">&quot;AUTO&quot;</span></span><br><span class="line">    SINGLE_APPROVAL = <span class="string">&quot;SINGLE_APPROVAL&quot;</span></span><br><span class="line">    DUAL_APPROVAL = <span class="string">&quot;DUAL_APPROVAL&quot;</span></span><br><span class="line">    DENY = <span class="string">&quot;DENY&quot;</span></span><br><span class="line">    ESCALATE = <span class="string">&quot;ESCALATE&quot;</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">ApprovalError</span>(<span class="title class_ inherited__">RuntimeError</span>):</span><br><span class="line">    <span class="keyword">pass</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">canonical_digest</span>(<span class="params">value: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>]</span>) -&gt; <span class="built_in">str</span>:</span><br><span class="line">    <span class="comment"># Demo canonicalization. Production systems should define and version the</span></span><br><span class="line">    <span class="comment"># canonicalization contract, for example with RFC 8785-compatible tooling.</span></span><br><span class="line">    raw = json.dumps(</span><br><span class="line">        value, ensure_ascii=<span class="literal">False</span>, sort_keys=<span class="literal">True</span>, separators=(<span class="string">&quot;,&quot;</span>, <span class="string">&quot;:&quot;</span>)</span><br><span class="line">    ).encode(<span class="string">&quot;utf-8&quot;</span>)</span><br><span class="line">    <span class="keyword">return</span> <span class="string">&quot;sha256:&quot;</span> + hashlib.sha256(raw).hexdigest()</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Actor</span>:</span><br><span class="line">    actor_id: <span class="built_in">str</span></span><br><span class="line">    manager_chain: <span class="built_in">str</span></span><br><span class="line">    max_refund_minor: <span class="built_in">int</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Request</span>:</span><br><span class="line">    tenant_id: <span class="built_in">str</span></span><br><span class="line">    requester_id: <span class="built_in">str</span></span><br><span class="line">    tool: <span class="built_in">str</span></span><br><span class="line">    arguments: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>]</span><br><span class="line">    resource_version: <span class="built_in">str</span></span><br><span class="line">    impact: <span class="built_in">int</span></span><br><span class="line">    irreversibility: <span class="built_in">int</span></span><br><span class="line">    privilege: <span class="built_in">int</span></span><br><span class="line">    sensitivity: <span class="built_in">int</span></span><br><span class="line">    calibrated_confidence: <span class="built_in">float</span></span><br><span class="line">    evidence_completeness: <span class="built_in">float</span></span><br><span class="line">    out_of_distribution: <span class="built_in">bool</span> = <span class="literal">False</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">snapshot</span>(<span class="params">self</span>) -&gt; <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>]:</span><br><span class="line">        <span class="keyword">return</span> &#123;</span><br><span class="line">            <span class="string">&quot;tenant_id&quot;</span>: <span class="variable language_">self</span>.tenant_id,</span><br><span class="line">            <span class="string">&quot;tool&quot;</span>: <span class="variable language_">self</span>.tool,</span><br><span class="line">            <span class="string">&quot;arguments&quot;</span>: <span class="variable language_">self</span>.arguments,</span><br><span class="line">            <span class="string">&quot;resource_version&quot;</span>: <span class="variable language_">self</span>.resource_version,</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">PolicyResult</span>:</span><br><span class="line">    decision: Decision</span><br><span class="line">    required_approvals: <span class="built_in">int</span></span><br><span class="line">    reasons: <span class="built_in">tuple</span>[<span class="built_in">str</span>, ...]</span><br><span class="line">    effective_risk: <span class="built_in">float</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">PolicyEngine</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">evaluate</span>(<span class="params">self, request: Request</span>) -&gt; PolicyResult:</span><br><span class="line">        amount = <span class="built_in">int</span>(request.arguments.get(<span class="string">&quot;amount_minor&quot;</span>, <span class="number">0</span>))</span><br><span class="line">        destination = request.arguments.get(<span class="string">&quot;destination&quot;</span>)</span><br><span class="line"></span><br><span class="line">        <span class="comment"># Hard invariants are not averaged into a model score.</span></span><br><span class="line">        <span class="keyword">if</span> request.tool != <span class="string">&quot;payment.refund.v3&quot;</span>:</span><br><span class="line">            <span class="keyword">return</span> PolicyResult(Decision.DENY, <span class="number">0</span>, (<span class="string">&quot;TOOL_NOT_ALLOWED&quot;</span>,), <span class="number">999</span>)</span><br><span class="line">        <span class="keyword">if</span> destination != <span class="string">&quot;ORIGINAL_PAYMENT_METHOD&quot;</span>:</span><br><span class="line">            <span class="keyword">return</span> PolicyResult(Decision.DENY, <span class="number">0</span>, (<span class="string">&quot;DESTINATION_DENIED&quot;</span>,), <span class="number">999</span>)</span><br><span class="line">        <span class="keyword">if</span> amount &lt;= <span class="number">0</span> <span class="keyword">or</span> amount &gt; <span class="number">10_000_000</span>:</span><br><span class="line">            <span class="keyword">return</span> PolicyResult(Decision.DENY, <span class="number">0</span>, (<span class="string">&quot;AMOUNT_OUT_OF_POLICY&quot;</span>,), <span class="number">999</span>)</span><br><span class="line">        <span class="keyword">if</span> request.evidence_completeness &lt; <span class="number">0.60</span>:</span><br><span class="line">            <span class="keyword">return</span> PolicyResult(Decision.ESCALATE, <span class="number">0</span>, (<span class="string">&quot;EVIDENCE_MISSING&quot;</span>,), <span class="number">99</span>)</span><br><span class="line"></span><br><span class="line">        base = (</span><br><span class="line">            <span class="number">3</span> * request.impact</span><br><span class="line">            + <span class="number">3</span> * request.irreversibility</span><br><span class="line">            + <span class="number">2</span> * request.privilege</span><br><span class="line">            + <span class="number">2</span> * request.sensitivity</span><br><span class="line">        )</span><br><span class="line">        uncertainty = <span class="number">2</span> * (<span class="number">1</span> - request.calibrated_confidence)</span><br><span class="line">        uncertainty += <span class="number">2</span> * (<span class="number">1</span> - request.evidence_completeness)</span><br><span class="line">        uncertainty += <span class="number">4</span> <span class="keyword">if</span> request.out_of_distribution <span class="keyword">else</span> <span class="number">0</span></span><br><span class="line">        risk = <span class="built_in">round</span>(base + uncertainty, <span class="number">3</span>)</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> amount &gt;= <span class="number">500_000</span> <span class="keyword">or</span> risk &gt;= <span class="number">24</span>:</span><br><span class="line">            <span class="keyword">return</span> PolicyResult(</span><br><span class="line">                Decision.DUAL_APPROVAL, <span class="number">2</span>, (<span class="string">&quot;HIGH_FINANCIAL_RISK&quot;</span>,), risk</span><br><span class="line">            )</span><br><span class="line">        <span class="keyword">if</span> amount &gt;= <span class="number">50_000</span> <span class="keyword">or</span> risk &gt;= <span class="number">15</span>:</span><br><span class="line">            <span class="keyword">return</span> PolicyResult(</span><br><span class="line">                Decision.SINGLE_APPROVAL, <span class="number">1</span>, (<span class="string">&quot;REVIEW_REQUIRED&quot;</span>,), risk</span><br><span class="line">            )</span><br><span class="line">        <span class="keyword">if</span> request.calibrated_confidence &lt; <span class="number">0.85</span>:</span><br><span class="line">            <span class="keyword">return</span> PolicyResult(</span><br><span class="line">                Decision.SINGLE_APPROVAL, <span class="number">1</span>, (<span class="string">&quot;UNCERTAINTY_REVIEW&quot;</span>,), risk</span><br><span class="line">            )</span><br><span class="line">        <span class="keyword">return</span> PolicyResult(Decision.AUTO, <span class="number">0</span>, (<span class="string">&quot;LOW_RISK_AUTO&quot;</span>,), risk)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Approval</span>:</span><br><span class="line">    approval_id: <span class="built_in">str</span></span><br><span class="line">    request: Request</span><br><span class="line">    policy: PolicyResult</span><br><span class="line">    action_digest: <span class="built_in">str</span></span><br><span class="line">    created_at: datetime</span><br><span class="line">    expires_at: datetime</span><br><span class="line">    status: Status = Status.PENDING</span><br><span class="line">    approvals: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="built_in">str</span>] = field(default_factory=<span class="built_in">dict</span>)</span><br><span class="line">    rejection_reason: <span class="built_in">str</span> | <span class="literal">None</span> = <span class="literal">None</span></span><br><span class="line">    execution_id: <span class="built_in">str</span> | <span class="literal">None</span> = <span class="literal">None</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">ApprovalStore</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.items: <span class="built_in">dict</span>[<span class="built_in">str</span>, Approval] = &#123;&#125;</span><br><span class="line">        <span class="variable language_">self</span>.consumed_idempotency_keys: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="built_in">str</span>] = &#123;&#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">create</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        approval_id: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">        request: Request,</span></span><br><span class="line"><span class="params">        policy: PolicyResult,</span></span><br><span class="line"><span class="params">        now: datetime,</span></span><br><span class="line"><span class="params">        ttl: timedelta = timedelta(<span class="params">minutes=<span class="number">10</span></span>),</span></span><br><span class="line"><span class="params">    </span>) -&gt; Approval:</span><br><span class="line">        <span class="keyword">if</span> policy.decision <span class="keyword">not</span> <span class="keyword">in</span> &#123;</span><br><span class="line">            Decision.SINGLE_APPROVAL,</span><br><span class="line">            Decision.DUAL_APPROVAL,</span><br><span class="line">        &#125;:</span><br><span class="line">            <span class="keyword">raise</span> ApprovalError(<span class="string">&quot;decision does not require an approval record&quot;</span>)</span><br><span class="line">        item = Approval(</span><br><span class="line">            approval_id=approval_id,</span><br><span class="line">            request=request,</span><br><span class="line">            policy=policy,</span><br><span class="line">            action_digest=canonical_digest(request.snapshot()),</span><br><span class="line">            created_at=now,</span><br><span class="line">            expires_at=now + ttl,</span><br><span class="line">        )</span><br><span class="line">        <span class="keyword">if</span> approval_id <span class="keyword">in</span> <span class="variable language_">self</span>.items:</span><br><span class="line">            <span class="keyword">raise</span> ApprovalError(<span class="string">&quot;duplicate approval_id&quot;</span>)</span><br><span class="line">        <span class="variable language_">self</span>.items[approval_id] = item</span><br><span class="line">        <span class="keyword">return</span> item</span><br><span class="line"></span><br><span class="line"><span class="meta">    @staticmethod</span></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">_expire_if_needed</span>(<span class="params">item: Approval, now: datetime</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="keyword">if</span> item.status <span class="keyword">in</span> &#123;Status.PENDING, Status.APPROVED&#125; <span class="keyword">and</span> now &gt;= item.expires_at:</span><br><span class="line">            item.status = Status.EXPIRED</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">approve</span>(<span class="params">self, approval_id: <span class="built_in">str</span>, reviewer: Actor, now: datetime</span>) -&gt; Approval:</span><br><span class="line">        item = <span class="variable language_">self</span>.items[approval_id]</span><br><span class="line">        <span class="variable language_">self</span>._expire_if_needed(item, now)</span><br><span class="line">        <span class="keyword">if</span> item.status != Status.PENDING:</span><br><span class="line">            <span class="keyword">raise</span> ApprovalError(<span class="string">f&quot;cannot approve from <span class="subst">&#123;item.status&#125;</span>&quot;</span>)</span><br><span class="line">        <span class="keyword">if</span> reviewer.actor_id == item.request.requester_id:</span><br><span class="line">            <span class="keyword">raise</span> ApprovalError(<span class="string">&quot;self approval is forbidden&quot;</span>)</span><br><span class="line">        amount = <span class="built_in">int</span>(item.request.arguments[<span class="string">&quot;amount_minor&quot;</span>])</span><br><span class="line">        <span class="keyword">if</span> amount &gt; reviewer.max_refund_minor:</span><br><span class="line">            <span class="keyword">raise</span> ApprovalError(<span class="string">&quot;reviewer amount limit exceeded&quot;</span>)</span><br><span class="line">        <span class="keyword">if</span> reviewer.actor_id <span class="keyword">in</span> item.approvals:</span><br><span class="line">            <span class="keyword">raise</span> ApprovalError(<span class="string">&quot;duplicate reviewer&quot;</span>)</span><br><span class="line">        <span class="keyword">if</span> reviewer.manager_chain <span class="keyword">in</span> item.approvals.values():</span><br><span class="line">            <span class="keyword">raise</span> ApprovalError(<span class="string">&quot;separation of duties violated&quot;</span>)</span><br><span class="line"></span><br><span class="line">        item.approvals[reviewer.actor_id] = reviewer.manager_chain</span><br><span class="line">        <span class="keyword">if</span> <span class="built_in">len</span>(item.approvals) &gt;= item.policy.required_approvals:</span><br><span class="line">            item.status = Status.APPROVED</span><br><span class="line">        <span class="keyword">return</span> item</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">reject</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self, approval_id: <span class="built_in">str</span>, reviewer: Actor, reason: <span class="built_in">str</span>, now: datetime</span></span><br><span class="line"><span class="params">    </span>) -&gt; Approval:</span><br><span class="line">        item = <span class="variable language_">self</span>.items[approval_id]</span><br><span class="line">        <span class="variable language_">self</span>._expire_if_needed(item, now)</span><br><span class="line">        <span class="keyword">if</span> item.status != Status.PENDING:</span><br><span class="line">            <span class="keyword">raise</span> ApprovalError(<span class="string">f&quot;cannot reject from <span class="subst">&#123;item.status&#125;</span>&quot;</span>)</span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">not</span> reason.strip():</span><br><span class="line">            <span class="keyword">raise</span> ApprovalError(<span class="string">&quot;rejection reason is required&quot;</span>)</span><br><span class="line">        item.rejection_reason = <span class="string">f&quot;<span class="subst">&#123;reviewer.actor_id&#125;</span>:<span class="subst">&#123;reason&#125;</span>&quot;</span></span><br><span class="line">        item.status = Status.REJECTED</span><br><span class="line">        <span class="keyword">return</span> item</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">execute</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        approval_id: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">        current_request: Request,</span></span><br><span class="line"><span class="params">        current_resource_version: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">        idempotency_key: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">        now: datetime,</span></span><br><span class="line"><span class="params">    </span>) -&gt; <span class="built_in">str</span>:</span><br><span class="line">        item = <span class="variable language_">self</span>.items[approval_id]</span><br><span class="line">        <span class="variable language_">self</span>._expire_if_needed(item, now)</span><br><span class="line">        <span class="keyword">if</span> item.status != Status.APPROVED:</span><br><span class="line">            <span class="keyword">raise</span> ApprovalError(<span class="string">f&quot;cannot execute from <span class="subst">&#123;item.status&#125;</span>&quot;</span>)</span><br><span class="line">        <span class="keyword">if</span> canonical_digest(current_request.snapshot()) != item.action_digest:</span><br><span class="line">            <span class="keyword">raise</span> ApprovalError(<span class="string">&quot;action snapshot changed after approval&quot;</span>)</span><br><span class="line">        <span class="keyword">if</span> current_resource_version != item.request.resource_version:</span><br><span class="line">            <span class="keyword">raise</span> ApprovalError(<span class="string">&quot;resource version changed after approval&quot;</span>)</span><br><span class="line">        <span class="keyword">if</span> idempotency_key <span class="keyword">in</span> <span class="variable language_">self</span>.consumed_idempotency_keys:</span><br><span class="line">            <span class="keyword">raise</span> ApprovalError(<span class="string">&quot;idempotency key already consumed&quot;</span>)</span><br><span class="line"></span><br><span class="line">        <span class="comment"># A production implementation must atomically claim the approval and use</span></span><br><span class="line">        <span class="comment"># a downstream idempotent API. This demo records the one-time transition.</span></span><br><span class="line">        execution_id = <span class="string">&quot;exec:&quot;</span> + approval_id</span><br><span class="line">        <span class="variable language_">self</span>.consumed_idempotency_keys[idempotency_key] = execution_id</span><br><span class="line">        item.execution_id = execution_id</span><br><span class="line">        item.status = Status.EXECUTED</span><br><span class="line">        <span class="keyword">return</span> execution_id</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">refund_request</span>(<span class="params">amount_minor: <span class="built_in">int</span> = <span class="number">800_000</span></span>) -&gt; Request:</span><br><span class="line">    <span class="keyword">return</span> Request(</span><br><span class="line">        tenant_id=<span class="string">&quot;tenant-cn-01&quot;</span>,</span><br><span class="line">        requester_id=<span class="string">&quot;agent-service&quot;</span>,</span><br><span class="line">        tool=<span class="string">&quot;payment.refund.v3&quot;</span>,</span><br><span class="line">        arguments=&#123;</span><br><span class="line">            <span class="string">&quot;order_id&quot;</span>: <span class="string">&quot;O-9137&quot;</span>,</span><br><span class="line">            <span class="string">&quot;amount_minor&quot;</span>: amount_minor,</span><br><span class="line">            <span class="string">&quot;currency&quot;</span>: <span class="string">&quot;CNY&quot;</span>,</span><br><span class="line">            <span class="string">&quot;destination&quot;</span>: <span class="string">&quot;ORIGINAL_PAYMENT_METHOD&quot;</span>,</span><br><span class="line">        &#125;,</span><br><span class="line">        resource_version=<span class="string">&quot;rv-188&quot;</span>,</span><br><span class="line">        impact=<span class="number">3</span>,</span><br><span class="line">        irreversibility=<span class="number">2</span>,</span><br><span class="line">        privilege=<span class="number">3</span>,</span><br><span class="line">        sensitivity=<span class="number">2</span>,</span><br><span class="line">        calibrated_confidence=<span class="number">0.91</span>,</span><br><span class="line">        evidence_completeness=<span class="number">1.0</span>,</span><br><span class="line">    )</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">ApprovalTests</span>(unittest.TestCase):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">setUp</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.now = datetime(<span class="number">2026</span>, <span class="number">4</span>, <span class="number">20</span>, <span class="number">12</span>, <span class="number">30</span>, tzinfo=timezone.utc)</span><br><span class="line">        <span class="variable language_">self</span>.engine = PolicyEngine()</span><br><span class="line">        <span class="variable language_">self</span>.store = ApprovalStore()</span><br><span class="line">        <span class="variable language_">self</span>.request = refund_request()</span><br><span class="line">        policy = <span class="variable language_">self</span>.engine.evaluate(<span class="variable language_">self</span>.request)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(Decision.DUAL_APPROVAL, policy.decision)</span><br><span class="line">        <span class="variable language_">self</span>.store.create(<span class="string">&quot;apr-1&quot;</span>, <span class="variable language_">self</span>.request, policy, <span class="variable language_">self</span>.now)</span><br><span class="line">        <span class="variable language_">self</span>.reviewer_a = Actor(<span class="string">&quot;reviewer-a&quot;</span>, <span class="string">&quot;finance-east&quot;</span>, <span class="number">1_000_000</span>)</span><br><span class="line">        <span class="variable language_">self</span>.reviewer_b = Actor(<span class="string">&quot;reviewer-b&quot;</span>, <span class="string">&quot;risk-central&quot;</span>, <span class="number">2_000_000</span>)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_two_independent_reviewers_can_execute_once</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.store.approve(<span class="string">&quot;apr-1&quot;</span>, <span class="variable language_">self</span>.reviewer_a, <span class="variable language_">self</span>.now)</span><br><span class="line">        item = <span class="variable language_">self</span>.store.approve(<span class="string">&quot;apr-1&quot;</span>, <span class="variable language_">self</span>.reviewer_b, <span class="variable language_">self</span>.now)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(Status.APPROVED, item.status)</span><br><span class="line">        execution_id = <span class="variable language_">self</span>.store.execute(</span><br><span class="line">            <span class="string">&quot;apr-1&quot;</span>, <span class="variable language_">self</span>.request, <span class="string">&quot;rv-188&quot;</span>, <span class="string">&quot;refund:O-9137:case-1842&quot;</span>, <span class="variable language_">self</span>.now</span><br><span class="line">        )</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(<span class="string">&quot;exec:apr-1&quot;</span>, execution_id)</span><br><span class="line">        <span class="keyword">with</span> <span class="variable language_">self</span>.assertRaisesRegex(ApprovalError, <span class="string">&quot;cannot execute&quot;</span>):</span><br><span class="line">            <span class="variable language_">self</span>.store.execute(</span><br><span class="line">                <span class="string">&quot;apr-1&quot;</span>, <span class="variable language_">self</span>.request, <span class="string">&quot;rv-188&quot;</span>, <span class="string">&quot;another-key&quot;</span>, <span class="variable language_">self</span>.now</span><br><span class="line">            )</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_same_manager_chain_is_not_independent</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.store.approve(<span class="string">&quot;apr-1&quot;</span>, <span class="variable language_">self</span>.reviewer_a, <span class="variable language_">self</span>.now)</span><br><span class="line">        alias = Actor(<span class="string">&quot;reviewer-c&quot;</span>, <span class="string">&quot;finance-east&quot;</span>, <span class="number">2_000_000</span>)</span><br><span class="line">        <span class="keyword">with</span> <span class="variable language_">self</span>.assertRaisesRegex(ApprovalError, <span class="string">&quot;separation&quot;</span>):</span><br><span class="line">            <span class="variable language_">self</span>.store.approve(<span class="string">&quot;apr-1&quot;</span>, alias, <span class="variable language_">self</span>.now)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_changed_amount_invalidates_snapshot</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.store.approve(<span class="string">&quot;apr-1&quot;</span>, <span class="variable language_">self</span>.reviewer_a, <span class="variable language_">self</span>.now)</span><br><span class="line">        <span class="variable language_">self</span>.store.approve(<span class="string">&quot;apr-1&quot;</span>, <span class="variable language_">self</span>.reviewer_b, <span class="variable language_">self</span>.now)</span><br><span class="line">        changed = refund_request(amount_minor=<span class="number">900_000</span>)</span><br><span class="line">        <span class="keyword">with</span> <span class="variable language_">self</span>.assertRaisesRegex(ApprovalError, <span class="string">&quot;snapshot changed&quot;</span>):</span><br><span class="line">            <span class="variable language_">self</span>.store.execute(</span><br><span class="line">                <span class="string">&quot;apr-1&quot;</span>, changed, <span class="string">&quot;rv-188&quot;</span>, <span class="string">&quot;refund:O-9137:case-1842&quot;</span>, <span class="variable language_">self</span>.now</span><br><span class="line">            )</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_resource_change_blocks_toctou</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.store.approve(<span class="string">&quot;apr-1&quot;</span>, <span class="variable language_">self</span>.reviewer_a, <span class="variable language_">self</span>.now)</span><br><span class="line">        <span class="variable language_">self</span>.store.approve(<span class="string">&quot;apr-1&quot;</span>, <span class="variable language_">self</span>.reviewer_b, <span class="variable language_">self</span>.now)</span><br><span class="line">        <span class="keyword">with</span> <span class="variable language_">self</span>.assertRaisesRegex(ApprovalError, <span class="string">&quot;resource version&quot;</span>):</span><br><span class="line">            <span class="variable language_">self</span>.store.execute(</span><br><span class="line">                <span class="string">&quot;apr-1&quot;</span>, <span class="variable language_">self</span>.request, <span class="string">&quot;rv-189&quot;</span>, <span class="string">&quot;refund:O-9137:case-1842&quot;</span>, <span class="variable language_">self</span>.now</span><br><span class="line">            )</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_expired_approval_cannot_be_used</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        late = <span class="variable language_">self</span>.now + timedelta(minutes=<span class="number">11</span>)</span><br><span class="line">        <span class="keyword">with</span> <span class="variable language_">self</span>.assertRaisesRegex(ApprovalError, <span class="string">&quot;EXPIRED&quot;</span>):</span><br><span class="line">            <span class="variable language_">self</span>.store.approve(<span class="string">&quot;apr-1&quot;</span>, <span class="variable language_">self</span>.reviewer_a, late)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(Status.EXPIRED, <span class="variable language_">self</span>.store.items[<span class="string">&quot;apr-1&quot;</span>].status)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&quot;__main__&quot;</span>:</span><br><span class="line">    unittest.main()</span><br></pre></td></tr></table></figure>
+<!-- hitl_example_end -->
+
+<p>保存为 <code>hitl_demo.py</code> 后运行：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">python3 hitl_demo.py -v</span><br></pre></td></tr></table></figure>
+
+<p>期望输出包含五条通过的测试：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">test_changed_amount_invalidates_snapshot ... ok</span><br><span class="line">test_expired_approval_cannot_be_used ... ok</span><br><span class="line">test_resource_change_blocks_toctou ... ok</span><br><span class="line">test_same_manager_chain_is_not_independent ... ok</span><br><span class="line">test_two_independent_reviewers_can_execute_once ... ok</span><br></pre></td></tr></table></figure>
+
+<p>这个示例仍有意保留一个生产级问题：<code>execute()</code> 先记录本地幂等键还是先调用支付服务，都会留下跨系统故障窗口。生产方案应让支付服务原生接受幂等键，并通过查询接口确认同一键的最终结果；若支付服务不提供可验证幂等语义，高风险自动执行范围需要进一步收紧。</p>
+<h2 id="十四、策略引擎本身应该怎么测试"><a href="#十四、策略引擎本身应该怎么测试" class="headerlink" title="十四、策略引擎本身应该怎么测试"></a>十四、策略引擎本身应该怎么测试</h2><p>策略引擎不是普通推荐模型。它控制哪些动作可以自动执行，因此要同时使用示例测试、性质测试、变形测试、状态机测试和线上影子比较。</p>
+<h3 id="1-决策表测试"><a href="#1-决策表测试" class="headerlink" title="1. 决策表测试"></a>1. 决策表测试</h3><table>
+<thead>
+<tr>
+<th>编号</th>
+<th>场景</th>
+<th>关键输入</th>
+<th>期望决策</th>
+<th>关键断言</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>P01</td>
+<td>公开物流查询</td>
+<td>只读、无敏感字段</td>
+<td><code>AUTO</code></td>
+<td>不创建审批，不扩大读取字段</td>
+</tr>
+<tr>
+<td>P02</td>
+<td>30 元原路退款</td>
+<td>证据完整、已校准高置信</td>
+<td><code>AUTO</code></td>
+<td>仍执行权限和幂等检查</td>
+</tr>
+<tr>
+<td>P03</td>
+<td>800 元原路退款</td>
+<td>中高金额</td>
+<td><code>SINGLE_APPROVAL</code></td>
+<td>审核人额度足够</td>
+</tr>
+<tr>
+<td>P04</td>
+<td>8000 元原路退款</td>
+<td>高金额</td>
+<td><code>DUAL_APPROVAL</code></td>
+<td>两个独立主体批准同一摘要</td>
+</tr>
+<tr>
+<td>P05</td>
+<td>退款到新银行卡</td>
+<td>目的地不符合规则</td>
+<td><code>DENY</code></td>
+<td>高置信不能覆盖拒绝</td>
+</tr>
+<tr>
+<td>P06</td>
+<td>订单状态缺失</td>
+<td>证据完整度低</td>
+<td><code>ESCALATE</code></td>
+<td>不能把缺字段当作“未退款”</td>
+</tr>
+<tr>
+<td>P07</td>
+<td>分布外语言输入</td>
+<td>OOD 为真</td>
+<td><code>REVIEW</code> 或 <code>ESCALATE</code></td>
+<td>不沿用普通切片阈值</td>
+</tr>
+<tr>
+<td>P08</td>
+<td>身份服务不可用</td>
+<td>授权事实未知</td>
+<td>失败关闭</td>
+<td>不降级成无身份自动路径</td>
+</tr>
+<tr>
+<td>P09</td>
+<td>政策版本过期</td>
+<td>当前策略不同</td>
+<td>重评估</td>
+<td>不使用旧批准继续执行</td>
+</tr>
+<tr>
+<td>P10</td>
+<td>金额在审批后变化</td>
+<td>摘要变化</td>
+<td>阻断</td>
+<td>原审批保持原终态，新建审批</td>
+</tr>
+</tbody></table>
+<h3 id="2-单调性测试"><a href="#2-单调性测试" class="headerlink" title="2. 单调性测试"></a>2. 单调性测试</h3><p>在其他条件相同时，增加金额、权限、敏感度或不可逆性，不应该让审批要求降低。</p>
+<p>可以生成成千上万个输入组合验证：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">risk(x + higher_amount) &gt;= risk(x)</span><br><span class="line">risk(x + more_privilege) &gt;= risk(x)</span><br><span class="line">risk(x + more_sensitive_data) &gt;= risk(x)</span><br><span class="line">approval_strength(high_risk_x) &gt;= approval_strength(x)</span><br></pre></td></tr></table></figure>
+
+<p>如果某个控制抵扣让高额动作反而自动通过，需要明确证明该控制确实降低了对应风险，并设置最大抵扣上限。</p>
+<h3 id="3-变形测试"><a href="#3-变形测试" class="headerlink" title="3. 变形测试"></a>3. 变形测试</h3><p>变形关系可以发现自然语言变化导致的策略漂移：</p>
+<ul>
+<li>把“800 元”改成“捌佰元”，规范化金额应相同</li>
+<li>调换 JSON 字段顺序，<code>action_digest</code> 应相同</li>
+<li>增加不影响动作的展示字段，审批摘要是否应变化由契约明确</li>
+<li>把货币从 CNY 改成 USD，即使数值不变也必须重新审批</li>
+<li>把订单显示名改写但保持 <code>order_id</code> 不变，核心动作身份应稳定</li>
+<li>将收件人邮箱大小写规范化后，摘要与发送系统应使用同一规则</li>
+</ul>
+<h3 id="4-状态机测试"><a href="#4-状态机测试" class="headerlink" title="4. 状态机测试"></a>4. 状态机测试</h3><p>对每个状态验证所有非法迁移，而不是只测成功路径：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">REJECTED -&gt; APPROVED      必须失败</span><br><span class="line">EXPIRED -&gt; EXECUTED       必须失败</span><br><span class="line">CANCELLED -&gt; PENDING      必须失败</span><br><span class="line">EXECUTED -&gt; APPROVED      必须失败</span><br><span class="line">APPROVED -&gt; APPROVED      重复决定不得新增票数</span><br><span class="line">PENDING -&gt; EXECUTED       未满足审批不得执行</span><br></pre></td></tr></table></figure>
+
+<p>并发测试要让多个执行器同时领取同一记录，最终只能有一个获得执行权。只在单线程单元测试里验证 <code>status</code>，无法发现数据库隔离级别、缓存延迟和消息重复投递带来的竞态。</p>
+<h3 id="5-影子策略比较"><a href="#5-影子策略比较" class="headerlink" title="5. 影子策略比较"></a>5. 影子策略比较</h3><p>新策略先对真实流量做只读影子判定，不改变当前决策。比较：</p>
+<ul>
+<li>自动范围扩大或缩小了多少</li>
+<li>哪些风险切片发生决策变化</li>
+<li>新旧策略与最终业务真值的差异</li>
+<li>人工队列峰值是否会超过容量</li>
+<li>阈值变化是否集中影响某类用户</li>
+</ul>
+<p>不能只报告“人工量下降 20%”。如果下降全部来自高额退款被自动化，这个数字反而是风险信号。</p>
+<h2 id="十五、审计证据：要重建一次决定，而不是堆日志"><a href="#十五、审计证据：要重建一次决定，而不是堆日志" class="headerlink" title="十五、审计证据：要重建一次决定，而不是堆日志"></a>十五、审计证据：要重建一次决定，而不是堆日志</h2><p>一条可审计链路至少要回答：</p>
+<ol>
+<li>谁发起了什么任务，代表谁行动。</li>
+<li>系统当时看到了哪些业务事实。</li>
+<li>哪个模型和哪套策略提出了什么动作。</li>
+<li>为什么需要或不需要人工介入。</li>
+<li>审核人实际看到了哪个快照。</li>
+<li>谁在什么时间作出什么决定，具有什么授权。</li>
+<li>执行时哪些事实发生变化。</li>
+<li>下游系统最终产生了什么业务结果。</li>
+</ol>
+<h3 id="1-事件而不是覆盖式字段"><a href="#1-事件而不是覆盖式字段" class="headerlink" title="1. 事件而不是覆盖式字段"></a>1. 事件而不是覆盖式字段</h3><p>不要只在一行记录上更新 <code>status</code>。追加事件能保留中间过程：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;event_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;evt-0198&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;approval_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;apr_01JQ9Y7R6M&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;event_type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;APPROVAL_DECISION_RECORDED&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;occurred_at&quot;</span><span class="punctuation">:</span> <span class="string">&quot;2026-04-20T12:34:10.381Z&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;actor&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;actor_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;reviewer-a&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;actor_type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;HUMAN&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;authentication_method&quot;</span><span class="punctuation">:</span> <span class="string">&quot;PASSKEY_MFA&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;authorization_snapshot&quot;</span><span class="punctuation">:</span> <span class="string">&quot;role-refund-l3@v7&quot;</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;action_digest&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sha256:4b54...&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;decision&quot;</span><span class="punctuation">:</span> <span class="string">&quot;APPROVE&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;reason_code&quot;</span><span class="punctuation">:</span> <span class="string">&quot;POLICY_AND_EVIDENCE_MATCH&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;comment_artifact_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;artifact://approval-comments/cmt-8821&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;previous_event_hash&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sha256:9c31...&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;event_hash&quot;</span><span class="punctuation">:</span> <span class="string">&quot;sha256:aa72...&quot;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>事件链哈希可以暴露部分删改，但不是完整防篡改方案。攻击者若能重写所有事件和根锚点，仍能伪造整条链。根摘要应周期性锚定到独立审计域，并限制能够同时修改业务数据、审批数据和审计证据的主体。</p>
+<h3 id="2-审批证据和执行证据分开"><a href="#2-审批证据和执行证据分开" class="headerlink" title="2. 审批证据和执行证据分开"></a>2. 审批证据和执行证据分开</h3><p>审批证据说明“允许尝试执行”，执行证据说明“实际发生了什么”。后者至少包括：</p>
+<ul>
+<li>执行器身份和版本</li>
+<li>下游请求 ID</li>
+<li>幂等键</li>
+<li>请求参数摘要</li>
+<li>开始、提交和确认时间</li>
+<li>下游返回类型</li>
+<li>提交状态是成功、失败还是未知</li>
+<li>最终业务对象 ID 和版本</li>
+<li>后置条件验证结果</li>
+</ul>
+<p>模型说“退款成功”不是执行证据，HTTP 200 也不一定是业务成功。必须查询退款账本或使用下游返回的稳定资源标识验证结果。</p>
+<h3 id="3-审核人看到的页面也要版本化"><a href="#3-审核人看到的页面也要版本化" class="headerlink" title="3. 审核人看到的页面也要版本化"></a>3. 审核人看到的页面也要版本化</h3><p>如果审计只能看到原始 JSON，却不知道界面是否截断了金额、隐藏了货币或把警告折叠起来，就无法判断审核人是否获得了知情决策条件。</p>
+<p>建议记录：</p>
+<ul>
+<li><code>review_ui_version</code></li>
+<li><code>presentation_schema_version</code></li>
+<li>展示字段清单与摘要</li>
+<li>被折叠或脱敏的字段</li>
+<li>证据加载失败项</li>
+<li>页面语言与时区</li>
+<li>决定前停留时长</li>
+</ul>
+<p>不需要录制审核人的全部屏幕或键盘。证据留存也要遵守隐私、劳动关系和最小化原则。</p>
+<h3 id="4-保留期要按证据类型区分"><a href="#4-保留期要按证据类型区分" class="headerlink" title="4. 保留期要按证据类型区分"></a>4. 保留期要按证据类型区分</h3><p>身份、财务和安全事件可能需要不同保留期。原始对话、附件和个人数据不应因为审批日志存在就永久保存。设计时需要给每类 Artifact 配置：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">data_classification</span><br><span class="line">retention_policy_id</span><br><span class="line">legal_hold_state</span><br><span class="line">encryption_key_scope</span><br><span class="line">allowed_roles</span><br><span class="line">deletion_propagation_state</span><br></pre></td></tr></table></figure>
+
+<p>删除主数据后，还要检查搜索索引、缓存、Trace、评测样本和审核截图是否保留了副本。</p>
+<h2 id="十六、超时、取消和长时间审批"><a href="#十六、超时、取消和长时间审批" class="headerlink" title="十六、超时、取消和长时间审批"></a>十六、超时、取消和长时间审批</h2><p>OpenAI Agents SDK 的 Human-in-the-loop 文档展示了工具调用产生 interruption、将运行转换为可持久化 <code>RunState</code>、批准或拒绝后恢复原运行的机制。这说明暂停和恢复可以成为 Agent 运行时的一等状态，但业务系统仍要负责审批记录、授权、过期和副作用一致性。</p>
+<h3 id="1-超时不是自动拒绝的同义词"><a href="#1-超时不是自动拒绝的同义词" class="headerlink" title="1. 超时不是自动拒绝的同义词"></a>1. 超时不是自动拒绝的同义词</h3><p>到达 <code>expires_at</code> 后，应将审批标记为 <code>EXPIRED</code>。业务层可以再决定：</p>
+<ul>
+<li>通知用户重新发起</li>
+<li>重新读取状态并创建新审批</li>
+<li>转入人工工单</li>
+<li>在明确低风险场景改走确定性路径</li>
+</ul>
+<p>不能因为“没人处理”就默认批准，也不能把旧动作原样重新排队而不刷新证据。</p>
+<h3 id="2-取消要传播到所有运行分支"><a href="#2-取消要传播到所有运行分支" class="headerlink" title="2. 取消要传播到所有运行分支"></a>2. 取消要传播到所有运行分支</h3><p>用户取消任务后，需要同时处理：</p>
+<ul>
+<li>待审批记录</li>
+<li>Agent 暂停状态</li>
+<li>已排队但未执行的工具消息</li>
+<li>并行子 Agent</li>
+<li>计划中的后续通知</li>
+<li>已经提交但状态未知的副作用</li>
+</ul>
+<p>取消不等于回滚。若退款已提交，系统应转入确认或补偿流程，而不是把状态简单写成 <code>CANCELLED</code>。</p>
+<h3 id="3-长时间审批必须重新验证环境"><a href="#3-长时间审批必须重新验证环境" class="headerlink" title="3. 长时间审批必须重新验证环境"></a>3. 长时间审批必须重新验证环境</h3><p>审批可能跨小时甚至跨天。恢复时至少检查：</p>
+<ul>
+<li>模型和工具版本是否仍可用</li>
+<li>策略是否紧急变更</li>
+<li>审批人角色是否被撤销</li>
+<li>原始用户授权是否仍有效</li>
+<li>资源是否已被其他流程处理</li>
+<li>输入 Artifact 是否仍可访问且未被替换</li>
+</ul>
+<p>序列化 Agent 状态不能冻结现实世界。恢复动作必须把持久状态与当前事实重新对齐。</p>
+<h2 id="十七、责任边界：人批准了，不等于系统免责"><a href="#十七、责任边界：人批准了，不等于系统免责" class="headerlink" title="十七、责任边界：人批准了，不等于系统免责"></a>十七、责任边界：人批准了，不等于系统免责</h2><p>审批系统需要把责任拆清。</p>
+<table>
+<thead>
+<tr>
+<th>角色</th>
+<th>主要责任</th>
+<th>不应承担的责任</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>产品&#x2F;业务所有者</td>
+<td>定义允许场景、风险容忍度和结果责任</td>
+<td>逐条判断底层技术故障</td>
+</tr>
+<tr>
+<td>策略所有者</td>
+<td>维护硬规则、阈值、额度和职责分离</td>
+<td>用规则替代所有领域判断</td>
+</tr>
+<tr>
+<td>模型&#x2F;Agent 团队</td>
+<td>提供版本、评测、限制和运行证据</td>
+<td>把审批当作模型缺陷的永久遮挡层</td>
+</tr>
+<tr>
+<td>工具服务团队</td>
+<td>认证授权、幂等、副作用和状态查询</td>
+<td>相信模型文本代表授权</td>
+</tr>
+<tr>
+<td>审核人</td>
+<td>在授权范围内依据展示证据作决定</td>
+<td>为隐藏字段、错误界面或系统缺陷背锅</td>
+</tr>
+<tr>
+<td>质量与风险团队</td>
+<td>独立验证控制有效性、抽样和演练</td>
+<td>代替业务所有者接受残余风险</td>
+</tr>
+<tr>
+<td>事件指挥者</td>
+<td>暂停能力、收敛影响和组织恢复</td>
+<td>事后修改证据使指标好看</td>
+</tr>
+</tbody></table>
+<p>“由人工批准”不能成为免责字段。如果系统展示错误金额、遗漏冲突证据或让无权限人员审核，根因仍是系统控制失效。</p>
+<h2 id="十八、三个完整失败案例与排查"><a href="#十八、三个完整失败案例与排查" class="headerlink" title="十八、三个完整失败案例与排查"></a>十八、三个完整失败案例与排查</h2><h3 id="案例一：审批-800-元，实际执行-8000-元"><a href="#案例一：审批-800-元，实际执行-8000-元" class="headerlink" title="案例一：审批 800 元，实际执行 8000 元"></a>案例一：审批 800 元，实际执行 8000 元</h3><p><strong>场景：</strong> Agent 生成 800 元退款，审核人批准。批准后，模型收到一条新消息，重新规划时把金额改成 8000 元，工具层继续复用了旧 <code>approval_id</code>。</p>
+<p><strong>现象：</strong> 审批记录显示 800 元，支付账本显示 8000 元；Agent 最终回复仍写“已按批准金额退款”。</p>
+<p><strong>排查顺序：</strong></p>
+<ol>
+<li>用支付资源 ID 找到实际下游请求。</li>
+<li>比较工具参数摘要和审批 <code>action_digest</code>。</li>
+<li>检查恢复后的 Agent 是否重新生成工具调用。</li>
+<li>检查执行器是否只验证 <code>APPROVED</code>，没有重算摘要。</li>
+<li>对齐审批、重规划、工具提交和支付确认时间。</li>
+</ol>
+<p><strong>根因：</strong> 审批绑定运行而不是绑定动作，执行器没有实施快照比较。</p>
+<p><strong>修复：</strong> 将规范化参数、货币、目的地、资源版本和证据摘要写入动作摘要；任何变化创建新审批；支付服务再次执行金额与审核额度校验。</p>
+<p><strong>回归：</strong> 修改金额、货币、目的地、订单 ID、工具版本和资源版本，旧审批都必须拒绝；只改变无业务意义的 JSON 字段顺序，摘要保持稳定。</p>
+<h3 id="案例二：批准率-99-7-，但风险没有下降"><a href="#案例二：批准率-99-7-，但风险没有下降" class="headerlink" title="案例二：批准率 99.7%，但风险没有下降"></a>案例二：批准率 99.7%，但风险没有下降</h3><p><strong>场景：</strong> 所有退款都进人工队列。工作日峰值每小时约 1800 条，审核人需要在平均 12 秒内处理一条才能清空队列。</p>
+<p><strong>现象：</strong> 批准率 99.7%，中位处理时长 2.4 秒，夜班和队列积压时批准率更高。上线报告把“人工覆盖率 100%”写成安全成果。</p>
+<p><strong>排查顺序：</strong></p>
+<ol>
+<li>按审核人、时段、队列长度和风险等级切分处理时长。</li>
+<li>检查拒绝、修改和升级是否真正改变后续动作。</li>
+<li>加入已知错误的校验样本，测量检出率。</li>
+<li>对比有模型建议与无模型建议的审核准确率。</li>
+<li>访谈审核人，检查页面是否需要切换多个系统取证。</li>
+</ol>
+<p><strong>根因：</strong> 队列容量与介入范围不匹配，界面把模型建议设为默认批准，审核控制退化为橡皮图章。</p>
+<p><strong>修复：</strong> 低风险请求改为自动加抽样；高风险请求显示差异和反证；限制连续审批速率；根据风险动态分配领域审核人；把有效干预率和校验样本检出率纳入 SLO。</p>
+<p><strong>回归：</strong> 在不同队列压力下重复盲测，确认高风险错误检出率不会随积压显著下降，并为超载设置自动收紧或暂停策略。</p>
+<h3 id="案例三：两个人批准，实际是同一责任主体"><a href="#案例三：两个人批准，实际是同一责任主体" class="headerlink" title="案例三：两个人批准，实际是同一责任主体"></a>案例三：两个人批准，实际是同一责任主体</h3><p><strong>场景：</strong> 高额退款要求两人审批。值班经理拥有个人账号和一个共享“财务值班”账号，先后使用两个账号完成批准。</p>
+<p><strong>现象：</strong> 数据库中有两个不同 <code>actor_id</code>，形式上满足 <code>approval_count == 2</code>；事后无法确定共享账号由谁操作。</p>
+<p><strong>排查顺序：</strong></p>
+<ol>
+<li>检查两个身份的稳定人员 ID、认证方式和登录设备。</li>
+<li>检查共享账号策略和 MFA 事件。</li>
+<li>比较两个决定的时间、IP、会话和管理链。</li>
+<li>检查策略是否只按账号字符串去重。</li>
+</ol>
+<p><strong>根因：</strong> 身份模型把账号当作人员，职责分离没有绑定可问责主体。</p>
+<p><strong>修复：</strong> 禁止共享账号参与高风险审批；使用稳定 workforce identity；两人必须来自允许的不同职责域；每次决定要求强认证并保存授权快照。</p>
+<p><strong>回归：</strong> 覆盖账号别名、委托身份、临时角色、同管理链、发起人自批、角色在审批中途被撤销等组合。</p>
+<h2 id="十九、量化结果应该同时看效率和控制有效性"><a href="#十九、量化结果应该同时看效率和控制有效性" class="headerlink" title="十九、量化结果应该同时看效率和控制有效性"></a>十九、量化结果应该同时看效率和控制有效性</h2><p>下面是一组用于说明验收方法的示例试运行数据。数据假设来自四周影子运行和两周受控灰度，不代表任何行业基准。</p>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th align="right">全量人工基线</th>
+<th align="right">风险分层灰度</th>
+<th>判断</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>每日请求量</td>
+<td align="right">18,420</td>
+<td align="right">18,760</td>
+<td>流量基本可比</td>
+</tr>
+<tr>
+<td>进入同步审批比例</td>
+<td align="right">100%</td>
+<td align="right">8.6%</td>
+<td>低风险噪声显著减少</td>
+</tr>
+<tr>
+<td>高风险动作审批覆盖率</td>
+<td align="right">100%</td>
+<td align="right">100%</td>
+<td>硬底线保持</td>
+</tr>
+<tr>
+<td>审批队列 P95 等待</td>
+<td align="right">38.4 分钟</td>
+<td align="right">6.7 分钟</td>
+<td>高风险请求更快获得关注</td>
+</tr>
+<tr>
+<td>审核中位停留时间</td>
+<td align="right">3.1 秒</td>
+<td align="right">22.8 秒</td>
+<td>不再以吞吐量替代判断</td>
+</tr>
+<tr>
+<td>校验样本错误检出率</td>
+<td align="right">61.2%</td>
+<td align="right">93.5%</td>
+<td>控制有效性提高</td>
+</tr>
+<tr>
+<td>审批后参数漂移阻断率</td>
+<td align="right">未记录</td>
+<td align="right">100%（37&#x2F;37）</td>
+<td>TOCTOU 测试生效</td>
+</tr>
+<tr>
+<td>重复执行事件</td>
+<td align="right">7</td>
+<td align="right">0</td>
+<td>幂等和一次性消费生效</td>
+</tr>
+<tr>
+<td>审计证据完整率</td>
+<td align="right">84.6%</td>
+<td align="right">99.3%</td>
+<td>仍需处理 0.7% 缺口</td>
+</tr>
+<tr>
+<td>自动路径已确认错误率</td>
+<td align="right">不适用</td>
+<td align="right">0.18%</td>
+<td>需继续按风险切片监控</td>
+</tr>
+</tbody></table>
+<p>这张表不能只挑“审批量下降”来汇报。至少还要说明：</p>
+<ul>
+<li>自动路径覆盖了哪些风险等级</li>
+<li>已确认错误的真值延迟多长</li>
+<li>0.18% 错误集中在哪些切片</li>
+<li>没有真值的请求占比</li>
+<li>人工检出率的置信区间</li>
+<li>自动化节省是否被申诉、补偿和审计成本抵消</li>
+</ul>
+<h3 id="1-推荐的运行指标"><a href="#1-推荐的运行指标" class="headerlink" title="1. 推荐的运行指标"></a>1. 推荐的运行指标</h3><p><strong>风险路由：</strong></p>
+<ul>
+<li><code>auto_execution_rate&#123;action,risk_band&#125;</code></li>
+<li><code>approval_required_rate&#123;policy_version&#125;</code></li>
+<li><code>escalation_rate&#123;reason&#125;</code></li>
+<li><code>hard_deny_rate&#123;rule&#125;</code></li>
+</ul>
+<p><strong>队列健康：</strong></p>
+<ul>
+<li><code>approval_queue_depth&#123;risk_band&#125;</code></li>
+<li><code>approval_wait_seconds</code></li>
+<li><code>approval_expired_rate</code></li>
+<li><code>reviewer_utilization</code></li>
+</ul>
+<p><strong>审核质量：</strong></p>
+<ul>
+<li>校验样本检出率</li>
+<li>有效干预率，即拒绝或修改后避免错误动作的比例</li>
+<li>审核人间一致性</li>
+<li>人工决定被后续真值推翻率</li>
+<li>极短停留和连续批准异常率</li>
+</ul>
+<p><strong>执行完整性：</strong></p>
+<ul>
+<li><code>snapshot_mismatch_block_total</code></li>
+<li><code>resource_version_conflict_total</code></li>
+<li><code>replay_block_total</code></li>
+<li><code>unknown_commit_state_total</code></li>
+<li><code>postcondition_failure_total</code></li>
+</ul>
+<p><strong>校准：</strong></p>
+<ul>
+<li>覆盖率与选择性风险</li>
+<li>分切片可靠性图</li>
+<li>Brier Score &#x2F; ECE 及样本量</li>
+<li>阈值附近请求比例</li>
+<li>分布外比例与人工错误率</li>
+</ul>
+<h3 id="2-指标不能激励错误行为"><a href="#2-指标不能激励错误行为" class="headerlink" title="2. 指标不能激励错误行为"></a>2. 指标不能激励错误行为</h3><p>把“每小时审批数”作为核心绩效，会推动快速点击；把“拒绝率”作为安全指标，会推动无意义拒绝；把“自动率”作为产品目标，会推动阈值放宽。</p>
+<p>更合理的是组合结果、成本和控制指标，并对高风险切片设置硬底线。任何效率提升都不能以越权、重复副作用、证据缺失或申诉上升为代价。</p>
+<h2 id="二十、人工决定不是天然真值：反馈闭环怎么建立"><a href="#二十、人工决定不是天然真值：反馈闭环怎么建立" class="headerlink" title="二十、人工决定不是天然真值：反馈闭环怎么建立"></a>二十、人工决定不是天然真值：反馈闭环怎么建立</h2><p>审批数据看起来天然带有“批准”和“拒绝”标签，因此很容易被直接拿去训练模型或调整阈值。这样做会把人的偏见、界面缺陷和旧策略一起固化进下一版系统。</p>
+<p>审核人回答的是“在当时证据和授权范围内是否允许执行”，不一定回答“模型判断是否客观正确”。例如审核人因为客户关系选择特批退款，并不表示模型引用的退款条款正确；审核人因为证据加载失败而拒绝，也不表示请求本身不合规。</p>
+<h3 id="1-把三类标签分开"><a href="#1-把三类标签分开" class="headerlink" title="1. 把三类标签分开"></a>1. 把三类标签分开</h3><p>至少要区分：</p>
+<table>
+<thead>
+<tr>
+<th>标签</th>
+<th>回答的问题</th>
+<th>典型来源</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>审批决定</td>
+<td>当时是否授权该动作</td>
+<td>审核人和审批策略</td>
+</tr>
+<tr>
+<td>过程质量</td>
+<td>模型、证据和工具过程是否符合要求</td>
+<td>独立评测、Trace 和规则</td>
+</tr>
+<tr>
+<td>业务真值</td>
+<td>最终事实是否证明决定正确</td>
+<td>支付账本、申诉、退货完成和后续调查</td>
+</tr>
+</tbody></table>
+<p>一条“已批准且退款成功”的记录仍可能存在政策引用错误，只是审核人依据其他事实作出了正确决定。训练任务模型时，应选择与目标事件一致的标签，不能把 <code>approved=1</code> 直接当成 <code>model_correct=1</code>。</p>
+<h3 id="2-记录决定理由，但不要让理由码替代证据"><a href="#2-记录决定理由，但不要让理由码替代证据" class="headerlink" title="2. 记录决定理由，但不要让理由码替代证据"></a>2. 记录决定理由，但不要让理由码替代证据</h3><p>结构化理由码适合聚合：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">EVIDENCE_SUFFICIENT</span><br><span class="line">POLICY_EXCEPTION_GRANTED</span><br><span class="line">AMOUNT_CHANGED</span><br><span class="line">IDENTITY_NOT_VERIFIED</span><br><span class="line">CONFLICTING_ORDER_STATE</span><br><span class="line">REVIEWER_OUT_OF_SCOPE</span><br></pre></td></tr></table></figure>
+
+<p>同时要保存理由所指向的证据版本。否则同一个 <code>POLICY_EXCEPTION_GRANTED</code> 可能代表完全不同的业务例外，后续无法判断模型缺陷、策略缺口还是正常裁量。</p>
+<h3 id="3-处理选择偏差"><a href="#3-处理选择偏差" class="headerlink" title="3. 处理选择偏差"></a>3. 处理选择偏差</h3><p>进入人工队列的样本本来就集中在低置信、高金额或异常场景。如果只用这些样本评估模型，会高估整体错误率；如果只用自动路径中容易获得的成功结果，又会低估隐藏错误。</p>
+<p>更合理的数据设计包括：</p>
+<ul>
+<li>从自动路径按风险与置信区间分层抽样复核</li>
+<li>为阈值上下两侧保留足够样本</li>
+<li>记录每条样本被选择的策略和概率</li>
+<li>对没有及时业务真值的记录标记 <code>outcome_pending</code>，不强行贴标签</li>
+<li>分开报告人工队列、自动队列和全量估计</li>
+<li>阈值实验使用受控灰度，避免同时改变模型、界面和策略</li>
+</ul>
+<p>当抽样概率不同，需要在统计估计中使用适当权重，并报告有效样本量。不能把过采样的高风险数据按原始条数直接当作生产分布。</p>
+<h3 id="4-处理审核人分歧"><a href="#4-处理审核人分歧" class="headerlink" title="4. 处理审核人分歧"></a>4. 处理审核人分歧</h3><p>对同一快照进行盲审，可以估计任务本身是否具有清晰标准。分歧应按原因拆开：</p>
+<ul>
+<li>政策文本含糊</li>
+<li>证据不足</li>
+<li>审核人领域知识不同</li>
+<li>界面展示不一致</li>
+<li>允许合理裁量</li>
+<li>某位审核人持续偏离校验集</li>
+</ul>
+<p>不能简单用多数票制造真值。高风险争议样本应由独立领域专家裁决，并保留原始分歧；允许裁量的场景可以将标签定义为分布或多种可接受动作，而不是强迫唯一答案。</p>
+<h3 id="5-延迟真值要能回填原运行"><a href="#5-延迟真值要能回填原运行" class="headerlink" title="5. 延迟真值要能回填原运行"></a>5. 延迟真值要能回填原运行</h3><p>退款是否正确可能要等客户申诉、商品回收或财务对账后才能确认。回填记录至少包含：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">outcome:</span></span><br><span class="line">  <span class="attr">approval_id:</span> <span class="string">apr_01JQ9Y7R6M</span></span><br><span class="line">  <span class="attr">outcome_type:</span> <span class="string">REFUND_CONFIRMED_VALID</span></span><br><span class="line">  <span class="attr">observed_at:</span> <span class="number">2026-05-08T09:14:00Z</span></span><br><span class="line">  <span class="attr">source:</span> <span class="string">finance-reconciliation-v4</span></span><br><span class="line">  <span class="attr">source_record_id:</span> <span class="string">recon-88172</span></span><br><span class="line">  <span class="attr">confidence:</span> <span class="string">VERIFIED_SYSTEM_FACT</span></span><br><span class="line">  <span class="attr">label_policy_version:</span> <span class="string">refund-outcome-v3</span></span><br></pre></td></tr></table></figure>
+
+<p>这样才能把业务结果关联到当时的模型、证据、策略和审核界面。只在月报里汇总“退款正确率”，无法重新校准具体切片。</p>
+<h3 id="6-反馈数据也要经过隐私与安全治理"><a href="#6-反馈数据也要经过隐私与安全治理" class="headerlink" title="6. 反馈数据也要经过隐私与安全治理"></a>6. 反馈数据也要经过隐私与安全治理</h3><p>审批备注可能包含身份证号、电话、病史、内部账号或审核人的主观评价。进入评测集或训练集前要重新执行数据最小化、授权、脱敏、保留期和删除传播。审核人为了完成业务写下的备注，不自动获得“可用于模型训练”的用途授权。</p>
+<p>最终的反馈闭环应该把人工介入当作一个需要评测的数据生成过程：既测审核正确性，也记录样本选择机制和标签来源。只有这样，阈值调整才是在减少真实风险，而不是让下一版模型更像上一版审核流程。</p>
+<h2 id="二十一、故障演练：人工介入链路也要定期注入故障"><a href="#二十一、故障演练：人工介入链路也要定期注入故障" class="headerlink" title="二十一、故障演练：人工介入链路也要定期注入故障"></a>二十一、故障演练：人工介入链路也要定期注入故障</h2><h3 id="演练一：策略服务不可用"><a href="#演练一：策略服务不可用" class="headerlink" title="演练一：策略服务不可用"></a>演练一：策略服务不可用</h3><p><strong>注入：</strong> 高额退款请求到达时，策略服务持续返回超时。</p>
+<p><strong>期望：</strong> 支付工具不执行；请求标记为策略基础设施错误或升级；用户看到明确延迟状态；恢复后重新读取当前订单，不直接复用旧决定。</p>
+<p><strong>证据：</strong> 工具调用计数为零、策略错误类型、升级工单、恢复后的新资源版本。</p>
+<h3 id="演练二：审批期间资源变化"><a href="#演练二：审批期间资源变化" class="headerlink" title="演练二：审批期间资源变化"></a>演练二：审批期间资源变化</h3><p><strong>注入：</strong> 第一位审核人批准后，由另一路径完成退款并把订单从 <code>rv-188</code> 更新到 <code>rv-189</code>。</p>
+<p><strong>期望：</strong> 第二位审核或执行时发现版本冲突；旧审批不能执行；系统查询现有退款并收敛到“已处理”。</p>
+<h3 id="演练三：审计存储不可用"><a href="#演练三：审计存储不可用" class="headerlink" title="演练三：审计存储不可用"></a>演练三：审计存储不可用</h3><p><strong>注入：</strong> 决策事件写入独立审计域失败。</p>
+<p><strong>期望：</strong> 高风险动作按策略失败关闭或进入可靠本地 Outbox；不能先执行再丢证据；Outbox 恢复后顺序补写且能验证完整性。</p>
+<p>低风险只读动作可以采用不同策略，但必须事先写清降级边界。</p>
+<h3 id="演练四：审核队列超载"><a href="#演练四：审核队列超载" class="headerlink" title="演练四：审核队列超载"></a>演练四：审核队列超载</h3><p><strong>注入：</strong> 将高风险请求突增到平时五倍，并让一半审核人不可用。</p>
+<p><strong>期望：</strong> 不降低高风险审批要求；低优先级请求明确延迟；暂停非关键自动任务；触发值班扩容和用户通知；超时请求变为 <code>EXPIRED</code>。</p>
+<h3 id="演练五：旧审批重放"><a href="#演练五：旧审批重放" class="headerlink" title="演练五：旧审批重放"></a>演练五：旧审批重放</h3><p><strong>注入：</strong> 捕获一个已执行审批引用，在新会话、不同租户和过期时间后分别重放。</p>
+<p><strong>期望：</strong> 因终态、租户、摘要、audience 或有效期失败；下游幂等键不产生第二个业务对象。</p>
+<h3 id="演练六：校准漂移"><a href="#演练六：校准漂移" class="headerlink" title="演练六：校准漂移"></a>演练六：校准漂移</h3><p><strong>注入：</strong> 在影子流量中增加一个历史校准集未覆盖的新语言和新政策表达。</p>
+<p><strong>期望：</strong> 分布外比例和可靠性偏差告警；自动覆盖收紧；新切片进入标注和校准流程，而不是用全局平均掩盖。</p>
+<p>每次演练都应记录首错时间、控制触发时间、最大影响、人工响应时间、恢复条件和遗留风险。只验证“最后没出事故”无法说明是哪一层控制起效。</p>
+<h2 id="二十二、什么时候不应该强行加入同步人工审批"><a href="#二十二、什么时候不应该强行加入同步人工审批" class="headerlink" title="二十二、什么时候不应该强行加入同步人工审批"></a>二十二、什么时候不应该强行加入同步人工审批</h2><h3 id="1-人无法在时间窗口内作出更好判断"><a href="#1-人无法在时间窗口内作出更好判断" class="headerlink" title="1. 人无法在时间窗口内作出更好判断"></a>1. 人无法在时间窗口内作出更好判断</h3><p>毫秒级风控、机器控制和大规模流式过滤可能没有同步人工窗口。这时更适合 Human-in-command 设定边界、Human-on-the-loop 监督、确定性保护和事后抽样，而不是制造一个无法兑现的按钮。</p>
+<h3 id="2-审核人拿不到独立证据"><a href="#2-审核人拿不到独立证据" class="headerlink" title="2. 审核人拿不到独立证据"></a>2. 审核人拿不到独立证据</h3><p>如果页面只展示模型结论和模型理由，人没有额外数据、领域知识或授权，审批不会自然提升质量。应先改善证据、工具和职责，再决定是否保留人工节点。</p>
+<h3 id="3-硬禁止可以直接自动拒绝"><a href="#3-硬禁止可以直接自动拒绝" class="headerlink" title="3. 硬禁止可以直接自动拒绝"></a>3. 硬禁止可以直接自动拒绝</h3><p>明确越权、非法参数、跨租户和超过系统上限的请求应由确定性控制拒绝。把它们交给人工容易形成绕过硬规则的渠道。</p>
+<h3 id="4-可逆低风险动作适合自动加抽样"><a href="#4-可逆低风险动作适合自动加抽样" class="headerlink" title="4. 可逆低风险动作适合自动加抽样"></a>4. 可逆低风险动作适合自动加抽样</h3><p>例如保存内部草稿、查询公开信息或创建不外发的建议，可以自动执行并按风险抽样。同步审批成本可能高于动作风险。</p>
+<h3 id="5-高风险领域不能只依赖通用审核人"><a href="#5-高风险领域不能只依赖通用审核人" class="headerlink" title="5. 高风险领域不能只依赖通用审核人"></a>5. 高风险领域不能只依赖通用审核人</h3><p>医疗、信贷、招聘、保险、司法和关键基础设施可能需要特定资质、解释、申诉和记录要求。一个普通客服点击确认不等于满足领域监督义务。具体设计应由领域、法律、合规和受影响群体共同评估。</p>
+<h2 id="二十三、从-0-到-1-的落地顺序"><a href="#二十三、从-0-到-1-的落地顺序" class="headerlink" title="二十三、从 0 到 1 的落地顺序"></a>二十三、从 0 到 1 的落地顺序</h2><h3 id="阶段一：先收紧高风险动作"><a href="#阶段一：先收紧高风险动作" class="headerlink" title="阶段一：先收紧高风险动作"></a>阶段一：先收紧高风险动作</h3><ol>
+<li>建立工具和动作清单。</li>
+<li>标记副作用、权限、金额、数据和可逆性。</li>
+<li>写出不可越过的硬规则。</li>
+<li>为高风险工具增加执行前审批。</li>
+<li>绑定规范化参数、资源版本、有效期和幂等键。</li>
+</ol>
+<p>这一阶段宁可覆盖范围小，也要证明审批确实能阻断动作。</p>
+<h3 id="阶段二：建立证据和状态机"><a href="#阶段二：建立证据和状态机" class="headerlink" title="阶段二：建立证据和状态机"></a>阶段二：建立证据和状态机</h3><ol>
+<li>实现六态审批模型和合法迁移。</li>
+<li>保存审批快照、决定事件和执行结果。</li>
+<li>处理超时、取消、恢复和重复消息。</li>
+<li>增加单人额度、双人审批和职责分离。</li>
+<li>建立故障注入与并发测试。</li>
+</ol>
+<h3 id="阶段三：校准并释放低风险流量"><a href="#阶段三：校准并释放低风险流量" class="headerlink" title="阶段三：校准并释放低风险流量"></a>阶段三：校准并释放低风险流量</h3><ol>
+<li>收集具有真实结果的历史样本。</li>
+<li>按业务和风险切片校准任务分数。</li>
+<li>影子比较新旧策略与队列容量。</li>
+<li>只扩大可逆、可观测、证据完整的自动范围。</li>
+<li>保留随机抽样和自动收紧机制。</li>
+</ol>
+<h3 id="阶段四：持续治理"><a href="#阶段四：持续治理" class="headerlink" title="阶段四：持续治理"></a>阶段四：持续治理</h3><ol>
+<li>监控自动化偏见和审核疲劳。</li>
+<li>定期复核阈值、角色、额度和保留期。</li>
+<li>将线上错误转成策略与回归样本。</li>
+<li>演练策略故障、身份故障、队列超载和重放。</li>
+<li>让业务所有者定期确认残余风险是否仍可接受。</li>
+</ol>
+<h2 id="二十四、上线前检查清单"><a href="#二十四、上线前检查清单" class="headerlink" title="二十四、上线前检查清单"></a>二十四、上线前检查清单</h2><h3 id="场景与风险"><a href="#场景与风险" class="headerlink" title="场景与风险"></a>场景与风险</h3><ul>
+<li><input disabled="" type="checkbox"> 每种动作都记录影响范围、可逆性、权限、金额和数据敏感度</li>
+<li><input disabled="" type="checkbox"> 硬禁止与可裁量风险明确分开</li>
+<li><input disabled="" type="checkbox"> 风险阈值按业务、租户和地区版本化</li>
+<li><input disabled="" type="checkbox"> 自动路径只覆盖已证明可接受的风险切片</li>
+<li><input disabled="" type="checkbox"> 系统级暂停和回滚责任人明确</li>
+</ul>
+<h3 id="置信度与证据"><a href="#置信度与证据" class="headerlink" title="置信度与证据"></a>置信度与证据</h3><ul>
+<li><input disabled="" type="checkbox"> 每个分数都定义了预测事件，不称未经验证的分数为正确概率</li>
+<li><input disabled="" type="checkbox"> 校准集、模型版本、Prompt 版本和适用切片可追溯</li>
+<li><input disabled="" type="checkbox"> 同时报告覆盖率、选择性风险、样本量和漂移</li>
+<li><input disabled="" type="checkbox"> 证据完整度由来源、版本、新鲜度和冲突规则计算</li>
+<li><input disabled="" type="checkbox"> 权限和硬规则不会被置信度覆盖</li>
+</ul>
+<h3 id="审批点与界面"><a href="#审批点与界面" class="headerlink" title="审批点与界面"></a>审批点与界面</h3><ul>
+<li><input disabled="" type="checkbox"> Plan、Tool、Result 和 Exception 的职责没有混用</li>
+<li><input disabled="" type="checkbox"> 副作用动作在执行前暂停</li>
+<li><input disabled="" type="checkbox"> 审核人看到规范化参数、差异、反证和缺失证据</li>
+<li><input disabled="" type="checkbox"> 批准不是默认选项，高风险决定有结构化原因</li>
+<li><input disabled="" type="checkbox"> 监控审批疲劳、异常速度和校验样本检出率</li>
+</ul>
+<h3 id="状态与并发"><a href="#状态与并发" class="headerlink" title="状态与并发"></a>状态与并发</h3><ul>
+<li><input disabled="" type="checkbox"> <code>PENDING/APPROVED/REJECTED/EXPIRED/CANCELLED/EXECUTED</code> 语义明确</li>
+<li><input disabled="" type="checkbox"> 终态不会被恢复成可执行状态</li>
+<li><input disabled="" type="checkbox"> 双人审批验证稳定人员身份和职责分离</li>
+<li><input disabled="" type="checkbox"> 并发领取只能有一个执行者成功</li>
+<li><input disabled="" type="checkbox"> 取消和超时会传播到 Agent、队列和工具分支</li>
+</ul>
+<h3 id="TOCTOU-与防重放"><a href="#TOCTOU-与防重放" class="headerlink" title="TOCTOU 与防重放"></a>TOCTOU 与防重放</h3><ul>
+<li><input disabled="" type="checkbox"> 审批绑定工具、参数、租户、资源版本、证据摘要和有效期</li>
+<li><input disabled="" type="checkbox"> 执行时重新鉴权、重新检查策略和业务不变量</li>
+<li><input disabled="" type="checkbox"> 下游副作用支持稳定幂等键与结果查询</li>
+<li><input disabled="" type="checkbox"> 已执行、已拒绝和已过期审批不能重放</li>
+<li><input disabled="" type="checkbox"> 提交状态未知时进入查询或对账，不盲目换键重试</li>
+</ul>
+<h3 id="审计与责任"><a href="#审计与责任" class="headerlink" title="审计与责任"></a>审计与责任</h3><ul>
+<li><input disabled="" type="checkbox"> 决策事件、审批证据和执行证据能够关联同一 Trace</li>
+<li><input disabled="" type="checkbox"> 审核页面版本和展示字段可追溯</li>
+<li><input disabled="" type="checkbox"> 敏感 Artifact 使用独立权限、加密和保留策略</li>
+<li><input disabled="" type="checkbox"> 审计链的防篡改边界和密钥责任明确</li>
+<li><input disabled="" type="checkbox"> 审核人、策略所有者、工具团队和业务所有者责任清楚</li>
+</ul>
+<h3 id="测试与演练"><a href="#测试与演练" class="headerlink" title="测试与演练"></a>测试与演练</h3><ul>
+<li><input disabled="" type="checkbox"> 决策表、单调性、变形、状态机和并发测试进入 CI</li>
+<li><input disabled="" type="checkbox"> 覆盖策略不可用、身份不可用、审计不可用和队列超载</li>
+<li><input disabled="" type="checkbox"> 覆盖审批后参数变化、资源变化和角色撤销</li>
+<li><input disabled="" type="checkbox"> 使用已知错误的校验样本测量人工控制有效性</li>
+<li><input disabled="" type="checkbox"> 每次真实事件都沉淀为最小复现样本和故障演练</li>
+</ul>
+<h2 id="二十五、小结"><a href="#二十五、小结" class="headerlink" title="二十五、小结"></a>二十五、小结</h2><p>Human-in-the-loop 的目标不是把责任转移给一个按钮后面的人，而是让系统在风险真正需要人类判断或授权的节点停下来，并给人足够、独立、可理解的证据。</p>
+<p>完整设计应形成下面这条闭环：</p>
+<ol>
+<li>用影响、可逆性、权限、金额和数据敏感度确定动作固有风险。</li>
+<li>用硬规则先守住不可越过的权限与业务边界。</li>
+<li>用证据完整度、经过校准的不确定性和分布外信号选择自动、复核、审批或升级。</li>
+<li>把审批绑定到规范化动作快照，而不是模糊的 Agent 运行。</li>
+<li>用明确状态机处理批准、拒绝、过期、取消和执行。</li>
+<li>执行前重新鉴权和比较资源版本，控制 TOCTOU。</li>
+<li>用一次性消费、下游幂等和最终状态查询防止重放与重复副作用。</li>
+<li>同时测量队列效率、人工判断质量和控制是否真正阻断错误。</li>
+<li>保存足以重建决定与业务结果的审计证据。</li>
+<li>通过故障注入和定期演练验证人工链路在压力下仍然有效。</li>
+</ol>
+<p>最终需要证明的不是“每个高风险请求都有人点过同意”，而是：</p>
+<p><strong>系统知道什么风险需要人介入，人知道自己批准的确切动作，批准后的任何变化都会使旧授权失效，而且每次决定与执行都能被独立复核。</strong></p>
+<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><p>以下资料核对时间为 2026-07-26。关键规范性事实优先引用官方框架、官方产品文档或原始论文。</p>
+<ul>
+<li><a target="_blank" rel="noopener" href="https://airc.nist.gov/airmf-resources/airmf/5-sec-core/">NIST AI RMF Core</a></li>
+<li><a target="_blank" rel="noopener" href="https://doi.org/10.6028/NIST.AI.100-1">NIST AI Risk Management Framework 1.0</a></li>
+<li><a target="_blank" rel="noopener" href="https://doi.org/10.6028/NIST.AI.600-1">NIST AI RMF Generative Artificial Intelligence Profile</a></li>
+<li><a target="_blank" rel="noopener" href="https://openai.com/business/guides-and-resources/a-practical-guide-to-building-ai-agents/">OpenAI：A Practical Guide to Building AI Agents</a></li>
+<li><a target="_blank" rel="noopener" href="https://openai.github.io/openai-agents-python/human_in_the_loop/">OpenAI Agents SDK：Human-in-the-loop</a></li>
+<li><a target="_blank" rel="noopener" href="https://digital-strategy.ec.europa.eu/en/library/ethics-guidelines-trustworthy-ai">European Commission：Ethics Guidelines for Trustworthy AI</a></li>
+<li><a target="_blank" rel="noopener" href="https://proceedings.mlr.press/v70/guo17a.html">Guo 等：On Calibration of Modern Neural Networks</a></li>
+<li><a target="_blank" rel="noopener" href="https://arxiv.org/abs/1705.08500">Geifman 与 El-Yaniv：Selective Classification for Deep Neural Networks</a></li>
+<li><a target="_blank" rel="noopener" href="https://doi.org/10.1006/ijhc.1999.0252">Skitka、Mosier 与 Burdick：Does Automation Bias Decision-Making?</a></li>
+<li><a target="_blank" rel="noopener" href="https://www.rfc-editor.org/rfc/rfc8785">IETF RFC 8785：JSON Canonicalization Scheme</a></li>
+</ul>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/AI%E6%B5%8B%E8%AF%95/" rel="tag"># AI测试</a>
+              <a href="/tags/%E9%A3%8E%E9%99%A9%E6%8E%A7%E5%88%B6/" rel="tag"># 风险控制</a>
+              <a href="/tags/%E8%B4%A8%E9%87%8F%E5%B7%A5%E7%A8%8B/" rel="tag"># 质量工程</a>
+              <a href="/tags/%E7%8A%B6%E6%80%81%E6%9C%BA/" rel="tag"># 状态机</a>
+              <a href="/tags/Human-in-the-loop/" rel="tag"># Human-in-the-loop</a>
+              <a href="/tags/Agent%E5%AE%A1%E6%89%B9/" rel="tag"># Agent审批</a>
+              <a href="/tags/%E7%BD%AE%E4%BF%A1%E5%BA%A6%E6%A0%A1%E5%87%86/" rel="tag"># 置信度校准</a>
+              <a href="/tags/%E5%AE%A1%E8%AE%A1%E8%AF%81%E6%8D%AE/" rel="tag"># 审计证据</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2026/04/18/AI%E6%B5%8B%E8%AF%95-31-%E5%A4%9AAgent%E7%B3%BB%E7%BB%9F%E6%80%8E%E4%B9%88%E8%AE%BE%E8%AE%A1%E8%A7%92%E8%89%B2%E5%A7%94%E6%B4%BE%E5%86%B2%E7%AA%81%E5%A4%84%E7%90%86%E5%92%8C%E9%AA%8C%E6%94%B6%E6%A0%87%E5%87%86/" rel="prev" title="AI测试-31-多Agent系统怎么设计角色委派冲突处理和验收标准">
+                  <i class="fa fa-angle-left"></i> AI测试-31-多Agent系统怎么设计角色委派冲突处理和验收标准
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2026/04/22/AI%E6%B5%8B%E8%AF%95-33-AI%E5%8A%9F%E8%83%BD%E6%80%8E%E4%B9%88%E5%81%9A%E6%A8%A1%E5%9E%8B%E9%99%8D%E7%BA%A7%E5%8A%9F%E8%83%BD%E7%86%94%E6%96%AD%E5%92%8C%E7%A1%AE%E5%AE%9A%E6%80%A7%E5%85%9C%E5%BA%95/" rel="next" title="AI测试-33-AI功能怎么做模型降级功能熔断和确定性兜底">
+                  AI测试-33-AI功能怎么做模型降级功能熔断和确定性兜底 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">2.1m</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">129:05</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

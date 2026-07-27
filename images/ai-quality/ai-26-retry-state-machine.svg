@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">模型 API 重试、未知提交状态与供应商切换状态机</title>
+  <desc id="desc">从准入检查开始，按成功、可重试错误、不可重试错误、流式中断和未知提交状态分类；可重试路径必须通过预算检查与随机退避，未知状态先对账，供应商切换只在副作用边界允许时执行。</desc>
+  <defs>
+    <style>
+      .bg { fill: #f8fafc; }
+      .title { fill: #172033; font: 700 29px Inter, "PingFang SC", "Microsoft YaHei", sans-serif; }
+      .subtitle { fill: #526079; font: 400 16px Inter, "PingFang SC", "Microsoft YaHei", sans-serif; }
+      .state { fill: #172033; font: 700 17px Inter, "PingFang SC", "Microsoft YaHei", sans-serif; }
+      .detail { fill: #526079; font: 400 14px Inter, "PingFang SC", "Microsoft YaHei", sans-serif; }
+      .edge { fill: #42516b; font: 600 14px Inter, "PingFang SC", "Microsoft YaHei", sans-serif; }
+      .line { stroke: #64748b; stroke-width: 2.2; fill: none; }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#64748b"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1280" height="720"/>
+  <text class="title" x="54" y="54">重试状态机：错误码只是输入，副作用状态决定下一步</text>
+  <text class="subtitle" x="54" y="83">逻辑请求 ID 始终不变；每个物理 Attempt 使用独立 attempt ID，并保留供应商 request ID</text>
+
+  <rect x="54" y="116" width="170" height="82" rx="8" fill="#e7efff" stroke="#7fa4df" stroke-width="2"/>
+  <text class="state" x="139" y="149" text-anchor="middle">准入检查</text>
+  <text class="detail" x="139" y="174" text-anchor="middle">并发 · Rate · Token</text>
+
+  <path class="line" d="M224 157 H292" marker-end="url(#arrow)"/>
+  <text class="edge" x="258" y="145" text-anchor="middle">允许</text>
+
+  <rect x="302" y="116" width="188" height="82" rx="8" fill="#fff0d9" stroke="#e8ab55" stroke-width="2"/>
+  <text class="state" x="396" y="149" text-anchor="middle">发送 Attempt</text>
+  <text class="detail" x="396" y="174" text-anchor="middle">connect / read timeout</text>
+
+  <path class="line" d="M490 157 H558" marker-end="url(#arrow)"/>
+  <text class="edge" x="524" y="145" text-anchor="middle">响应 / 异常</text>
+
+  <polygon points="665,105 772,157 665,209 558,157" fill="#f4e9ff" stroke="#aa82d4" stroke-width="2"/>
+  <text class="state" x="665" y="151" text-anchor="middle">分类结果</text>
+  <text class="detail" x="665" y="175" text-anchor="middle">状态 + 阶段 + 语义</text>
+
+  <path class="line" d="M772 137 C835 105, 860 105, 904 132" marker-end="url(#arrow)"/>
+  <text class="edge" x="836" y="100" text-anchor="middle">2xx 且完整终态</text>
+  <rect x="914" y="99" width="170" height="72" rx="36" fill="#dff4ee" stroke="#77bfa9" stroke-width="2"/>
+  <text class="state" x="999" y="142" text-anchor="middle">SUCCESS</text>
+
+  <path class="line" d="M750 188 C805 228, 836 246, 904 252" marker-end="url(#arrow)"/>
+  <text class="edge" x="835" y="222" text-anchor="middle">400 / 401 / 403</text>
+  <rect x="914" y="218" width="170" height="72" rx="36" fill="#ffe7e7" stroke="#df8888" stroke-width="2"/>
+  <text class="state" x="999" y="249" text-anchor="middle">FAILED</text>
+  <text class="detail" x="999" y="271" text-anchor="middle">修请求，不盲重试</text>
+
+  <path class="line" d="M635 208 V280" marker-end="url(#arrow)"/>
+  <text class="edge" x="516" y="248">429 / 临时 5xx / 明确未提交的网络故障</text>
+  <polygon points="635,280 745,332 635,384 525,332" fill="#e4f4ff" stroke="#6daed6" stroke-width="2"/>
+  <text class="state" x="635" y="326" text-anchor="middle">预算仍允许？</text>
+  <text class="detail" x="635" y="350" text-anchor="middle">attempt · deadline · quota</text>
+
+  <path class="line" d="M525 332 H418" marker-end="url(#arrow)"/>
+  <text class="edge" x="475" y="320" text-anchor="middle">是</text>
+  <rect x="230" y="294" width="178" height="78" rx="8" fill="#f4e9ff" stroke="#aa82d4" stroke-width="2"/>
+  <text class="state" x="319" y="325" text-anchor="middle">等待</text>
+  <text class="detail" x="319" y="350" text-anchor="middle">max(Retry-After, jitter)</text>
+
+  <path class="line" d="M230 333 C139 333, 110 250, 139 208" marker-end="url(#arrow)"/>
+  <text class="edge" x="118" y="282" text-anchor="middle">重新准入</text>
+
+  <path class="line" d="M682 376 C733 421, 829 424, 914 397" marker-end="url(#arrow)"/>
+  <text class="edge" x="805" y="411" text-anchor="middle">否</text>
+  <rect x="914" y="356" width="170" height="82" rx="8" fill="#eef1f5" stroke="#9aa7b8" stroke-width="2"/>
+  <text class="state" x="999" y="388" text-anchor="middle">降级 / 切换</text>
+  <text class="detail" x="999" y="413" text-anchor="middle">只在语义与副作用允许时</text>
+
+  <path class="line" d="M664 209 C670 446, 692 488, 775 505" marker-end="url(#arrow)"/>
+  <text class="edge" x="704" y="459">read timeout · 流中断 · 已发请求但无终态</text>
+  <rect x="785" y="467" width="212" height="82" rx="8" fill="#fff0d9" stroke="#e8ab55" stroke-width="2"/>
+  <text class="state" x="891" y="499" text-anchor="middle">UNKNOWN_COMMIT</text>
+  <text class="detail" x="891" y="524" text-anchor="middle">不拼接半截结果，不直接执行工具</text>
+
+  <path class="line" d="M997 508 H1060" marker-end="url(#arrow)"/>
+  <rect x="1070" y="467" width="156" height="82" rx="8" fill="#e7efff" stroke="#7fa4df" stroke-width="2"/>
+  <text class="state" x="1148" y="499" text-anchor="middle">对账</text>
+  <text class="detail" x="1148" y="524" text-anchor="middle">查询 ID / 幂等账本</text>
+
+  <path class="line" d="M1148 467 V179 C1148 142, 1122 136, 1094 136" marker-end="url(#arrow)"/>
+  <text class="edge" x="1162" y="329">确认已完成</text>
+
+  <path class="line" d="M1148 549 V615 H1012" marker-end="url(#arrow)"/>
+  <text class="edge" x="1090" y="603" text-anchor="middle">仍无法确认</text>
+  <rect x="812" y="579" width="190" height="72" rx="36" fill="#ffe7e7" stroke="#df8888" stroke-width="2"/>
+  <text class="state" x="907" y="611" text-anchor="middle">NEEDS_RECONCILE</text>
+  <text class="detail" x="907" y="633" text-anchor="middle">交给业务补偿流程</text>
+
+  <rect x="54" y="465" width="604" height="178" rx="8" fill="#ffffff" stroke="#d9e1ec" stroke-width="2"/>
+  <text class="state" x="78" y="498">供应商切换的边界</text>
+  <circle cx="85" cy="532" r="5" fill="#6daed6"/>
+  <text class="detail" x="102" y="537">输入、工具 Schema、输出结构、内容策略和 Token 口径先经过适配与回归</text>
+  <circle cx="85" cy="566" r="5" fill="#77bfa9"/>
+  <text class="detail" x="102" y="571">只切换未提交的模型生成；已经产生现实副作用的工具动作先对账</text>
+  <circle cx="85" cy="600" r="5" fill="#e8ab55"/>
+  <text class="detail" x="102" y="605">主供应商熔断器与备用供应商隔离舱独立，避免同一故障耗尽全部并发</text>
+  <circle cx="85" cy="634" r="5" fill="#aa82d4"/>
+  <text class="detail" x="102" y="639">切换也是一次新 Attempt，继续服从原始 overall deadline 与成本上限</text>
+</svg>

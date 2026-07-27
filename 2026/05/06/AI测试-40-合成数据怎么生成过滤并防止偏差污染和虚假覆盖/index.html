@@ -1,0 +1,1461 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="合成数据最容易制造一种工程错觉：数据量增加得很快，覆盖报表也很快变绿，于是生成流水线看起来比真实数据建设更高效。 问题在于，生成器并不观察真实世界。它只是根据种子、Prompt、模型参数和已有分布，产出一个“像数据”的对象。只要种子遗漏了尾部场景，生成器就可能把遗漏放大；只要生成器把政策理解错了，同源验证器就可能用相同理由证明错误标签正确；只要私有训练资料被模型记住，改了姓名的输出仍可能逐字泄漏罕">
+<meta property="og:type" content="article">
+<meta property="og:title" content="AI测试-40-合成数据怎么生成过滤并防止偏差污染和虚假覆盖">
+<meta property="og:url" content="https://paynewinnt.github.io/2026/05/06/AI%E6%B5%8B%E8%AF%95-40-%E5%90%88%E6%88%90%E6%95%B0%E6%8D%AE%E6%80%8E%E4%B9%88%E7%94%9F%E6%88%90%E8%BF%87%E6%BB%A4%E5%B9%B6%E9%98%B2%E6%AD%A2%E5%81%8F%E5%B7%AE%E6%B1%A1%E6%9F%93%E5%92%8C%E8%99%9A%E5%81%87%E8%A6%86%E7%9B%96/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="合成数据最容易制造一种工程错觉：数据量增加得很快，覆盖报表也很快变绿，于是生成流水线看起来比真实数据建设更高效。 问题在于，生成器并不观察真实世界。它只是根据种子、Prompt、模型参数和已有分布，产出一个“像数据”的对象。只要种子遗漏了尾部场景，生成器就可能把遗漏放大；只要生成器把政策理解错了，同源验证器就可能用相同理由证明错误标签正确；只要私有训练资料被模型记住，改了姓名的输出仍可能逐字泄漏罕">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://paynewinnt.github.io/images/ai-quality/ai-40-synthetic-data-pipeline.svg">
+<meta property="og:image" content="https://paynewinnt.github.io/images/ai-quality/ai-40-risk-test-matrix.svg">
+<meta property="article:published_time" content="2026-05-06T12:30:00.000Z">
+<meta property="article:modified_time" content="2026-05-06T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="AI测试">
+<meta property="article:tag" content="质量工程">
+<meta property="article:tag" content="数据血缘">
+<meta property="article:tag" content="合成数据">
+<meta property="article:tag" content="偏差测试">
+<meta property="article:tag" content="差分隐私">
+<meta property="article:tag" content="泄漏检测">
+<meta property="article:tag" content="失败注入">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://paynewinnt.github.io/images/ai-quality/ai-40-synthetic-data-pipeline.svg">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2026/05/06/AI%E6%B5%8B%E8%AF%95-40-%E5%90%88%E6%88%90%E6%95%B0%E6%8D%AE%E6%80%8E%E4%B9%88%E7%94%9F%E6%88%90%E8%BF%87%E6%BB%A4%E5%B9%B6%E9%98%B2%E6%AD%A2%E5%81%8F%E5%B7%AE%E6%B1%A1%E6%9F%93%E5%92%8C%E8%99%9A%E5%81%87%E8%A6%86%E7%9B%96/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2026/05/06/AI%E6%B5%8B%E8%AF%95-40-%E5%90%88%E6%88%90%E6%95%B0%E6%8D%AE%E6%80%8E%E4%B9%88%E7%94%9F%E6%88%90%E8%BF%87%E6%BB%A4%E5%B9%B6%E9%98%B2%E6%AD%A2%E5%81%8F%E5%B7%AE%E6%B1%A1%E6%9F%93%E5%92%8C%E8%99%9A%E5%81%87%E8%A6%86%E7%9B%96/","path":"2026/05/06/AI测试-40-合成数据怎么生成过滤并防止偏差污染和虚假覆盖/","title":"AI测试-40-合成数据怎么生成过滤并防止偏差污染和虚假覆盖"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>AI测试-40-合成数据怎么生成过滤并防止偏差污染和虚假覆盖 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E5%B7%A5%E7%A8%8B%E5%AE%9A%E4%B9%89%E4%B8%8E%E8%BE%B9%E7%95%8C%EF%BC%9A%E5%90%88%E6%88%90%E7%9A%84%E6%98%AF%E8%AE%B0%E5%BD%95%EF%BC%8C%E4%B8%8D%E6%98%AF%E4%BA%8B%E5%AE%9E"><span class="nav-number">1.</span> <span class="nav-text">一、工程定义与边界：合成的是记录，不是事实</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-1-%E4%BB%80%E4%B9%88%E7%AE%97%E5%90%88%E6%88%90%E6%95%B0%E6%8D%AE"><span class="nav-number">1.1.</span> <span class="nav-text">1.1 什么算合成数据</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-2-%E5%9B%9B%E7%B1%BB%E7%94%A8%E9%80%94%E5%BF%85%E9%A1%BB%E5%88%86%E5%BC%80"><span class="nav-number">1.2.</span> <span class="nav-text">1.2 四类用途必须分开</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-3-%E6%9C%AC%E6%96%87%E4%B8%8D%E8%A7%A3%E5%86%B3%E4%BB%80%E4%B9%88"><span class="nav-number">1.3.</span> <span class="nav-text">1.3 本文不解决什么</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E8%B4%AF%E7%A9%BF%E5%9C%BA%E6%99%AF%EF%BC%9A%E9%80%80%E6%AC%BE%E6%B5%8B%E8%AF%95%E4%B8%BA%E4%BB%80%E4%B9%88%E9%9C%80%E8%A6%81%E5%90%88%E6%88%90%E6%95%B0%E6%8D%AE"><span class="nav-number">2.</span> <span class="nav-text">二、贯穿场景：退款测试为什么需要合成数据</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-%E7%9C%9F%E5%AE%9E%E6%95%B0%E6%8D%AE%E6%8F%90%E4%BE%9B%E9%94%9A%E7%82%B9%EF%BC%8C%E4%BD%86%E4%B8%8D%E4%B8%80%E5%AE%9A%E6%8F%90%E4%BE%9B%E6%89%80%E6%9C%89%E9%A3%8E%E9%99%A9"><span class="nav-number">2.1.</span> <span class="nav-text">2.1 真实数据提供锚点，但不一定提供所有风险</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-%E5%90%88%E6%88%90%E6%95%B0%E6%8D%AE%E4%B8%8D%E8%83%BD%E6%9B%BF%E4%BB%A3%E7%9C%9F%E5%AE%9E%E9%94%9A%E7%82%B9"><span class="nav-number">2.2.</span> <span class="nav-text">2.2 合成数据不能替代真实锚点</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-3-%E5%85%88%E5%86%99%E7%94%A8%E9%80%94%E5%A5%91%E7%BA%A6"><span class="nav-number">2.3.</span> <span class="nav-text">2.3 先写用途契约</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E5%AE%8C%E6%95%B4%E6%9E%B6%E6%9E%84%EF%BC%9A%E6%8E%A7%E5%88%B6%E9%9D%A2%E3%80%81%E6%95%B0%E6%8D%AE%E9%9D%A2%E5%92%8C%E8%AF%81%E6%8D%AE%E9%9D%A2"><span class="nav-number">3.</span> <span class="nav-text">三、完整架构：控制面、数据面和证据面</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#3-1-%E6%8E%A7%E5%88%B6%E9%9D%A2"><span class="nav-number">3.1.</span> <span class="nav-text">3.1 控制面</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-2-%E6%95%B0%E6%8D%AE%E9%9D%A2"><span class="nav-number">3.2.</span> <span class="nav-text">3.2 数据面</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-3-%E8%AF%81%E6%8D%AE%E9%9D%A2"><span class="nav-number">3.3.</span> <span class="nav-text">3.3 证据面</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E6%95%B0%E6%8D%AE%E6%A8%A1%E5%9E%8B%EF%BC%9A%E6%8A%8A%E7%94%9F%E6%88%90%E8%AE%B0%E5%BD%95%E5%8F%98%E6%88%90%E5%8F%AF%E8%BF%BD%E8%B8%AA%E5%AF%B9%E8%B1%A1"><span class="nav-number">4.</span> <span class="nav-text">四、数据模型：把生成记录变成可追踪对象</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#4-1-%E6%9C%80%E5%B0%8F%E8%AE%B0%E5%BD%95%E7%BB%93%E6%9E%84"><span class="nav-number">4.1.</span> <span class="nav-text">4.1 最小记录结构</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-2-%E8%AE%B0%E5%BD%95-ID-%E4%B8%8D%E6%89%BF%E6%8B%85%E5%85%A8%E9%83%A8%E8%AF%AD%E4%B9%89"><span class="nav-number">4.2.</span> <span class="nav-text">4.2 记录 ID 不承担全部语义</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-3-%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F%E9%87%87%E7%94%A8%E8%BF%BD%E5%8A%A0%E4%BA%8B%E4%BB%B6"><span class="nav-number">4.3.</span> <span class="nav-text">4.3 生命周期采用追加事件</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81%E7%A7%8D%E5%AD%90%E5%88%86%E7%B1%BB%EF%BC%9A%E4%B8%8D%E6%98%AF%E7%BB%99-Prompt-%E5%87%A0%E4%B8%AA%E4%BE%8B%E5%AD%90"><span class="nav-number">5.</span> <span class="nav-text">五、种子分类：不是给 Prompt 几个例子</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#5-1-%E7%A7%8D%E5%AD%90%E5%86%B3%E5%AE%9A%E7%94%9F%E6%88%90%E7%A9%BA%E9%97%B4%E7%9A%84%E4%B8%8A%E9%99%90"><span class="nav-number">5.1.</span> <span class="nav-text">5.1 种子决定生成空间的上限</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-2-%E6%AF%8F%E4%B8%AA%E7%A7%8D%E5%AD%90%E5%8C%85%E5%90%AB%E5%8F%8D%E4%BA%8B%E5%AE%9E%E8%BD%B4"><span class="nav-number">5.2.</span> <span class="nav-text">5.2 每个种子包含反事实轴</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-3-%E7%9C%9F%E5%AE%9E%E9%94%9A%E7%82%B9%E6%9C%89%E4%B8%89%E7%A7%8D%E8%A7%92%E8%89%B2"><span class="nav-number">5.3.</span> <span class="nav-text">5.3 真实锚点有三种角色</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-4-%E9%94%9A%E7%82%B9%E4%B8%8D%E6%98%AF%E8%A6%81%E8%A2%AB%E5%A4%8D%E5%88%B6%E8%BF%9B-Prompt-%E7%9A%84%E5%8E%9F%E6%96%87"><span class="nav-number">5.4.</span> <span class="nav-text">5.4 锚点不是要被复制进 Prompt 的原文</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E7%94%9F%E6%88%90%E5%99%A8%E7%89%88%E6%9C%AC%EF%BC%9A%E5%8F%AF%E8%BF%BD%E6%BA%AF%E4%B8%8D%E7%AD%89%E4%BA%8E%E5%8F%AF%E7%B2%BE%E7%A1%AE%E5%A4%8D%E7%8E%B0"><span class="nav-number">6.</span> <span class="nav-text">六、生成器版本：可追溯不等于可精确复现</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#6-1-%E4%B8%80%E6%AC%A1%E7%94%9F%E6%88%90%E6%89%B9%E6%AC%A1%E5%86%BB%E7%BB%93%E4%BB%80%E4%B9%88"><span class="nav-number">6.1.</span> <span class="nav-text">6.1 一次生成批次冻结什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-2-%E6%89%B9%E6%AC%A1%E4%B9%8B%E9%97%B4%E5%8F%AA%E6%94%B9%E5%8F%98%E4%B8%80%E4%B8%AA%E4%B8%BB%E8%A6%81%E5%8F%98%E9%87%8F"><span class="nav-number">6.2.</span> <span class="nav-text">6.2 批次之间只改变一个主要变量</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E7%8B%AC%E7%AB%8B%E9%AA%8C%E8%AF%81%EF%BC%9A%E5%88%87%E6%96%AD%E7%94%9F%E6%88%90%E5%99%A8%E7%BB%99%E8%87%AA%E5%B7%B1%E9%A2%81%E5%8F%91%E6%A0%87%E7%AD%BE%E7%9A%84%E5%BE%AA%E7%8E%AF"><span class="nav-number">7.</span> <span class="nav-text">七、独立验证：切断生成器给自己颁发标签的循环</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#7-1-%E6%A0%87%E7%AD%BE%E8%87%AA%E8%AF%81%E5%BE%AA%E7%8E%AF%E6%80%8E%E6%A0%B7%E5%BD%A2%E6%88%90"><span class="nav-number">7.1.</span> <span class="nav-text">7.1 标签自证循环怎样形成</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-2-%E9%AA%8C%E8%AF%81%E4%BC%98%E5%85%88%E7%BA%A7"><span class="nav-number">7.2.</span> <span class="nav-text">7.2 验证优先级</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-3-%E9%AA%8C%E8%AF%81%E5%99%A8%E5%8F%AA%E7%9C%8B%E5%BF%85%E8%A6%81%E4%BF%A1%E6%81%AF"><span class="nav-number">7.3.</span> <span class="nav-text">7.3 验证器只看必要信息</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-4-%E5%88%86%E6%AD%A7%E4%B8%8D%E6%98%AF%E5%99%AA%E5%A3%B0%EF%BC%8C%E8%80%8C%E6%98%AF%E8%B5%84%E4%BA%A7"><span class="nav-number">7.4.</span> <span class="nav-text">7.4 分歧不是噪声，而是资产</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81%E8%BF%87%E6%BB%A4%E6%B5%81%E6%B0%B4%E7%BA%BF%EF%BC%9A%E8%A7%84%E5%88%99%E3%80%81%E6%A8%A1%E5%9E%8B%E5%92%8C%E4%BA%BA%E5%B7%A5%E5%90%84%E8%87%AA%E8%B4%9F%E8%B4%A3%E4%BB%80%E4%B9%88"><span class="nav-number">8.</span> <span class="nav-text">八、过滤流水线：规则、模型和人工各自负责什么</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#8-1-%E8%A7%84%E5%88%99%E8%BF%87%E6%BB%A4%E8%B4%9F%E8%B4%A3%E5%8F%AF%E7%A1%AE%E5%AE%9A%E7%BA%A6%E6%9D%9F"><span class="nav-number">8.1.</span> <span class="nav-text">8.1 规则过滤负责可确定约束</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-2-%E6%A8%A1%E5%9E%8B%E8%BF%87%E6%BB%A4%E8%B4%9F%E8%B4%A3%E5%8F%91%E7%8E%B0%E5%80%99%E9%80%89%EF%BC%8C%E4%B8%8D%E8%B4%9F%E8%B4%A3%E6%8A%B9%E5%B9%B3%E4%B8%8D%E7%A1%AE%E5%AE%9A%E6%80%A7"><span class="nav-number">8.2.</span> <span class="nav-text">8.2 模型过滤负责发现候选，不负责抹平不确定性</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-3-%E4%BA%BA%E5%B7%A5%E8%BF%87%E6%BB%A4%E5%A4%84%E7%90%86%E4%BB%B7%E5%80%BC%E5%88%A4%E6%96%AD%E5%92%8C%E8%AF%81%E6%8D%AE%E4%B8%8D%E8%B6%B3"><span class="nav-number">8.3.</span> <span class="nav-text">8.3 人工过滤处理价值判断和证据不足</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-4-%E8%BF%87%E6%BB%A4%E9%A1%BA%E5%BA%8F%E8%A6%81%E5%87%8F%E5%B0%91%E6%98%82%E8%B4%B5%E5%88%A4%E6%96%AD"><span class="nav-number">8.4.</span> <span class="nav-text">8.4 过滤顺序要减少昂贵判断</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E5%8E%BB%E9%87%8D%EF%BC%9A%E7%9B%B8%E4%BC%BC%E6%98%AF%E5%A4%8D%E6%A0%B8%E7%BA%BF%E7%B4%A2%EF%BC%8C%E4%B8%8D%E6%98%AF%E5%88%A0%E9%99%A4%E7%90%86%E7%94%B1"><span class="nav-number">9.</span> <span class="nav-text">九、去重：相似是复核线索，不是删除理由</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#9-1-%E7%B2%BE%E7%A1%AE%E5%8E%BB%E9%87%8D%E4%BF%9D%E7%95%99%E8%AF%AD%E4%B9%89%E7%AC%A6%E5%8F%B7"><span class="nav-number">9.1.</span> <span class="nav-text">9.1 精确去重保留语义符号</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-2-%E8%AF%AD%E4%B9%89%E5%8E%BB%E9%87%8D%E5%8F%AA%E4%BA%A7%E7%94%9F%E5%80%99%E9%80%89%E7%B0%87"><span class="nav-number">9.2.</span> <span class="nav-text">9.2 语义去重只产生候选簇</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-3-%E7%BB%9F%E8%AE%A1%E7%B0%87%EF%BC%8C%E8%80%8C%E4%B8%8D%E5%8F%AA%E7%BB%9F%E8%AE%A1%E8%A1%8C"><span class="nav-number">9.3.</span> <span class="nav-text">9.3 统计簇，而不只统计行</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81%E5%81%8F%E5%B7%AE%E6%94%BE%E5%A4%A7%EF%BC%9A%E7%94%9F%E6%88%90%E5%99%A8%E4%BC%9A%E5%BF%A0%E5%AE%9E%E5%A4%8D%E5%88%B6%E7%BC%BA%E5%8F%A3%EF%BC%8C%E4%B9%9F%E4%BC%9A%E8%BF%9B%E4%B8%80%E6%AD%A5%E5%8E%8B%E7%BC%A9%E5%B0%BE%E9%83%A8"><span class="nav-number">10.</span> <span class="nav-text">十、偏差放大：生成器会忠实复制缺口，也会进一步压缩尾部</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#10-1-%E5%85%88%E6%AF%94%E8%BE%83%E7%94%9F%E6%88%90%E5%89%8D%E5%90%8E%E7%9A%84%E6%9D%A1%E4%BB%B6%E5%88%86%E5%B8%83"><span class="nav-number">10.1.</span> <span class="nav-text">10.1 先比较生成前后的条件分布</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-2-%E8%BF%87%E6%BB%A4%E6%9C%AC%E8%BA%AB%E4%B9%9F%E4%BC%9A%E5%88%B6%E9%80%A0%E5%81%8F%E5%B7%AE"><span class="nav-number">10.2.</span> <span class="nav-text">10.2 过滤本身也会制造偏差</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-3-%E9%80%92%E5%BD%92%E5%9B%9E%E6%B5%81%E8%A6%81%E4%BF%9D%E7%95%99%E7%9C%9F%E5%AE%9E%E6%95%B0%E6%8D%AE%E9%94%9A"><span class="nav-number">10.3.</span> <span class="nav-text">10.3 递归回流要保留真实数据锚</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E9%9A%90%E7%A7%81%E8%AF%AF%E5%8C%BA%EF%BC%9A%E8%99%9A%E6%9E%84%E4%BA%BA%E7%89%A9%E4%B8%8D%E7%AD%89%E4%BA%8E%E6%95%B0%E5%AD%A6%E5%8C%BF%E5%90%8D"><span class="nav-number">11.</span> <span class="nav-text">十一、隐私误区：虚构人物不等于数学匿名</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#11-1-%E6%99%AE%E9%80%9A%E5%90%88%E6%88%90%E6%95%B0%E6%8D%AE%E5%8F%AF%E8%83%BD%E6%B3%84%E6%BC%8F%E4%BB%80%E4%B9%88"><span class="nav-number">11.1.</span> <span class="nav-text">11.1 普通合成数据可能泄漏什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-2-%E6%B3%84%E6%BC%8F%E5%93%A8%E5%85%B5%E6%98%AF%E4%B8%80%E7%A7%8D%E6%B5%8B%E8%AF%95%EF%BC%8C%E4%B8%8D%E6%98%AF%E9%9A%90%E7%A7%81%E8%AF%81%E6%98%8E"><span class="nav-number">11.2.</span> <span class="nav-text">11.2 泄漏哨兵是一种测试，不是隐私证明</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-3-%E5%B7%AE%E5%88%86%E9%9A%90%E7%A7%81%E4%BF%9D%E8%AF%81%E7%9A%84%E5%AF%B9%E8%B1%A1%E5%92%8C%E6%9D%A1%E4%BB%B6"><span class="nav-number">11.3.</span> <span class="nav-text">11.3 差分隐私保证的对象和条件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-4-DP-%E4%B8%8D%E6%98%AF%E9%9B%B6%E4%BB%A3%E4%BB%B7%E5%8C%85%E8%A3%85%E5%B1%82"><span class="nav-number">11.4.</span> <span class="nav-text">11.4 DP 不是零代价包装层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-5-%E4%B8%8D%E8%A6%81%E6%89%8B%E5%86%99%E7%94%9F%E4%BA%A7%E7%BA%A7-DP-%E7%AE%97%E6%B3%95"><span class="nav-number">11.5.</span> <span class="nav-text">11.5 不要手写生产级 DP 算法</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E6%B5%8B%E8%AF%95%E6%B1%A1%E6%9F%93%EF%BC%9A%E5%90%88%E6%88%90%E5%99%A8%E5%8F%AF%E4%BB%A5%E6%8A%8A%E5%AF%86%E5%B0%81%E7%AD%94%E6%A1%88%E6%89%A9%E6%95%A3%E6%88%90%E6%97%A0%E6%95%B0%E5%8F%98%E4%BD%93"><span class="nav-number">12.</span> <span class="nav-text">十二、测试污染：合成器可以把密封答案扩散成无数变体</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#12-1-%E6%B1%A1%E6%9F%93%E9%93%BE%E4%B8%8D%E5%8F%AA%E5%8F%91%E7%94%9F%E5%9C%A8%E8%AE%AD%E7%BB%83%E6%96%87%E4%BB%B6"><span class="nav-number">12.1.</span> <span class="nav-text">12.1 污染链不只发生在训练文件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-2-%E7%94%A8%E7%A6%81%E6%AD%A2%E7%A5%96%E5%85%88%E8%80%8C%E4%B8%8D%E6%98%AF%E5%8F%AA%E7%94%A8%E7%9B%B8%E4%BC%BC%E5%BA%A6"><span class="nav-number">12.2.</span> <span class="nav-text">12.2 用禁止祖先而不是只用相似度</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-3-%E7%94%9F%E6%88%90%E5%BC%8F%E6%89%A9%E5%A2%9E%E8%A6%81%E6%8C%89%E7%B0%87%E9%9A%94%E7%A6%BB"><span class="nav-number">12.3.</span> <span class="nav-text">12.3 生成式扩增要按簇隔离</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81%E8%99%9A%E5%81%87%E8%A6%86%E7%9B%96%EF%BC%9A%E6%A0%87%E7%AD%BE%E6%A0%BC%E5%AD%90%E5%8F%98%E7%BB%BF%E4%B8%8D%E4%BB%A3%E8%A1%A8%E6%95%85%E9%9A%9C%E8%83%BD%E8%A2%AB%E5%8F%91%E7%8E%B0"><span class="nav-number">13.</span> <span class="nav-text">十三、虚假覆盖：标签格子变绿不代表故障能被发现</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#13-1-%E5%90%8D%E4%B9%89%E8%A6%86%E7%9B%96%E4%B8%8E%E8%AF%81%E6%8D%AE%E8%A6%86%E7%9B%96%E5%88%86%E5%BC%80"><span class="nav-number">13.1.</span> <span class="nav-text">13.1 名义覆盖与证据覆盖分开</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#13-2-%E7%94%A8%E5%8F%98%E5%BC%82%E6%9D%80%E4%BC%A4%E7%8E%87%E8%AF%86%E5%88%AB%E8%A1%A8%E9%9D%A2%E5%8F%98%E4%BD%93"><span class="nav-number">13.2.</span> <span class="nav-text">13.2 用变异杀伤率识别表面变体</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#13-3-%E7%9C%9F%E5%AE%9E%E4%BA%8B%E6%95%85%E5%9B%9E%E6%94%BE%E6%98%AF%E8%A6%86%E7%9B%96%E6%A0%A1%E5%87%86%E5%99%A8"><span class="nav-number">13.3.</span> <span class="nav-text">13.3 真实事故回放是覆盖校准器</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81%E6%97%A0-API-Key-%E7%9A%84%E5%8F%AF%E6%89%A7%E8%A1%8C-Python-%E7%A4%BA%E4%BE%8B"><span class="nav-number">14.</span> <span class="nav-text">十四、无 API Key 的可执行 Python 示例</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#14-1-%E4%BB%A3%E7%A0%81%E6%80%8E%E6%A0%B7%E5%AF%B9%E5%BA%94%E7%94%9F%E4%BA%A7%E8%81%8C%E8%B4%A3"><span class="nav-number">14.1.</span> <span class="nav-text">14.1 代码怎样对应生产职责</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#14-2-%E8%BF%99%E4%B8%AA%E7%A4%BA%E4%BE%8B%E6%B2%A1%E6%9C%89%E8%AF%81%E6%98%8E%E4%BB%80%E4%B9%88"><span class="nav-number">14.2.</span> <span class="nav-text">14.2 这个示例没有证明什么</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%94%E3%80%81%E5%AE%9E%E9%99%85%E6%89%A7%E8%A1%8C%E7%BB%93%E6%9E%9C"><span class="nav-number">15.</span> <span class="nav-text">十五、实际执行结果</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AD%E3%80%81%E8%87%AA%E5%8A%A8%E5%8C%96%E6%B5%8B%E8%AF%95%E4%B8%8E%E5%A4%B1%E8%B4%A5%E6%B3%A8%E5%85%A5%E8%AE%BE%E8%AE%A1"><span class="nav-number">16.</span> <span class="nav-text">十六、自动化测试与失败注入设计</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#16-1-%E5%8D%95%E5%85%83%E6%B5%8B%E8%AF%95"><span class="nav-number">16.1.</span> <span class="nav-text">16.1 单元测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#16-2-%E5%B1%9E%E6%80%A7%E6%B5%8B%E8%AF%95"><span class="nav-number">16.2.</span> <span class="nav-text">16.2 属性测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#16-3-%E5%A4%B1%E8%B4%A5%E6%B3%A8%E5%85%A5%E4%B8%8D%E6%98%AF%E5%86%8D%E7%94%9F%E6%88%90%E5%87%A0%E6%9D%A1%E8%84%8F%E6%95%B0%E6%8D%AE"><span class="nav-number">16.3.</span> <span class="nav-text">16.3 失败注入不是再生成几条脏数据</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#16-4-%E7%BB%84%E5%90%88%E6%95%85%E9%9A%9C%E6%9B%B4%E6%8E%A5%E8%BF%91%E5%AE%9E%E9%99%85%E4%BA%8B%E6%95%85"><span class="nav-number">16.4.</span> <span class="nav-text">16.4 组合故障更接近实际事故</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%83%E3%80%81%E6%8C%87%E6%A0%87%E5%8F%A3%E5%BE%84%EF%BC%9A%E6%AF%8F%E4%B8%AA%E5%88%86%E6%95%B0%E9%83%BD%E8%AF%B4%E6%98%8E%E5%88%86%E6%AF%8D%E5%92%8C%E7%94%A8%E9%80%94"><span class="nav-number">17.</span> <span class="nav-text">十七、指标口径：每个分数都说明分母和用途</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#17-1-%E7%94%9F%E6%88%90%E6%8E%A5%E5%8F%97%E7%8E%87"><span class="nav-number">17.1.</span> <span class="nav-text">17.1 生成接受率</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#17-2-%E7%8B%AC%E7%AB%8B%E9%AA%8C%E8%AF%81%E7%8E%87"><span class="nav-number">17.2.</span> <span class="nav-text">17.2 独立验证率</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#17-3-%E6%A0%87%E7%AD%BE%E8%87%AA%E8%AF%81%E6%9A%B4%E9%9C%B2%E7%8E%87"><span class="nav-number">17.3.</span> <span class="nav-text">17.3 标签自证暴露率</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#17-4-%E7%B2%BE%E7%A1%AE%E9%87%8D%E5%A4%8D%E7%8E%87%E4%B8%8E%E8%BF%91%E9%87%8D%E5%A4%8D%E7%B0%87%E9%9B%86%E4%B8%AD%E5%BA%A6"><span class="nav-number">17.4.</span> <span class="nav-text">17.4 精确重复率与近重复簇集中度</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#17-5-%E6%B3%84%E6%BC%8F%E6%8C%87%E6%A0%87"><span class="nav-number">17.5.</span> <span class="nav-text">17.5 泄漏指标</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#17-6-%E5%81%8F%E5%B7%AE%E6%94%BE%E5%A4%A7%E6%8C%87%E6%A0%87"><span class="nav-number">17.6.</span> <span class="nav-text">17.6 偏差放大指标</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#17-7-%E8%A6%86%E7%9B%96%E6%8C%87%E6%A0%87"><span class="nav-number">17.7.</span> <span class="nav-text">17.7 覆盖指标</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#17-8-%E5%88%A0%E9%99%A4%E4%BC%A0%E6%92%AD%E5%AE%8C%E6%95%B4%E7%8E%87"><span class="nav-number">17.8.</span> <span class="nav-text">17.8 删除传播完整率</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#17-9-%E5%8D%95%E6%9D%A1%E6%8E%A5%E5%8F%97%E6%95%B0%E6%8D%AE%E6%88%90%E6%9C%AC"><span class="nav-number">17.9.</span> <span class="nav-text">17.9 单条接受数据成本</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AB%E3%80%81%E5%AE%8C%E6%95%B4%E5%A4%B1%E8%B4%A5%E6%A1%88%E4%BE%8B%EF%BC%9A%E8%A6%86%E7%9B%96%E7%8E%87-97-9-%EF%BC%8C%E5%8D%B4%E6%BC%8F%E6%8E%89%E4%BA%86%E9%83%A8%E5%88%86%E5%8F%91%E8%B4%A7%E9%80%80%E6%AC%BE%E9%94%99%E8%AF%AF"><span class="nav-number">18.</span> <span class="nav-text">十八、完整失败案例：覆盖率 97.9%，却漏掉了部分发货退款错误</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#18-1-%E8%83%8C%E6%99%AF"><span class="nav-number">18.1.</span> <span class="nav-text">18.1 背景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#18-2-%E7%BA%BF%E4%B8%8A%E6%BC%94%E7%BB%83%E7%8E%B0%E8%B1%A1"><span class="nav-number">18.2.</span> <span class="nav-text">18.2 线上演练现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#18-3-%E5%85%88%E5%86%BB%E7%BB%93%E8%AF%81%E6%8D%AE"><span class="nav-number">18.3.</span> <span class="nav-text">18.3 先冻结证据</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#18-4-%E6%97%B6%E9%97%B4%E7%AA%97%E5%8F%A3%E5%AF%B9%E9%BD%90"><span class="nav-number">18.4.</span> <span class="nav-text">18.4 时间窗口对齐</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#18-5-%E9%80%90%E5%B1%82%E6%8E%92%E6%9F%A5"><span class="nav-number">18.5.</span> <span class="nav-text">18.5 逐层排查</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#18-6-%E6%8E%92%E9%99%A4%E7%9A%84%E9%94%99%E8%AF%AF%E6%96%B9%E5%90%91"><span class="nav-number">18.6.</span> <span class="nav-text">18.6 排除的错误方向</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#18-7-%E6%A0%B9%E5%9B%A0%E4%B8%8E%E8%B4%A1%E7%8C%AE%E5%9B%A0%E7%B4%A0"><span class="nav-number">18.7.</span> <span class="nav-text">18.7 根因与贡献因素</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#18-8-%E6%AD%A2%E6%8D%9F%E4%B8%8E%E4%BF%AE%E5%A4%8D"><span class="nav-number">18.8.</span> <span class="nav-text">18.8 止损与修复</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#18-9-%E4%BF%AE%E5%A4%8D%E5%90%8E%E6%80%8E%E6%A0%B7%E9%AA%8C%E6%94%B6"><span class="nav-number">18.9.</span> <span class="nav-text">18.9 修复后怎样验收</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B9%9D%E3%80%81%E4%BB%8E%E9%9B%B6%E5%88%B0%E4%B8%80%E7%9A%84%E8%90%BD%E5%9C%B0%E9%A1%BA%E5%BA%8F"><span class="nav-number">19.</span> <span class="nav-text">十九、从零到一的落地顺序</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5%E4%B8%80%EF%BC%9A%E5%85%88%E9%9A%94%E7%A6%BB%E7%94%A8%E9%80%94"><span class="nav-number">19.1.</span> <span class="nav-text">阶段一：先隔离用途</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5%E4%BA%8C%EF%BC%9A%E8%A1%A5%E7%94%9F%E6%88%90%E8%AE%B0%E5%BD%95%E5%92%8C%E8%A1%80%E7%BC%98"><span class="nav-number">19.2.</span> <span class="nav-text">阶段二：补生成记录和血缘</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5%E4%B8%89%EF%BC%9A%E6%8A%8A%E7%A1%AE%E5%AE%9A%E6%80%A7-Oracle-%E5%89%8D%E7%BD%AE"><span class="nav-number">19.3.</span> <span class="nav-text">阶段三：把确定性 Oracle 前置</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5%E5%9B%9B%EF%BC%9A%E5%BB%BA%E7%AB%8B%E7%8B%AC%E7%AB%8B%E9%AA%8C%E8%AF%81%E5%92%8C%E5%88%86%E6%AD%A7%E9%98%9F%E5%88%97"><span class="nav-number">19.4.</span> <span class="nav-text">阶段四：建立独立验证和分歧队列</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5%E4%BA%94%EF%BC%9A%E8%A1%A5%E6%B3%84%E6%BC%8F%E3%80%81%E5%81%8F%E5%B7%AE%E5%92%8C%E8%A6%86%E7%9B%96%E9%97%A8%E7%A6%81"><span class="nav-number">19.5.</span> <span class="nav-text">阶段五：补泄漏、偏差和覆盖门禁</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%B6%E6%AE%B5%E5%85%AD%EF%BC%9A%E6%BC%94%E7%BB%83%E6%92%A4%E5%9B%9E%E5%92%8C%E4%BA%8B%E6%95%85"><span class="nav-number">19.6.</span> <span class="nav-text">阶段六：演练撤回和事故</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E3%80%81%E4%B8%8A%E7%BA%BF%E6%A3%80%E6%9F%A5%E8%A1%A8"><span class="nav-number">20.</span> <span class="nav-text">二十、上线检查表</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%94%A8%E9%80%94%E4%B8%8E%E8%BE%B9%E7%95%8C"><span class="nav-number">20.1.</span> <span class="nav-text">用途与边界</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%A7%8D%E5%AD%90%E4%B8%8E%E7%9C%9F%E5%AE%9E%E9%94%9A%E7%82%B9"><span class="nav-number">20.2.</span> <span class="nav-text">种子与真实锚点</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%94%9F%E6%88%90%E8%AE%B0%E5%BD%95"><span class="nav-number">20.3.</span> <span class="nav-text">生成记录</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A0%87%E7%AD%BE%E4%B8%8E%E9%AA%8C%E8%AF%81"><span class="nav-number">20.4.</span> <span class="nav-text">标签与验证</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%BF%87%E6%BB%A4%E4%B8%8E%E5%8E%BB%E9%87%8D"><span class="nav-number">20.5.</span> <span class="nav-text">过滤与去重</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%9A%90%E7%A7%81"><span class="nav-number">20.6.</span> <span class="nav-text">隐私</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%B1%A1%E6%9F%93%E4%B8%8E%E8%A1%80%E7%BC%98"><span class="nav-number">20.7.</span> <span class="nav-text">污染与血缘</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%A6%86%E7%9B%96%E4%B8%8E%E6%8C%87%E6%A0%87"><span class="nav-number">20.8.</span> <span class="nav-text">覆盖与指标</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%B5%8B%E8%AF%95%E4%B8%8E%E5%8F%91%E5%B8%83"><span class="nav-number">20.9.</span> <span class="nav-text">测试与发布</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E5%8D%81%E4%B8%80%E3%80%81%E6%80%BB%E7%BB%93"><span class="nav-number">21.</span> <span class="nav-text">二十一、总结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8F%82%E8%80%83%E8%B5%84%E6%96%99"><span class="nav-number">22.</span> <span class="nav-text">参考资料</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">358</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">27</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">796</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2026/05/06/AI%E6%B5%8B%E8%AF%95-40-%E5%90%88%E6%88%90%E6%95%B0%E6%8D%AE%E6%80%8E%E4%B9%88%E7%94%9F%E6%88%90%E8%BF%87%E6%BB%A4%E5%B9%B6%E9%98%B2%E6%AD%A2%E5%81%8F%E5%B7%AE%E6%B1%A1%E6%9F%93%E5%92%8C%E8%99%9A%E5%81%87%E8%A6%86%E7%9B%96/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="AI测试-40-合成数据怎么生成过滤并防止偏差污染和虚假覆盖 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          AI测试-40-合成数据怎么生成过滤并防止偏差污染和虚假覆盖
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2026-05-06 20:30:00" itemprop="dateCreated datePublished" datetime="2026-05-06T20:30:00+08:00">2026-05-06</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/AI%E6%B5%8B%E8%AF%95/" itemprop="url" rel="index"><span itemprop="name">AI测试</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>20k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>1:12</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>合成数据最容易制造一种工程错觉：数据量增加得很快，覆盖报表也很快变绿，于是生成流水线看起来比真实数据建设更高效。</p>
+<p>问题在于，生成器并不观察真实世界。它只是根据种子、Prompt、模型参数和已有分布，产出一个“像数据”的对象。只要种子遗漏了尾部场景，生成器就可能把遗漏放大；只要生成器把政策理解错了，同源验证器就可能用相同理由证明错误标签正确；只要私有训练资料被模型记住，改了姓名的输出仍可能逐字泄漏罕见片段；只要把同一条成功路径改写一百次，场景计数就会增长，真正能触发不同故障状态的覆盖却没有增加。</p>
+<p>因此，合成数据工程需要回答的不是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">能不能再生成十万条？</span><br></pre></td></tr></table></figure>
+
+<p>而是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">这条记录为什么被生成，依据哪个真实锚点，经过谁独立验证，</span><br><span class="line">可能继承了哪些生成器盲区，是否泄漏私有源，属于哪个用途，</span><br><span class="line">能证明哪一种行为已被测试，以及上游撤回后怎样找到并停止全部后代？</span><br></pre></td></tr></table></figure>
+
+<p>《AI测试-15-高质量AI评测集怎么采集清洗标注和版本化》已经讨论目标总体、采集、通用去重、污染、切分、标注和版本治理。本文把这些能力视为前置基础，不再重复“评测集如何按会话切分”或“如何做一般性数据清洗”。这里专门处理合成数据新增的五类风险：</p>
+<ol>
+<li>生成器和验证器具有共同训练来源、共同表达偏好或同一模型家族，错误并不独立；</li>
+<li>生成器同时给出问题、标签和标签理由，形成无法外证的标签自证循环；</li>
+<li>合成分布覆盖种子里已有的表面类别，却进一步压低真实世界的少数群体和尾部状态；</li>
+<li>“记录不对应真实个人”被错误等同于匿名、不可重识别或满足差分隐私；</li>
+<li>同义改写、评测答案回流和标签计数共同制造测试污染与虚假覆盖。</li>
+</ol>
+<p>全文以客服退款与订单变更测试为贯穿场景。文中的订单数、通过率、比例、阈值和故障时间线均为<strong>构造数据</strong>，只用于演示口径，不代表任何企业或公开基准结果。论文中的数字只在论文原有模型、数据和实验范围内解释。资料核对截止日期为 <strong>2026-07-26</strong>。</p>
+<h2 id="一、工程定义与边界：合成的是记录，不是事实"><a href="#一、工程定义与边界：合成的是记录，不是事实" class="headerlink" title="一、工程定义与边界：合成的是记录，不是事实"></a>一、工程定义与边界：合成的是记录，不是事实</h2><h3 id="1-1-什么算合成数据"><a href="#1-1-什么算合成数据" class="headerlink" title="1.1 什么算合成数据"></a>1.1 什么算合成数据</h3><p>本文把合成数据定义为：</p>
+<blockquote>
+<p>由规则、模拟器、统计模型、生成模型或它们的组合产生，并以训练、评测、红队或受控数据共享为目的的数据记录。</p>
+</blockquote>
+<p>这个定义关注生成过程，不以“看起来像不像真人写的”作为判据。下面这些都属于合成数据：</p>
+<ul>
+<li>状态机枚举出的订单边界条件；</li>
+<li>模板加参数组合产生的 API 请求；</li>
+<li>从真实分布估计后采样出的表格记录；</li>
+<li>大模型根据种子任务生成的指令、输入、答案和解释；</li>
+<li>模拟用户与 Agent 多轮交互得到的轨迹；</li>
+<li>经过差分隐私机制训练或计算后发布的合成表；</li>
+<li>故意包含越权、提示注入和矛盾证据的红队样本。</li>
+</ul>
+<p>真实日志脱敏后仍然是经过转换的真实观测，不会因为替换姓名就自动变成合成数据。反过来，一条由模型生成的订单记录即使与某个真实订单偶然相同，来源仍然是合成过程，但这次碰撞会产生隐私和污染风险。</p>
+<h3 id="1-2-四类用途必须分开"><a href="#1-2-四类用途必须分开" class="headerlink" title="1.2 四类用途必须分开"></a>1.2 四类用途必须分开</h3><p>“合成数据”不是一个统一资产类型。至少要把训练、评测、红队和隐私型合成数据分开，因为它们的正确性证据、可接受噪声和发布边界完全不同。</p>
+<table>
+<thead>
+<tr>
+<th>类型</th>
+<th>主要目标</th>
+<th>最低证据</th>
+<th>可以容忍什么</th>
+<th>不能据此声称什么</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>训练型合成数据</td>
+<td>扩展监督信号、补充特定能力或困难样本</td>
+<td>数据来源、生成器版本、抽样策略、独立训练后评测</td>
+<td>一定比例可识别噪声，但要测其净效用和切片影响</td>
+<td>数据量增加就必然提升模型；训练分布等于真实分布</td>
+</tr>
+<tr>
+<td>评测型合成数据</td>
+<td>验证明确行为、边界和风险</td>
+<td>独立 Oracle、真实锚点、密封用途、失败可复现</td>
+<td>为风险测试而过采样，不必模拟自然发生率</td>
+<td>测试通过就代表总体业务质量；场景标签等于行为覆盖</td>
+</tr>
+<tr>
+<td>红队型合成数据</td>
+<td>主动寻找安全、权限和鲁棒性失败</td>
+<td>攻击目标、威胁模型、预期阻断、真实副作用证据</td>
+<td>极端、不自然和高攻击性输入</td>
+<td>攻击通过率代表生产发生率；未攻破就证明系统安全</td>
+</tr>
+<tr>
+<td>隐私型合成数据</td>
+<td>在限制原始记录暴露的前提下支持分析或共享</td>
+<td>威胁模型、生成机制、隐私单位、参数、实现审计、效用测试</td>
+<td>为隐私保证付出可量化效用代价</td>
+<td>普通生成数据天然匿名；删除直接标识符就有数学保证</td>
+</tr>
+</tbody></table>
+<p>同一条记录不能只靠增加一个 <code>purpose</code> 标签就在四类用途之间自由流转。例如训练型数据的标签允许带少量噪声，并不意味着它适合成为发布门禁的金标准；红队样本为了攻击成功而刻意提高危险表达比例，也不适合估计自然流量中的发生率；隐私型合成数据如果没有明确的差分隐私机制和参数，不能因为“人物是虚构的”就贴上 <code>differentially_private=true</code>。</p>
+<h3 id="1-3-本文不解决什么"><a href="#1-3-本文不解决什么" class="headerlink" title="1.3 本文不解决什么"></a>1.3 本文不解决什么</h3><p>本文不重复以下通用数据治理问题：</p>
+<ul>
+<li>如何从生产日志定义目标总体；</li>
+<li>如何做分层抽样和样本量估计；</li>
+<li>如何按用户、会话、文档族或时间切分数据；</li>
+<li>如何组织双标、仲裁和数据卡；</li>
+<li>如何用通用评测集比较两个系统版本；</li>
+<li>如何评测 RAG 的召回率、忠实度和引用质量。</li>
+</ul>
+<p>这些问题仍然需要解决，只是不能替代本文的合成特有控制。一个按会话正确切分的数据集，仍可能在每个切分里都包含由同一模型生成并自证的错误标签。一个完全没有行级重复的数据集，仍可能是一百种措辞表达同一个状态转换。一个 Schema 全部合法的数据集，仍可能把“订单已发货”错误标成“允许自动全额退款”。结构成功、相似度、模型置信度、协议成功和 HTTP 200 都不能单独证明业务正确。</p>
+<h2 id="二、贯穿场景：退款测试为什么需要合成数据"><a href="#二、贯穿场景：退款测试为什么需要合成数据" class="headerlink" title="二、贯穿场景：退款测试为什么需要合成数据"></a>二、贯穿场景：退款测试为什么需要合成数据</h2><p>假设系统需要判断用户的订单诉求，并输出以下动作之一：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">AUTO_REFUND      在规则和额度内自动退款</span><br><span class="line">MANUAL_REVIEW    证据冲突或金额较高，进入人工复核</span><br><span class="line">POLICY_EXPLAIN   仅解释政策，不执行资金动作</span><br><span class="line">REJECT           明确不满足当前政策</span><br><span class="line">ASK_CLARIFY      缺少订单或诉求信息，需要澄清</span><br></pre></td></tr></table></figure>
+
+<p>系统输入包括用户文本、订单状态、金额、商品类型、地区、时间、会员权益和历史操作；输出不仅有标签，还有解释、证据 ID 和是否允许调用退款工具。</p>
+<h3 id="2-1-真实数据提供锚点，但不一定提供所有风险"><a href="#2-1-真实数据提供锚点，但不一定提供所有风险" class="headerlink" title="2.1 真实数据提供锚点，但不一定提供所有风险"></a>2.1 真实数据提供锚点，但不一定提供所有风险</h3><p>假设构造的真实锚点池包含 320 条经过业务专家确认的案例。它能够说明：</p>
+<ul>
+<li>真实用户怎样表达诉求；</li>
+<li>订单系统实际有哪些状态组合；</li>
+<li>政策在某个版本下怎样映射到动作；</li>
+<li>哪些少数语言、辅助技术用户或特殊商品容易被遗漏；</li>
+<li>已发生事故的输入、输出和副作用是什么。</li>
+</ul>
+<p>但真实池可能没有“退款工具返回未知提交状态后用户立即重复请求”这一组合，也可能只有一条“已发货地址变更”的高风险记录。直接复制真实记录会制造重复，直接等待生产再发生则把测试变成事故采集。</p>
+<p>合成数据适合承担三项补充任务：</p>
+<ol>
+<li>围绕真实锚点做受控变形，例如只改变订单状态、金额边界或否定词；</li>
+<li>用状态机枚举尚未出现但业务上可达的转换；</li>
+<li>主动构造安全、权限、泄漏和恢复失败，验证系统是否阻断。</li>
+</ol>
+<h3 id="2-2-合成数据不能替代真实锚点"><a href="#2-2-合成数据不能替代真实锚点" class="headerlink" title="2.2 合成数据不能替代真实锚点"></a>2.2 合成数据不能替代真实锚点</h3><p>如果完全从政策文档和模型常识生成样本，生成器可能不知道生产系统里存在 <code>PARTIALLY_SHIPPED</code>，也不知道某个旧客户端把金额单位传成分。生成器会围绕自己理解的世界制造越来越多一致样本，而真实事故恰好落在它没有建模的地方。</p>
+<p>所以本场景使用双轨资产：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">真实锚点轨：真实表达、真实状态、人工确认、事故回放、分布基线</span><br><span class="line">合成扩展轨：边界变形、状态组合、对抗输入、故障注入、隐私机制输出</span><br></pre></td></tr></table></figure>
+
+<p>发布报告同时展示两条轨。合成轨通过不能抵消真实锚点轨退化，真实锚点通过也不能说明未出现过的风险已经覆盖。</p>
+<h3 id="2-3-先写用途契约"><a href="#2-3-先写用途契约" class="headerlink" title="2.3 先写用途契约"></a>2.3 先写用途契约</h3><p>一批评测型合成数据可以先写成下面的契约：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">dataset_id:</span> <span class="string">refund-synthetic-eval</span></span><br><span class="line"><span class="attr">purpose:</span> <span class="string">evaluation</span></span><br><span class="line"><span class="attr">allowed_uses:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">pre_release_regression</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">failure_injection</span></span><br><span class="line"><span class="attr">prohibited_uses:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">model_training</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">few_shot_prompt</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">router_training</span></span><br><span class="line"><span class="attr">real_anchor_snapshot:</span> <span class="string">refund-anchor-2026-04-20</span></span><br><span class="line"><span class="attr">policy_snapshot:</span> <span class="string">refund-policy-7.3</span></span><br><span class="line"><span class="attr">required_independence:</span></span><br><span class="line">  <span class="attr">high_risk_validator_family_must_differ:</span> <span class="literal">true</span></span><br><span class="line">  <span class="attr">deterministic_oracle_preferred:</span> <span class="literal">true</span></span><br><span class="line"><span class="attr">privacy_claim:</span> <span class="string">none</span></span><br><span class="line"><span class="attr">sealed_ancestors:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">refund-sealed-eval-v5</span></span><br><span class="line"><span class="attr">deletion_policy:</span></span><br><span class="line">  <span class="attr">propagate_to_descendants:</span> <span class="literal">true</span></span><br><span class="line">  <span class="attr">historical_reports_keep_tombstone:</span> <span class="literal">true</span></span><br></pre></td></tr></table></figure>
+
+<p><code>privacy_claim: none</code> 很重要。它明确表示这批样本即使没有直接使用真实姓名，也没有经过可声明数学保证的隐私机制。工程记录可以说“已执行特定泄漏扫描”，不能把扫描未命中改写为“数据已匿名”。</p>
+<h2 id="三、完整架构：控制面、数据面和证据面"><a href="#三、完整架构：控制面、数据面和证据面" class="headerlink" title="三、完整架构：控制面、数据面和证据面"></a>三、完整架构：控制面、数据面和证据面</h2><p><img src="/images/ai-quality/ai-40-synthetic-data-pipeline.svg" alt="合成数据从种子到可用资产的证据流水线"></p>
+<p>图里的主链不是简单的 <code>generate -&gt; save</code>。一套可审计实现至少分成三个平面。</p>
+<h3 id="3-1-控制面"><a href="#3-1-控制面" class="headerlink" title="3.1 控制面"></a>3.1 控制面</h3><p>控制面保存不会随单条生成请求任意变化的约束：</p>
+<ul>
+<li>用途契约和禁止用途；</li>
+<li>种子分类体系；</li>
+<li>真实锚点与政策快照；</li>
+<li>允许的生成器、验证器和家族关系；</li>
+<li>泄漏哨兵与禁止祖先清单；</li>
+<li>风险切片的最低证据要求；</li>
+<li>精确重复阻断和语义重复复核阈值；</li>
+<li>偏差、隐私、覆盖和人工复核门槛；</li>
+<li>保留期限、撤回和删除传播规则。</li>
+</ul>
+<p>控制面配置需要不可变版本。一次生成批次必须指向确切的配置摘要，不能只记录“使用当前规则”。否则同一批数据在下周重新验收时，过滤结果可能变化，却无法判断是样本变了还是规则变了。</p>
+<h3 id="3-2-数据面"><a href="#3-2-数据面" class="headerlink" title="3.2 数据面"></a>3.2 数据面</h3><p>数据面执行真正的处理：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">读取用途和种子</span><br><span class="line">  -&gt; 构造生成请求</span><br><span class="line">  -&gt; 保存原始响应与供应商元数据</span><br><span class="line">  -&gt; 解析为候选记录</span><br><span class="line">  -&gt; 运行确定性规则和业务 Oracle</span><br><span class="line">  -&gt; 运行异源模型验证</span><br><span class="line">  -&gt; 进入人工复核或自动判定</span><br><span class="line">  -&gt; 精确去重与语义近重复候选聚类</span><br><span class="line">  -&gt; 泄漏、偏差、污染和覆盖检查</span><br><span class="line">  -&gt; 生成发布清单或隔离清单</span><br></pre></td></tr></table></figure>
+
+<p>原始响应和解析后的记录应分开。解析失败不能通过手工编辑原文件“修好”后继续沿用原记录 ID。更稳的做法是保留原始对象，新增一个带转换器版本的派生记录。这样才能区分生成失败、解析器失败和人工修复。</p>
+<h3 id="3-3-证据面"><a href="#3-3-证据面" class="headerlink" title="3.3 证据面"></a>3.3 证据面</h3><p>证据面回答每个结论凭什么成立：</p>
+<ul>
+<li>规则命中了哪个字段和哪条规则；</li>
+<li>Oracle 使用哪个政策版本计算出预期动作；</li>
+<li>模型验证器是谁、看到了什么、输出什么结构化理由；</li>
+<li>人工复核者是否对生成器身份盲化；</li>
+<li>哪个哨兵或片段产生泄漏命中；</li>
+<li>哪两条记录进入近重复候选簇，人工最后保留了谁；</li>
+<li>某个覆盖格子依赖哪些真实锚点和变形关系；</li>
+<li>某条上游记录撤回后，哪些后代被标为不可用；</li>
+<li>历史报告当时使用了哪个有效清单。</li>
+</ul>
+<p>只有最终 <code>accepted=true</code> 没有诊断价值。一个可信结论应该能展开成机器可读事件：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;record_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;syn_7b21...&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;decision&quot;</span><span class="punctuation">:</span> <span class="string">&quot;quarantined&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;decision_version&quot;</span><span class="punctuation">:</span> <span class="string">&quot;acceptance-policy-3.2&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;reasons&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;code&quot;</span><span class="punctuation">:</span> <span class="string">&quot;LABEL_SELF_CERTIFICATION&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;generator_family&quot;</span><span class="punctuation">:</span> <span class="string">&quot;family-a&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;validator_family&quot;</span><span class="punctuation">:</span> <span class="string">&quot;family-a&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;risk&quot;</span><span class="punctuation">:</span> <span class="string">&quot;high&quot;</span></span><br><span class="line">    <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;code&quot;</span><span class="punctuation">:</span> <span class="string">&quot;ORACLE_MISMATCH&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;expected&quot;</span><span class="punctuation">:</span> <span class="string">&quot;MANUAL_REVIEW&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;actual&quot;</span><span class="punctuation">:</span> <span class="string">&quot;AUTO_REFUND&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;policy_snapshot&quot;</span><span class="punctuation">:</span> <span class="string">&quot;refund-policy-7.3&quot;</span></span><br><span class="line">    <span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">]</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>这两个原因需要同时保留。<code>ORACLE_MISMATCH</code> 说明标签错了，<code>LABEL_SELF_CERTIFICATION</code> 说明为什么自动验证没有发现它。只修标签而不修验证独立性，同一类错误还会在下一批出现。</p>
+<h2 id="四、数据模型：把生成记录变成可追踪对象"><a href="#四、数据模型：把生成记录变成可追踪对象" class="headerlink" title="四、数据模型：把生成记录变成可追踪对象"></a>四、数据模型：把生成记录变成可追踪对象</h2><h3 id="4-1-最小记录结构"><a href="#4-1-最小记录结构" class="headerlink" title="4.1 最小记录结构"></a>4.1 最小记录结构</h3><p>一条合成记录不应只有 <code>prompt</code> 和 <code>answer</code>。建议至少包含以下字段组。</p>
+<table>
+<thead>
+<tr>
+<th>字段组</th>
+<th>关键字段</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>身份</td>
+<td><code>record_id</code>、<code>batch_id</code>、<code>created_at</code></td>
+<td>稳定定位，不依赖文件行号</td>
+</tr>
+<tr>
+<td>用途</td>
+<td><code>purpose</code>、<code>allowed_uses</code>、<code>prohibited_uses</code></td>
+<td>防止训练、评测、红队和共享用途混用</td>
+</tr>
+<tr>
+<td>种子</td>
+<td><code>seed_ids</code>、<code>seed_taxonomy</code>、<code>anchor_ids</code></td>
+<td>说明样本从哪类需求和真实证据派生</td>
+</tr>
+<tr>
+<td>生成</td>
+<td><code>generator_id</code>、<code>generator_family</code>、<code>generator_version</code>、<code>prompt_hash</code>、<code>parameters</code></td>
+<td>识别生成器共同故障和批次差异</td>
+</tr>
+<tr>
+<td>内容</td>
+<td><code>raw_output_ref</code>、<code>normalized_input</code>、<code>expected_behavior</code>、<code>label</code></td>
+<td>保存原始对象与评测对象</td>
+</tr>
+<tr>
+<td>验证</td>
+<td><code>oracle_version</code>、<code>validator_id</code>、<code>validator_family</code>、<code>review_id</code>、<code>evidence</code></td>
+<td>判断标签是否有独立支持</td>
+</tr>
+<tr>
+<td>风险</td>
+<td><code>privacy_claim</code>、<code>sentinel_hits</code>、<code>duplicate_cluster</code>、<code>bias_slices</code></td>
+<td>保存过滤和风险结果</td>
+</tr>
+<tr>
+<td>血缘</td>
+<td><code>parent_ids</code>、<code>transform_id</code>、<code>source_snapshot</code></td>
+<td>构造可传播删除的有向无环图</td>
+</tr>
+<tr>
+<td>生命周期</td>
+<td><code>status</code>、<code>reason_codes</code>、<code>tombstoned_at</code>、<code>superseded_by</code></td>
+<td>不覆盖历史，显式表达失效</td>
+</tr>
+</tbody></table>
+<p><code>generator_id</code> 和 <code>generator_family</code> 不能合并。两个产品名不同的模型可能来自同一基础模型或同一微调链，错误高度相关；同一个产品在不同固定版本上也可能行为不同。家族关系不一定公开可知，因此可以使用保守分类：已知同源、已知异源、来源不明。来源不明不能自动当作独立。</p>
+<h3 id="4-2-记录-ID-不承担全部语义"><a href="#4-2-记录-ID-不承担全部语义" class="headerlink" title="4.2 记录 ID 不承担全部语义"></a>4.2 记录 ID 不承担全部语义</h3><p>可以用内容和关键元数据的哈希生成稳定 ID：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">record_id = sha256(</span><br><span class="line">    purpose</span><br><span class="line">    + canonical_content</span><br><span class="line">    + generator_version</span><br><span class="line">    + prompt_hash</span><br><span class="line">    + sorted(seed_ids)</span><br><span class="line">    + sorted(anchor_ids)</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+
+<p>但 <code>record_id</code> 不是去重哈希。相同文本在训练集和密封评测集里用途不同，必须产生不同记录身份；相同文本由不同生成器独立产生，也可能需要保留两条生成事件用于分析相关性。另设：</p>
+<ul>
+<li><code>content_hash</code>：规范化后精确内容摘要；</li>
+<li><code>raw_hash</code>：原始字节摘要；</li>
+<li><code>semantic_cluster_id</code>：近重复候选簇；</li>
+<li><code>lineage_digest</code>：父记录和转换链摘要；</li>
+<li><code>release_manifest_hash</code>：发布清单整体摘要。</li>
+</ul>
+<p>把这些概念压成一个哈希，后面会在“身份”“重复”“血缘”和“发布版本”之间反复冲突。</p>
+<h3 id="4-3-生命周期采用追加事件"><a href="#4-3-生命周期采用追加事件" class="headerlink" title="4.3 生命周期采用追加事件"></a>4.3 生命周期采用追加事件</h3><p>建议状态至少包括：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">GENERATED</span><br><span class="line">PARSED</span><br><span class="line">RULE_REJECTED</span><br><span class="line">NEEDS_MODEL_REVIEW</span><br><span class="line">NEEDS_HUMAN_REVIEW</span><br><span class="line">ACCEPTED</span><br><span class="line">QUARANTINED</span><br><span class="line">PUBLISHED</span><br><span class="line">TOMBSTONED</span><br><span class="line">SUPERSEDED</span><br></pre></td></tr></table></figure>
+
+<p>状态变化使用追加事件，不直接改掉旧结论。若人工推翻模型验证，保存：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;event&quot;</span><span class="punctuation">:</span> <span class="string">&quot;HUMAN_OVERRIDE&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;record_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;syn_7b21...&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;from&quot;</span><span class="punctuation">:</span> <span class="string">&quot;NEEDS_HUMAN_REVIEW&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;to&quot;</span><span class="punctuation">:</span> <span class="string">&quot;QUARANTINED&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;reason&quot;</span><span class="punctuation">:</span> <span class="string">&quot;政策前提被生成器遗漏&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;evidence_refs&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;policy-7.3#refund-after-shipping&quot;</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;review_guideline_version&quot;</span><span class="punctuation">:</span> <span class="string">&quot;refund-review-2.1&quot;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>这样既能重放当前有效状态，也能统计某个验证器曾经放行多少后来被人工推翻的记录。</p>
+<h2 id="五、种子分类：不是给-Prompt-几个例子"><a href="#五、种子分类：不是给-Prompt-几个例子" class="headerlink" title="五、种子分类：不是给 Prompt 几个例子"></a>五、种子分类：不是给 Prompt 几个例子</h2><h3 id="5-1-种子决定生成空间的上限"><a href="#5-1-种子决定生成空间的上限" class="headerlink" title="5.1 种子决定生成空间的上限"></a>5.1 种子决定生成空间的上限</h3><p>生成模型可以改写和组合，却不会稳定发现业务系统从未告诉它的隐藏状态。种子分类至少应覆盖：</p>
+<ul>
+<li><strong>意图</strong>：退款、取消、地址变更、发票、物流查询；</li>
+<li><strong>状态</strong>：未支付、已支付、部分发货、全部发货、签收、退款处理中；</li>
+<li><strong>动作风险</strong>：只读、低额写入、高额资金、跨账户、不可逆动作；</li>
+<li><strong>证据形态</strong>：完整、缺失、冲突、过期、来源无权限；</li>
+<li><strong>表达现象</strong>：否定、条件句、反问、指代、多轮修正、代码混排；</li>
+<li><strong>用户与渠道切片</strong>：语言、地区、客户端版本、辅助技术、企业租户；</li>
+<li><strong>故障状态</strong>：超时、重复提交、未知提交、部分成功、供应商切换；</li>
+<li><strong>攻击目标</strong>：越权、提示注入、敏感数据外发、策略绕过；</li>
+<li><strong>Oracle 类型</strong>：确定性状态机、数值边界、专家裁决、暂无可靠 Oracle。</li>
+</ul>
+<p>最后一项尤其重要。没有可靠 Oracle 的格子可以生成探索候选，但不能和有确定性答案的记录一起计算自动通过率。</p>
+<h3 id="5-2-每个种子包含反事实轴"><a href="#5-2-每个种子包含反事实轴" class="headerlink" title="5.2 每个种子包含反事实轴"></a>5.2 每个种子包含反事实轴</h3><p>好的种子不只是一个示例，而是一组允许改变和禁止改变的变量：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">seed_id:</span> <span class="string">seed-refund-after-shipping</span></span><br><span class="line"><span class="attr">anchor_id:</span> <span class="string">anchor-1042</span></span><br><span class="line"><span class="attr">fixed_facts:</span></span><br><span class="line">  <span class="attr">order_state:</span> <span class="string">SHIPPED</span></span><br><span class="line">  <span class="attr">policy_version:</span> <span class="string">&quot;7.3&quot;</span></span><br><span class="line"><span class="attr">mutable_axes:</span></span><br><span class="line">  <span class="attr">amount_cents:</span> [<span class="number">9999</span>, <span class="number">10000</span>, <span class="number">10001</span>]</span><br><span class="line">  <span class="attr">user_language:</span> [<span class="string">zh-CN</span>, <span class="string">en-US</span>]</span><br><span class="line">  <span class="attr">evidence_state:</span> [<span class="string">complete</span>, <span class="string">conflicting</span>, <span class="string">missing</span>]</span><br><span class="line">  <span class="attr">expression:</span> [<span class="string">direct</span>, <span class="string">negated</span>, <span class="string">multi_turn_correction</span>]</span><br><span class="line"><span class="attr">expected_relation:</span></span><br><span class="line">  <span class="attr">if:</span> <span class="string">&quot;order_state == SHIPPED and evidence_state == conflicting&quot;</span></span><br><span class="line">  <span class="attr">then:</span> <span class="string">MANUAL_REVIEW</span></span><br><span class="line"><span class="attr">forbidden_mutations:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">change_order_owner</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">invent_delivery_event</span></span><br></pre></td></tr></table></figure>
+
+<p>生成器如果把固定事实改成 <code>DELIVERED</code>，这不是一条新的有效变体，而是违反种子约束。只有记录了变形轴，才能判断两个文本是覆盖了不同状态，还是仅换了措辞。</p>
+<h3 id="5-3-真实锚点有三种角色"><a href="#5-3-真实锚点有三种角色" class="headerlink" title="5.3 真实锚点有三种角色"></a>5.3 真实锚点有三种角色</h3><p>真实锚点不只负责“让语言更自然”。它至少有三种角色：</p>
+<ol>
+<li><strong>事实锚点</strong>：证明状态、政策和预期动作在某个版本下成立；</li>
+<li><strong>分布锚点</strong>：提供真实群体、表达和状态的比例基线；</li>
+<li><strong>失败锚点</strong>：证明某类故障真实发生过，并保存完整证据链。</li>
+</ol>
+<p>一条合成记录可以引用多个锚点。例如它的表达来自真实客服会话，状态转换来自订单状态机，预期动作来自政策快照。只保存一个模糊的 <code>source=production</code> 会丢失这种组合关系。</p>
+<h3 id="5-4-锚点不是要被复制进-Prompt-的原文"><a href="#5-4-锚点不是要被复制进-Prompt-的原文" class="headerlink" title="5.4 锚点不是要被复制进 Prompt 的原文"></a>5.4 锚点不是要被复制进 Prompt 的原文</h3><p>为了减少隐私和污染风险，生成器通常只需要最小必要特征：状态、约束、关系和经过批准的短片段。把完整私有会话原样塞给模型，再要求“改写成匿名版本”，会让生成器具备复现原文的机会。更稳的路径是先在受控环境提取结构化事实，经授权后构造种子；必要原文单独加访问控制、哨兵和保留期限。</p>
+<h2 id="六、生成器版本：可追溯不等于可精确复现"><a href="#六、生成器版本：可追溯不等于可精确复现" class="headerlink" title="六、生成器版本：可追溯不等于可精确复现"></a>六、生成器版本：可追溯不等于可精确复现</h2><h3 id="6-1-一次生成批次冻结什么"><a href="#6-1-一次生成批次冻结什么" class="headerlink" title="6.1 一次生成批次冻结什么"></a>6.1 一次生成批次冻结什么</h3><p>至少冻结：</p>
+<ul>
+<li>生成器产品和固定模型版本；</li>
+<li>API 或本地推理运行时版本；</li>
+<li>系统指令、任务模板和 Few-shot 摘要；</li>
+<li>采样参数、最大输出、停止条件；</li>
+<li>种子和真实锚点快照；</li>
+<li>工具、检索和后处理版本；</li>
+<li>请求顺序、并发策略和重试策略；</li>
+<li>生成时间、区域与供应商请求 ID；</li>
+<li>内容过滤和安全策略版本；</li>
+<li>原始响应摘要和解析器版本。</li>
+</ul>
+<p>即使全部记录，远程模型服务也未必能逐 Token 重放历史输出。供应商可能更新后端，底层并行计算也可能带来差异。因此，版本记录支持的是“解释和比较生成条件”，不能夸大成“未来一定逐字复现”。真正需要稳定的评测样本，应把已接受记录固化为不可变资产，而不是每次回归时重新调用生成器。</p>
+<h3 id="6-2-批次之间只改变一个主要变量"><a href="#6-2-批次之间只改变一个主要变量" class="headerlink" title="6.2 批次之间只改变一个主要变量"></a>6.2 批次之间只改变一个主要变量</h3><p>如果同一批同时更换生成器、Prompt、种子分类和过滤器，验收率变化无法归因。建议使用批次实验：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">batch-a：generator-v3 + prompt-12 + seeds-8 + filter-5</span><br><span class="line">batch-b：generator-v4 + prompt-12 + seeds-8 + filter-5</span><br><span class="line">batch-c：generator-v4 + prompt-13 + seeds-8 + filter-5</span><br><span class="line">batch-d：generator-v4 + prompt-13 + seeds-9 + filter-5</span><br></pre></td></tr></table></figure>
+
+<p>对比指标不是只有接受率。还要看：</p>
+<ul>
+<li>Oracle 不一致率；</li>
+<li>人工推翻率；</li>
+<li>近重复簇集中度；</li>
+<li>新增真实锚点覆盖；</li>
+<li>泄漏哨兵命中；</li>
+<li>群体比例和切片错误偏移；</li>
+<li>每条最终接受记录的生成与复核成本。</li>
+</ul>
+<p>接受率高可能只是过滤器变松，新增记录多可能只是重复检测失效。</p>
+<h2 id="七、独立验证：切断生成器给自己颁发标签的循环"><a href="#七、独立验证：切断生成器给自己颁发标签的循环" class="headerlink" title="七、独立验证：切断生成器给自己颁发标签的循环"></a>七、独立验证：切断生成器给自己颁发标签的循环</h2><h3 id="7-1-标签自证循环怎样形成"><a href="#7-1-标签自证循环怎样形成" class="headerlink" title="7.1 标签自证循环怎样形成"></a>7.1 标签自证循环怎样形成</h3><p>最危险的流水线通常长这样：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">模型 A 根据政策摘要生成问题</span><br><span class="line">  -&gt; 模型 A 同时生成标准答案和理由</span><br><span class="line">  -&gt; 模型 A 或同一底座的模型 A&#x27; 判断答案是否合理</span><br><span class="line">  -&gt; 模型 A 根据“通过”样本继续微调</span><br><span class="line">  -&gt; 新模型再生成下一轮数据</span><br></pre></td></tr></table></figure>
+
+<p>问题不是模型一定错，而是错误缺少独立发现机会。若模型把“已发货”理解成仍可自动退款，它会在问题、答案和理由里保持内部一致；同源验证器熟悉同一种表达和推理习惯，也可能偏好这套答案。标签理由读起来完整，只说明错误闭环自洽。</p>
+<p>Self-Instruct 的原始工作展示了从人工种子生成指令和实例、过滤无效或相似数据再微调模型的路线。其公开仓库同时明确提醒：对 200 条随机指令的数据质量分析中，46% 的数据点可能存在问题。这个数字只描述该论文和仓库所发布数据的检查，不能外推成所有合成数据的错误率；它说明自动生成之后仍需要独立质量控制，不能把“论文有效”理解成“每条生成标签可靠”。</p>
+<h3 id="7-2-验证优先级"><a href="#7-2-验证优先级" class="headerlink" title="7.2 验证优先级"></a>7.2 验证优先级</h3><p>按证据强度，验证可以采用下面的优先级：</p>
+<ol>
+<li><strong>可执行确定性 Oracle</strong>：状态机、计算规则、数据库约束、编译器、单元测试、模拟器后置条件；</li>
+<li><strong>受控参考事实</strong>：版本化政策、标准答案的原子事实、授权知识快照；</li>
+<li><strong>异源模型交叉验证</strong>：模型家族、Prompt 和上下文尽量独立，输出结构化分歧；</li>
+<li><strong>盲化人工复核</strong>：隐藏生成器身份和已有判断，按规范独立判定；</li>
+<li><strong>生成器自检</strong>：只用于发现明显格式问题或提出复核线索，不作为高风险最终证据。</li>
+</ol>
+<p>“异源模型”也不是绝对独立。训练语料可能重叠，行业常识可能共同错误，两个模型也可能都依赖同一份错误政策摘要。因此，高风险标签仍应尽量落到可执行 Oracle 或人工证据。</p>
+<h3 id="7-3-验证器只看必要信息"><a href="#7-3-验证器只看必要信息" class="headerlink" title="7.3 验证器只看必要信息"></a>7.3 验证器只看必要信息</h3><p>如果验证器看到生成器给出的长理由，它容易被理由锚定。更合适的顺序是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">第一遍：验证器只看输入、事实和标签规范，独立算预期结果</span><br><span class="line">第二遍：比较生成标签与独立结果</span><br><span class="line">第三遍：只有分歧时才看生成理由，用于定位错误来源</span><br></pre></td></tr></table></figure>
+
+<p>人工复核同理。先让复核者独立作答，再展示自动判断，可以减少自动化结论对人的锚定影响。</p>
+<h3 id="7-4-分歧不是噪声，而是资产"><a href="#7-4-分歧不是噪声，而是资产" class="headerlink" title="7.4 分歧不是噪声，而是资产"></a>7.4 分歧不是噪声，而是资产</h3><p>分歧记录至少分四类：</p>
+<table>
+<thead>
+<tr>
+<th>分歧</th>
+<th>可能原因</th>
+<th>动作</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>生成器与确定性 Oracle 冲突</td>
+<td>生成标签错误或种子前提被改写</td>
+<td>直接隔离，修生成约束</td>
+</tr>
+<tr>
+<td>两个模型验证器冲突</td>
+<td>任务模糊、模型盲区或上下文差异</td>
+<td>进入盲化人工复核</td>
+</tr>
+<tr>
+<td>人工之间冲突</td>
+<td>标签规范不清或事实不足</td>
+<td>补规范与证据，不按多数票草率收口</td>
+</tr>
+<tr>
+<td>Oracle 与当前生产行为冲突</td>
+<td>实现缺陷、政策版本错位或 Oracle 过期</td>
+<td>暂停批次，核对外部事实</td>
+</tr>
+</tbody></table>
+<p>分歧率按种子、生成器、语言、风险和 Oracle 类型切片统计，往往比总接受率更能发现系统问题。</p>
+<h2 id="八、过滤流水线：规则、模型和人工各自负责什么"><a href="#八、过滤流水线：规则、模型和人工各自负责什么" class="headerlink" title="八、过滤流水线：规则、模型和人工各自负责什么"></a>八、过滤流水线：规则、模型和人工各自负责什么</h2><h3 id="8-1-规则过滤负责可确定约束"><a href="#8-1-规则过滤负责可确定约束" class="headerlink" title="8.1 规则过滤负责可确定约束"></a>8.1 规则过滤负责可确定约束</h3><p>适合规则处理的内容包括：</p>
+<ul>
+<li>必填字段、类型、枚举和长度；</li>
+<li>固定事实是否被非法改写；</li>
+<li>数值边界与状态机是否一致；</li>
+<li>禁止祖先或密封评测 ID 是否出现；</li>
+<li>生成器与验证器家族是否满足隔离策略；</li>
+<li>直接标识符、秘密格式和泄漏哨兵；</li>
+<li>精确内容重复；</li>
+<li>发布用途是否与记录用途一致。</li>
+</ul>
+<p>规则结论应可复现，错误码应稳定。不要把一句自然语言模型提示包装成“规则层”。</p>
+<h3 id="8-2-模型过滤负责发现候选，不负责抹平不确定性"><a href="#8-2-模型过滤负责发现候选，不负责抹平不确定性" class="headerlink" title="8.2 模型过滤负责发现候选，不负责抹平不确定性"></a>8.2 模型过滤负责发现候选，不负责抹平不确定性</h3><p>模型适合辅助判断：</p>
+<ul>
+<li>语义是否偏离种子意图；</li>
+<li>是否出现隐含冲突、歧视表达或不自然措辞；</li>
+<li>两条记录是否可能是近重复；</li>
+<li>生成解释是否遗漏关键前提；</li>
+<li>开放式红队输入是否仍针对预期攻击面。</li>
+</ul>
+<p>模型输出是风险信号，不是业务真值。模型置信度高也可能来自熟悉自己的表达风格。高风险记录需要把模型结论转换为可复核证据，例如具体冲突字段、引用的政策条款和建议的人审队列。</p>
+<h3 id="8-3-人工过滤处理价值判断和证据不足"><a href="#8-3-人工过滤处理价值判断和证据不足" class="headerlink" title="8.3 人工过滤处理价值判断和证据不足"></a>8.3 人工过滤处理价值判断和证据不足</h3><p>人工复核适合：</p>
+<ul>
+<li>政策本身存在例外或解释空间；</li>
+<li>群体伤害不能由简单比例代表；</li>
+<li>红队输入可能造成真实危害，需要控制披露；</li>
+<li>两个独立验证器持续分歧；</li>
+<li>语义近重复是否保留取决于测试目标；</li>
+<li>隐私风险涉及罕见组合和外部可链接数据。</li>
+</ul>
+<p>人工不是无限兜底。队列应有优先级、容量、抽样复核和一致性检查。若某个生成批次把 60% 记录送人工，说明自动生成契约或种子设计需要重做，而不是继续扩充审核人力。</p>
+<h3 id="8-4-过滤顺序要减少昂贵判断"><a href="#8-4-过滤顺序要减少昂贵判断" class="headerlink" title="8.4 过滤顺序要减少昂贵判断"></a>8.4 过滤顺序要减少昂贵判断</h3><p>常见顺序是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">结构与用途</span><br><span class="line">  -&gt; 固定事实和确定性 Oracle</span><br><span class="line">  -&gt; 精确重复与禁止祖先</span><br><span class="line">  -&gt; 泄漏哨兵和敏感模式</span><br><span class="line">  -&gt; 语义近重复候选</span><br><span class="line">  -&gt; 异源模型验证</span><br><span class="line">  -&gt; 人工复核</span><br><span class="line">  -&gt; 批次级偏差与覆盖验收</span><br></pre></td></tr></table></figure>
+
+<p>先运行低成本硬规则，可以避免让模型和人工审查明显无效记录。但泄漏扫描不能因为记录已被结构规则拒绝就省略：被拒绝的原始输出仍可能已经写入日志或对象存储，需要纳入事故处置。</p>
+<h2 id="九、去重：相似是复核线索，不是删除理由"><a href="#九、去重：相似是复核线索，不是删除理由" class="headerlink" title="九、去重：相似是复核线索，不是删除理由"></a>九、去重：相似是复核线索，不是删除理由</h2><h3 id="9-1-精确去重保留语义符号"><a href="#9-1-精确去重保留语义符号" class="headerlink" title="9.1 精确去重保留语义符号"></a>9.1 精确去重保留语义符号</h3><p>规范化可以统一空白、大小写和无意义标点，但不能随意删除：</p>
+<ul>
+<li>否定词；</li>
+<li>金额、小数点和单位；</li>
+<li>订单、政策和错误代码；</li>
+<li>引号与字段边界；</li>
+<li>多轮对话顺序；</li>
+<li>工具调用参数。</li>
+</ul>
+<p>“允许退款”和“不允许退款”如果在规范化时删除否定词，会产生灾难性的错误合并。<code>100.00 元</code> 和 <code>10000 分</code> 可能金额相同，也可能代表单位转换缺陷，是否合并取决于测试目标。</p>
+<h3 id="9-2-语义去重只产生候选簇"><a href="#9-2-语义去重只产生候选簇" class="headerlink" title="9.2 语义去重只产生候选簇"></a>9.2 语义去重只产生候选簇</h3><p>Embedding 或字符片段相似度适合找候选，不适合自动删除。下面两条文本很相似，却覆盖相反动作：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">订单尚未发货，用户要求取消并退款。</span><br><span class="line">订单已经发货，用户要求取消并退款。</span><br></pre></td></tr></table></figure>
+
+<p>语义相似度高，只能说明它们需要一起看。复核时还要比较：</p>
+<ul>
+<li>固定事实；</li>
+<li>预期动作；</li>
+<li>风险等级；</li>
+<li>状态转换；</li>
+<li>真实锚点；</li>
+<li>是否用于成对反事实测试。</li>
+</ul>
+<p>对反事实样本，近重复恰恰是设计目标：除一个变量外其余内容尽量相同。删除它会损失测试能力。</p>
+<h3 id="9-3-统计簇，而不只统计行"><a href="#9-3-统计簇，而不只统计行" class="headerlink" title="9.3 统计簇，而不只统计行"></a>9.3 统计簇，而不只统计行</h3><p>批次报告同时给出：</p>
+<ul>
+<li>原始记录数；</li>
+<li>精确唯一记录数；</li>
+<li>近重复候选簇数；</li>
+<li>最大簇占比；</li>
+<li>每个种子产生的独立状态数；</li>
+<li>每个真实锚点的派生后代数；</li>
+<li>反事实对数量和可区分率。</li>
+</ul>
+<p>如果一万条记录来自十个模板，每个模板换一千个商品名，行数很大，独立测试信息仍然很低。</p>
+<h2 id="十、偏差放大：生成器会忠实复制缺口，也会进一步压缩尾部"><a href="#十、偏差放大：生成器会忠实复制缺口，也会进一步压缩尾部" class="headerlink" title="十、偏差放大：生成器会忠实复制缺口，也会进一步压缩尾部"></a>十、偏差放大：生成器会忠实复制缺口，也会进一步压缩尾部</h2><h3 id="10-1-先比较生成前后的条件分布"><a href="#10-1-先比较生成前后的条件分布" class="headerlink" title="10.1 先比较生成前后的条件分布"></a>10.1 先比较生成前后的条件分布</h3><p>不能只看合成数据内部“各组是否一样多”。需要把它与真实锚点和目标用途比较。设真实锚点中某群体在高风险退款场景的比例为 <code>p_real(g | high_risk)</code>，合成数据对应比例为 <code>p_syn(g | high_risk)</code>，可以先报告：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">representation_delta(g) = p_syn(g | high_risk) - p_real(g | high_risk)</span><br></pre></td></tr></table></figure>
+
+<p>这只是表示差异，不是公平结论。进一步还要比较：</p>
+<ul>
+<li>标签错误率；</li>
+<li>拒答与人工升级率；</li>
+<li>有害内容率；</li>
+<li>工具误调用率；</li>
+<li>对等反事实输入的动作差异；</li>
+<li>过滤器对不同群体的拒绝比例；</li>
+<li>差分隐私或稀有值抑制带来的切片效用下降。</li>
+</ul>
+<h3 id="10-2-过滤本身也会制造偏差"><a href="#10-2-过滤本身也会制造偏差" class="headerlink" title="10.2 过滤本身也会制造偏差"></a>10.2 过滤本身也会制造偏差</h3><p>若“语言自然度”验证器更偏好主流书面表达，方言、非母语表达和辅助沟通文本可能被大量过滤。最终数据看起来更流畅，却比真实用户更同质。</p>
+<p>因此每一层都要记录分母：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">generated_by_group</span><br><span class="line">rule_rejected_by_group</span><br><span class="line">model_rejected_by_group</span><br><span class="line">human_rejected_by_group</span><br><span class="line">accepted_by_group</span><br></pre></td></tr></table></figure>
+
+<p>只有最终接受比例，无法判断偏差来自生成器还是过滤器。</p>
+<h3 id="10-3-递归回流要保留真实数据锚"><a href="#10-3-递归回流要保留真实数据锚" class="headerlink" title="10.3 递归回流要保留真实数据锚"></a>10.3 递归回流要保留真实数据锚</h3><p>NIST AI 600-1 把有害偏差与同质化列为生成式 AI 风险，并建议评估训练数据中合成与非合成数据比例，避免训练数据过度同质或过度由生成式 AI 产生。Shumailov 等人的 Nature 论文研究了模型在递归使用模型生成数据训练时的分布退化；其结论来自论文设定下的递归生成实验，不能简化成“加入任何合成数据都会坍塌”。更精确的工程含义是：</p>
+<ul>
+<li>记录每一代数据的来源和比例；</li>
+<li>不让新一代合成数据无标记替换真实来源；</li>
+<li>保留真实数据作为评测和分布锚点；</li>
+<li>检查尾部事件、低频词和少数切片是否逐代消失；</li>
+<li>每轮回流都重新做独立评测，而不是只看训练损失。</li>
+</ul>
+<p>“合成数据越多越危险”和“混入真实数据就一定安全”都过度外推。风险取决于任务、模型、比例、筛选、递归方式和评测证据。</p>
+<h2 id="十一、隐私误区：虚构人物不等于数学匿名"><a href="#十一、隐私误区：虚构人物不等于数学匿名" class="headerlink" title="十一、隐私误区：虚构人物不等于数学匿名"></a>十一、隐私误区：虚构人物不等于数学匿名</h2><h3 id="11-1-普通合成数据可能泄漏什么"><a href="#11-1-普通合成数据可能泄漏什么" class="headerlink" title="11.1 普通合成数据可能泄漏什么"></a>11.1 普通合成数据可能泄漏什么</h3><p>生成器可能复现：</p>
+<ul>
+<li>罕见姓名、地址、邮箱和订单号；</li>
+<li>私有文档里的长文本片段；</li>
+<li>多字段组合形成的唯一身份；</li>
+<li>训练数据中特别重复或特别独特的记录；</li>
+<li>受版权或合同限制的内容；</li>
+<li>密封评测答案和内部事故细节。</li>
+</ul>
+<p>把姓名替换成“张三”只处理直接标识符。年龄、邮编、职业、事件日期和罕见病症的组合仍可能支持重识别。大模型生成的文本也可能记忆并逐字输出训练片段。Carlini 等人在 GPT-2 家族上的原始提取研究证明了从该实验中的语言模型提取逐字训练序列是可行的；这不等于所有模型、所有数据都会以相同比例泄漏，但足以否定“模型生成内容天然与训练记录无关”的假设。</p>
+<h3 id="11-2-泄漏哨兵是一种测试，不是隐私证明"><a href="#11-2-泄漏哨兵是一种测试，不是隐私证明" class="headerlink" title="11.2 泄漏哨兵是一种测试，不是隐私证明"></a>11.2 泄漏哨兵是一种测试，不是隐私证明</h3><p>可以在受控私有源中放入不会自然出现的唯一字符串，例如：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">PRIVATE-CANARY-7F91-XQ</span><br></pre></td></tr></table></figure>
+
+<p>再检测生成输出、日志、缓存和下游数据是否出现哨兵或其稳定变体。哨兵命中说明链路存在泄漏；未命中只说明这次测试没有观察到该哨兵，不能证明不存在其他记忆、推断或链接攻击。</p>
+<p>哨兵需要：</p>
+<ul>
+<li>只在授权测试环境使用；</li>
+<li>与真实秘密完全不同；</li>
+<li>有创建、投放、轮换和撤回记录；</li>
+<li>覆盖原始响应、错误日志、Trace 和导出文件；</li>
+<li>命中后能追踪所有派生数据和访问者。</li>
+</ul>
+<h3 id="11-3-差分隐私保证的对象和条件"><a href="#11-3-差分隐私保证的对象和条件" class="headerlink" title="11.3 差分隐私保证的对象和条件"></a>11.3 差分隐私保证的对象和条件</h3><p>NIST SP 800-226 将差分隐私描述为量化“某个实体的数据是否出现在数据集里”所带来隐私损失的数学框架。简化的 <code>(ε, δ)</code> 差分隐私定义是：对于相邻数据集 <code>D</code>、<code>D&#39;</code>，任意输出事件 <code>S</code>，随机机制 <code>M</code> 满足：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Pr[M(D) ∈ S] &lt;= exp(ε) * Pr[M(D&#x27;) ∈ S] + δ</span><br></pre></td></tr></table></figure>
+
+<p>真正解释这个式子时，至少要同时说明：</p>
+<ul>
+<li>相邻数据集怎样定义；</li>
+<li>隐私单位是一次记录、一个用户还是一个家庭；</li>
+<li><code>ε</code> 与 <code>δ</code> 的值及选择依据；</li>
+<li>多次训练、查询和发布怎样组合隐私预算；</li>
+<li>信任模型是中央、局部还是其他部署方式；</li>
+<li>实现使用哪个经过验证的库和会计方法；</li>
+<li>原始数据怎样存储、访问和销毁；</li>
+<li>对目标任务造成什么效用损失和切片偏差。</li>
+</ul>
+<p>只写 <code>epsilon=1</code> 不足以比较两个保证。NIST SP 800-226 明确指出，相同 <code>ε</code> 但 <code>δ</code> 或隐私单位不同的保证不能直接比较。</p>
+<h3 id="11-4-DP-不是零代价包装层"><a href="#11-4-DP-不是零代价包装层" class="headerlink" title="11.4 DP 不是零代价包装层"></a>11.4 DP 不是零代价包装层</h3><p>差分隐私通过随机化限制单个隐私单位对输出分布的影响。更强的隐私通常需要更多噪声，并降低某些统计和下游任务的效用。低频类别、长尾相关性和高维组合尤其可能受到影响。</p>
+<p>NIST 关于差分隐私合成数据的官方文章明确区分：许多合成数据技术不满足差分隐私或任何正式隐私性质；差分隐私合成数据可以提供数学支持的保证，但准确构造很难，针对特定分析设计的差分隐私查询通常可能比先发布通用合成数据再分析获得更高准确性。这个结论不能被改写成“DP 合成数据发布后适合所有用途”。</p>
+<p>如果任务只需要三个固定统计量，直接为这些统计量设计差分隐私机制，可能比发布一份试图支持任意分析的合成表更合适。若任务需要高保真罕见关联，团队需要明确接受效用损失，或改用受控安全环境而不是强行发布数据。</p>
+<h3 id="11-5-不要手写生产级-DP-算法"><a href="#11-5-不要手写生产级-DP-算法" class="headerlink" title="11.5 不要手写生产级 DP 算法"></a>11.5 不要手写生产级 DP 算法</h3><p>本文后面的 Python 示例实现泄漏哨兵和数据验收，不实现差分隐私机制。NIST SP 800-226 提醒随机化算法实现容易出错，建议尽可能使用经过严格验证的库。生产系统还需要专业隐私评审、预算会计、威胁模型和实现审计。给计数加一个随机数，再把输出称为 DP，是错误做法。</p>
+<h2 id="十二、测试污染：合成器可以把密封答案扩散成无数变体"><a href="#十二、测试污染：合成器可以把密封答案扩散成无数变体" class="headerlink" title="十二、测试污染：合成器可以把密封答案扩散成无数变体"></a>十二、测试污染：合成器可以把密封答案扩散成无数变体</h2><h3 id="12-1-污染链不只发生在训练文件"><a href="#12-1-污染链不只发生在训练文件" class="headerlink" title="12.1 污染链不只发生在训练文件"></a>12.1 污染链不只发生在训练文件</h3><p>密封评测内容可能通过以下路径进入生成器：</p>
+<ul>
+<li>被复制到 Few-shot 示例；</li>
+<li>作为“失败样本”进入 Prompt 优化记录；</li>
+<li>通过 RAG 索引或调试知识库被检索；</li>
+<li>评测报告把标准答案和理由写入工单；</li>
+<li>开发人员要求模型“围绕这些测试失败再生成相似数据”；</li>
+<li>路由器或验证器训练使用了带评测标签的日志；</li>
+<li>上一轮合成评测样本被误标为训练种子。</li>
+</ul>
+<p>即使最终文本没有逐字重复，生成器也可能扩散同一题的答案模式。普通字符串去重发现不了这种祖先污染。</p>
+<h3 id="12-2-用禁止祖先而不是只用相似度"><a href="#12-2-用禁止祖先而不是只用相似度" class="headerlink" title="12.2 用禁止祖先而不是只用相似度"></a>12.2 用禁止祖先而不是只用相似度</h3><p>每条记录保存 <code>seed_ids</code>、<code>parent_ids</code> 和 <code>source_snapshot</code>。评测型发布策略维护禁止祖先集合：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">sealed_eval_ids</span><br><span class="line">sealed_answer_ids</span><br><span class="line">evaluation_report_ids</span><br><span class="line">developer_debug_transcripts_derived_from_sealed_eval</span><br></pre></td></tr></table></figure>
+
+<p>任何后代只要路径穿过禁止节点，就不能进入训练、Prompt 示例或另一套宣称独立的密封评测集。相似度扫描作为补充，用来发现未记录血缘或外部数据碰撞。</p>
+<h3 id="12-3-生成式扩增要按簇隔离"><a href="#12-3-生成式扩增要按簇隔离" class="headerlink" title="12.3 生成式扩增要按簇隔离"></a>12.3 生成式扩增要按簇隔离</h3><p>如果一条真实失败派生出五十条改写，切分时必须把整棵派生树当成一个独立性单位。否则同一事实模板的变体会分散到开发、校准和密封集合中。这个原则与通用分组切分一致，但合成数据需要额外使用显式血缘，而不是只靠文本聚类猜测家族。</p>
+<h2 id="十三、虚假覆盖：标签格子变绿不代表故障能被发现"><a href="#十三、虚假覆盖：标签格子变绿不代表故障能被发现" class="headerlink" title="十三、虚假覆盖：标签格子变绿不代表故障能被发现"></a>十三、虚假覆盖：标签格子变绿不代表故障能被发现</h2><h3 id="13-1-名义覆盖与证据覆盖分开"><a href="#13-1-名义覆盖与证据覆盖分开" class="headerlink" title="13.1 名义覆盖与证据覆盖分开"></a>13.1 名义覆盖与证据覆盖分开</h3><p>定义目标矩阵：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">意图 × 订单状态 × 风险 × 证据状态 × 语言 × 预期动作</span><br></pre></td></tr></table></figure>
+
+<p>可以计算三种不同覆盖：</p>
+<ol>
+<li><strong>名义覆盖</strong>：每个格子是否至少有一条记录；</li>
+<li><strong>锚定覆盖</strong>：格子中的记录是否连接有效真实锚点，并通过独立验证；</li>
+<li><strong>行为覆盖</strong>：执行记录是否触发目标状态、分支、工具动作或阻断，并验证业务后置条件。</li>
+</ol>
+<p>名义覆盖适合发现空白，不能作为上线保证。锚定覆盖说明样本更可信，仍不等于系统正确执行。行为覆盖需要运行被测系统，观察外部事实。</p>
+<h3 id="13-2-用变异杀伤率识别表面变体"><a href="#13-2-用变异杀伤率识别表面变体" class="headerlink" title="13.2 用变异杀伤率识别表面变体"></a>13.2 用变异杀伤率识别表面变体</h3><p>对确定性策略和工作流，可以主动注入缺陷：</p>
+<ul>
+<li>把 <code>SHIPPED</code> 判断写成 <code>PAID</code>；</li>
+<li>把金额 <code>&gt;= 10000</code> 改成 <code>&gt; 10000</code>；</li>
+<li>删除租户权限检查；</li>
+<li>把工具超时当作失败并自动重试；</li>
+<li>忽略多轮最后一次用户更正；</li>
+<li>在证据冲突时仍自动退款。</li>
+</ul>
+<p>如果合成测试集填满了矩阵，却杀不死这些变异，覆盖只是标签覆盖。变异杀伤率可以写成：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">mutation_kill_rate = 被测试识别的有效变异数 / 注入的有效变异总数</span><br></pre></td></tr></table></figure>
+
+<p>分母必须排除编译失败或与目标无关的无效变异。这个指标仍不证明没有未知缺陷，但比“生成了多少场景名称”更接近行为证据。</p>
+<h3 id="13-3-真实事故回放是覆盖校准器"><a href="#13-3-真实事故回放是覆盖校准器" class="headerlink" title="13.3 真实事故回放是覆盖校准器"></a>13.3 真实事故回放是覆盖校准器</h3><p>每当生产发生新事故，先问：</p>
+<ul>
+<li>目标矩阵是否已有对应格子；</li>
+<li>若已有，样本为什么没有触发缺陷；</li>
+<li>是输入表达不真实、状态不完整、Oracle 错误，还是执行证据不足；</li>
+<li>需要新增种子轴、真实锚点还是故障注入；</li>
+<li>原有覆盖率是否需要回溯修正。</li>
+</ul>
+<p>覆盖不是单调只增。真实事故证明某个“已覆盖”格子其实没有测到关键行为时，应把历史证据覆盖标记为失效，并重新计算。</p>
+<p><img src="/images/ai-quality/ai-40-risk-test-matrix.svg" alt="合成数据风险与失败注入测试矩阵"></p>
+<p>图中的每一行都故意制造“自动系统容易放行”的坏数据。失败注入的价值在于证明门禁确实会失败，而不是只用干净样本证明流水线能成功。</p>
+<h2 id="十四、无-API-Key-的可执行-Python-示例"><a href="#十四、无-API-Key-的可执行-Python-示例" class="headerlink" title="十四、无 API Key 的可执行 Python 示例"></a>十四、无 API Key 的可执行 Python 示例</h2><p>下面的示例只使用 Python 标准库，适合 Python 3.11 及以上版本。它不是生产数据平台，也不实现差分隐私算法；它把本文最关键的验收关系缩成一个可以执行和测试的最小骨架：</p>
+<ul>
+<li>每条记录保存用途、种子、锚点、生成器、验证器、父记录和状态；</li>
+<li>规则层检查 Oracle、生成验证相关性、标签自证、禁止祖先和泄漏哨兵；</li>
+<li>精确重复自动隔离，字符三元片段相似度只产生人工近重复候选；</li>
+<li>覆盖同时报告接受覆盖和真实锚定覆盖；</li>
+<li>偏差报告比较构造的真实锚点分布与最终接受分布；</li>
+<li>验收夹具要求没有待复核记录、关键风险泄漏和硬规则违规；</li>
+<li>锚点撤回沿血缘图传播 <code>TOMBSTONED</code>，历史记录不会被物理覆盖。</li>
+</ul>
+<p>示例中的阈值、群体名称和三条真实分布比例都是构造数据。字符三元片段 Jaccard 只为演示近重复候选生成，不能替代生产语义模型，更不能证明两个标签等价。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br><span class="line">146</span><br><span class="line">147</span><br><span class="line">148</span><br><span class="line">149</span><br><span class="line">150</span><br><span class="line">151</span><br><span class="line">152</span><br><span class="line">153</span><br><span class="line">154</span><br><span class="line">155</span><br><span class="line">156</span><br><span class="line">157</span><br><span class="line">158</span><br><span class="line">159</span><br><span class="line">160</span><br><span class="line">161</span><br><span class="line">162</span><br><span class="line">163</span><br><span class="line">164</span><br><span class="line">165</span><br><span class="line">166</span><br><span class="line">167</span><br><span class="line">168</span><br><span class="line">169</span><br><span class="line">170</span><br><span class="line">171</span><br><span class="line">172</span><br><span class="line">173</span><br><span class="line">174</span><br><span class="line">175</span><br><span class="line">176</span><br><span class="line">177</span><br><span class="line">178</span><br><span class="line">179</span><br><span class="line">180</span><br><span class="line">181</span><br><span class="line">182</span><br><span class="line">183</span><br><span class="line">184</span><br><span class="line">185</span><br><span class="line">186</span><br><span class="line">187</span><br><span class="line">188</span><br><span class="line">189</span><br><span class="line">190</span><br><span class="line">191</span><br><span class="line">192</span><br><span class="line">193</span><br><span class="line">194</span><br><span class="line">195</span><br><span class="line">196</span><br><span class="line">197</span><br><span class="line">198</span><br><span class="line">199</span><br><span class="line">200</span><br><span class="line">201</span><br><span class="line">202</span><br><span class="line">203</span><br><span class="line">204</span><br><span class="line">205</span><br><span class="line">206</span><br><span class="line">207</span><br><span class="line">208</span><br><span class="line">209</span><br><span class="line">210</span><br><span class="line">211</span><br><span class="line">212</span><br><span class="line">213</span><br><span class="line">214</span><br><span class="line">215</span><br><span class="line">216</span><br><span class="line">217</span><br><span class="line">218</span><br><span class="line">219</span><br><span class="line">220</span><br><span class="line">221</span><br><span class="line">222</span><br><span class="line">223</span><br><span class="line">224</span><br><span class="line">225</span><br><span class="line">226</span><br><span class="line">227</span><br><span class="line">228</span><br><span class="line">229</span><br><span class="line">230</span><br><span class="line">231</span><br><span class="line">232</span><br><span class="line">233</span><br><span class="line">234</span><br><span class="line">235</span><br><span class="line">236</span><br><span class="line">237</span><br><span class="line">238</span><br><span class="line">239</span><br><span class="line">240</span><br><span class="line">241</span><br><span class="line">242</span><br><span class="line">243</span><br><span class="line">244</span><br><span class="line">245</span><br><span class="line">246</span><br><span class="line">247</span><br><span class="line">248</span><br><span class="line">249</span><br><span class="line">250</span><br><span class="line">251</span><br><span class="line">252</span><br><span class="line">253</span><br><span class="line">254</span><br><span class="line">255</span><br><span class="line">256</span><br><span class="line">257</span><br><span class="line">258</span><br><span class="line">259</span><br><span class="line">260</span><br><span class="line">261</span><br><span class="line">262</span><br><span class="line">263</span><br><span class="line">264</span><br><span class="line">265</span><br><span class="line">266</span><br><span class="line">267</span><br><span class="line">268</span><br><span class="line">269</span><br><span class="line">270</span><br><span class="line">271</span><br><span class="line">272</span><br><span class="line">273</span><br><span class="line">274</span><br><span class="line">275</span><br><span class="line">276</span><br><span class="line">277</span><br><span class="line">278</span><br><span class="line">279</span><br><span class="line">280</span><br><span class="line">281</span><br><span class="line">282</span><br><span class="line">283</span><br><span class="line">284</span><br><span class="line">285</span><br><span class="line">286</span><br><span class="line">287</span><br><span class="line">288</span><br><span class="line">289</span><br><span class="line">290</span><br><span class="line">291</span><br><span class="line">292</span><br><span class="line">293</span><br><span class="line">294</span><br><span class="line">295</span><br><span class="line">296</span><br><span class="line">297</span><br><span class="line">298</span><br><span class="line">299</span><br><span class="line">300</span><br><span class="line">301</span><br><span class="line">302</span><br><span class="line">303</span><br><span class="line">304</span><br><span class="line">305</span><br><span class="line">306</span><br><span class="line">307</span><br><span class="line">308</span><br><span class="line">309</span><br><span class="line">310</span><br><span class="line">311</span><br><span class="line">312</span><br><span class="line">313</span><br><span class="line">314</span><br><span class="line">315</span><br><span class="line">316</span><br><span class="line">317</span><br><span class="line">318</span><br><span class="line">319</span><br><span class="line">320</span><br><span class="line">321</span><br><span class="line">322</span><br><span class="line">323</span><br><span class="line">324</span><br><span class="line">325</span><br><span class="line">326</span><br><span class="line">327</span><br><span class="line">328</span><br><span class="line">329</span><br><span class="line">330</span><br><span class="line">331</span><br><span class="line">332</span><br><span class="line">333</span><br><span class="line">334</span><br><span class="line">335</span><br><span class="line">336</span><br><span class="line">337</span><br><span class="line">338</span><br><span class="line">339</span><br><span class="line">340</span><br><span class="line">341</span><br><span class="line">342</span><br><span class="line">343</span><br><span class="line">344</span><br><span class="line">345</span><br><span class="line">346</span><br><span class="line">347</span><br><span class="line">348</span><br><span class="line">349</span><br><span class="line">350</span><br><span class="line">351</span><br><span class="line">352</span><br><span class="line">353</span><br><span class="line">354</span><br><span class="line">355</span><br><span class="line">356</span><br><span class="line">357</span><br><span class="line">358</span><br><span class="line">359</span><br><span class="line">360</span><br><span class="line">361</span><br><span class="line">362</span><br><span class="line">363</span><br><span class="line">364</span><br><span class="line">365</span><br><span class="line">366</span><br><span class="line">367</span><br><span class="line">368</span><br><span class="line">369</span><br><span class="line">370</span><br><span class="line">371</span><br><span class="line">372</span><br><span class="line">373</span><br><span class="line">374</span><br><span class="line">375</span><br><span class="line">376</span><br><span class="line">377</span><br><span class="line">378</span><br><span class="line">379</span><br><span class="line">380</span><br><span class="line">381</span><br><span class="line">382</span><br><span class="line">383</span><br><span class="line">384</span><br><span class="line">385</span><br><span class="line">386</span><br><span class="line">387</span><br><span class="line">388</span><br><span class="line">389</span><br><span class="line">390</span><br><span class="line">391</span><br><span class="line">392</span><br><span class="line">393</span><br><span class="line">394</span><br><span class="line">395</span><br><span class="line">396</span><br><span class="line">397</span><br><span class="line">398</span><br><span class="line">399</span><br><span class="line">400</span><br><span class="line">401</span><br><span class="line">402</span><br><span class="line">403</span><br><span class="line">404</span><br><span class="line">405</span><br><span class="line">406</span><br><span class="line">407</span><br><span class="line">408</span><br><span class="line">409</span><br><span class="line">410</span><br><span class="line">411</span><br><span class="line">412</span><br><span class="line">413</span><br><span class="line">414</span><br><span class="line">415</span><br><span class="line">416</span><br><span class="line">417</span><br><span class="line">418</span><br><span class="line">419</span><br><span class="line">420</span><br><span class="line">421</span><br><span class="line">422</span><br><span class="line">423</span><br><span class="line">424</span><br><span class="line">425</span><br><span class="line">426</span><br><span class="line">427</span><br><span class="line">428</span><br><span class="line">429</span><br><span class="line">430</span><br><span class="line">431</span><br><span class="line">432</span><br><span class="line">433</span><br><span class="line">434</span><br><span class="line">435</span><br><span class="line">436</span><br><span class="line">437</span><br><span class="line">438</span><br><span class="line">439</span><br><span class="line">440</span><br><span class="line">441</span><br><span class="line">442</span><br><span class="line">443</span><br><span class="line">444</span><br><span class="line">445</span><br><span class="line">446</span><br><span class="line">447</span><br><span class="line">448</span><br><span class="line">449</span><br><span class="line">450</span><br><span class="line">451</span><br><span class="line">452</span><br><span class="line">453</span><br><span class="line">454</span><br><span class="line">455</span><br><span class="line">456</span><br><span class="line">457</span><br><span class="line">458</span><br><span class="line">459</span><br><span class="line">460</span><br><span class="line">461</span><br><span class="line">462</span><br><span class="line">463</span><br><span class="line">464</span><br><span class="line">465</span><br><span class="line">466</span><br><span class="line">467</span><br><span class="line">468</span><br><span class="line">469</span><br><span class="line">470</span><br><span class="line">471</span><br><span class="line">472</span><br><span class="line">473</span><br><span class="line">474</span><br><span class="line">475</span><br><span class="line">476</span><br><span class="line">477</span><br><span class="line">478</span><br><span class="line">479</span><br><span class="line">480</span><br><span class="line">481</span><br><span class="line">482</span><br><span class="line">483</span><br><span class="line">484</span><br><span class="line">485</span><br><span class="line">486</span><br><span class="line">487</span><br><span class="line">488</span><br><span class="line">489</span><br><span class="line">490</span><br><span class="line">491</span><br><span class="line">492</span><br><span class="line">493</span><br><span class="line">494</span><br><span class="line">495</span><br><span class="line">496</span><br><span class="line">497</span><br><span class="line">498</span><br><span class="line">499</span><br><span class="line">500</span><br><span class="line">501</span><br><span class="line">502</span><br><span class="line">503</span><br><span class="line">504</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> __future__ <span class="keyword">import</span> annotations</span><br><span class="line"></span><br><span class="line"><span class="keyword">from</span> collections <span class="keyword">import</span> Counter</span><br><span class="line"><span class="keyword">from</span> dataclasses <span class="keyword">import</span> dataclass, replace</span><br><span class="line"><span class="keyword">from</span> hashlib <span class="keyword">import</span> sha256</span><br><span class="line"><span class="keyword">import</span> json</span><br><span class="line"><span class="keyword">import</span> re</span><br><span class="line"><span class="keyword">import</span> sys</span><br><span class="line"><span class="keyword">import</span> unittest</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">ALLOWED_PURPOSES = &#123;<span class="string">&quot;training&quot;</span>, <span class="string">&quot;evaluation&quot;</span>, <span class="string">&quot;red_team&quot;</span>, <span class="string">&quot;privacy&quot;</span>&#125;</span><br><span class="line">ORACLE = &#123;</span><br><span class="line">    <span class="string">&quot;refund_after_ship&quot;</span>: <span class="string">&quot;MANUAL_REVIEW&quot;</span>,</span><br><span class="line">    <span class="string">&quot;address_change_after_ship&quot;</span>: <span class="string">&quot;MANUAL_REVIEW&quot;</span>,</span><br><span class="line">    <span class="string">&quot;policy_explanation&quot;</span>: <span class="string">&quot;POLICY_EXPLAIN&quot;</span>,</span><br><span class="line">&#125;</span><br><span class="line">EXPECTED_CELLS = &#123;</span><br><span class="line">    (<span class="string">&quot;refund_after_ship&quot;</span>, <span class="string">&quot;high&quot;</span>),</span><br><span class="line">    (<span class="string">&quot;address_change_after_ship&quot;</span>, <span class="string">&quot;medium&quot;</span>),</span><br><span class="line">    (<span class="string">&quot;policy_explanation&quot;</span>, <span class="string">&quot;low&quot;</span>),</span><br><span class="line">&#125;</span><br><span class="line">LEAKAGE_SENTINELS = &#123;<span class="string">&quot;PRIVATE-CANARY-7F91-XQ&quot;</span>&#125;</span><br><span class="line">PROHIBITED_ANCESTORS = &#123;<span class="string">&quot;sealed-eval-v5:case-9&quot;</span>, <span class="string">&quot;sealed-answer-v5:case-9&quot;</span>&#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">digest</span>(<span class="params">*parts: <span class="built_in">object</span></span>) -&gt; <span class="built_in">str</span>:</span><br><span class="line">    payload = json.dumps(parts, ensure_ascii=<span class="literal">False</span>, sort_keys=<span class="literal">True</span>)</span><br><span class="line">    <span class="keyword">return</span> sha256(payload.encode(<span class="string">&quot;utf-8&quot;</span>)).hexdigest()</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">normalize_for_exact_match</span>(<span class="params">text: <span class="built_in">str</span></span>) -&gt; <span class="built_in">str</span>:</span><br><span class="line">    <span class="comment"># 保留否定词、数字、单位和标识符，只折叠空白与常见标点。</span></span><br><span class="line">    <span class="keyword">return</span> re.sub(<span class="string">r&quot;[\s，。！？；：、,.!?;:]+&quot;</span>, <span class="string">&quot;&quot;</span>, text.casefold())</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">character_ngrams</span>(<span class="params">text: <span class="built_in">str</span>, n: <span class="built_in">int</span> = <span class="number">3</span></span>) -&gt; <span class="built_in">set</span>[<span class="built_in">str</span>]:</span><br><span class="line">    normalized = normalize_for_exact_match(text)</span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(normalized) &lt; n:</span><br><span class="line">        <span class="keyword">return</span> &#123;normalized&#125; <span class="keyword">if</span> normalized <span class="keyword">else</span> <span class="built_in">set</span>()</span><br><span class="line">    <span class="keyword">return</span> &#123;normalized[i : i + n] <span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span>(<span class="built_in">len</span>(normalized) - n + <span class="number">1</span>)&#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">near_similarity</span>(<span class="params">left: <span class="built_in">str</span>, right: <span class="built_in">str</span></span>) -&gt; <span class="built_in">float</span>:</span><br><span class="line">    a = character_ngrams(left)</span><br><span class="line">    b = character_ngrams(right)</span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> a <span class="keyword">and</span> <span class="keyword">not</span> b:</span><br><span class="line">        <span class="keyword">return</span> <span class="number">1.0</span></span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> a <span class="keyword">or</span> <span class="keyword">not</span> b:</span><br><span class="line">        <span class="keyword">return</span> <span class="number">0.0</span></span><br><span class="line">    <span class="keyword">return</span> <span class="built_in">len</span>(a &amp; b) / <span class="built_in">len</span>(a | b)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">SyntheticRecord</span>:</span><br><span class="line">    record_id: <span class="built_in">str</span></span><br><span class="line">    purpose: <span class="built_in">str</span></span><br><span class="line">    scenario: <span class="built_in">str</span></span><br><span class="line">    risk: <span class="built_in">str</span></span><br><span class="line">    group: <span class="built_in">str</span></span><br><span class="line">    text: <span class="built_in">str</span></span><br><span class="line">    label: <span class="built_in">str</span></span><br><span class="line">    label_source: <span class="built_in">str</span></span><br><span class="line">    generator_family: <span class="built_in">str</span></span><br><span class="line">    generator_version: <span class="built_in">str</span></span><br><span class="line">    validator_family: <span class="built_in">str</span></span><br><span class="line">    validator_version: <span class="built_in">str</span></span><br><span class="line">    seed_ids: <span class="built_in">tuple</span>[<span class="built_in">str</span>, ...]</span><br><span class="line">    anchor_ids: <span class="built_in">tuple</span>[<span class="built_in">str</span>, ...]</span><br><span class="line">    parent_ids: <span class="built_in">tuple</span>[<span class="built_in">str</span>, ...] = ()</span><br><span class="line">    status: <span class="built_in">str</span> = <span class="string">&quot;GENERATED&quot;</span></span><br><span class="line">    reasons: <span class="built_in">tuple</span>[<span class="built_in">str</span>, ...] = ()</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">make_record</span>(<span class="params"></span></span><br><span class="line"><span class="params">    key: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">    *,</span></span><br><span class="line"><span class="params">    scenario: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">    risk: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">    group: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">    text: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">    label: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">    purpose: <span class="built_in">str</span> = <span class="string">&quot;evaluation&quot;</span>,</span></span><br><span class="line"><span class="params">    label_source: <span class="built_in">str</span> = <span class="string">&quot;deterministic_oracle&quot;</span>,</span></span><br><span class="line"><span class="params">    generator_family: <span class="built_in">str</span> = <span class="string">&quot;generator-family-a&quot;</span>,</span></span><br><span class="line"><span class="params">    generator_version: <span class="built_in">str</span> = <span class="string">&quot;generator-family-a@3.2&quot;</span>,</span></span><br><span class="line"><span class="params">    validator_family: <span class="built_in">str</span> = <span class="string">&quot;rules-engine&quot;</span>,</span></span><br><span class="line"><span class="params">    validator_version: <span class="built_in">str</span> = <span class="string">&quot;refund-oracle@7.3&quot;</span>,</span></span><br><span class="line"><span class="params">    seed_ids: <span class="built_in">tuple</span>[<span class="built_in">str</span>, ...] = (<span class="params"><span class="string">&quot;seed-refund-v8&quot;</span>,</span>),</span></span><br><span class="line"><span class="params">    anchor_ids: <span class="built_in">tuple</span>[<span class="built_in">str</span>, ...] = (<span class="params"><span class="string">&quot;anchor-refund-001&quot;</span>,</span>),</span></span><br><span class="line"><span class="params">    parent_ids: <span class="built_in">tuple</span>[<span class="built_in">str</span>, ...] = (<span class="params"></span>),</span></span><br><span class="line"><span class="params"></span>) -&gt; SyntheticRecord:</span><br><span class="line">    <span class="keyword">return</span> SyntheticRecord(</span><br><span class="line">        record_id=<span class="string">&quot;syn_&quot;</span> + digest(key, text, generator_version)[:<span class="number">16</span>],</span><br><span class="line">        purpose=purpose,</span><br><span class="line">        scenario=scenario,</span><br><span class="line">        risk=risk,</span><br><span class="line">        group=group,</span><br><span class="line">        text=text,</span><br><span class="line">        label=label,</span><br><span class="line">        label_source=label_source,</span><br><span class="line">        generator_family=generator_family,</span><br><span class="line">        generator_version=generator_version,</span><br><span class="line">        validator_family=validator_family,</span><br><span class="line">        validator_version=validator_version,</span><br><span class="line">        seed_ids=seed_ids,</span><br><span class="line">        anchor_ids=anchor_ids,</span><br><span class="line">        parent_ids=parent_ids,</span><br><span class="line">    )</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">generated_fixture</span>() -&gt; <span class="built_in">list</span>[SyntheticRecord]:</span><br><span class="line">    <span class="string">&quot;&quot;&quot;返回包含正常样本与五种故障的确定性构造批次。&quot;&quot;&quot;</span></span><br><span class="line">    valid_refund = make_record(</span><br><span class="line">        <span class="string">&quot;valid-refund&quot;</span>,</span><br><span class="line">        scenario=<span class="string">&quot;refund_after_ship&quot;</span>,</span><br><span class="line">        risk=<span class="string">&quot;high&quot;</span>,</span><br><span class="line">        group=<span class="string">&quot;standard&quot;</span>,</span><br><span class="line">        text=<span class="string">&quot;订单已发货，用户要求全额退款，物流与仓库证据冲突。&quot;</span>,</span><br><span class="line">        label=<span class="string">&quot;MANUAL_REVIEW&quot;</span>,</span><br><span class="line">    )</span><br><span class="line">    exact_duplicate = make_record(</span><br><span class="line">        <span class="string">&quot;exact-duplicate&quot;</span>,</span><br><span class="line">        scenario=<span class="string">&quot;refund_after_ship&quot;</span>,</span><br><span class="line">        risk=<span class="string">&quot;high&quot;</span>,</span><br><span class="line">        group=<span class="string">&quot;standard&quot;</span>,</span><br><span class="line">        text=<span class="string">&quot;订单已发货， 用户要求全额退款，物流与仓库证据冲突！&quot;</span>,</span><br><span class="line">        label=<span class="string">&quot;MANUAL_REVIEW&quot;</span>,</span><br><span class="line">    )</span><br><span class="line">    near_duplicate = make_record(</span><br><span class="line">        <span class="string">&quot;near-duplicate&quot;</span>,</span><br><span class="line">        scenario=<span class="string">&quot;refund_after_ship&quot;</span>,</span><br><span class="line">        risk=<span class="string">&quot;high&quot;</span>,</span><br><span class="line">        group=<span class="string">&quot;standard&quot;</span>,</span><br><span class="line">        text=<span class="string">&quot;订单已发货，用户要求全额退款，物流和仓库证据冲突。&quot;</span>,</span><br><span class="line">        label=<span class="string">&quot;MANUAL_REVIEW&quot;</span>,</span><br><span class="line">        parent_ids=(valid_refund.record_id,),</span><br><span class="line">    )</span><br><span class="line">    valid_address = make_record(</span><br><span class="line">        <span class="string">&quot;valid-address&quot;</span>,</span><br><span class="line">        scenario=<span class="string">&quot;address_change_after_ship&quot;</span>,</span><br><span class="line">        risk=<span class="string">&quot;medium&quot;</span>,</span><br><span class="line">        group=<span class="string">&quot;assistive-tech&quot;</span>,</span><br><span class="line">        text=<span class="string">&quot;屏幕阅读器用户更正了地址，但订单状态已经变为发货。&quot;</span>,</span><br><span class="line">        label=<span class="string">&quot;MANUAL_REVIEW&quot;</span>,</span><br><span class="line">        anchor_ids=(<span class="string">&quot;anchor-address-004&quot;</span>,),</span><br><span class="line">    )</span><br><span class="line">    valid_policy = make_record(</span><br><span class="line">        <span class="string">&quot;valid-policy&quot;</span>,</span><br><span class="line">        scenario=<span class="string">&quot;policy_explanation&quot;</span>,</span><br><span class="line">        risk=<span class="string">&quot;low&quot;</span>,</span><br><span class="line">        group=<span class="string">&quot;minority-language&quot;</span>,</span><br><span class="line">        text=<span class="string">&quot;用户只询问退款时限，不要求执行退款工具。&quot;</span>,</span><br><span class="line">        label=<span class="string">&quot;POLICY_EXPLAIN&quot;</span>,</span><br><span class="line">        anchor_ids=(<span class="string">&quot;anchor-policy-012&quot;</span>,),</span><br><span class="line">    )</span><br><span class="line">    leaked = make_record(</span><br><span class="line">        <span class="string">&quot;leaked&quot;</span>,</span><br><span class="line">        scenario=<span class="string">&quot;policy_explanation&quot;</span>,</span><br><span class="line">        risk=<span class="string">&quot;low&quot;</span>,</span><br><span class="line">        group=<span class="string">&quot;standard&quot;</span>,</span><br><span class="line">        text=<span class="string">&quot;内部备注 PRIVATE-CANARY-7F91-XQ 表示可以直接退款。&quot;</span>,</span><br><span class="line">        label=<span class="string">&quot;POLICY_EXPLAIN&quot;</span>,</span><br><span class="line">        anchor_ids=(<span class="string">&quot;anchor-policy-private&quot;</span>,),</span><br><span class="line">    )</span><br><span class="line">    self_certified = make_record(</span><br><span class="line">        <span class="string">&quot;self-certified&quot;</span>,</span><br><span class="line">        scenario=<span class="string">&quot;refund_after_ship&quot;</span>,</span><br><span class="line">        risk=<span class="string">&quot;high&quot;</span>,</span><br><span class="line">        group=<span class="string">&quot;standard&quot;</span>,</span><br><span class="line">        text=<span class="string">&quot;订单已发货且证据冲突，生成器判断可以自动全额退款。&quot;</span>,</span><br><span class="line">        label=<span class="string">&quot;AUTO_REFUND&quot;</span>,</span><br><span class="line">        label_source=<span class="string">&quot;generator&quot;</span>,</span><br><span class="line">        validator_family=<span class="string">&quot;generator-family-a&quot;</span>,</span><br><span class="line">        validator_version=<span class="string">&quot;generator-family-a@3.2-judge&quot;</span>,</span><br><span class="line">        anchor_ids=(<span class="string">&quot;anchor-refund-002&quot;</span>,),</span><br><span class="line">    )</span><br><span class="line">    contaminated = make_record(</span><br><span class="line">        <span class="string">&quot;contaminated&quot;</span>,</span><br><span class="line">        scenario=<span class="string">&quot;policy_explanation&quot;</span>,</span><br><span class="line">        risk=<span class="string">&quot;low&quot;</span>,</span><br><span class="line">        group=<span class="string">&quot;standard&quot;</span>,</span><br><span class="line">        text=<span class="string">&quot;按照测试答案模板解释退款时限。&quot;</span>,</span><br><span class="line">        label=<span class="string">&quot;POLICY_EXPLAIN&quot;</span>,</span><br><span class="line">        parent_ids=(<span class="string">&quot;sealed-eval-v5:case-9&quot;</span>,),</span><br><span class="line">        anchor_ids=(<span class="string">&quot;anchor-policy-013&quot;</span>,),</span><br><span class="line">    )</span><br><span class="line">    <span class="keyword">return</span> [</span><br><span class="line">        valid_refund,</span><br><span class="line">        exact_duplicate,</span><br><span class="line">        near_duplicate,</span><br><span class="line">        valid_address,</span><br><span class="line">        valid_policy,</span><br><span class="line">        leaked,</span><br><span class="line">        self_certified,</span><br><span class="line">        contaminated,</span><br><span class="line">    ]</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">deterministic_screen</span>(<span class="params">record: SyntheticRecord</span>) -&gt; SyntheticRecord:</span><br><span class="line">    reasons: <span class="built_in">list</span>[<span class="built_in">str</span>] = []</span><br><span class="line">    <span class="keyword">if</span> record.purpose <span class="keyword">not</span> <span class="keyword">in</span> ALLOWED_PURPOSES:</span><br><span class="line">        reasons.append(<span class="string">&quot;PURPOSE_NOT_ALLOWED&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> record.anchor_ids:</span><br><span class="line">        reasons.append(<span class="string">&quot;REAL_ANCHOR_MISSING&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> record.label_source == <span class="string">&quot;generator&quot;</span>:</span><br><span class="line">        reasons.append(<span class="string">&quot;LABEL_SELF_CERTIFICATION&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> record.risk == <span class="string">&quot;high&quot;</span> <span class="keyword">and</span> record.generator_family == record.validator_family:</span><br><span class="line">        reasons.append(<span class="string">&quot;CORRELATED_VALIDATOR&quot;</span>)</span><br><span class="line">    expected = ORACLE.get(record.scenario)</span><br><span class="line">    <span class="keyword">if</span> expected <span class="keyword">is</span> <span class="literal">None</span>:</span><br><span class="line">        reasons.append(<span class="string">&quot;ORACLE_MISSING&quot;</span>)</span><br><span class="line">    <span class="keyword">elif</span> record.label != expected:</span><br><span class="line">        reasons.append(<span class="string">&quot;ORACLE_MISMATCH&quot;</span>)</span><br><span class="line">    ancestry = <span class="built_in">set</span>(record.seed_ids) | <span class="built_in">set</span>(record.parent_ids)</span><br><span class="line">    <span class="keyword">if</span> ancestry &amp; PROHIBITED_ANCESTORS:</span><br><span class="line">        reasons.append(<span class="string">&quot;PROHIBITED_ANCESTOR&quot;</span>)</span><br><span class="line">    folded_text = record.text.casefold()</span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">any</span>(sentinel.casefold() <span class="keyword">in</span> folded_text <span class="keyword">for</span> sentinel <span class="keyword">in</span> LEAKAGE_SENTINELS):</span><br><span class="line">        reasons.append(<span class="string">&quot;LEAKAGE_SENTINEL_HIT&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> reasons:</span><br><span class="line">        <span class="keyword">return</span> replace(record, status=<span class="string">&quot;QUARANTINED&quot;</span>, reasons=<span class="built_in">tuple</span>(<span class="built_in">sorted</span>(reasons)))</span><br><span class="line">    <span class="keyword">return</span> replace(record, status=<span class="string">&quot;SCREENED&quot;</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">run_pipeline</span>(<span class="params"></span></span><br><span class="line"><span class="params">    records: <span class="built_in">list</span>[SyntheticRecord],</span></span><br><span class="line"><span class="params">    *,</span></span><br><span class="line"><span class="params">    near_threshold: <span class="built_in">float</span> = <span class="number">0.73</span>,</span></span><br><span class="line"><span class="params"></span>) -&gt; <span class="built_in">list</span>[SyntheticRecord]:</span><br><span class="line">    result: <span class="built_in">list</span>[SyntheticRecord] = []</span><br><span class="line">    exact_seen: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="built_in">str</span>] = &#123;&#125;</span><br><span class="line">    accepted_texts: <span class="built_in">list</span>[<span class="built_in">tuple</span>[<span class="built_in">str</span>, <span class="built_in">str</span>]] = []</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> original <span class="keyword">in</span> records:</span><br><span class="line">        record = deterministic_screen(original)</span><br><span class="line">        <span class="keyword">if</span> record.status == <span class="string">&quot;QUARANTINED&quot;</span>:</span><br><span class="line">            result.append(record)</span><br><span class="line">            <span class="keyword">continue</span></span><br><span class="line"></span><br><span class="line">        exact_hash = digest(normalize_for_exact_match(record.text))</span><br><span class="line">        <span class="keyword">if</span> exact_hash <span class="keyword">in</span> exact_seen:</span><br><span class="line">            result.append(</span><br><span class="line">                replace(</span><br><span class="line">                    record,</span><br><span class="line">                    status=<span class="string">&quot;QUARANTINED&quot;</span>,</span><br><span class="line">                    reasons=(<span class="string">&quot;EXACT_DUPLICATE_OF:&quot;</span> + exact_seen[exact_hash],),</span><br><span class="line">                )</span><br><span class="line">            )</span><br><span class="line">            <span class="keyword">continue</span></span><br><span class="line"></span><br><span class="line">        nearest_id = <span class="string">&quot;&quot;</span></span><br><span class="line">        nearest_score = <span class="number">0.0</span></span><br><span class="line">        <span class="keyword">for</span> accepted_id, accepted_text <span class="keyword">in</span> accepted_texts:</span><br><span class="line">            score = near_similarity(record.text, accepted_text)</span><br><span class="line">            <span class="keyword">if</span> score &gt; nearest_score:</span><br><span class="line">                nearest_id = accepted_id</span><br><span class="line">                nearest_score = score</span><br><span class="line">        <span class="keyword">if</span> nearest_score &gt;= near_threshold:</span><br><span class="line">            result.append(</span><br><span class="line">                replace(</span><br><span class="line">                    record,</span><br><span class="line">                    status=<span class="string">&quot;NEEDS_HUMAN_REVIEW&quot;</span>,</span><br><span class="line">                    reasons=(<span class="string">f&quot;NEAR_DUPLICATE_OF:<span class="subst">&#123;nearest_id&#125;</span>:<span class="subst">&#123;nearest_score:<span class="number">.3</span>f&#125;</span>&quot;</span>,),</span><br><span class="line">                )</span><br><span class="line">            )</span><br><span class="line">            <span class="keyword">continue</span></span><br><span class="line"></span><br><span class="line">        exact_seen[exact_hash] = record.record_id</span><br><span class="line">        accepted_texts.append((record.record_id, record.text))</span><br><span class="line">        result.append(replace(record, status=<span class="string">&quot;ACCEPTED&quot;</span>))</span><br><span class="line">    <span class="keyword">return</span> result</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">resolve_near_duplicate_reviews</span>(<span class="params"></span></span><br><span class="line"><span class="params">    records: <span class="built_in">list</span>[SyntheticRecord],</span></span><br><span class="line"><span class="params"></span>) -&gt; <span class="built_in">list</span>[SyntheticRecord]:</span><br><span class="line">    <span class="string">&quot;&quot;&quot;夹具中的近重复由人工确认只改连接词，因此隔离而非自动删除。&quot;&quot;&quot;</span></span><br><span class="line">    resolved: <span class="built_in">list</span>[SyntheticRecord] = []</span><br><span class="line">    <span class="keyword">for</span> record <span class="keyword">in</span> records:</span><br><span class="line">        <span class="keyword">if</span> record.status == <span class="string">&quot;NEEDS_HUMAN_REVIEW&quot;</span>:</span><br><span class="line">            resolved.append(</span><br><span class="line">                replace(</span><br><span class="line">                    record,</span><br><span class="line">                    status=<span class="string">&quot;QUARANTINED&quot;</span>,</span><br><span class="line">                    reasons=record.reasons + (<span class="string">&quot;HUMAN_CONFIRMED_REDUNDANT&quot;</span>,),</span><br><span class="line">                )</span><br><span class="line">            )</span><br><span class="line">        <span class="keyword">else</span>:</span><br><span class="line">            resolved.append(record)</span><br><span class="line">    <span class="keyword">return</span> resolved</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">coverage_report</span>(<span class="params">records: <span class="built_in">list</span>[SyntheticRecord]</span>) -&gt; <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="built_in">float</span> | <span class="built_in">int</span>]:</span><br><span class="line">    accepted = [record <span class="keyword">for</span> record <span class="keyword">in</span> records <span class="keyword">if</span> record.status == <span class="string">&quot;ACCEPTED&quot;</span>]</span><br><span class="line">    accepted_cells = &#123;(record.scenario, record.risk) <span class="keyword">for</span> record <span class="keyword">in</span> accepted&#125;</span><br><span class="line">    anchored_cells = &#123;</span><br><span class="line">        (record.scenario, record.risk)</span><br><span class="line">        <span class="keyword">for</span> record <span class="keyword">in</span> accepted</span><br><span class="line">        <span class="keyword">if</span> record.anchor_ids <span class="keyword">and</span> record.validator_family != record.generator_family</span><br><span class="line">    &#125;</span><br><span class="line">    denominator = <span class="built_in">len</span>(EXPECTED_CELLS)</span><br><span class="line">    <span class="keyword">return</span> &#123;</span><br><span class="line">        <span class="string">&quot;expected_cells&quot;</span>: denominator,</span><br><span class="line">        <span class="string">&quot;accepted_coverage&quot;</span>: <span class="built_in">len</span>(accepted_cells &amp; EXPECTED_CELLS) / denominator,</span><br><span class="line">        <span class="string">&quot;anchored_coverage&quot;</span>: <span class="built_in">len</span>(anchored_cells &amp; EXPECTED_CELLS) / denominator,</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">max_group_distribution_delta</span>(<span class="params"></span></span><br><span class="line"><span class="params">    records: <span class="built_in">list</span>[SyntheticRecord],</span></span><br><span class="line"><span class="params">    real_anchor_distribution: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="built_in">float</span>],</span></span><br><span class="line"><span class="params"></span>) -&gt; <span class="built_in">float</span>:</span><br><span class="line">    accepted = [record <span class="keyword">for</span> record <span class="keyword">in</span> records <span class="keyword">if</span> record.status == <span class="string">&quot;ACCEPTED&quot;</span>]</span><br><span class="line">    counts = Counter(record.group <span class="keyword">for</span> record <span class="keyword">in</span> accepted)</span><br><span class="line">    total = <span class="built_in">len</span>(accepted)</span><br><span class="line">    groups = <span class="built_in">set</span>(real_anchor_distribution) | <span class="built_in">set</span>(counts)</span><br><span class="line">    <span class="keyword">if</span> total == <span class="number">0</span>:</span><br><span class="line">        <span class="keyword">return</span> <span class="number">1.0</span></span><br><span class="line">    <span class="keyword">return</span> <span class="built_in">max</span>(</span><br><span class="line">        <span class="built_in">abs</span>(counts[group] / total - real_anchor_distribution.get(group, <span class="number">0.0</span>))</span><br><span class="line">        <span class="keyword">for</span> group <span class="keyword">in</span> groups</span><br><span class="line">    )</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">AcceptanceFixture</span>:</span><br><span class="line">    min_anchored_coverage: <span class="built_in">float</span> = <span class="number">1.0</span></span><br><span class="line">    max_group_delta: <span class="built_in">float</span> = <span class="number">0.20</span></span><br><span class="line">    max_pending_reviews: <span class="built_in">int</span> = <span class="number">0</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">acceptance_report</span>(<span class="params"></span></span><br><span class="line"><span class="params">    records: <span class="built_in">list</span>[SyntheticRecord],</span></span><br><span class="line"><span class="params">    fixture: AcceptanceFixture,</span></span><br><span class="line"><span class="params">    real_anchor_distribution: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="built_in">float</span>],</span></span><br><span class="line"><span class="params"></span>) -&gt; <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="built_in">object</span>]:</span><br><span class="line">    coverage = coverage_report(records)</span><br><span class="line">    pending = <span class="built_in">sum</span>(record.status == <span class="string">&quot;NEEDS_HUMAN_REVIEW&quot;</span> <span class="keyword">for</span> record <span class="keyword">in</span> records)</span><br><span class="line">    accepted = [record <span class="keyword">for</span> record <span class="keyword">in</span> records <span class="keyword">if</span> record.status == <span class="string">&quot;ACCEPTED&quot;</span>]</span><br><span class="line">    accepted_hard_failures = <span class="built_in">sum</span>(</span><br><span class="line">        <span class="built_in">any</span>(</span><br><span class="line">            reason <span class="keyword">in</span> &#123;</span><br><span class="line">                <span class="string">&quot;LABEL_SELF_CERTIFICATION&quot;</span>,</span><br><span class="line">                <span class="string">&quot;CORRELATED_VALIDATOR&quot;</span>,</span><br><span class="line">                <span class="string">&quot;ORACLE_MISMATCH&quot;</span>,</span><br><span class="line">                <span class="string">&quot;PROHIBITED_ANCESTOR&quot;</span>,</span><br><span class="line">                <span class="string">&quot;LEAKAGE_SENTINEL_HIT&quot;</span>,</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="keyword">for</span> reason <span class="keyword">in</span> record.reasons</span><br><span class="line">        )</span><br><span class="line">        <span class="keyword">for</span> record <span class="keyword">in</span> accepted</span><br><span class="line">    )</span><br><span class="line">    group_delta = max_group_distribution_delta(records, real_anchor_distribution)</span><br><span class="line">    checks = &#123;</span><br><span class="line">        <span class="string">&quot;anchored_coverage&quot;</span>: coverage[<span class="string">&quot;anchored_coverage&quot;</span>]</span><br><span class="line">        &gt;= fixture.min_anchored_coverage,</span><br><span class="line">        <span class="string">&quot;pending_reviews&quot;</span>: pending &lt;= fixture.max_pending_reviews,</span><br><span class="line">        <span class="string">&quot;accepted_hard_failures&quot;</span>: accepted_hard_failures == <span class="number">0</span>,</span><br><span class="line">        <span class="string">&quot;group_distribution_delta&quot;</span>: group_delta &lt;= fixture.max_group_delta,</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> &#123;</span><br><span class="line">        <span class="string">&quot;passed&quot;</span>: <span class="built_in">all</span>(checks.values()),</span><br><span class="line">        <span class="string">&quot;checks&quot;</span>: checks,</span><br><span class="line">        <span class="string">&quot;accepted&quot;</span>: <span class="built_in">len</span>(accepted),</span><br><span class="line">        <span class="string">&quot;pending&quot;</span>: pending,</span><br><span class="line">        <span class="string">&quot;max_group_delta&quot;</span>: <span class="built_in">round</span>(group_delta, <span class="number">3</span>),</span><br><span class="line">        **coverage,</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">propagate_deletion</span>(<span class="params"></span></span><br><span class="line"><span class="params">    records: <span class="built_in">list</span>[SyntheticRecord], revoked_id: <span class="built_in">str</span></span></span><br><span class="line"><span class="params"></span>) -&gt; <span class="built_in">tuple</span>[<span class="built_in">list</span>[SyntheticRecord], <span class="built_in">int</span>]:</span><br><span class="line">    <span class="string">&quot;&quot;&quot;沿 anchor、seed 和 parent 边传播墓碑，不删除历史证据。&quot;&quot;&quot;</span></span><br><span class="line">    invalid_ids = &#123;revoked_id&#125;</span><br><span class="line">    changed = <span class="literal">True</span></span><br><span class="line">    <span class="keyword">while</span> changed:</span><br><span class="line">        changed = <span class="literal">False</span></span><br><span class="line">        <span class="keyword">for</span> record <span class="keyword">in</span> records:</span><br><span class="line">            ancestors = <span class="built_in">set</span>(record.anchor_ids) | <span class="built_in">set</span>(record.seed_ids) | <span class="built_in">set</span>(record.parent_ids)</span><br><span class="line">            <span class="keyword">if</span> record.record_id <span class="keyword">not</span> <span class="keyword">in</span> invalid_ids <span class="keyword">and</span> ancestors &amp; invalid_ids:</span><br><span class="line">                invalid_ids.add(record.record_id)</span><br><span class="line">                changed = <span class="literal">True</span></span><br><span class="line"></span><br><span class="line">    updated: <span class="built_in">list</span>[SyntheticRecord] = []</span><br><span class="line">    tombstoned = <span class="number">0</span></span><br><span class="line">    <span class="keyword">for</span> record <span class="keyword">in</span> records:</span><br><span class="line">        <span class="keyword">if</span> record.record_id <span class="keyword">in</span> invalid_ids:</span><br><span class="line">            updated.append(</span><br><span class="line">                replace(</span><br><span class="line">                    record,</span><br><span class="line">                    status=<span class="string">&quot;TOMBSTONED&quot;</span>,</span><br><span class="line">                    reasons=record.reasons + (<span class="string">&quot;ANCESTOR_REVOKED:&quot;</span> + revoked_id,),</span><br><span class="line">                )</span><br><span class="line">            )</span><br><span class="line">            tombstoned += <span class="number">1</span></span><br><span class="line">        <span class="keyword">else</span>:</span><br><span class="line">            updated.append(record)</span><br><span class="line">    <span class="keyword">return</span> updated, tombstoned</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">REAL_ANCHOR_DISTRIBUTION = &#123;</span><br><span class="line">    <span class="string">&quot;standard&quot;</span>: <span class="number">0.50</span>,</span><br><span class="line">    <span class="string">&quot;assistive-tech&quot;</span>: <span class="number">0.25</span>,</span><br><span class="line">    <span class="string">&quot;minority-language&quot;</span>: <span class="number">0.25</span>,</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">SyntheticPipelineTests</span>(unittest.TestCase):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">setUp</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.raw = generated_fixture()</span><br><span class="line">        <span class="variable language_">self</span>.processed = run_pipeline(<span class="variable language_">self</span>.raw)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">record_for_key_text</span>(<span class="params">self, fragment: <span class="built_in">str</span></span>) -&gt; SyntheticRecord:</span><br><span class="line">        <span class="keyword">return</span> <span class="built_in">next</span>(record <span class="keyword">for</span> record <span class="keyword">in</span> <span class="variable language_">self</span>.processed <span class="keyword">if</span> fragment <span class="keyword">in</span> record.text)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_normalization_preserves_negation_and_numbers</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.assertNotEqual(</span><br><span class="line">            normalize_for_exact_match(<span class="string">&quot;不允许退款 100 元&quot;</span>),</span><br><span class="line">            normalize_for_exact_match(<span class="string">&quot;允许退款 10 元&quot;</span>),</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_exact_duplicate_is_quarantined</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        duplicate = <span class="variable language_">self</span>.record_for_key_text(<span class="string">&quot;冲突！&quot;</span>)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(duplicate.status, <span class="string">&quot;QUARANTINED&quot;</span>)</span><br><span class="line">        <span class="variable language_">self</span>.assertTrue(duplicate.reasons[<span class="number">0</span>].startswith(<span class="string">&quot;EXACT_DUPLICATE_OF:&quot;</span>))</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_near_duplicate_requires_human_review</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        candidate = <span class="variable language_">self</span>.record_for_key_text(<span class="string">&quot;物流和仓库&quot;</span>)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(candidate.status, <span class="string">&quot;NEEDS_HUMAN_REVIEW&quot;</span>)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_leakage_sentinel_is_blocked</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        leaked = <span class="variable language_">self</span>.record_for_key_text(<span class="string">&quot;PRIVATE-CANARY&quot;</span>)</span><br><span class="line">        <span class="variable language_">self</span>.assertIn(<span class="string">&quot;LEAKAGE_SENTINEL_HIT&quot;</span>, leaked.reasons)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(leaked.status, <span class="string">&quot;QUARANTINED&quot;</span>)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_self_certification_and_wrong_label_are_both_visible</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        record = <span class="variable language_">self</span>.record_for_key_text(<span class="string">&quot;生成器判断&quot;</span>)</span><br><span class="line">        <span class="variable language_">self</span>.assertIn(<span class="string">&quot;LABEL_SELF_CERTIFICATION&quot;</span>, record.reasons)</span><br><span class="line">        <span class="variable language_">self</span>.assertIn(<span class="string">&quot;CORRELATED_VALIDATOR&quot;</span>, record.reasons)</span><br><span class="line">        <span class="variable language_">self</span>.assertIn(<span class="string">&quot;ORACLE_MISMATCH&quot;</span>, record.reasons)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_sealed_ancestor_contamination_is_blocked</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        record = <span class="variable language_">self</span>.record_for_key_text(<span class="string">&quot;测试答案模板&quot;</span>)</span><br><span class="line">        <span class="variable language_">self</span>.assertIn(<span class="string">&quot;PROHIBITED_ANCESTOR&quot;</span>, record.reasons)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_release_passes_only_after_review_resolution</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        fixture = AcceptanceFixture()</span><br><span class="line">        before = acceptance_report(</span><br><span class="line">            <span class="variable language_">self</span>.processed, fixture, REAL_ANCHOR_DISTRIBUTION</span><br><span class="line">        )</span><br><span class="line">        after = acceptance_report(</span><br><span class="line">            resolve_near_duplicate_reviews(<span class="variable language_">self</span>.processed),</span><br><span class="line">            fixture,</span><br><span class="line">            REAL_ANCHOR_DISTRIBUTION,</span><br><span class="line">        )</span><br><span class="line">        <span class="variable language_">self</span>.assertFalse(before[<span class="string">&quot;passed&quot;</span>])</span><br><span class="line">        <span class="variable language_">self</span>.assertTrue(after[<span class="string">&quot;passed&quot;</span>])</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_anchored_coverage_is_complete_for_fixture</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        report = coverage_report(resolve_near_duplicate_reviews(<span class="variable language_">self</span>.processed))</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(report[<span class="string">&quot;anchored_coverage&quot;</span>], <span class="number">1.0</span>)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_anchor_revocation_tombstones_all_descendants</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        resolved = resolve_near_duplicate_reviews(<span class="variable language_">self</span>.processed)</span><br><span class="line">        updated, count = propagate_deletion(resolved, <span class="string">&quot;anchor-refund-001&quot;</span>)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(count, <span class="number">3</span>)</span><br><span class="line">        affected = [record <span class="keyword">for</span> record <span class="keyword">in</span> updated <span class="keyword">if</span> record.status == <span class="string">&quot;TOMBSTONED&quot;</span>]</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(<span class="built_in">len</span>(affected), <span class="number">3</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">main</span>() -&gt; <span class="literal">None</span>:</span><br><span class="line">    raw = generated_fixture()</span><br><span class="line">    processed = run_pipeline(raw)</span><br><span class="line">    before = acceptance_report(</span><br><span class="line">        processed, AcceptanceFixture(), REAL_ANCHOR_DISTRIBUTION</span><br><span class="line">    )</span><br><span class="line">    resolved = resolve_near_duplicate_reviews(processed)</span><br><span class="line">    after = acceptance_report(</span><br><span class="line">        resolved, AcceptanceFixture(), REAL_ANCHOR_DISTRIBUTION</span><br><span class="line">    )</span><br><span class="line">    status_before = Counter(record.status <span class="keyword">for</span> record <span class="keyword">in</span> processed)</span><br><span class="line">    reason_counts = Counter(</span><br><span class="line">        reason.split(<span class="string">&quot;:&quot;</span>, <span class="number">1</span>)[<span class="number">0</span>]</span><br><span class="line">        <span class="keyword">for</span> record <span class="keyword">in</span> processed</span><br><span class="line">        <span class="keyword">for</span> reason <span class="keyword">in</span> record.reasons</span><br><span class="line">    )</span><br><span class="line">    _, tombstoned = propagate_deletion(resolved, <span class="string">&quot;anchor-refund-001&quot;</span>)</span><br><span class="line"></span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;status_before_review=&quot;</span> + json.dumps(status_before, sort_keys=<span class="literal">True</span>))</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;detected_reasons=&quot;</span> + json.dumps(reason_counts, sort_keys=<span class="literal">True</span>))</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;acceptance_before_review=&quot;</span> + json.dumps(before, sort_keys=<span class="literal">True</span>))</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;acceptance_after_review=&quot;</span> + json.dumps(after, sort_keys=<span class="literal">True</span>))</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&quot;tombstoned_after_anchor_revocation=<span class="subst">&#123;tombstoned&#125;</span>&quot;</span>)</span><br><span class="line"></span><br><span class="line">    suite = unittest.defaultTestLoader.loadTestsFromTestCase(SyntheticPipelineTests)</span><br><span class="line">    result = unittest.TextTestRunner(stream=sys.stdout, verbosity=<span class="number">1</span>).run(suite)</span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> result.wasSuccessful():</span><br><span class="line">        <span class="keyword">raise</span> SystemExit(<span class="number">1</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&quot;__main__&quot;</span>:</span><br><span class="line">    main()</span><br></pre></td></tr></table></figure>
+
+<h3 id="14-1-代码怎样对应生产职责"><a href="#14-1-代码怎样对应生产职责" class="headerlink" title="14.1 代码怎样对应生产职责"></a>14.1 代码怎样对应生产职责</h3><p>这个示例刻意把“检测到风险”和“允许发布”分开。</p>
+<p><code>deterministic_screen</code> 只处理能够给出稳定错误码的约束。泄漏哨兵、禁止祖先、Oracle 不一致和高风险同源验证任何一项命中，记录就进入隔离。即使一条记录同时命中三个原因，也不会只保留第一个异常。</p>
+<p><code>run_pipeline</code> 先做硬规则，再做精确和近重复处理。精确重复可以自动隔离；近重复只进入 <code>NEEDS_HUMAN_REVIEW</code>。这个区别防止相似度把一对关键反事实自动删掉。</p>
+<p><code>acceptance_report</code> 只在已接受记录上计算发布覆盖，同时要求待复核队列归零。初次运行故意失败，因为一条近重复候选尚未被人工收口。夹具中的“人工结果”确认它只改了连接词，随后将其隔离，第二次验收才通过。</p>
+<p><code>propagate_deletion</code> 从撤回的真实锚点开始，沿 <code>anchor_ids</code>、<code>seed_ids</code> 和 <code>parent_ids</code> 传播墓碑。它不删除行，也不把历史报告改写成“当时从未使用”。生产实现需要把当前有效视图与历史审计视图分开：当前训练和评测构建排除墓碑记录，历史报告仍显示当时使用记录及后续失效原因。</p>
+<h3 id="14-2-这个示例没有证明什么"><a href="#14-2-这个示例没有证明什么" class="headerlink" title="14.2 这个示例没有证明什么"></a>14.2 这个示例没有证明什么</h3><p>代码执行通过只证明这组确定性夹具满足实现断言。它没有证明：</p>
+<ul>
+<li>字符三元片段能识别所有语义重复；</li>
+<li>泄漏哨兵未命中就不存在隐私泄漏；</li>
+<li>三个构造群体能代表真实公平风险；</li>
+<li>真实锚点本身一定正确或足够新；</li>
+<li>数据满足差分隐私；</li>
+<li>被测 AI 系统在这些输入上业务正确。</li>
+</ul>
+<p>最后一项需要把接受的评测记录真正送入被测系统，并核验动作、权限、资金账本和其他外部后置条件。</p>
+<h2 id="十五、实际执行结果"><a href="#十五、实际执行结果" class="headerlink" title="十五、实际执行结果"></a>十五、实际执行结果</h2><p>文章完成时，从代码围栏提取上述脚本并在本地 Python 环境执行。下面结果中的数量全部来自这段构造夹具：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">status_before_review=&#123;&quot;ACCEPTED&quot;: 3, &quot;NEEDS_HUMAN_REVIEW&quot;: 1, &quot;QUARANTINED&quot;: 4&#125;</span><br><span class="line">detected_reasons=&#123;&quot;CORRELATED_VALIDATOR&quot;: 1, &quot;EXACT_DUPLICATE_OF&quot;: 1, &quot;LABEL_SELF_CERTIFICATION&quot;: 1, &quot;LEAKAGE_SENTINEL_HIT&quot;: 1, &quot;NEAR_DUPLICATE_OF&quot;: 1, &quot;ORACLE_MISMATCH&quot;: 1, &quot;PROHIBITED_ANCESTOR&quot;: 1&#125;</span><br><span class="line">acceptance_before_review=&#123;&quot;accepted&quot;: 3, &quot;accepted_coverage&quot;: 1.0, &quot;anchored_coverage&quot;: 1.0, &quot;checks&quot;: &#123;&quot;accepted_hard_failures&quot;: true, &quot;anchored_coverage&quot;: true, &quot;group_distribution_delta&quot;: true, &quot;pending_reviews&quot;: false&#125;, &quot;expected_cells&quot;: 3, &quot;max_group_delta&quot;: 0.167, &quot;passed&quot;: false, &quot;pending&quot;: 1&#125;</span><br><span class="line">acceptance_after_review=&#123;&quot;accepted&quot;: 3, &quot;accepted_coverage&quot;: 1.0, &quot;anchored_coverage&quot;: 1.0, &quot;checks&quot;: &#123;&quot;accepted_hard_failures&quot;: true, &quot;anchored_coverage&quot;: true, &quot;group_distribution_delta&quot;: true, &quot;pending_reviews&quot;: true&#125;, &quot;expected_cells&quot;: 3, &quot;max_group_delta&quot;: 0.167, &quot;passed&quot;: true, &quot;pending&quot;: 0&#125;</span><br><span class="line">tombstoned_after_anchor_revocation=3</span><br><span class="line">.........</span><br><span class="line">----------------------------------------------------------------------</span><br><span class="line">Ran 9 tests in 0.002s</span><br><span class="line"></span><br><span class="line">OK</span><br></pre></td></tr></table></figure>
+
+<p>执行输出应按以下方式解释：</p>
+<ul>
+<li><code>ACCEPTED=3</code> 表示三种预期场景各有一条通过硬规则和独立验证的记录；</li>
+<li><code>QUARANTINED=4</code> 应包含精确重复、哨兵泄漏、自证错误和密封祖先污染；</li>
+<li><code>NEEDS_HUMAN_REVIEW=1</code> 是语义近重复候选；</li>
+<li>第一次验收失败应只因为待复核不为零；</li>
+<li>人工复核把近重复隔离后，锚定覆盖、构造群体偏移和硬失败门禁应全部通过；</li>
+<li>撤回 <code>anchor-refund-001</code> 应使原记录、精确副本和近重复后代共三条记录变为墓碑状态。</li>
+</ul>
+<p>如果实际输出与这些预期不一致，应该修代码或文章解释，而不是手工改输出文本。</p>
+<h2 id="十六、自动化测试与失败注入设计"><a href="#十六、自动化测试与失败注入设计" class="headerlink" title="十六、自动化测试与失败注入设计"></a>十六、自动化测试与失败注入设计</h2><h3 id="16-1-单元测试"><a href="#16-1-单元测试" class="headerlink" title="16.1 单元测试"></a>16.1 单元测试</h3><p>最小单元测试覆盖：</p>
+<ul>
+<li>规范化保留否定和数字语义；</li>
+<li>精确重复被隔离；</li>
+<li>语义近重复进入人工而非自动删除；</li>
+<li>泄漏哨兵被阻断；</li>
+<li>标签自证、同源验证和 Oracle 冲突同时留证；</li>
+<li>密封评测祖先不能进入独立评测资产；</li>
+<li>待复核存在时发布失败；</li>
+<li>真实锚定覆盖按独立验证计算；</li>
+<li>锚点撤回传播到所有后代。</li>
+</ul>
+<p>这些是对数据流水线的测试，不是对最终 AI 产品的端到端测试。</p>
+<h3 id="16-2-属性测试"><a href="#16-2-属性测试" class="headerlink" title="16.2 属性测试"></a>16.2 属性测试</h3><p>生产实现还适合增加以下不变量：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">任何 ACCEPTED 记录都至少有一个有效真实锚点</span><br><span class="line">任何高风险 ACCEPTED 记录都不能由同家族生成器和验证器闭环决定</span><br><span class="line">任何包含禁止祖先的记录都不能出现在发布清单</span><br><span class="line">任何墓碑祖先都不存在状态为 PUBLISHED 的有效后代</span><br><span class="line">相同发布版本的 manifest_hash 在不同机器上相同</span><br><span class="line">任何近重复自动删除都必须有明确的确定性等价规则</span><br><span class="line">任何 privacy_claim=DP 都必须关联参数、隐私单位、预算账本和实现版本</span><br></pre></td></tr></table></figure>
+
+<p>可以使用生成式属性测试框架随机组合血缘图、状态和错误原因，特别检查环、孤儿父节点、重复事件和删除传播收敛。但不要让用于生成属性测试输入的模型同时决定断言是否正确。</p>
+<h3 id="16-3-失败注入不是再生成几条脏数据"><a href="#16-3-失败注入不是再生成几条脏数据" class="headerlink" title="16.3 失败注入不是再生成几条脏数据"></a>16.3 失败注入不是再生成几条脏数据</h3><p>失败注入要针对控制失效：</p>
+<table>
+<thead>
+<tr>
+<th>注入点</th>
+<th>注入内容</th>
+<th>预期观察</th>
+<th>不能接受的结果</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>生成器</td>
+<td>固定把一个边界标签反转</td>
+<td>Oracle 冲突率升高，批次隔离</td>
+<td>同源 Judge 提高置信度后放行</td>
+</tr>
+<tr>
+<td>验证器</td>
+<td>替换为生成器同家族版本</td>
+<td>相关性门禁阻断高风险记录</td>
+<td>只因 API 名不同就视为独立</td>
+</tr>
+<tr>
+<td>去重器</td>
+<td>删除否定词或数字</td>
+<td>反事实对被错误合并，测试失败</td>
+<td>覆盖率反而上升并发布</td>
+</tr>
+<tr>
+<td>泄漏扫描</td>
+<td>私有源加入唯一哨兵</td>
+<td>原始输出、日志、缓存全链命中</td>
+<td>只扫最终发布 JSON</td>
+</tr>
+<tr>
+<td>血缘服务</td>
+<td>丢失一条父边</td>
+<td>完整性检查发现孤儿或后代未传播</td>
+<td>删除请求显示成功但后代仍可用</td>
+</tr>
+<tr>
+<td>覆盖器</td>
+<td>一百次改写同一成功路径</td>
+<td>行数增加，行为覆盖不变</td>
+<td>名义覆盖被报告成完整覆盖</td>
+</tr>
+<tr>
+<td>隐私配置</td>
+<td>缺少隐私单位或预算记录</td>
+<td>阻止 DP 声明和数据发布</td>
+<td>默认补 <code>epsilon=1</code></td>
+</tr>
+<tr>
+<td>评测隔离</td>
+<td>把密封答案放入种子</td>
+<td>禁止祖先命中，整批作废</td>
+<td>只删除一条逐字重复记录</td>
+</tr>
+</tbody></table>
+<h3 id="16-4-组合故障更接近实际事故"><a href="#16-4-组合故障更接近实际事故" class="headerlink" title="16.4 组合故障更接近实际事故"></a>16.4 组合故障更接近实际事故</h3><p>单点门禁可能都能工作，组合起来仍会失效。例如：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">生成器把密封答案改写</span><br><span class="line">  + 血缘服务漏记父节点</span><br><span class="line">  + 语义去重阈值过高</span><br><span class="line">  + 同源验证器偏好生成措辞</span><br><span class="line">  = 污染样本以“高质量新增覆盖”进入密封集</span><br></pre></td></tr></table></figure>
+
+<p>组合测试应验证：只要任一证据不足，系统是否进入隔离，而不是多个弱信号投票后放行。</p>
+<h2 id="十七、指标口径：每个分数都说明分母和用途"><a href="#十七、指标口径：每个分数都说明分母和用途" class="headerlink" title="十七、指标口径：每个分数都说明分母和用途"></a>十七、指标口径：每个分数都说明分母和用途</h2><h3 id="17-1-生成接受率"><a href="#17-1-生成接受率" class="headerlink" title="17.1 生成接受率"></a>17.1 生成接受率</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">acceptance_rate = 最终 ACCEPTED 记录数 / 成功解析的生成候选数</span><br></pre></td></tr></table></figure>
+
+<p>网络失败和无法解析的原始响应另报，不能从分母消失。接受率过低可能说明生成器差，过高也可能说明过滤器松。它是过程效率，不是数据正确率。</p>
+<h3 id="17-2-独立验证率"><a href="#17-2-独立验证率" class="headerlink" title="17.2 独立验证率"></a>17.2 独立验证率</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">independent_validation_rate =</span><br><span class="line">  有确定性 Oracle 或合格异源/人工证据的接受记录数</span><br><span class="line">  / 全部接受记录数</span><br></pre></td></tr></table></figure>
+
+<p>高风险与低风险分开报告。来源不明的验证器不能算已知异源。</p>
+<h3 id="17-3-标签自证暴露率"><a href="#17-3-标签自证暴露率" class="headerlink" title="17.3 标签自证暴露率"></a>17.3 标签自证暴露率</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">self_certification_exposure =</span><br><span class="line">  标签来源与最终验证来源缺少独立性的候选数</span><br><span class="line">  / 成功解析候选数</span><br></pre></td></tr></table></figure>
+
+<p>这个指标用于发现流水线结构风险，不应因为这些记录最后被隔离就停止监控。若比例持续上升，生成配置已经偏离设计。</p>
+<h3 id="17-4-精确重复率与近重复簇集中度"><a href="#17-4-精确重复率与近重复簇集中度" class="headerlink" title="17.4 精确重复率与近重复簇集中度"></a>17.4 精确重复率与近重复簇集中度</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">exact_duplicate_rate = 精确重复候选数 / 成功解析候选数</span><br><span class="line">largest_cluster_share = 最大近重复候选簇记录数 / 成功解析候选数</span><br></pre></td></tr></table></figure>
+
+<p>近重复率要注明算法、阈值和人工复核口径。不同版本不能直接比较。</p>
+<h3 id="17-5-泄漏指标"><a href="#17-5-泄漏指标" class="headerlink" title="17.5 泄漏指标"></a>17.5 泄漏指标</h3><p>至少分开：</p>
+<ul>
+<li><code>sentinel_hit_count</code>：唯一测试哨兵命中数；</li>
+<li><code>verbatim_overlap_rate</code>：与受控私有源长片段逐字重叠候选率；</li>
+<li><code>identifier_pattern_hit_rate</code>：敏感格式候选率；</li>
+<li><code>privacy_attack_success</code>：在明确威胁模型和攻击集下的成功率；</li>
+<li><code>unknown_privacy_risk</code>：无法测量或数据来源不透明的风险说明。</li>
+</ul>
+<p>这些指标不能合成“匿名分数”。哨兵为零也不能把 <code>privacy_claim</code> 从 <code>none</code> 自动升级为 DP。</p>
+<h3 id="17-6-偏差放大指标"><a href="#17-6-偏差放大指标" class="headerlink" title="17.6 偏差放大指标"></a>17.6 偏差放大指标</h3><p>至少同时报告：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">representation_delta_by_group</span><br><span class="line">filter_rejection_rate_by_group</span><br><span class="line">label_error_rate_by_group</span><br><span class="line">downstream_task_error_by_group</span><br><span class="line">counterfactual_action_difference</span><br></pre></td></tr></table></figure>
+
+<p>构造数据里的 <code>max_group_delta &lt;= 0.20</code> 只是示例验收夹具。真实阈值要根据目标总体、样本不确定性、伤害严重度和法律政策要求制定。比例接近也不能证明个体处理公平。</p>
+<h3 id="17-7-覆盖指标"><a href="#17-7-覆盖指标" class="headerlink" title="17.7 覆盖指标"></a>17.7 覆盖指标</h3><p>报告：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">nominal_cell_coverage</span><br><span class="line">anchored_cell_coverage</span><br><span class="line">behavior_coverage</span><br><span class="line">mutation_kill_rate</span><br><span class="line">incident_replay_detection_rate</span><br></pre></td></tr></table></figure>
+
+<p>这些指标按顺序增加证据强度，但后一个也不自动包含前一个。行为覆盖可能在少量场景很高，却遗漏真实总体；名义覆盖可能很广，却没有有效 Oracle。</p>
+<h3 id="17-8-删除传播完整率"><a href="#17-8-删除传播完整率" class="headerlink" title="17.8 删除传播完整率"></a>17.8 删除传播完整率</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">deletion_propagation_completeness =</span><br><span class="line">  已变为不可用的已知后代数 / 血缘图识别出的全部后代数</span><br></pre></td></tr></table></figure>
+
+<p>还要记录传播延迟、无法访问副本数、缓存清除状态和下游确认。<code>100%</code> 只对“已知后代”成立，血缘漏记会制造虚高。</p>
+<h3 id="17-9-单条接受数据成本"><a href="#17-9-单条接受数据成本" class="headerlink" title="17.9 单条接受数据成本"></a>17.9 单条接受数据成本</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">cost_per_accepted_record =</span><br><span class="line">  生成 + 模型验证 + 人工复核 + 存储 + 风险检查成本</span><br><span class="line">  / 最终接受记录数</span><br></pre></td></tr></table></figure>
+
+<p>只计算生成 API 费用会鼓励生成大量低质量候选，把昂贵复核成本隐藏到其他预算里。</p>
+<h2 id="十八、完整失败案例：覆盖率-97-9-，却漏掉了部分发货退款错误"><a href="#十八、完整失败案例：覆盖率-97-9-，却漏掉了部分发货退款错误" class="headerlink" title="十八、完整失败案例：覆盖率 97.9%，却漏掉了部分发货退款错误"></a>十八、完整失败案例：覆盖率 97.9%，却漏掉了部分发货退款错误</h2><p>下面是一段完整的构造案例。所有批次规模、比例、时间和结果数字均为教学用构造数据，目的在于演示排查顺序。</p>
+<h3 id="18-1-背景"><a href="#18-1-背景" class="headerlink" title="18.1 背景"></a>18.1 背景</h3><p>退款助手准备从 <code>policy-7.3</code> 升级到 <code>policy-7.4</code>。新版本增加了“部分发货”状态：同一订单中，未发货商品可以取消，已发货商品不能按整单路径自动退款。系统需要拆分商品行、验证各自状态，再决定部分自动处理还是人工复核。</p>
+<p>真实锚点池只有 320 条，其中 <code>PARTIALLY_SHIPPED</code> 只有 4 条，没有覆盖少数语言的多轮更正。项目生成 12,000 条合成候选，过滤后发布 10,992 条，报表显示：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">名义场景覆盖：94 / 96 = 97.9%</span><br><span class="line">合成集动作准确率：98.7%</span><br><span class="line">结构合法率：99.96%</span><br><span class="line">近重复率：2.1%</span><br><span class="line">泄漏扫描命中：0</span><br></pre></td></tr></table></figure>
+
+<p>这些数字看起来足以支持发布。但发布候选在 320 条真实锚点上从 94.1% 降到 91.9%，4 条部分发货记录错了 3 条。评测负责人最初把它归因于真实数据样本太少，认为合成集规模更大，结论应该更稳定。</p>
+<p>这个判断混淆了样本量和测量偏差。若 10,992 条记录共享同一个错误 Oracle，规模越大，只会越稳定地证明错误规则。</p>
+<h3 id="18-2-线上演练现象"><a href="#18-2-线上演练现象" class="headerlink" title="18.2 线上演练现象"></a>18.2 线上演练现象</h3><p>灰度演练使用只读模拟工具，没有执行真实退款。演练开始 18 分钟后出现三类现象：</p>
+<ol>
+<li><code>PARTIALLY_SHIPPED</code> 请求被直接标为 <code>AUTO_REFUND</code>，没有拆分商品行；</li>
+<li>少数语言多轮对话中，用户最后一句撤回退款，系统仍沿用第一轮诉求；</li>
+<li>返回 JSON、工具参数 Schema 和模拟 API 都成功，HTTP 状态为 200。</li>
+</ol>
+<p>如果监控只看协议成功率，这次演练是绿色。业务后置条件检查却发现：模拟账本中的“计划退款金额”大于未发货商品金额。Schema 只能证明字段存在且类型正确，不能证明金额对应允许退款的商品行。</p>
+<h3 id="18-3-先冻结证据"><a href="#18-3-先冻结证据" class="headerlink" title="18.3 先冻结证据"></a>18.3 先冻结证据</h3><p>处置的第一步不是立即改 Prompt，而是冻结：</p>
+<ul>
+<li>路由到的模型和固定版本；</li>
+<li>生成批次 <code>syn-refund-2026-04-28</code>；</li>
+<li>验证批次和验证器配置；</li>
+<li>政策 <code>7.3</code>、<code>7.4</code> 两个快照；</li>
+<li>真实锚点和密封评测版本；</li>
+<li>失败请求的多轮原文、结构化事实和模拟工具轨迹；</li>
+<li>每条失败样本的种子、父节点和锚点；</li>
+<li>覆盖报表的 SQL、分母和代码版本；</li>
+<li>原始生成响应、过滤事件和人工覆盖记录。</li>
+</ul>
+<p>同时暂停该合成批次继续流入训练和评测资产。若先修改 Prompt 再重跑，原始错误闭环会被新输出覆盖，后面难以证明哪一层首先出错。</p>
+<h3 id="18-4-时间窗口对齐"><a href="#18-4-时间窗口对齐" class="headerlink" title="18.4 时间窗口对齐"></a>18.4 时间窗口对齐</h3><p>构造时间线如下：</p>
+<table>
+<thead>
+<tr>
+<th>时间</th>
+<th>事件</th>
+<th>证据</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>09:00</td>
+<td>政策摘要 <code>prompt-policy-44</code> 更新</td>
+<td>Prompt 摘要只写“已发货转人工”，没有描述部分发货拆行</td>
+</tr>
+<tr>
+<td>09:12</td>
+<td>生成批次开始</td>
+<td>生成器 <code>family-a@3.2</code></td>
+</tr>
+<tr>
+<td>09:40</td>
+<td>自动标签完成</td>
+<td>标签与理由由同一生成调用输出</td>
+</tr>
+<tr>
+<td>10:05</td>
+<td>Judge 验证开始</td>
+<td>API 名称不同，但底座属于 <code>family-a</code></td>
+</tr>
+<tr>
+<td>10:32</td>
+<td>覆盖报表达到 97.9%</td>
+<td>分子按 <code>scenario_tag</code> 存在计算</td>
+</tr>
+<tr>
+<td>11:10</td>
+<td>近重复过滤完成</td>
+<td>阈值偏高，实体替换被视为独立记录</td>
+</tr>
+<tr>
+<td>14:00</td>
+<td>真实锚点回归下降</td>
+<td>报表被标记为“样本量不足告警”而未阻断</td>
+</tr>
+<tr>
+<td>次日 15:18</td>
+<td>灰度演练首个业务后置条件失败</td>
+<td>模拟账本金额超过允许范围</td>
+</tr>
+</tbody></table>
+<p>第一处可观察偏差发生在政策摘要，而不是灰度模型响应。后面的生成、验证和覆盖统计共同放大了这个缺口。</p>
+<h3 id="18-5-逐层排查"><a href="#18-5-逐层排查" class="headerlink" title="18.5 逐层排查"></a>18.5 逐层排查</h3><h4 id="第一步：检查被测模型是不是退化"><a href="#第一步：检查被测模型是不是退化" class="headerlink" title="第一步：检查被测模型是不是退化"></a>第一步：检查被测模型是不是退化</h4><p>把失败输入换成手工构造的完整事实，并明确列出每个商品行状态。发布候选模型能够正确返回 <code>MANUAL_REVIEW</code>，说明模型不是对部分发货概念完全无能力。问题更可能来自评测数据没有约束它学习或验证拆行逻辑。</p>
+<h4 id="第二步：运行确定性-Oracle"><a href="#第二步：运行确定性-Oracle" class="headerlink" title="第二步：运行确定性 Oracle"></a>第二步：运行确定性 Oracle</h4><p>使用订单状态机根据每个商品行计算最大可自动退款金额。对合成集中 1,840 条标记为 <code>PARTIALLY_SHIPPED</code> 的接受记录重算，发现 1,612 条期望标签不一致。合成集的 98.7%“准确率”来自模型 Judge 对生成标签的同意，不是状态机准确率。</p>
+<h4 id="第三步：查生成器与验证器家族"><a href="#第三步：查生成器与验证器家族" class="headerlink" title="第三步：查生成器与验证器家族"></a>第三步：查生成器与验证器家族</h4><p>记录里只有不同的 <code>generator_id</code> 和 <code>validator_id</code>，初看满足“双模型验证”。继续查模型注册表，发现两者指向同一基础家族，只是一个端点使用生成 Prompt，另一个端点使用评分 Prompt。失败记录的 Judge 理由大量复述生成器里的“订单已发货前可退”模板，没有独立拆分商品行。</p>
+<h4 id="第四步：查标签来源"><a href="#第四步：查标签来源" class="headerlink" title="第四步：查标签来源"></a>第四步：查标签来源</h4><p><code>label_source</code> 被统一写成 <code>model_validated</code>，覆盖了最初由生成器给出标签的事实。查看原始响应才发现问题、标签和理由在一次调用里生成，Judge 只做同意或拒绝。数据模型把“标签创建者”和“标签验证者”压成一个字段，导致自证关系在报表里不可见。</p>
+<h4 id="第五步：查覆盖分子"><a href="#第五步：查覆盖分子" class="headerlink" title="第五步：查覆盖分子"></a>第五步：查覆盖分子</h4><p>覆盖 SQL 只判断：</p>
+<figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">COUNT</span>(<span class="keyword">DISTINCT</span> scenario_tag)</span><br></pre></td></tr></table></figure>
+
+<p>只要文本带 <code>PARTIALLY_SHIPPED</code> 标签，就算覆盖对应格子。它没有检查：</p>
+<ul>
+<li>是否有场景对应的真实锚点；</li>
+<li>Oracle 是否按商品行执行；</li>
+<li>测试是否触发拆分分支；</li>
+<li>计划退款金额是否满足后置条件；</li>
+<li>同一模板簇是否重复贡献。</li>
+</ul>
+<p>因此 97.9% 是名义标签覆盖，不是锚定覆盖或行为覆盖。</p>
+<h4 id="第六步：查近重复簇"><a href="#第六步：查近重复簇" class="headerlink" title="第六步：查近重复簇"></a>第六步：查近重复簇</h4><p>重新用结构字段聚类后，1,840 条部分发货记录中有 1,506 条来自同一个模板，只替换商品名、金额和用户称呼。文本相似度因为实体变化而低于原阈值，但状态路径完全相同。原来的 2.1% 近重复率测的是文本表面，不是业务状态重复。</p>
+<h4 id="第七步：查真实锚点"><a href="#第七步：查真实锚点" class="headerlink" title="第七步：查真实锚点"></a>第七步：查真实锚点</h4><p>大部分记录都写了 <code>anchor_ids</code>，报表因此声称锚定覆盖很高。但这些 ID 指向通用退款政策，不是部分发货真实案例。锚点存在性通过，不代表锚点支持当前标签。锚点关系还需要类型：<code>FACT_SUPPORT</code>、<code>DISTRIBUTION_REFERENCE</code>、<code>FAILURE_REPLAY</code> 或 <code>STYLE_ONLY</code>。</p>
+<h4 id="第八步：查测试污染"><a href="#第八步：查测试污染" class="headerlink" title="第八步：查测试污染"></a>第八步：查测试污染</h4><p>生成 Prompt 的 Few-shot 中有一条来自上一版密封评测失败报告。报告没有完整标准答案，却包含“预期转人工”的结论。生成器围绕这个模式产生大量措辞变体，使密封集上的得分虚高。由于中间工单没有继承密封样本 ID，禁止祖先检查未命中。</p>
+<h4 id="第九步：查隐私扫描"><a href="#第九步：查隐私扫描" class="headerlink" title="第九步：查隐私扫描"></a>第九步：查隐私扫描</h4><p>最终发布文件中的哨兵为零，但原始响应对象里发现一条私有政策备注哨兵。记录因为解析失败未进入发布文件，所以旧报表没有统计。虽然没有交付给被测系统，内容已经进入生成日志和对象存储，仍需按泄漏事件处理。</p>
+<h3 id="18-6-排除的错误方向"><a href="#18-6-排除的错误方向" class="headerlink" title="18.6 排除的错误方向"></a>18.6 排除的错误方向</h3><p>排查过程中可以排除：</p>
+<ul>
+<li><strong>订单模拟 API 故障</strong>：输入状态和返回账本可重放，确定性 Oracle 稳定复现；</li>
+<li><strong>JSON 解析错误</strong>：失败结果均符合 Schema，字段值错误而非结构错误；</li>
+<li><strong>单次随机采样</strong>：固定 100 条失败记录重复运行仍保持同类错误；</li>
+<li><strong>只有少数语言翻译问题</strong>：主流语言同一状态也存在错误，只是少数语言因多轮更正再增加一层失败；</li>
+<li><strong>真实锚点标签错误</strong>：政策专家和状态机对 4 条真实记录重新确认，三条失败结论不变。</li>
+</ul>
+<p>这些排除动作很重要。不能看到同源 Judge 就直接断言所有错误都由 Judge 引起。政策摘要遗漏是首因，同源验证、标签字段覆盖、近重复漏检和覆盖口径则让首因逃过门禁。</p>
+<h3 id="18-7-根因与贡献因素"><a href="#18-7-根因与贡献因素" class="headerlink" title="18.7 根因与贡献因素"></a>18.7 根因与贡献因素</h3><p>根因是：<code>policy-7.4</code> 的部分发货语义没有被编码进可执行 Oracle，生成器根据不完整摘要自行补全标签。</p>
+<p>贡献因素包括：</p>
+<ol>
+<li>生成器同时产生标签和理由；</li>
+<li>验证器与生成器同家族，且只判断理由是否自洽；</li>
+<li>数据模型覆盖了原始标签来源；</li>
+<li>覆盖按场景标签计数，没有真实锚点关系和行为后置条件；</li>
+<li>文本近重复没有结合结构化状态路径；</li>
+<li>密封评测报告经过工单丢失血缘后进入 Few-shot；</li>
+<li>泄漏扫描只看最终发布文件，没有覆盖被拒绝原始响应；</li>
+<li>真实锚点轨退化被大规模合成集平均分压过。</li>
+</ol>
+<h3 id="18-8-止损与修复"><a href="#18-8-止损与修复" class="headerlink" title="18.8 止损与修复"></a>18.8 止损与修复</h3><p>立即动作：</p>
+<ul>
+<li>冻结批次，不再用于训练、Prompt 和评测；</li>
+<li>从密封失败报告节点开始补齐血缘并传播墓碑；</li>
+<li>删除或限制原始响应对象访问，轮换测试哨兵；</li>
+<li>灰度回退到旧策略，部分发货全部转人工；</li>
+<li>保留历史报告，但标记结论已失效。</li>
+</ul>
+<p>结构修复：</p>
+<ul>
+<li>用订单商品行状态机实现 <code>policy-7.4</code> Oracle；</li>
+<li>分开保存 <code>label_creator</code>、<code>label_source</code> 和 <code>validators[]</code>；</li>
+<li>模型注册表增加 <code>family</code> 与“来源不明”状态；</li>
+<li>高风险记录要求确定性 Oracle 或异源模型加盲化人工双证据；</li>
+<li>覆盖报告拆成名义、锚定、行为和变异杀伤四层；</li>
+<li>近重复同时使用文本候选和结构路径指纹；</li>
+<li>所有工单、报告和 Few-shot 继承密封数据血缘；</li>
+<li>泄漏扫描覆盖接受、拒绝、解析失败、日志、缓存和导出。</li>
+</ul>
+<h3 id="18-9-修复后怎样验收"><a href="#18-9-修复后怎样验收" class="headerlink" title="18.9 修复后怎样验收"></a>18.9 修复后怎样验收</h3><p>构造回归结果如下，仍只用于说明验收方式：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">名义覆盖：94 / 96 = 97.9%        保持不变</span><br><span class="line">锚定覆盖：从 71 / 96 提升到 92 / 96</span><br><span class="line">行为覆盖：从 58 / 96 提升到 89 / 96</span><br><span class="line">有效变异杀伤率：从 61.4% 提升到 93.2%</span><br><span class="line">部分发货 Oracle 冲突：从 87.6% 降到 0.4%</span><br><span class="line">真实锚点准确率：从 91.9% 恢复到 94.4%</span><br><span class="line">少数语言多轮更正切片：从 82.0% 提升到 91.0%</span><br><span class="line">泄漏哨兵命中：发布、拒绝和日志三条扫描链均为 0</span><br></pre></td></tr></table></figure>
+
+<p>这里不能说“问题彻底解决”。仍有 4 个锚定格子和 7 个行为格子缺少证据，少数语言切片也低于总体。更准确的发布结论是：部分发货错误闭环已被切断，关键门禁通过；未覆盖格子继续人工处理，不把 97.9% 名义覆盖包装成完整业务保证。</p>
+<h2 id="十九、从零到一的落地顺序"><a href="#十九、从零到一的落地顺序" class="headerlink" title="十九、从零到一的落地顺序"></a>十九、从零到一的落地顺序</h2><h3 id="阶段一：先隔离用途"><a href="#阶段一：先隔离用途" class="headerlink" title="阶段一：先隔离用途"></a>阶段一：先隔离用途</h3><p>建立训练、评测、红队和隐私四个物理或逻辑隔离区，发布清单明确禁止用途。还没有自动化时，宁可用小规模人工审批，也不要先建一个所有数据自由流转的大池。</p>
+<h3 id="阶段二：补生成记录和血缘"><a href="#阶段二：补生成记录和血缘" class="headerlink" title="阶段二：补生成记录和血缘"></a>阶段二：补生成记录和血缘</h3><p>先记录生成器、Prompt、种子、锚点、父节点和原始响应，再讨论复杂质量模型。没有血缘时，任何删除传播、污染排查和生成器回归都只能靠猜。</p>
+<h3 id="阶段三：把确定性-Oracle-前置"><a href="#阶段三：把确定性-Oracle-前置" class="headerlink" title="阶段三：把确定性 Oracle 前置"></a>阶段三：把确定性 Oracle 前置</h3><p>状态机、计算规则、编译执行和业务不变量应先于模型 Judge。每增加一个可执行 Oracle，就减少一部分由模型自证的空间。</p>
+<h3 id="阶段四：建立独立验证和分歧队列"><a href="#阶段四：建立独立验证和分歧队列" class="headerlink" title="阶段四：建立独立验证和分歧队列"></a>阶段四：建立独立验证和分歧队列</h3><p>模型注册表加入家族关系，人工复核对生成器身份盲化，分歧按风险排序。先治理高风险和高批量种子，不追求所有开放式内容自动判断。</p>
+<h3 id="阶段五：补泄漏、偏差和覆盖门禁"><a href="#阶段五：补泄漏、偏差和覆盖门禁" class="headerlink" title="阶段五：补泄漏、偏差和覆盖门禁"></a>阶段五：补泄漏、偏差和覆盖门禁</h3><p>从唯一哨兵、逐字片段、分层分母和真实锚定覆盖开始。语义攻击、成员推断和复杂公平分析需要专门能力，但不能因为暂时做不全就把未知风险记成零。</p>
+<h3 id="阶段六：演练撤回和事故"><a href="#阶段六：演练撤回和事故" class="headerlink" title="阶段六：演练撤回和事故"></a>阶段六：演练撤回和事故</h3><p>选择一个测试锚点执行撤回，验证训练快照、评测清单、缓存、对象存储和历史报告怎样响应。再注入同源验证、密封祖先污染和泄漏哨兵，证明门禁确实会失败。</p>
+<h2 id="二十、上线检查表"><a href="#二十、上线检查表" class="headerlink" title="二十、上线检查表"></a>二十、上线检查表</h2><h3 id="用途与边界"><a href="#用途与边界" class="headerlink" title="用途与边界"></a>用途与边界</h3><ul>
+<li><input disabled="" type="checkbox"> 训练、评测、红队和隐私型合成数据有独立用途契约；</li>
+<li><input disabled="" type="checkbox"> 每类数据写明允许用途、禁止用途和失效条件；</li>
+<li><input disabled="" type="checkbox"> 合成红队比例不会被解释成生产发生率；</li>
+<li><input disabled="" type="checkbox"> 训练型标签噪声不会被直接当作评测金标准；</li>
+<li><input disabled="" type="checkbox"> 没有正式隐私机制的数据明确标为无 DP 声明；</li>
+<li><input disabled="" type="checkbox"> 通用数据治理与合成特有控制都有责任人。</li>
+</ul>
+<h3 id="种子与真实锚点"><a href="#种子与真实锚点" class="headerlink" title="种子与真实锚点"></a>种子与真实锚点</h3><ul>
+<li><input disabled="" type="checkbox"> 种子按意图、状态、风险、证据、表达、群体和故障分类；</li>
+<li><input disabled="" type="checkbox"> 每个种子区分固定事实、可变轴和禁止变形；</li>
+<li><input disabled="" type="checkbox"> 真实锚点标明事实、分布、失败或仅风格关系；</li>
+<li><input disabled="" type="checkbox"> 高风险格子没有用通用政策 ID 伪装具体事实支持；</li>
+<li><input disabled="" type="checkbox"> 私有原文只按最小必要原则进入生成上下文；</li>
+<li><input disabled="" type="checkbox"> 锚点过期、撤回和政策版本变化会触发后代重算。</li>
+</ul>
+<h3 id="生成记录"><a href="#生成记录" class="headerlink" title="生成记录"></a>生成记录</h3><ul>
+<li><input disabled="" type="checkbox"> 生成器 ID、家族、固定版本和运行时已记录；</li>
+<li><input disabled="" type="checkbox"> Prompt、Few-shot、参数、种子与来源快照有摘要；</li>
+<li><input disabled="" type="checkbox"> 原始响应和解析后记录分开保存；</li>
+<li><input disabled="" type="checkbox"> 解析失败没有通过覆盖原文件变成成功；</li>
+<li><input disabled="" type="checkbox"> 批次之间的主要变量可归因；</li>
+<li><input disabled="" type="checkbox"> 远程模型可追溯性没有被夸大成逐 Token 可复现。</li>
+</ul>
+<h3 id="标签与验证"><a href="#标签与验证" class="headerlink" title="标签与验证"></a>标签与验证</h3><ul>
+<li><input disabled="" type="checkbox"> 标签创建者、标签来源和所有验证者分别记录；</li>
+<li><input disabled="" type="checkbox"> 确定性 Oracle 优先于模型判断；</li>
+<li><input disabled="" type="checkbox"> 高风险生成器与验证器满足家族隔离；</li>
+<li><input disabled="" type="checkbox"> 来源不明的验证器没有被当作已知独立；</li>
+<li><input disabled="" type="checkbox"> 验证器先独立作答，再查看生成理由；</li>
+<li><input disabled="" type="checkbox"> 分歧进入有容量和时限的盲化人工队列；</li>
+<li><input disabled="" type="checkbox"> 模型置信度没有被当作业务真值。</li>
+</ul>
+<h3 id="过滤与去重"><a href="#过滤与去重" class="headerlink" title="过滤与去重"></a>过滤与去重</h3><ul>
+<li><input disabled="" type="checkbox"> 规则、模型和人工过滤职责明确；</li>
+<li><input disabled="" type="checkbox"> 每层保留输入分母、拒绝原因和版本；</li>
+<li><input disabled="" type="checkbox"> 精确规范化保留否定、数字、单位和标识符；</li>
+<li><input disabled="" type="checkbox"> 语义相似只产生候选，关键反事实不会被自动删除；</li>
+<li><input disabled="" type="checkbox"> 文本簇与业务状态路径簇分别统计；</li>
+<li><input disabled="" type="checkbox"> 最大模板簇不会支配训练权重或评测分数；</li>
+<li><input disabled="" type="checkbox"> 被拒绝原始输出仍执行泄漏扫描。</li>
+</ul>
+<h3 id="隐私"><a href="#隐私" class="headerlink" title="隐私"></a>隐私</h3><ul>
+<li><input disabled="" type="checkbox"> 威胁模型覆盖重识别、逐字记忆、链接和成员推断；</li>
+<li><input disabled="" type="checkbox"> 哨兵有授权、轮换、撤回和全链扫描；</li>
+<li><input disabled="" type="checkbox"> 未命中哨兵不会被写成匿名证明；</li>
+<li><input disabled="" type="checkbox"> 若声明 DP，记录 <code>ε</code>、<code>δ</code>、隐私单位、邻接关系和组合预算；</li>
+<li><input disabled="" type="checkbox"> DP 实现使用经过评估的库并接受专业审查；</li>
+<li><input disabled="" type="checkbox"> 原始数据存储、访问和删除不依赖输出 DP 保证；</li>
+<li><input disabled="" type="checkbox"> 隐私效用代价按任务和群体切片验证。</li>
+</ul>
+<h3 id="污染与血缘"><a href="#污染与血缘" class="headerlink" title="污染与血缘"></a>污染与血缘</h3><ul>
+<li><input disabled="" type="checkbox"> 密封样本、答案、报告、工单和调试会话都有禁止祖先标识；</li>
+<li><input disabled="" type="checkbox"> Few-shot、RAG、路由训练和验证训练都做祖先检查；</li>
+<li><input disabled="" type="checkbox"> 派生树按簇隔离，不跨开发、校准和密封集合；</li>
+<li><input disabled="" type="checkbox"> 外部数据无血缘时补相似度与来源审计；</li>
+<li><input disabled="" type="checkbox"> 生成记录、锚点、种子和转换构成无环可查询图；</li>
+<li><input disabled="" type="checkbox"> 删除传播覆盖快照、缓存、导出和下游副本；</li>
+<li><input disabled="" type="checkbox"> 历史报告保留墓碑而不静默改写过去。</li>
+</ul>
+<h3 id="覆盖与指标"><a href="#覆盖与指标" class="headerlink" title="覆盖与指标"></a>覆盖与指标</h3><ul>
+<li><input disabled="" type="checkbox"> 名义、锚定、行为和变异杀伤覆盖分别报告；</li>
+<li><input disabled="" type="checkbox"> 覆盖格子保存具体样本、锚点、执行和后置条件证据；</li>
+<li><input disabled="" type="checkbox"> 新事故可以回溯修正历史覆盖结论；</li>
+<li><input disabled="" type="checkbox"> 接受率不会被称为正确率；</li>
+<li><input disabled="" type="checkbox"> 偏差指标包含生成、规则、模型、人工各层分母；</li>
+<li><input disabled="" type="checkbox"> 泄漏指标不会被压成单一匿名分数；</li>
+<li><input disabled="" type="checkbox"> 每个比例保存分子、分母、阈值版本和不确定性。</li>
+</ul>
+<h3 id="测试与发布"><a href="#测试与发布" class="headerlink" title="测试与发布"></a>测试与发布</h3><ul>
+<li><input disabled="" type="checkbox"> 自动测试覆盖自证、同源验证、重复、哨兵、污染和删除传播；</li>
+<li><input disabled="" type="checkbox"> 组合故障注入能让发布门禁真实失败；</li>
+<li><input disabled="" type="checkbox"> 待人工复核记录不会进入发布清单；</li>
+<li><input disabled="" type="checkbox"> 真实锚点轨退化不能被合成平均分抵消；</li>
+<li><input disabled="" type="checkbox"> 发布清单不可变并绑定所有配置版本；</li>
+<li><input disabled="" type="checkbox"> 回滚能停止数据继续进入训练、Prompt 和评测；</li>
+<li><input disabled="" type="checkbox"> 事故包能从错误输出追到生成器、种子、验证器和所有后代。</li>
+</ul>
+<h2 id="二十一、总结"><a href="#二十一、总结" class="headerlink" title="二十一、总结"></a>二十一、总结</h2><p>合成数据的价值在于把真实世界稀缺、危险或尚未发生的状态变成可控制的工程输入。它的风险也来自同一件事：数据由系统自己创造，系统很容易同时创造问题、答案、理由和通过证明。</p>
+<p>一条可信链路需要守住以下边界：</p>
+<ol>
+<li>训练、评测、红队和隐私型数据按用途隔离，证据标准不混用；</li>
+<li>种子不仅保存例子，还定义固定事实、可变轴、风险切片和禁止变形；</li>
+<li>每条记录连接真实事实、分布或失败锚点，并保存完整生成器版本与血缘；</li>
+<li>确定性 Oracle、异源验证和盲化人工共同切断标签自证循环；</li>
+<li>精确重复可自动处理，语义相似只作为复核线索，关键反事实不能被相似度删除；</li>
+<li>生成与过滤各层都检查群体和尾部变化，递归回流保留真实数据锚；</li>
+<li>普通合成数据不天然匿名，泄漏哨兵是检测手段而非隐私证明；</li>
+<li>差分隐私只在明确机制、参数、隐私单位、组合预算和实现条件下提供数学保证，并伴随效用代价；</li>
+<li>污染控制沿禁止祖先和派生图工作，不能只靠最终文本相似度；</li>
+<li>覆盖分成名义、锚定和行为证据，并用变异与事故回放校准；</li>
+<li>上游撤回沿血缘传播墓碑，当前有效资产与历史审计事实分开；</li>
+<li>发布门禁通过说明既定证据齐全，不意味着未知风险为零。</li>
+</ol>
+<p>最终，合成数据平台不应只回答：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">这一批生成了 12,000 条，通过率 91.6%。</span><br></pre></td></tr></table></figure>
+
+<p>它应该能够回答：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">哪些记录只用于训练，哪些用于密封评测或红队；</span><br><span class="line">每个标签由什么独立事实支持；</span><br><span class="line">哪些群体、尾部状态和隐私风险可能被生成与过滤放大；</span><br><span class="line">覆盖格子是否真的触发目标行为；</span><br><span class="line">以及任一锚点、许可或政策失效后，所有派生资产怎样停止继续生效。</span><br></pre></td></tr></table></figure>
+
+<p>做到这一层，合成数据才是可测量、可撤回的质量资产，而不是一台自动扩大已有假设的文本生产机。</p>
+<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><p>以下资料核对截止日期为 2026-07-26。关键事实优先采用官方规范、官方软件说明和原始论文；文中对工程控制的组合与取舍属于基于这些资料的工程推导。</p>
+<ol>
+<li>Yizhong Wang 等，<a target="_blank" rel="noopener" href="https://arxiv.org/abs/2212.10560">Self-Instruct: Aligning Language Models with Self-Generated Instructions</a>，原始论文，介绍从种子生成指令和实例、过滤后用于指令微调的实验。</li>
+<li>Self-Instruct 作者仓库，<a target="_blank" rel="noopener" href="https://github.com/yizhongw/self-instruct">yizhongw&#x2F;self-instruct</a>，包含生成与过滤脚本、数据版本说明，以及对 200 条随机指令质量检查的限定性提醒。</li>
+<li>NIST，<a target="_blank" rel="noopener" href="https://www.nist.gov/blogs/cybersecurity-insights/differentially-private-synthetic-data">Differentially Private Synthetic Data</a>，区分普通合成方法与差分隐私合成数据，并讨论隐私与效用权衡。</li>
+<li>NIST SP 800-226，<a target="_blank" rel="noopener" href="https://doi.org/10.6028/NIST.SP.800-226">Guidelines for Evaluating Differential Privacy Guarantees</a>，2025 年 3 月最终版，说明差分隐私保证、参数、隐私单位、效用、偏差和部署风险。</li>
+<li>NIST AI 600-1，<a target="_blank" rel="noopener" href="https://doi.org/10.6028/NIST.AI.600-1">Artificial Intelligence Risk Management Framework: Generative Artificial Intelligence Profile</a>，讨论生成式 AI 的数据隐私、有害偏差、同质化、模型坍塌、来源跟踪和风险管理动作。</li>
+<li>NIST，<a target="_blank" rel="noopener" href="https://www.nist.gov/services-resources/software/sdnist-synthetic-data-report-tool">SDNist Synthetic Data Report Tool v1.4</a>，官方工具说明；该版本针对 NIST Diverse Community Excerpts 比较合成数据的效用和隐私指标，不能当作任意数据的通用认证。</li>
+<li>Ilia Shumailov 等，<a target="_blank" rel="noopener" href="https://www.nature.com/articles/s41586-024-07566-y">AI models collapse when trained on recursively generated data</a>，原始研究，实验分析递归使用生成数据时的分布退化；文中结论限定在论文实验设置。</li>
+<li>Nicholas Carlini 等，<a target="_blank" rel="noopener" href="https://www.usenix.org/conference/usenixsecurity21/presentation/carlini-extracting">Extracting Training Data from Large Language Models</a>，USENIX Security 2021 原始研究，在 GPT-2 家族实验中展示逐字训练数据提取风险。</li>
+<li>Arjun Panickssery、Samuel R. Bowman、Shi Feng，<a target="_blank" rel="noopener" href="https://arxiv.org/abs/2404.13076">LLM Evaluators Recognize and Favor Their Own Generations</a>，原始论文，研究模型自识别与自偏好对自动评估独立性的影响。</li>
+<li>Cynthia Dwork 等，<a target="_blank" rel="noopener" href="https://doi.org/10.1007/11681878_14">Calibrating Noise to Sensitivity in Private Data Analysis</a>，差分隐私基础原始论文之一。</li>
+<li>Timnit Gebru 等，<a target="_blank" rel="noopener" href="https://arxiv.org/abs/1803.09010">Datasheets for Datasets</a>，原始论文，提出记录数据集动机、组成、采集、处理、用途与维护信息的方法。</li>
+<li>Pushkarna 等，<a target="_blank" rel="noopener" href="https://research.google/pubs/data-cards-purposeful-and-transparent-dataset-documentation-for-responsible-ai/">Data Cards: Purposeful and Transparent Dataset Documentation for Responsible AI</a>，原始工作，讨论面向不同角色记录数据集用途、限制和评测信息。</li>
+</ol>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/AI%E6%B5%8B%E8%AF%95/" rel="tag"># AI测试</a>
+              <a href="/tags/%E8%B4%A8%E9%87%8F%E5%B7%A5%E7%A8%8B/" rel="tag"># 质量工程</a>
+              <a href="/tags/%E6%95%B0%E6%8D%AE%E8%A1%80%E7%BC%98/" rel="tag"># 数据血缘</a>
+              <a href="/tags/%E5%90%88%E6%88%90%E6%95%B0%E6%8D%AE/" rel="tag"># 合成数据</a>
+              <a href="/tags/%E5%81%8F%E5%B7%AE%E6%B5%8B%E8%AF%95/" rel="tag"># 偏差测试</a>
+              <a href="/tags/%E5%B7%AE%E5%88%86%E9%9A%90%E7%A7%81/" rel="tag"># 差分隐私</a>
+              <a href="/tags/%E6%B3%84%E6%BC%8F%E6%A3%80%E6%B5%8B/" rel="tag"># 泄漏检测</a>
+              <a href="/tags/%E5%A4%B1%E8%B4%A5%E6%B3%A8%E5%85%A5/" rel="tag"># 失败注入</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2026/05/04/AI%E6%B5%8B%E8%AF%95-39-%E5%BE%AE%E8%B0%83%E9%A1%B9%E7%9B%AE%E6%80%8E%E4%B9%88%E8%AE%BE%E8%AE%A1%E8%AE%AD%E7%BB%83%E6%95%B0%E6%8D%AE%E5%9F%BA%E7%BA%BF%E9%AA%8C%E6%94%B6%E5%92%8C%E5%9B%9E%E6%BB%9A/" rel="prev" title="AI测试-39-微调项目怎么设计训练数据基线验收和回滚">
+                  <i class="fa fa-angle-left"></i> AI测试-39-微调项目怎么设计训练数据基线验收和回滚
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2026/05/08/AI%E6%B5%8B%E8%AF%95-41-%E5%A4%9A%E6%A8%A1%E5%9E%8B%E8%B7%AF%E7%94%B1%E6%80%8E%E4%B9%88%E6%9D%83%E8%A1%A1%E8%B4%A8%E9%87%8F%E5%BB%B6%E8%BF%9F%E6%88%90%E6%9C%AC%E9%9A%90%E7%A7%81%E5%92%8C%E5%8F%AF%E7%94%A8%E6%80%A7/" rel="next" title="AI测试-41-多模型路由怎么权衡质量延迟成本隐私和可用性">
+                  AI测试-41-多模型路由怎么权衡质量延迟成本隐私和可用性 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">2.1m</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">129:05</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>

@@ -1,0 +1,1635 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"paynewinnt.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.27.0","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"always","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"stackoverflow-dark"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="知识库系统最危险的状态，通常不是“完全不可用”，而是看起来正常、检索也有结果，但结果来自已经修改、已经删除或当前用户已经无权访问的旧投影。 一次源文档更新，可能依次经过业务数据库、对象存储、CDC、消息队列、解析器、分片器、Embedding 服务、向量索引、关键词索引、重排缓存和答案缓存。任何一段都可能延迟、重试、乱序或只完成一半。源系统里的“保存成功”与查询端的“新内容已经可见”不是同一个时刻">
+<meta property="og:type" content="article">
+<meta property="og:title" content="AI测试-38-知识库更新删除和权限变更后怎么保证索引新鲜度与一致性">
+<meta property="og:url" content="https://paynewinnt.github.io/2026/05/02/AI%E6%B5%8B%E8%AF%95-38-%E7%9F%A5%E8%AF%86%E5%BA%93%E6%9B%B4%E6%96%B0%E5%88%A0%E9%99%A4%E5%92%8C%E6%9D%83%E9%99%90%E5%8F%98%E6%9B%B4%E5%90%8E%E6%80%8E%E4%B9%88%E4%BF%9D%E8%AF%81%E7%B4%A2%E5%BC%95%E6%96%B0%E9%B2%9C%E5%BA%A6%E4%B8%8E%E4%B8%80%E8%87%B4%E6%80%A7/index.html">
+<meta property="og:site_name" content="大道至简">
+<meta property="og:description" content="知识库系统最危险的状态，通常不是“完全不可用”，而是看起来正常、检索也有结果，但结果来自已经修改、已经删除或当前用户已经无权访问的旧投影。 一次源文档更新，可能依次经过业务数据库、对象存储、CDC、消息队列、解析器、分片器、Embedding 服务、向量索引、关键词索引、重排缓存和答案缓存。任何一段都可能延迟、重试、乱序或只完成一半。源系统里的“保存成功”与查询端的“新内容已经可见”不是同一个时刻">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://paynewinnt.github.io/images/ai-quality/ai-38-change-propagation.svg">
+<meta property="og:image" content="https://paynewinnt.github.io/images/ai-quality/ai-38-consistency-state-machine.svg">
+<meta property="article:published_time" content="2026-05-02T12:30:00.000Z">
+<meta property="article:modified_time" content="2026-05-02T12:30:00.000Z">
+<meta property="article:author" content="Payne Winn">
+<meta property="article:tag" content="AI测试">
+<meta property="article:tag" content="权限治理">
+<meta property="article:tag" content="知识库">
+<meta property="article:tag" content="CDC">
+<meta property="article:tag" content="索引一致性">
+<meta property="article:tag" content="Embedding迁移">
+<meta property="article:tag" content="数据新鲜度">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://paynewinnt.github.io/images/ai-quality/ai-38-change-propagation.svg">
+
+
+<link rel="canonical" href="https://paynewinnt.github.io/2026/05/02/AI%E6%B5%8B%E8%AF%95-38-%E7%9F%A5%E8%AF%86%E5%BA%93%E6%9B%B4%E6%96%B0%E5%88%A0%E9%99%A4%E5%92%8C%E6%9D%83%E9%99%90%E5%8F%98%E6%9B%B4%E5%90%8E%E6%80%8E%E4%B9%88%E4%BF%9D%E8%AF%81%E7%B4%A2%E5%BC%95%E6%96%B0%E9%B2%9C%E5%BA%A6%E4%B8%8E%E4%B8%80%E8%87%B4%E6%80%A7/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://paynewinnt.github.io/2026/05/02/AI%E6%B5%8B%E8%AF%95-38-%E7%9F%A5%E8%AF%86%E5%BA%93%E6%9B%B4%E6%96%B0%E5%88%A0%E9%99%A4%E5%92%8C%E6%9D%83%E9%99%90%E5%8F%98%E6%9B%B4%E5%90%8E%E6%80%8E%E4%B9%88%E4%BF%9D%E8%AF%81%E7%B4%A2%E5%BC%95%E6%96%B0%E9%B2%9C%E5%BA%A6%E4%B8%8E%E4%B8%80%E8%87%B4%E6%80%A7/","path":"2026/05/02/AI测试-38-知识库更新删除和权限变更后怎么保证索引新鲜度与一致性/","title":"AI测试-38-知识库更新删除和权限变更后怎么保证索引新鲜度与一致性"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>AI测试-38-知识库更新删除和权限变更后怎么保证索引新鲜度与一致性 | 大道至简</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+<style>
+  .back-to-top {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-width: 98px;
+    margin: 0 !important;
+    min-height: 24px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d9f3f8 0%, #bfe6ef 100%) !important;
+    border: 1px solid rgba(85, 154, 172, 0.28);
+    box-shadow: 0 8px 16px rgba(72, 139, 157, 0.16);
+    color: #3f7280 !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    position: fixed !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    z-index: 40;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  }
+
+  .sidebar-inner .back-to-top {
+    display: inline-flex !important;
+    width: fit-content;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .back-to-top::before {
+    content: "回到顶部";
+    color: #3f7280;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top .fa {
+    width: auto !important;
+    color: #3f7280 !important;
+    font-size: 16px !important;
+    text-align: center;
+  }
+
+  .back-to-top span {
+    margin-right: 0 !important;
+    color: #3f7280 !important;
+    font-size: 12px !important;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .back-to-top.back-to-top-on {
+    opacity: 1 !important;
+  }
+
+  .back-to-top.back-to-top-on:hover,
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #ccecf4 0%, #aeddE8 100%) !important;
+    box-shadow: 0 10px 18px rgba(72, 139, 157, 0.18);
+    color: #2f6472 !important;
+  }
+
+  .github-corner {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41;
+  }
+
+  .github-corner svg {
+    position: fixed !important;
+    top: 0;
+    right: 0;
+    z-index: 41 !important;
+  }
+
+  @media (min-width: 1201px) {
+    .back-to-top {
+      left: var(--b2t-fixed-left) !important;
+      top: var(--b2t-fixed-top) !important;
+      width: var(--b2t-fixed-width) !important;
+      min-width: 0;
+    }
+
+    .header.header-fixed-desktop {
+      position: fixed !important;
+      top: var(--header-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      z-index: 20;
+    }
+
+    .sidebar.sidebar-fixed-desktop {
+      position: fixed !important;
+      top: var(--sidebar-fixed-top) !important;
+      left: var(--column-fixed-left) !important;
+      width: var(--column-fixed-width) !important;
+      max-height: calc(100vh - var(--sidebar-fixed-top) - 12px);
+      overflow-y: auto;
+      z-index: 19;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .back-to-top {
+      left: auto !important;
+      right: 16px !important;
+      bottom: 16px !important;
+    }
+  }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const header = document.querySelector('.header');
+    const sidebar = document.querySelector('.sidebar');
+    if (!header || !sidebar) return;
+
+    let resizeTimer = null;
+
+    const syncSidebar = () => {
+      header.classList.remove('header-fixed-desktop');
+      sidebar.classList.remove('sidebar-fixed-desktop');
+      [header, sidebar].forEach(node => {
+        node.style.removeProperty('--column-fixed-left');
+        node.style.removeProperty('--column-fixed-width');
+      });
+      header.style.removeProperty('--header-fixed-top');
+      sidebar.style.removeProperty('--sidebar-fixed-top');
+
+      if (window.innerWidth <= 1200) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sidebarRect = sidebar.getBoundingClientRect();
+
+      [header, sidebar].forEach(node => {
+        node.style.setProperty('--column-fixed-left', `${headerRect.left}px`);
+        node.style.setProperty('--column-fixed-width', `${headerRect.width}px`);
+      });
+
+      const blankHeight = Math.max(window.innerHeight - sidebarRect.bottom - 12, 0);
+      const b2tTop = sidebarRect.bottom + blankHeight * 0.8;
+
+      header.style.setProperty('--header-fixed-top', `${headerRect.top}px`);
+      sidebar.style.setProperty('--sidebar-fixed-top', `${sidebarRect.top}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-left', `${headerRect.left + headerRect.width * 0.25}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-width', `${headerRect.width * 0.5}px`);
+      document.documentElement.style.setProperty('--b2t-fixed-top', `${b2tTop}px`);
+      header.classList.add('header-fixed-desktop');
+      sidebar.classList.add('sidebar-fixed-desktop');
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(syncSidebar, 60);
+    };
+
+    syncSidebar();
+    window.addEventListener('load', syncSidebar, { once: true });
+    window.addEventListener('resize', scheduleSync, { passive: true });
+  });
+</script>
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">大道至简</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">欲买桂花同载酒...</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E3%80%81%E5%B7%A5%E7%A8%8B%E5%AE%9A%E4%B9%89%EF%BC%9A%E7%B4%A2%E5%BC%95%E4%B8%8D%E6%98%AF%E7%AC%AC%E4%BA%8C%E4%BB%BD%E7%9C%9F%E5%80%BC%EF%BC%8C%E8%80%8C%E6%98%AF%E5%8F%AF%E4%B8%A2%E5%BC%83%E3%80%81%E5%8F%AF%E9%87%8D%E5%BB%BA%E7%9A%84%E6%8A%95%E5%BD%B1"><span class="nav-number">1.</span> <span class="nav-text">一、工程定义：索引不是第二份真值，而是可丢弃、可重建的投影</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%BA%90%E7%B3%BB%E7%BB%9F%E7%9C%9F%E5%80%BC%E6%98%AF%E4%BB%80%E4%B9%88"><span class="nav-number">1.1.</span> <span class="nav-text">1. 源系统真值是什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E2%80%9C%E4%B8%80%E8%87%B4%E6%80%A7%E2%80%9D%E8%87%B3%E5%B0%91%E6%9C%89%E5%85%AD%E4%B8%AA%E7%BB%B4%E5%BA%A6"><span class="nav-number">1.2.</span> <span class="nav-text">2. “一致性”至少有六个维度</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E2%80%9C%E6%96%B0%E9%B2%9C%E2%80%9D%E5%BF%85%E9%A1%BB%E7%BB%91%E5%AE%9A%E5%AF%B9%E8%B1%A1%E3%80%81%E8%B5%B7%E7%82%B9%E5%92%8C%E7%BB%88%E7%82%B9"><span class="nav-number">1.3.</span> <span class="nav-text">3. “新鲜”必须绑定对象、起点和终点</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E8%BE%B9%E7%95%8C%EF%BC%9A%E6%9C%AC%E6%96%87%E4%BF%9D%E8%AF%81%E4%BB%80%E4%B9%88%EF%BC%8C%E4%B8%8D%E4%BF%9D%E8%AF%81%E4%BB%80%E4%B9%88"><span class="nav-number">1.4.</span> <span class="nav-text">4. 边界：本文保证什么，不保证什么</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C%E3%80%81%E5%85%88%E5%86%99%E4%B8%80%E8%87%B4%E6%80%A7%E5%90%88%E5%90%8C%EF%BC%8C%E5%86%8D%E9%80%89-CDC%E3%80%81%E9%98%9F%E5%88%97%E5%92%8C%E5%90%91%E9%87%8F%E5%BA%93"><span class="nav-number">2.</span> <span class="nav-text">二、先写一致性合同，再选 CDC、队列和向量库</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E3%80%81%E5%AE%8C%E6%95%B4%E6%9E%B6%E6%9E%84%EF%BC%9A%E6%99%AE%E9%80%9A%E6%9B%B4%E6%96%B0%E6%9C%80%E7%BB%88%E6%94%B6%E6%95%9B%EF%BC%8C%E5%88%A0%E9%99%A4%E5%92%8C%E6%92%A4%E6%9D%83%E5%85%88%E9%98%BB%E6%96%AD%E5%86%8D%E6%B8%85%E7%90%86"><span class="nav-number">3.</span> <span class="nav-text">三、完整架构：普通更新最终收敛，删除和撤权先阻断再清理</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%BA%90%E5%86%99%E5%85%A5%E6%9C%8D%E5%8A%A1"><span class="nav-number">3.1.</span> <span class="nav-text">1. 源写入服务</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-CDC-%E6%8D%95%E8%8E%B7%E5%99%A8"><span class="nav-number">3.2.</span> <span class="nav-text">2. CDC 捕获器</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%BA%8B%E4%BB%B6%E6%80%BB%E7%BA%BF%E4%B8%8E%E4%BC%98%E5%85%88%E7%BA%A7%E8%B0%83%E5%BA%A6"><span class="nav-number">3.3.</span> <span class="nav-text">3. 事件总线与优先级调度</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E8%A7%A3%E6%9E%90%E4%B8%8E%E5%88%86%E7%89%87"><span class="nav-number">3.4.</span> <span class="nav-text">4. 解析与分片</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-Embedding-%E4%B8%8E%E6%8A%95%E5%BD%B1%E5%99%A8"><span class="nav-number">3.5.</span> <span class="nav-text">5. Embedding 与投影器</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E5%8F%8C%E6%A3%80%E7%B4%A2%E7%B4%A2%E5%BC%95"><span class="nav-number">3.6.</span> <span class="nav-text">6. 双检索索引</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-%E7%BC%93%E5%AD%98%E5%B1%82"><span class="nav-number">3.7.</span> <span class="nav-text">7. 缓存层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-%E6%9F%A5%E8%AF%A2%E5%AE%88%E5%8D%AB"><span class="nav-number">3.8.</span> <span class="nav-text">8. 查询守卫</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-%E8%AF%81%E6%8D%AE%E4%B8%8E%E4%BF%AE%E5%A4%8D%E9%9D%A2"><span class="nav-number">3.9.</span> <span class="nav-text">9. 证据与修复面</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E3%80%81%E6%95%B0%E6%8D%AE%E6%A8%A1%E5%9E%8B%EF%BC%9A%E7%89%88%E6%9C%AC%E3%80%81%E5%A2%93%E7%A2%91%E3%80%81%E8%B4%A6%E6%9C%AC%E5%92%8C%E6%B0%B4%E4%BD%8D%E7%BC%BA%E4%B8%80%E4%B8%8D%E5%8F%AF"><span class="nav-number">4.</span> <span class="nav-text">四、数据模型：版本、墓碑、账本和水位缺一不可</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E6%BA%90%E5%AE%9E%E4%BD%93"><span class="nav-number">4.1.</span> <span class="nav-text">1. 源实体</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Outbox-%E4%BA%8B%E4%BB%B6"><span class="nav-number">4.2.</span> <span class="nav-text">2. Outbox 事件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%8A%95%E5%BD%B1%E8%AE%B0%E5%BD%95"><span class="nav-number">4.3.</span> <span class="nav-text">3. 投影记录</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%8A%95%E5%BD%B1%E8%B4%A6%E6%9C%AC"><span class="nav-number">4.4.</span> <span class="nav-text">4. 投影账本</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%A2%93%E7%A2%91"><span class="nav-number">4.5.</span> <span class="nav-text">5. 墓碑</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E6%B0%B4%E4%BD%8D%E4%B8%8E%E7%BC%BA%E5%8F%A3"><span class="nav-number">4.6.</span> <span class="nav-text">6. 水位与缺口</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%94%E3%80%81CDC-%E4%B8%8E-Outbox%EF%BC%9A%E8%A7%A3%E5%86%B3%E2%80%9C%E4%BA%8B%E5%AE%9E%E5%A6%82%E4%BD%95%E5%8F%AF%E9%9D%A0%E5%87%BA%E7%8E%B0%E2%80%9D%EF%BC%8C%E4%B8%8D%E6%9B%BF%E4%B8%8B%E6%B8%B8%E5%AE%8C%E6%88%90%E4%B8%80%E8%87%B4%E6%80%A7"><span class="nav-number">5.</span> <span class="nav-text">五、CDC 与 Outbox：解决“事实如何可靠出现”，不替下游完成一致性</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%B8%BA%E4%BB%80%E4%B9%88%E4%B8%9A%E5%8A%A1%E5%86%99%E5%85%A5%E5%90%8E%E7%9B%B4%E6%8E%A5%E5%8F%91%E6%B6%88%E6%81%AF%E5%AE%B9%E6%98%93%E8%A3%82%E5%BC%80"><span class="nav-number">5.1.</span> <span class="nav-text">1. 为什么业务写入后直接发消息容易裂开</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Outbox-%E8%A1%A8%E5%8F%AA%E8%BF%BD%E5%8A%A0%EF%BC%8C%E4%B8%8D%E5%8E%9F%E5%9C%B0%E6%94%B9%E4%BA%8B%E4%BB%B6"><span class="nav-number">5.2.</span> <span class="nav-text">2. Outbox 表只追加，不原地改事件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%BF%AB%E7%85%A7%E4%B8%8E%E5%A2%9E%E9%87%8F%E7%9A%84%E4%BA%A4%E7%95%8C%E8%A6%81%E4%B8%93%E9%A1%B9%E6%B5%8B%E8%AF%95"><span class="nav-number">5.3.</span> <span class="nav-text">3. 快照与增量的交界要专项测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%BA%90%E7%BA%AA%E5%85%83%E5%A4%84%E7%90%86%E6%81%A2%E5%A4%8D%E4%B8%8E%E9%87%8D%E5%BB%BA"><span class="nav-number">5.4.</span> <span class="nav-text">4. 源纪元处理恢复与重建</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AD%E3%80%81%E5%8D%95%E8%B0%83%E7%89%88%E6%9C%AC%E3%80%81%E5%B9%82%E7%AD%89%E6%B6%88%E8%B4%B9%E4%B8%8E%E4%B9%B1%E5%BA%8F%E6%94%B6%E6%95%9B"><span class="nav-number">6.</span> <span class="nav-text">六、单调版本、幂等消费与乱序收敛</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%B8%8D%E7%94%A8%E6%B6%88%E6%81%AF%E5%88%B0%E8%BE%BE%E6%97%B6%E9%97%B4%E8%A3%81%E5%86%B3%E7%8A%B6%E6%80%81"><span class="nav-number">6.1.</span> <span class="nav-text">1. 不用消息到达时间裁决状态</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%B8%89%E7%B1%BB%E5%88%B0%E8%BE%BE%E7%BB%93%E6%9E%9C"><span class="nav-number">6.2.</span> <span class="nav-text">2. 三类到达结果</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%B9%82%E7%AD%89%E5%BF%85%E9%A1%BB%E8%A6%86%E7%9B%96%E5%A4%96%E9%83%A8%E5%89%AF%E4%BD%9C%E7%94%A8"><span class="nav-number">6.3.</span> <span class="nav-text">3. 幂等必须覆盖外部副作用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%B9%B1%E5%BA%8F%E4%B8%8D%E5%8F%AA%E6%98%AF-v2%E3%80%81v1-%E7%9A%84%E7%AE%80%E5%8D%95%E6%8E%92%E5%88%97"><span class="nav-number">6.4.</span> <span class="nav-text">4. 乱序不只是 v2、v1 的简单排列</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E4%BC%98%E5%85%88%E7%BA%A7%E4%B8%8D%E8%83%BD%E7%A0%B4%E5%9D%8F%E5%AE%9E%E4%BD%93%E5%9B%A0%E6%9E%9C"><span class="nav-number">6.5.</span> <span class="nav-text">5. 优先级不能破坏实体因果</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%83%E3%80%81%E5%88%A0%E9%99%A4%E5%92%8C-ACL-%E6%92%A4%E9%94%80%EF%BC%9A%E5%AE%89%E5%85%A8%E6%80%A7%E4%BC%98%E5%85%88%E4%BA%8E%E6%99%AE%E9%80%9A%E5%86%85%E5%AE%B9%E6%96%B0%E9%B2%9C%E5%BA%A6"><span class="nav-number">7.</span> <span class="nav-text">七、删除和 ACL 撤销：安全性优先于普通内容新鲜度</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%88%A0%E9%99%A4%E6%98%AF%E4%B8%9A%E5%8A%A1%E4%BA%8B%E4%BB%B6%EF%BC%8C%E4%B8%8D%E6%98%AF%E7%B4%A2%E5%BC%95%E7%BB%B4%E6%8A%A4%E5%91%BD%E4%BB%A4"><span class="nav-number">7.1.</span> <span class="nav-text">1. 删除是业务事件，不是索引维护命令</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%85%88%E9%98%BB%E6%96%AD%E5%86%8D%E7%89%A9%E7%90%86%E6%B8%85%E7%90%86"><span class="nav-number">7.2.</span> <span class="nav-text">2. 先阻断再物理清理</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-ACL-%E6%92%A4%E9%94%80%E4%B8%8E-ACL-%E6%8E%88%E6%9D%83%E4%B8%8D%E6%98%AF%E5%AF%B9%E7%A7%B0%E9%A3%8E%E9%99%A9"><span class="nav-number">7.3.</span> <span class="nav-text">3. ACL 撤销与 ACL 授权不是对称风险</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%9D%83%E9%99%90%E5%BF%AB%E7%85%A7%E4%B8%8E%E4%B8%BB%E4%BD%93%E5%8F%98%E5%8C%96"><span class="nav-number">7.4.</span> <span class="nav-text">4. 权限快照与主体变化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%88%A0%E9%99%A4%E6%89%80%E6%9C%89%E8%A1%8D%E7%94%9F%E7%89%A9%EF%BC%8C%E8%80%8C%E4%B8%8D%E5%8F%AA%E5%88%A0%E5%90%91%E9%87%8F"><span class="nav-number">7.5.</span> <span class="nav-text">5. 删除所有衍生物，而不只删向量</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E8%B4%9F%E5%90%91%E9%AA%8C%E8%AF%81%E6%AF%94%E2%80%9C%E5%88%A0%E9%99%A4%E6%88%90%E5%8A%9F%E2%80%9D%E6%9B%B4%E6%8E%A5%E8%BF%91%E7%94%A8%E6%88%B7%E9%A3%8E%E9%99%A9"><span class="nav-number">7.6.</span> <span class="nav-text">6. 负向验证比“删除成功”更接近用户风险</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AB%E3%80%81Embedding-%E7%89%88%E6%9C%AC%E8%BF%81%E7%A7%BB%EF%BC%9A%E5%8F%8C%E7%B4%A2%E5%BC%95%E6%AF%94%E5%8E%9F%E5%9C%B0%E6%B7%B7%E5%86%99%E6%9B%B4%E5%AE%B9%E6%98%93%E9%AA%8C%E8%AF%81%E5%92%8C%E5%9B%9E%E6%BB%9A"><span class="nav-number">8.</span> <span class="nav-text">八、Embedding 版本迁移：双索引比原地混写更容易验证和回滚</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%B8%BA%E4%BB%80%E4%B9%88%E4%B8%8D%E8%83%BD%E5%9C%A8%E5%90%8C%E4%B8%80%E5%90%91%E9%87%8F%E7%A9%BA%E9%97%B4%E9%87%8C%E6%82%84%E6%82%84%E6%9B%BF%E6%8D%A2%E6%A8%A1%E5%9E%8B"><span class="nav-number">8.1.</span> <span class="nav-text">1. 为什么不能在同一向量空间里悄悄替换模型</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%8F%8C%E7%B4%A2%E5%BC%95%E8%BF%81%E7%A7%BB%E7%9A%84%E4%B8%83%E4%B8%AA%E9%98%B6%E6%AE%B5"><span class="nav-number">8.2.</span> <span class="nav-text">2. 双索引迁移的七个阶段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E8%BF%81%E7%A7%BB%E9%AA%8C%E6%94%B6%E4%B8%8D%E5%8F%AA%E6%AF%94%E8%BE%83%E8%AE%B0%E5%BD%95%E6%95%B0"><span class="nav-number">8.3.</span> <span class="nav-text">3. 迁移验收不只比较记录数</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%8F%8C%E5%86%99%E5%A4%B1%E8%B4%A5%E7%9A%84%E8%AF%AD%E4%B9%89"><span class="nav-number">8.4.</span> <span class="nav-text">4. 双写失败的语义</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E5%9B%9E%E6%BB%9A%E7%AA%97%E5%8F%A3%E4%B8%8D%E6%98%AF%E2%80%9C%E6%97%A7%E7%B4%A2%E5%BC%95%E8%BF%98%E5%9C%A8%E2%80%9D%E8%BF%99%E4%B9%88%E7%AE%80%E5%8D%95"><span class="nav-number">8.5.</span> <span class="nav-text">5. 回滚窗口不是“旧索引还在”这么简单</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B9%9D%E3%80%81%E7%BC%93%E5%AD%98%E5%A4%B1%E6%95%88%EF%BC%9A%E7%89%88%E6%9C%AC%E5%8C%96%E9%94%AE%E3%80%81%E4%BE%9D%E8%B5%96%E6%B8%85%E5%8D%95%E4%B8%8E%E4%B8%BB%E5%8A%A8%E6%92%A4%E9%94%80%E5%85%B1%E5%90%8C%E5%B7%A5%E4%BD%9C"><span class="nav-number">9.</span> <span class="nav-text">九、缓存失效：版本化键、依赖清单与主动撤销共同工作</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%8F%AA%E8%AE%BE%E7%BD%AE%E7%9F%AD-TTL-%E4%B8%BA%E4%BB%80%E4%B9%88%E4%B8%8D%E5%A4%9F"><span class="nav-number">9.1.</span> <span class="nav-text">1. 只设置短 TTL 为什么不够</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E7%BC%93%E5%AD%98%E9%94%AE%E8%A6%81%E8%A6%86%E7%9B%96%E7%9C%9F%E6%AD%A3%E4%BE%9D%E8%B5%96"><span class="nav-number">9.2.</span> <span class="nav-text">2. 缓存键要覆盖真正依赖</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%A4%B1%E6%95%88%E6%B6%88%E6%81%AF%E6%9C%AC%E8%BA%AB%E4%B9%9F%E4%BC%9A%E4%B8%A2%E5%92%8C%E9%87%8D%E5%A4%8D"><span class="nav-number">9.3.</span> <span class="nav-text">3. 失效消息本身也会丢和重复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E3%80%81read-your-writes%EF%BC%9A%E6%8A%8A%E4%BC%9A%E8%AF%9D%E4%BF%9D%E8%AF%81%E5%81%9A%E6%88%90%E6%98%BE%E5%BC%8F%E5%8D%8F%E8%AE%AE"><span class="nav-number">10.</span> <span class="nav-text">十、read-your-writes：把会话保证做成显式协议</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E9%BB%98%E8%AE%A4%E5%BC%82%E6%AD%A5%E8%AF%BB%E4%B8%BA%E4%BB%80%E4%B9%88%E4%BC%9A%E8%AE%A9%E7%94%A8%E6%88%B7%E5%9B%B0%E6%83%91"><span class="nav-number">10.1.</span> <span class="nav-text">1. 默认异步读为什么会让用户困惑</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-read-your-writes-%E7%9A%84%E6%89%BF%E8%AF%BA%E8%8C%83%E5%9B%B4"><span class="nav-number">10.2.</span> <span class="nav-text">2. read-your-writes 的承诺范围</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%AE%89%E5%85%A8%E5%8F%98%E6%9B%B4%E7%9A%84%E8%AF%BB%E8%BE%B9%E7%95%8C%E6%9B%B4%E4%B8%A5%E6%A0%BC"><span class="nav-number">10.3.</span> <span class="nav-text">3. 安全变更的读边界更严格</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E7%8A%B6%E6%80%81%E6%9C%BA%EF%BC%9A%E6%8A%8A%E6%AF%8F%E7%A7%8D%E4%BA%8B%E4%BB%B6%E6%98%A0%E5%B0%84%E4%B8%BA%E5%8F%AF%E9%AA%8C%E8%AF%81%E8%BD%AC%E6%8D%A2"><span class="nav-number">11.</span> <span class="nav-text">十一、状态机：把每种事件映射为可验证转换</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-ACTIVE"><span class="nav-number">11.1.</span> <span class="nav-text">1. ACTIVE</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-MIGRATING"><span class="nav-number">11.2.</span> <span class="nav-text">2. MIGRATING</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-REVOKED"><span class="nav-number">11.3.</span> <span class="nav-text">3. REVOKED</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-TOMBSTONED"><span class="nav-number">11.4.</span> <span class="nav-text">4. TOMBSTONED</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-RETRY-REPAIR"><span class="nav-number">11.5.</span> <span class="nav-text">5. RETRY &#x2F; REPAIR</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E5%9B%9B%E6%9D%A1%E6%A0%B8%E5%BF%83%E4%B8%8D%E5%8F%98%E9%87%8F"><span class="nav-number">11.6.</span> <span class="nav-text">6. 四条核心不变量</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%8C%E3%80%81%E6%8C%87%E6%A0%87%E5%8F%A3%E5%BE%84%EF%BC%9A%E5%90%8C%E6%97%B6%E6%B5%8B%E5%BB%B6%E8%BF%9F%E3%80%81%E6%9A%B4%E9%9C%B2%E3%80%81%E7%BC%BA%E5%8F%A3%E5%92%8C%E6%9C%80%E7%BB%88%E6%94%B6%E6%95%9B"><span class="nav-number">12.</span> <span class="nav-text">十二、指标口径：同时测延迟、暴露、缺口和最终收敛</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%86%85%E5%AE%B9%E5%8F%AF%E6%90%9C%E7%B4%A2%E6%96%B0%E9%B2%9C%E5%BA%A6"><span class="nav-number">12.1.</span> <span class="nav-text">1. 内容可搜索新鲜度</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E5%88%A0%E9%99%A4%E4%B8%8D%E5%8F%AF%E8%A7%81%E5%BB%B6%E8%BF%9F"><span class="nav-number">12.2.</span> <span class="nav-text">2. 删除不可见延迟</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-ACL-%E6%92%A4%E9%94%80%E6%9A%B4%E9%9C%B2%E7%AA%97%E5%8F%A3"><span class="nav-number">12.3.</span> <span class="nav-text">3. ACL 撤销暴露窗口</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%B8%80%E8%87%B4%E5%AE%9E%E4%BD%93%E6%AF%94%E7%8E%87"><span class="nav-number">12.4.</span> <span class="nav-text">4. 一致实体比率</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E7%BC%BA%E5%8F%A3%E4%B8%8E%E7%A7%AF%E5%8E%8B"><span class="nav-number">12.5.</span> <span class="nav-text">5. 缺口与积压</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E8%BF%81%E7%A7%BB%E5%B7%AE%E5%BC%82%E6%8C%87%E6%A0%87"><span class="nav-number">12.6.</span> <span class="nav-text">6. 迁移差异指标</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-%E4%B8%80%E7%BB%84%E6%9E%84%E9%80%A0%E6%95%B0%E6%8D%AE%E6%80%8E%E6%A0%B7%E8%A7%A3%E9%87%8A"><span class="nav-number">12.7.</span> <span class="nav-text">7. 一组构造数据怎样解释</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%89%E3%80%81%E6%97%A0%E9%9C%80-API-Key-%E7%9A%84%E4%BA%8B%E4%BB%B6%E9%A9%B1%E5%8A%A8%E7%B4%A2%E5%BC%95%E6%8A%95%E5%BD%B1%E5%99%A8"><span class="nav-number">13.</span> <span class="nav-text">十三、无需 API Key 的事件驱动索引投影器</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BB%A3%E7%A0%81%E6%B2%A1%E6%9C%89%E5%81%87%E8%A3%85%E8%A7%A3%E5%86%B3%E7%9A%84%E7%94%9F%E4%BA%A7%E9%97%AE%E9%A2%98"><span class="nav-number">13.1.</span> <span class="nav-text">代码没有假装解决的生产问题</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%9B%9B%E3%80%81%E8%87%AA%E5%8A%A8%E5%8C%96%E6%B5%8B%E8%AF%95%E4%B8%8E%E5%A4%B1%E8%B4%A5%E6%B3%A8%E5%85%A5%E8%AE%BE%E8%AE%A1"><span class="nav-number">14.</span> <span class="nav-text">十四、自动化测试与失败注入设计</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%A5%91%E7%BA%A6%E6%B5%8B%E8%AF%95"><span class="nav-number">14.1.</span> <span class="nav-text">1. 契约测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E9%A1%BA%E5%BA%8F%E4%B8%8E%E9%87%8D%E5%A4%8D%E6%B5%8B%E8%AF%95"><span class="nav-number">14.2.</span> <span class="nav-text">2. 顺序与重复测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%B4%A9%E6%BA%83%E7%82%B9%E6%B3%A8%E5%85%A5"><span class="nav-number">14.3.</span> <span class="nav-text">3. 崩溃点注入</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E4%BE%9D%E8%B5%96%E6%95%85%E9%9A%9C%E6%B3%A8%E5%85%A5"><span class="nav-number">14.4.</span> <span class="nav-text">4. 依赖故障注入</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%80%A7%E8%83%BD%E4%B8%8E%E7%A7%AF%E5%8E%8B%E6%B5%8B%E8%AF%95"><span class="nav-number">14.5.</span> <span class="nav-text">5. 性能与积压测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E6%9F%A5%E8%AF%A2%E6%97%81%E8%B7%AF%E6%B5%8B%E8%AF%95"><span class="nav-number">14.6.</span> <span class="nav-text">6. 查询旁路测试</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%BA%94%E3%80%81%E5%AF%B9%E8%B4%A6%E4%B8%8E%E4%BF%AE%E5%A4%8D%EF%BC%9A%E4%BA%8B%E4%BB%B6%E9%93%BE%E8%B7%AF%E4%B9%8B%E5%A4%96%E7%9A%84%E7%AC%AC%E4%BA%8C%E6%9D%A1%E6%AD%A3%E7%A1%AE%E6%80%A7%E9%98%B2%E7%BA%BF"><span class="nav-number">15.</span> <span class="nav-text">十五、对账与修复：事件链路之外的第二条正确性防线</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E4%B8%BA%E4%BB%80%E4%B9%88%E6%88%90%E5%8A%9F%E6%B6%88%E8%B4%B9%E4%BB%8D%E9%9C%80%E5%AF%B9%E8%B4%A6"><span class="nav-number">15.1.</span> <span class="nav-text">1. 为什么成功消费仍需对账</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%B8%89%E5%B1%82%E5%AF%B9%E8%B4%A6"><span class="nav-number">15.2.</span> <span class="nav-text">2. 三层对账</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E5%93%88%E5%B8%8C%E5%88%86%E6%A1%B6%E5%87%8F%E5%B0%91%E5%85%A8%E9%87%8F%E6%89%AB%E6%8F%8F%E6%88%90%E6%9C%AC"><span class="nav-number">15.3.</span> <span class="nav-text">3. 哈希分桶减少全量扫描成本</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E5%B7%AE%E5%BC%82%E5%88%86%E7%B1%BB%E5%86%B3%E5%AE%9A%E4%BF%AE%E5%A4%8D%E5%8A%A8%E4%BD%9C"><span class="nav-number">15.4.</span> <span class="nav-text">4. 差异分类决定修复动作</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E4%BF%AE%E5%A4%8D%E4%BB%BB%E5%8A%A1%E4%B9%9F%E8%A6%81%E6%9C%89%E7%89%88%E6%9C%AC%E4%BF%9D%E6%8A%A4"><span class="nav-number">15.5.</span> <span class="nav-text">5. 修复任务也要有版本保护</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E4%BF%AE%E5%A4%8D%E9%A3%8E%E6%9A%B4%E6%8E%A7%E5%88%B6"><span class="nav-number">15.6.</span> <span class="nav-text">6. 修复风暴控制</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AD%E3%80%81%E5%AE%8C%E6%95%B4%E5%A4%B1%E8%B4%A5%E6%A1%88%E4%BE%8B%EF%BC%9A%E6%92%A4%E6%9D%83%E4%BA%8B%E4%BB%B6%E8%A2%AB%E5%9B%9E%E5%A1%AB%E6%B5%81%E5%8E%8B%E4%BD%8F%EF%BC%8C%E6%97%A7%E7%AD%94%E6%A1%88%E7%BC%93%E5%AD%98%E7%BB%A7%E7%BB%AD%E6%B3%84%E9%9C%B2"><span class="nav-number">16.</span> <span class="nav-text">十六、完整失败案例：撤权事件被回填流压住，旧答案缓存继续泄露</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E7%B3%BB%E7%BB%9F%E8%83%8C%E6%99%AF"><span class="nav-number">16.1.</span> <span class="nav-text">1. 系统背景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E4%BA%8B%E6%95%85%E6%97%B6%E9%97%B4%E7%BA%BF"><span class="nav-number">16.2.</span> <span class="nav-text">2. 事故时间线</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E4%B8%BA%E4%BB%80%E4%B9%88%E7%AC%AC%E4%B8%80%E8%BD%AE%E7%9B%91%E6%8E%A7%E6%B2%A1%E6%9C%89%E6%8A%A5%E8%AD%A6"><span class="nav-number">16.3.</span> <span class="nav-text">3. 为什么第一轮监控没有报警</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E8%AF%81%E6%8D%AE%E5%8C%85%E6%80%8E%E6%A0%B7%E4%B8%80%E6%AD%A5%E6%AD%A5%E6%8E%92%E6%9F%A5"><span class="nav-number">16.4.</span> <span class="nav-text">4. 证据包怎样一步步排查</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%A0%B9%E5%9B%A0%E6%A0%91"><span class="nav-number">16.5.</span> <span class="nav-text">5. 根因树</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E4%B8%B4%E6%97%B6%E6%AD%A2%E8%A1%80"><span class="nav-number">16.6.</span> <span class="nav-text">6. 临时止血</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-%E6%B0%B8%E4%B9%85%E4%BF%AE%E5%A4%8D"><span class="nav-number">16.7.</span> <span class="nav-text">7. 永久修复</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-%E5%85%B3%E9%97%AD%E4%BA%8B%E6%95%85%E9%9C%80%E8%A6%81%E4%BB%80%E4%B9%88%E8%AF%81%E6%8D%AE"><span class="nav-number">16.8.</span> <span class="nav-text">8. 关闭事故需要什么证据</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B8%83%E3%80%81%E5%80%BC%E7%8F%AD%E6%8E%92%E6%9F%A5%E6%89%8B%E5%86%8C%EF%BC%9A%E4%BB%8E%E7%94%A8%E6%88%B7%E8%AF%81%E6%8D%AE%E5%8F%8D%E5%90%91%E8%B5%B0%E5%88%B0%E6%BA%90%E7%9C%9F%E5%80%BC"><span class="nav-number">17.</span> <span class="nav-text">十七、值班排查手册：从用户证据反向走到源真值</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-%E5%85%88%E5%86%BB%E7%BB%93%E9%97%AE%E9%A2%98%E6%8F%8F%E8%BF%B0"><span class="nav-number">17.1.</span> <span class="nav-text">1. 先冻结问题描述</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-%E6%A3%80%E6%9F%A5%E6%BA%90%E7%8A%B6%E6%80%81"><span class="nav-number">17.2.</span> <span class="nav-text">2. 检查源状态</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-%E6%A3%80%E6%9F%A5%E4%BA%8B%E4%BB%B6%E5%AD%98%E5%9C%A8%E4%B8%8E%E8%B7%AF%E7%94%B1"><span class="nav-number">17.3.</span> <span class="nav-text">3. 检查事件存在与路由</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-%E6%A3%80%E6%9F%A5%E7%A7%AF%E5%8E%8B%E5%92%8C%E7%BC%BA%E5%8F%A3"><span class="nav-number">17.4.</span> <span class="nav-text">4. 检查积压和缺口</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-%E6%A3%80%E6%9F%A5%E6%AF%8F%E4%B8%AA%E5%89%AF%E4%BD%9C%E7%94%A8"><span class="nav-number">17.5.</span> <span class="nav-text">5. 检查每个副作用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-%E6%A3%80%E6%9F%A5%E7%94%9F%E4%BA%A7%E5%8F%AF%E8%A7%81%E6%80%A7"><span class="nav-number">17.6.</span> <span class="nav-text">6. 检查生产可见性</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-%E9%80%89%E6%8B%A9%E4%BF%AE%E5%A4%8D%E6%96%B9%E5%90%91"><span class="nav-number">17.7.</span> <span class="nav-text">7. 选择修复方向</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-%E5%A4%8D%E9%AA%8C%E5%B9%B6%E6%89%A9%E5%A4%A7%E8%8C%83%E5%9B%B4"><span class="nav-number">17.8.</span> <span class="nav-text">8. 复验并扩大范围</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E5%85%AB%E3%80%81%E4%B8%8A%E7%BA%BF%E5%89%8D%E6%A3%80%E6%9F%A5%E8%A1%A8"><span class="nav-number">18.</span> <span class="nav-text">十八、上线前检查表</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%9C%9F%E5%80%BC%E4%B8%8E%E5%90%88%E5%90%8C"><span class="nav-number">18.1.</span> <span class="nav-text">真值与合同</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#CDC-%E4%B8%8E%E4%BA%8B%E4%BB%B6"><span class="nav-number">18.2.</span> <span class="nav-text">CDC 与事件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8A%95%E5%BD%B1%E4%B8%8E%E5%B9%82%E7%AD%89"><span class="nav-number">18.3.</span> <span class="nav-text">投影与幂等</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%A0%E9%99%A4%E4%B8%8E%E6%9D%83%E9%99%90"><span class="nav-number">18.4.</span> <span class="nav-text">删除与权限</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Embedding-%E8%BF%81%E7%A7%BB"><span class="nav-number">18.5.</span> <span class="nav-text">Embedding 迁移</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8C%87%E6%A0%87%E3%80%81%E5%AF%B9%E8%B4%A6%E4%B8%8E%E8%BF%90%E7%BB%B4"><span class="nav-number">18.6.</span> <span class="nav-text">指标、对账与运维</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%81%E4%B9%9D%E3%80%81%E6%80%BB%E7%BB%93"><span class="nav-number">19.</span> <span class="nav-text">十九、总结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8F%82%E8%80%83%E8%B5%84%E6%96%99"><span class="nav-number">20.</span> <span class="nav-text">参考资料</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Payne Winn"
+      src="https://avatars.githubusercontent.com/u/55482031?v=4">
+  <p class="site-author-name" itemprop="name">Payne Winn</p>
+  <div class="site-description" itemprop="description">Coding, Testing, Cloud and Simple Life</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">358</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">27</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">796</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/paynewinnt" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;paynewinnt" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:1073715844@qq.com" title="E-Mail → mailto:1073715844@qq.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://paynewinnt.github.io/2026/05/02/AI%E6%B5%8B%E8%AF%95-38-%E7%9F%A5%E8%AF%86%E5%BA%93%E6%9B%B4%E6%96%B0%E5%88%A0%E9%99%A4%E5%92%8C%E6%9D%83%E9%99%90%E5%8F%98%E6%9B%B4%E5%90%8E%E6%80%8E%E4%B9%88%E4%BF%9D%E8%AF%81%E7%B4%A2%E5%BC%95%E6%96%B0%E9%B2%9C%E5%BA%A6%E4%B8%8E%E4%B8%80%E8%87%B4%E6%80%A7/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="https://avatars.githubusercontent.com/u/55482031?v=4">
+      <meta itemprop="name" content="Payne Winn">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="大道至简">
+      <meta itemprop="description" content="Coding, Testing, Cloud and Simple Life">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="AI测试-38-知识库更新删除和权限变更后怎么保证索引新鲜度与一致性 | 大道至简">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          AI测试-38-知识库更新删除和权限变更后怎么保证索引新鲜度与一致性
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2026-05-02 20:30:00" itemprop="dateCreated datePublished" datetime="2026-05-02T20:30:00+08:00">2026-05-02</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/AI%E6%B5%8B%E8%AF%95/" itemprop="url" rel="index"><span itemprop="name">AI测试</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-break"></span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>19k</span>
+    </span>
+    <span class="post-meta-item" title="阅读时长">
+      <span class="post-meta-item-icon">
+        <i class="far fa-clock"></i>
+      </span>
+      <span class="post-meta-item-text">阅读时长 &asymp;</span>
+      <span>1:08</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>知识库系统最危险的状态，通常不是“完全不可用”，而是<strong>看起来正常、检索也有结果，但结果来自已经修改、已经删除或当前用户已经无权访问的旧投影</strong>。</p>
+<p>一次源文档更新，可能依次经过业务数据库、对象存储、CDC、消息队列、解析器、分片器、Embedding 服务、向量索引、关键词索引、重排缓存和答案缓存。任何一段都可能延迟、重试、乱序或只完成一半。源系统里的“保存成功”与查询端的“新内容已经可见”不是同一个时刻。</p>
+<p>删除与权限撤销更加严格。更新延迟几分钟可能让用户看到旧制度；删除延迟可能违反数据保留承诺；ACL 撤销延迟则可能把仍然存在的内容暴露给已经失去权限的主体。三者不能共用一个模糊的“同步成功率”。</p>
+<p>本文讨论的是知识进入索引以及从索引退出的控制面，不重复 AI测试-18 已经展开的 Recall、忠实度、引用正确性和通用 RAG 评测。这里也不把以下信号当成业务正确性保证：</p>
+<ul>
+<li>CDC 连接器处于运行状态；</li>
+<li>消息已经被消费或提交 offset；</li>
+<li>向量数据库返回 HTTP 200；</li>
+<li>文档 Schema 校验通过；</li>
+<li>向量相似度很高；</li>
+<li>模型声称自己“有信心”；</li>
+<li>查询协议成功返回结果。</li>
+</ul>
+<p>这些信号各自只能证明局部步骤。本文要建立的是另一组可验证结论：</p>
+<ol>
+<li>一个源版本是否已经传播到所有应该存在的投影；</li>
+<li>一个删除或撤权版本是否已经让所有不应再见的副本不可见；</li>
+<li>乱序、重复和部分失败后，系统是否一定收敛到源真值；</li>
+<li>Embedding 版本迁移期间，新旧索引是否保持可解释、可回滚；</li>
+<li>当在线链路悄悄漏事件时，对账能否发现并修复；</li>
+<li>用户写入后要求立即读取时，系统究竟承诺到哪个边界。</li>
+</ol>
+<p>文中所有示例指标和事故数字均为<strong>构造数据</strong>，只用于演示口径和排查方法。厂商行为按资料截止日 <code>2026-07-26</code> 对应文档描述，不能外推到其他产品、部署模式或未来版本。</p>
+<h2 id="一、工程定义：索引不是第二份真值，而是可丢弃、可重建的投影"><a href="#一、工程定义：索引不是第二份真值，而是可丢弃、可重建的投影" class="headerlink" title="一、工程定义：索引不是第二份真值，而是可丢弃、可重建的投影"></a>一、工程定义：索引不是第二份真值，而是可丢弃、可重建的投影</h2><h3 id="1-源系统真值是什么"><a href="#1-源系统真值是什么" class="headerlink" title="1. 源系统真值是什么"></a>1. 源系统真值是什么</h3><p>“源系统”不是固定等于某个数据库。它是对某项业务事实拥有最终裁决权的系统。例如：</p>
+<ul>
+<li>文档正文由内容管理系统裁决；</li>
+<li>文档是否删除由内容生命周期服务裁决；</li>
+<li>用户、组、租户和资源之间的授权关系由权限服务裁决；</li>
+<li>合规冻结与强制下架由治理系统裁决；</li>
+<li>当前有效版本由带事务语义的版本记录裁决。</li>
+</ul>
+<p>一个知识对象可能有多个权威来源，但每个字段必须有唯一责任边界。若正文说文档存在、权限服务说资源已经冻结，查询层不能自行“折中”。冻结属于安全否决条件，应优先阻断读取。</p>
+<p>向量索引、倒排索引、缓存和生成答案都是派生状态。派生状态允许暂时落后，也允许删除后重建；它不能反向覆盖源真值。把索引当主库，会立即产生三个无法回答的问题：</p>
+<ul>
+<li>索引中的内容来自哪个源版本；</li>
+<li>索引缺少记录表示“尚未同步”还是“已经删除”；</li>
+<li>两个索引内容冲突时由谁裁决。</li>
+</ul>
+<p>因此第一条架构不变量是：</p>
+<blockquote>
+<p>对每个可检索单元，都能追溯到源实体、源纪元、单调版本、转换版本和投影时间；源系统能够独立枚举当前应存在的集合。</p>
+</blockquote>
+<p><a target="_blank" rel="noopener" href="https://www.w3.org/TR/prov-o/">W3C PROV-O</a> 把实体、活动、代理以及 <code>wasDerivedFrom</code> 等关系定义为来源描述词汇。工程上不必照搬 RDF，但应保留同等信息：哪个源实体经过哪一次解析、切分和嵌入活动生成了哪个索引记录，活动由哪个代码与配置版本执行。</p>
+<h3 id="2-“一致性”至少有六个维度"><a href="#2-“一致性”至少有六个维度" class="headerlink" title="2. “一致性”至少有六个维度"></a>2. “一致性”至少有六个维度</h3><p>知识索引的一致性不能压成一个布尔字段。</p>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>要回答的问题</th>
+<th>典型错误</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>内容一致性</td>
+<td>查询到的正文是否来自当前有效源版本</td>
+<td>标题是 v18，正文仍是 v17</td>
+</tr>
+<tr>
+<td>集合一致性</td>
+<td>应存在的分片是否完整，不应存在的分片是否消失</td>
+<td>更新后旧分片残留，形成冲突证据</td>
+</tr>
+<tr>
+<td>权限一致性</td>
+<td>当前主体是否只看到此刻有权读取的资源</td>
+<td>组成员被移除后旧缓存仍命中</td>
+</tr>
+<tr>
+<td>模型一致性</td>
+<td>同一索引代的向量是否由声明的 Embedding 版本生成</td>
+<td>新旧维度或归一化规则混写</td>
+</tr>
+<tr>
+<td>缓存一致性</td>
+<td>缓存键和失效范围是否覆盖内容、ACL、索引代</td>
+<td>向量已删，答案缓存仍返回原文</td>
+</tr>
+<tr>
+<td>证据一致性</td>
+<td>账本、水位、索引实际内容和源清单能否互相印证</td>
+<td>账本标记成功，索引副作用实际失败</td>
+</tr>
+</tbody></table>
+<p>这六个维度里，内容更新通常追求低延迟最终一致；删除和 ACL 撤销通常需要更短、更明确的暴露上限。若风险无法接受异步窗口，应在查询入口增加权威权限守卫或同步拒绝列表，而不是假装异步索引具备强一致。</p>
+<h3 id="3-“新鲜”必须绑定对象、起点和终点"><a href="#3-“新鲜”必须绑定对象、起点和终点" class="headerlink" title="3. “新鲜”必须绑定对象、起点和终点"></a>3. “新鲜”必须绑定对象、起点和终点</h3><p>一句“索引五分钟内更新”缺少三个定义：</p>
+<ul>
+<li>哪类变更：正文更新、删除、ACL 授权还是 ACL 撤销；</li>
+<li>从何时开始：用户点击保存、源事务提交、Outbox 可见还是 CDC 读到；</li>
+<li>到何时结束：索引写请求返回、refresh 后可搜索、权限过滤生效，还是缓存也已失效。</li>
+</ul>
+<p>本文采用以下主要终点：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">内容更新完成 = 指定源版本在生产查询路径中可搜索，且旧版本不再参与结果</span><br><span class="line">删除完成     = 生产查询路径、缓存和所有在役索引代都不可返回该实体</span><br><span class="line">撤权完成     = 被撤主体通过任何在役入口都不能读取该实体</span><br><span class="line">迁移完成     = 新索引通过覆盖、版本、权限和质量门禁，并完成受控读切换</span><br></pre></td></tr></table></figure>
+
+<p>“索引 API 接收了写请求”只是一项中间事件。以 Elasticsearch 为例，官方近实时搜索文档明确区分写入与 refresh；refresh 会让上次 refresh 以来的操作可供搜索，并可以等待刷新间隔、使用 <code>refresh</code> 选项或调用 Refresh API。这个事实只适用于对应 Elasticsearch 行为，不代表所有搜索产品都采用相同机制。</p>
+<h3 id="4-边界：本文保证什么，不保证什么"><a href="#4-边界：本文保证什么，不保证什么" class="headerlink" title="4. 边界：本文保证什么，不保证什么"></a>4. 边界：本文保证什么，不保证什么</h3><p>本文关注<strong>投影正确性与可见性</strong>：事件不丢、版本不倒退、删除不复活、撤权优先、迁移可回滚、差异可修复。</p>
+<p>它不自动保证：</p>
+<ul>
+<li>分片语义合理；</li>
+<li>Embedding 能召回业务相关证据；</li>
+<li>重排器顺序正确；</li>
+<li>生成答案忠于证据；</li>
+<li>源文档本身事实正确；</li>
+<li>权限策略定义符合组织制度。</li>
+</ul>
+<p>即使投影与源 100% 一致，源数据也可能错误。即使 Recall@10 很高，旧权限缓存仍可能泄露内容。层间责任必须分开，故障证据才能指向实际修复点。</p>
+<h2 id="二、先写一致性合同，再选-CDC、队列和向量库"><a href="#二、先写一致性合同，再选-CDC、队列和向量库" class="headerlink" title="二、先写一致性合同，再选 CDC、队列和向量库"></a>二、先写一致性合同，再选 CDC、队列和向量库</h2><p>一个可测试的知识索引合同至少包含以下字段。</p>
+<table>
+<thead>
+<tr>
+<th>合同项</th>
+<th>示例</th>
+<th>设计目的</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>真值所有者</td>
+<td><code>content-service</code>、<code>authz-service</code></td>
+<td>冲突时知道向谁对账</td>
+</tr>
+<tr>
+<td>实体键</td>
+<td><code>(tenant_id, document_id)</code></td>
+<td>隔离租户并维持实体顺序</td>
+</tr>
+<tr>
+<td>源纪元</td>
+<td><code>content-db-prod-03</code></td>
+<td>灾备恢复或导入后避免版本号碰撞</td>
+</tr>
+<tr>
+<td>单调版本</td>
+<td><code>document_version=58</code></td>
+<td>不用到达时间判断新旧</td>
+</tr>
+<tr>
+<td>操作</td>
+<td><code>UPSERT/DELETE/ACL_REVOKE/ACL_GRANT</code></td>
+<td>不把空内容误当删除</td>
+</tr>
+<tr>
+<td>事件 ID</td>
+<td>全局唯一 UUID</td>
+<td>支持重复检测与审计</td>
+</tr>
+<tr>
+<td>提交时间</td>
+<td>数据库提交对应时间</td>
+<td>计算端到端新鲜度</td>
+</tr>
+<tr>
+<td>安全级别</td>
+<td><code>normal/security_critical</code></td>
+<td>撤权与删除独立调度</td>
+</tr>
+<tr>
+<td>目标投影</td>
+<td><code>lexical-v3/vector-e5-v2/cache</code></td>
+<td>明确传播扇出</td>
+</tr>
+<tr>
+<td>完成条件</td>
+<td>可搜索 + 旧片消失 + 缓存失效</td>
+<td>防止过早确认</td>
+</tr>
+<tr>
+<td>SLO</td>
+<td>更新 p99、撤权 p99 与最大值</td>
+<td>把风险变成可告警目标</td>
+</tr>
+<tr>
+<td>修复责任</td>
+<td>自动重放、人工审批、源修复</td>
+<td>避免发现差异后无人处理</td>
+</tr>
+</tbody></table>
+<p>合同还要写出三个“不承诺”。</p>
+<p>第一，不承诺跨所有实体的全局顺序。大多数系统只需要同一实体或同一聚合内有序。强求全局顺序会降低吞吐，却不一定改善正确性。</p>
+<p>第二，不承诺消息只投递一次。网络超时、消费者崩溃和 offset 提交失败都会制造重复。系统应接受至少一次投递，并让相同事件重复执行后结果不变。</p>
+<p>第三，不承诺所有读都自动 read-your-writes。写入端和检索端之间有异步链路，必须通过写入回执、最低版本、有限等待或源回退显式实现这一会话保证。</p>
+<h2 id="三、完整架构：普通更新最终收敛，删除和撤权先阻断再清理"><a href="#三、完整架构：普通更新最终收敛，删除和撤权先阻断再清理" class="headerlink" title="三、完整架构：普通更新最终收敛，删除和撤权先阻断再清理"></a>三、完整架构：普通更新最终收敛，删除和撤权先阻断再清理</h2><p><img src="/images/ai-quality/ai-38-change-propagation.svg" alt="知识库变更传播、权限优先与一致性证据架构"></p>
+<p>图中的主路径可以拆成九个责任单元。</p>
+<h3 id="1-源写入服务"><a href="#1-源写入服务" class="headerlink" title="1. 源写入服务"></a>1. 源写入服务</h3><p>源写入服务在一个事务里完成：</p>
+<ol>
+<li>校验调用者是否有权修改；</li>
+<li>更新业务实体并递增实体版本；</li>
+<li>写入不可变 Outbox 事件；</li>
+<li>返回包含 <code>source_epoch</code> 与 <code>entity_version</code> 的写入回执。</li>
+</ol>
+<p>如果业务表提交而事件没有可靠产生，后续只能依赖周期扫描“猜”出变化。Outbox 的价值正是让业务变更和待发布事实共享事务边界。<a target="_blank" rel="noopener" href="https://debezium.io/documentation/reference/stable/transformations/outbox-event-router.html">Debezium 3.6 Outbox Event Router 文档</a>说明 Outbox 模式用于避免服务内部状态与消费事件之间的不一致；其默认表结构包含唯一事件 ID、聚合类型、聚合 ID、类型与载荷。</p>
+<h3 id="2-CDC-捕获器"><a href="#2-CDC-捕获器" class="headerlink" title="2. CDC 捕获器"></a>2. CDC 捕获器</h3><p>CDC 捕获事务日志或 Outbox 表变化，形成可重放事件流。Debezium 3.6 文档描述其连接器捕获数据库表的行级变化并形成变更事件流。这里应谨慎理解“顺序”：</p>
+<ul>
+<li>数据库日志提供源侧顺序信息；</li>
+<li>进入消息系统后，顺序通常受 topic 分区、路由键和并行消费者影响；</li>
+<li>Outbox 文档指出 <code>aggregateid</code> 作为消息键对于维持 Kafka 分区内正确顺序很重要；</li>
+<li>这不等于跨分区全局有序，也不等于下游副作用按顺序完成。</li>
+</ul>
+<p>因此事件信封必须携带源版本，消费者也必须自行拒绝倒退。</p>
+<h3 id="3-事件总线与优先级调度"><a href="#3-事件总线与优先级调度" class="headerlink" title="3. 事件总线与优先级调度"></a>3. 事件总线与优先级调度</h3><p>正文更新可以进入普通队列。删除、ACL 撤销、租户冻结和法律下架进入安全关键队列，拥有：</p>
+<ul>
+<li>独立吞吐预留；</li>
+<li>更短的排队年龄告警；</li>
+<li>不被大规模回填挤占的消费者；</li>
+<li>更严格的死信升级；</li>
+<li>端到端最大暴露时间，而不只看分位数。</li>
+</ul>
+<p>“同一个 topic 设置高优先级字段”往往不够，因为消费者积压时仍然按旧消息顺序读取。安全通道需要资源隔离，或者由查询守卫同步消费一份紧急拒绝状态。</p>
+<h3 id="4-解析与分片"><a href="#4-解析与分片" class="headerlink" title="4. 解析与分片"></a>4. 解析与分片</h3><p>解析器把源对象转换成规范文档，分片器生成稳定 <code>chunk_id</code>。稳定不意味着永远不变，而是由显式规则生成，例如：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">chunk_id = hash(tenant_id, document_id, source_version, chunker_version, ordinal)</span><br></pre></td></tr></table></figure>
+
+<p>若更新采用“只覆盖新分片”而不清除旧分片，分片数量减少时会留下幽灵片段。可靠做法有两种：</p>
+<ul>
+<li>先生成该实体某版本的完整清单，原子切换可见版本；</li>
+<li>在同一投影操作中 upsert 新清单并删除不再属于目标清单的旧 ID。</li>
+</ul>
+<p>二者都需要实体级版本与清单，不能只依赖向量相似度找旧片删除。</p>
+<h3 id="5-Embedding-与投影器"><a href="#5-Embedding-与投影器" class="headerlink" title="5. Embedding 与投影器"></a>5. Embedding 与投影器</h3><p>Embedding 服务只负责把指定文本按指定模型与预处理规则变成向量。投影器负责更高层的不变量：</p>
+<ul>
+<li>检查目标索引允许的维度与模型版本；</li>
+<li>比较实体当前账本版本；</li>
+<li>生成所有目标索引代的副作用；</li>
+<li>写墓碑、清理旧分片、失效缓存；</li>
+<li>保存结果哈希、重试次数和完成时间；</li>
+<li>暴露失败阶段供修复器重放。</li>
+</ul>
+<p>Embedding 请求成功不代表索引完成；向量维度正确也不代表向量来自声明的模型。投影记录需要保存 <code>embedding_model_id</code>、<code>preprocessor_hash</code> 与输入内容哈希。</p>
+<h3 id="6-双检索索引"><a href="#6-双检索索引" class="headerlink" title="6. 双检索索引"></a>6. 双检索索引</h3><p>生产常同时使用倒排索引和向量索引。两者必须共享源身份、版本、ACL 摘要与墓碑语义。否则关键词结果已撤权、向量结果仍可见，混合召回器依然会把禁止内容送进上下文。</p>
+<p>Embedding 迁移时还会同时存在旧向量索引和新向量索引。读别名不能在“新索引记录数差不多”时直接切换，后文会定义完整门禁。</p>
+<h3 id="7-缓存层"><a href="#7-缓存层" class="headerlink" title="7. 缓存层"></a>7. 缓存层</h3><p>至少区分：</p>
+<ul>
+<li>文档解析缓存；</li>
+<li>Embedding 缓存；</li>
+<li>检索候选缓存；</li>
+<li>重排缓存；</li>
+<li>最终答案缓存；</li>
+<li>ACL 判定缓存。</li>
+</ul>
+<p>每类缓存依赖的版本不同。正文更新未必需要清除共享 Embedding 缓存中的其他文本；ACL 撤销却必须清除可能包含原文的检索和答案结果，并使授权缓存失效。</p>
+<h3 id="8-查询守卫"><a href="#8-查询守卫" class="headerlink" title="8. 查询守卫"></a>8. 查询守卫</h3><p>查询守卫在索引返回候选后，再依据当前主体、租户、资源版本和风险策略做确定性检查。对于高敏感知识，它应读取权威权限快照或短时拒绝集合，做到撤权先阻断。</p>
+<p>守卫不是修复脏索引的借口。索引仍要最终清理，否则会持续增加暴露面、统计噪声和旁路风险。它的作用是在异步清理窗口内缩短可见性风险。</p>
+<h3 id="9-证据与修复面"><a href="#9-证据与修复面" class="headerlink" title="9. 证据与修复面"></a>9. 证据与修复面</h3><p>每个事件要能串联以下证据：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">source_commit</span><br><span class="line">  -&gt; outbox_row</span><br><span class="line">  -&gt; cdc_position</span><br><span class="line">  -&gt; broker_partition/offset</span><br><span class="line">  -&gt; projector_attempt</span><br><span class="line">  -&gt; embedding_input_hash/model</span><br><span class="line">  -&gt; index_generation/result</span><br><span class="line">  -&gt; search_visibility_probe</span><br><span class="line">  -&gt; cache_invalidation</span><br><span class="line">  -&gt; reconciliation_verdict</span><br></pre></td></tr></table></figure>
+
+<p>这条链路用于回答“卡在哪里”，而不是只展示一条绿色流水线。</p>
+<h2 id="四、数据模型：版本、墓碑、账本和水位缺一不可"><a href="#四、数据模型：版本、墓碑、账本和水位缺一不可" class="headerlink" title="四、数据模型：版本、墓碑、账本和水位缺一不可"></a>四、数据模型：版本、墓碑、账本和水位缺一不可</h2><h3 id="1-源实体"><a href="#1-源实体" class="headerlink" title="1. 源实体"></a>1. 源实体</h3><p>源实体至少应有下面这些逻辑字段：</p>
+<figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">CREATE TABLE</span> knowledge_document (</span><br><span class="line">  tenant_id         TEXT        <span class="keyword">NOT NULL</span>,</span><br><span class="line">  document_id       TEXT        <span class="keyword">NOT NULL</span>,</span><br><span class="line">  source_epoch      TEXT        <span class="keyword">NOT NULL</span>,</span><br><span class="line">  entity_version    <span class="type">BIGINT</span>      <span class="keyword">NOT NULL</span>,</span><br><span class="line">  lifecycle_state   TEXT        <span class="keyword">NOT NULL</span>,</span><br><span class="line">  content_uri       TEXT,</span><br><span class="line">  content_sha256    TEXT,</span><br><span class="line">  acl_version       <span class="type">BIGINT</span>      <span class="keyword">NOT NULL</span>,</span><br><span class="line">  updated_at        <span class="type">TIMESTAMP</span>   <span class="keyword">NOT NULL</span>,</span><br><span class="line">  <span class="keyword">PRIMARY KEY</span> (tenant_id, document_id)</span><br><span class="line">);</span><br></pre></td></tr></table></figure>
+
+<p><code>updated_at</code> 用于审计和延迟，不用于消费者判断新旧。两个节点的时钟可能偏移，同一毫秒也可能发生多个事务。新旧裁决使用源纪元和实体单调版本。</p>
+<h3 id="2-Outbox-事件"><a href="#2-Outbox-事件" class="headerlink" title="2. Outbox 事件"></a>2. Outbox 事件</h3><p>事件应表达事实，而不是下游实现命令。一个示例信封如下：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;event_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;0ad0a799-377c-4e72-93e2-221624060058&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;event_type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;ACL_REVOKE&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;tenant_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;tenant-a&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;entity_type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;knowledge_document&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;entity_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;refund-policy&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;source_epoch&quot;</span><span class="punctuation">:</span> <span class="string">&quot;content-prod-03&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;entity_version&quot;</span><span class="punctuation">:</span> <span class="number">59</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;acl_version&quot;</span><span class="punctuation">:</span> <span class="number">12</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;committed_at&quot;</span><span class="punctuation">:</span> <span class="string">&quot;2026-05-02T10:02:11.482Z&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;priority&quot;</span><span class="punctuation">:</span> <span class="string">&quot;security_critical&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;payload_ref&quot;</span><span class="punctuation">:</span> <span class="string">&quot;s3://immutable-source/tenant-a/refund-policy/v59.json&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;payload_sha256&quot;</span><span class="punctuation">:</span> <span class="string">&quot;b51d...d020&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;trace_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;01HT...Q9&quot;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>事件中最好传不可变载荷或带版本的引用。若消费者收到 v59 事件后却按无版本 URL 读取“当前内容”，它可能读到 v60，再把 v60 内容标成 v59，破坏来源链。</p>
+<p>唯一 <code>event_id</code> 用于事件级去重；<code>entity_version</code> 用于状态级幂等。两者不能互相替代：同一业务版本可能因修复生成新的事件 ID，而一个错误复用的事件 ID 也不能阻止版本比较。</p>
+<h3 id="3-投影记录"><a href="#3-投影记录" class="headerlink" title="3. 投影记录"></a>3. 投影记录</h3><p>每个分片保存：</p>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>tenant_id/document_id/chunk_id</code></td>
+<td>稳定身份与租户隔离</td>
+</tr>
+<tr>
+<td><code>source_epoch/entity_version</code></td>
+<td>内容新旧裁决</td>
+</tr>
+<tr>
+<td><code>acl_version/allowed_principals</code></td>
+<td>权限过滤与审计</td>
+</tr>
+<tr>
+<td><code>content_sha256/chunk_sha256</code></td>
+<td>检测错内容和残片</td>
+</tr>
+<tr>
+<td><code>parser_version/chunker_version</code></td>
+<td>定位转换差异</td>
+</tr>
+<tr>
+<td><code>embedding_model_id</code></td>
+<td>防止模型代混写</td>
+</tr>
+<tr>
+<td><code>embedding_input_sha256</code></td>
+<td>证明向量输入</td>
+</tr>
+<tr>
+<td><code>index_generation</code></td>
+<td>支持双索引和回滚</td>
+</tr>
+<tr>
+<td><code>projected_at/searchable_at</code></td>
+<td>分解写入与可搜索延迟</td>
+</tr>
+<tr>
+<td><code>event_id/trace_id</code></td>
+<td>回到传播证据</td>
+</tr>
+</tbody></table>
+<p>不要把 ACL 只编码进向量。权限必须是可检查的结构化元数据或查询守卫输入。相似度、模型置信度和自然语言声明都不能替代授权判定。</p>
+<h3 id="4-投影账本"><a href="#4-投影账本" class="headerlink" title="4. 投影账本"></a>4. 投影账本</h3><p>实体级账本记录消费者认为已经完成的目标状态：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">projection_ledger(</span><br><span class="line">  tenant_id,</span><br><span class="line">  entity_id,</span><br><span class="line">  source_epoch,</span><br><span class="line">  applied_version,</span><br><span class="line">  operation,</span><br><span class="line">  target_generation,</span><br><span class="line">  manifest_sha256,</span><br><span class="line">  acl_sha256,</span><br><span class="line">  event_id,</span><br><span class="line">  status,</span><br><span class="line">  first_seen_at,</span><br><span class="line">  searchable_at,</span><br><span class="line">  last_attempt_at,</span><br><span class="line">  attempt_count,</span><br><span class="line">  failure_stage</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+
+<p>账本不是绝对真理。若进程在索引副作用成功后、账本提交前崩溃，账本会落后；若账本提前提交而索引调用超时，账本又可能领先。因此副作用必须幂等，对账还要直接抽查或枚举索引实际状态。</p>
+<h3 id="5-墓碑"><a href="#5-墓碑" class="headerlink" title="5. 墓碑"></a>5. 墓碑</h3><p>删除不能只表现为“查不到记录”。查不到还可能表示未同步、索引损坏或租户过滤错误。墓碑至少保存：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">tombstone_key       = (tenant_id, entity_id)</span><br><span class="line">source_epoch        = content-prod-03</span><br><span class="line">deleted_version     = 73</span><br><span class="line">deleted_at          = source commit time</span><br><span class="line">retention_until     = 最大重放窗口之后</span><br><span class="line">reason              = user_delete / retention / legal / source_rebuild</span><br><span class="line">event_id            = ...</span><br></pre></td></tr></table></figure>
+
+<p>只要旧事件仍可能重放，墓碑就不能提前丢弃。否则 v70 的更新在 v73 删除之后迟到，会把文档复活。墓碑保留期必须覆盖消息最大保留期、备份恢复窗口、离线重放窗口和人工修复队列寿命。</p>
+<h3 id="6-水位与缺口"><a href="#6-水位与缺口" class="headerlink" title="6. 水位与缺口"></a>6. 水位与缺口</h3><p>每个分区至少记录两类水位：</p>
+<ul>
+<li><code>max_seen_position</code>：已经看到的最大源位置；</li>
+<li><code>contiguous_applied_position</code>：此前所有必需位置都已完成的连续水位。</li>
+</ul>
+<p>只记录最大值会掩盖缺口。若消费者收到位置 100、101、103 并成功处理，最大已见是 103，但 102 仍缺失；连续完成水位只能停在 101。新鲜度看板应同时展示：</p>
+<ul>
+<li>连续水位距离源头的差；</li>
+<li>未完成缺口数量；</li>
+<li>最老未完成事件年龄；</li>
+<li>安全关键缺口年龄；</li>
+<li>死信和隔离事件数量。</li>
+</ul>
+<p>对实体状态而言，v103 可能已经覆盖 v102，最终内容没有错误；但缺失 v102 仍可能包含一次撤权、审计记录或副作用，不能仅凭最终正文相同就静默忽略。</p>
+<h2 id="五、CDC-与-Outbox：解决“事实如何可靠出现”，不替下游完成一致性"><a href="#五、CDC-与-Outbox：解决“事实如何可靠出现”，不替下游完成一致性" class="headerlink" title="五、CDC 与 Outbox：解决“事实如何可靠出现”，不替下游完成一致性"></a>五、CDC 与 Outbox：解决“事实如何可靠出现”，不替下游完成一致性</h2><h3 id="1-为什么业务写入后直接发消息容易裂开"><a href="#1-为什么业务写入后直接发消息容易裂开" class="headerlink" title="1. 为什么业务写入后直接发消息容易裂开"></a>1. 为什么业务写入后直接发消息容易裂开</h3><p>最直观的实现是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">UPDATE knowledge_document ...;</span><br><span class="line">COMMIT;</span><br><span class="line">publish(&quot;document.updated&quot;, payload);</span><br></pre></td></tr></table></figure>
+
+<p>如果数据库提交后进程崩溃，消息没有发出，源和索引永久分叉。如果先发消息再提交数据库，消费者可能投影一个最后回滚的版本。把数据库事务与外部消息发送做成“看起来同时”也不等于原子，除非引入经过证明的跨系统事务协议及其恢复机制。</p>
+<p>Outbox 把待发布事件先写入与业务表相同的本地事务。CDC 再读取已提交的 Outbox 行。这样能够保证“源变更提交则事件事实存在”，但仍有以下工程工作：</p>
+<ul>
+<li>CDC 可能重发；</li>
+<li>事件总线可能重复投递；</li>
+<li>同一实体的事件可能被错误路由到不同分区；</li>
+<li>消费者可能在任意副作用边界崩溃；</li>
+<li>Outbox 清理可能早于审计和重放需要；</li>
+<li>快照与增量切换可能产生边界错误；</li>
+<li>Schema 变化可能让消费者无法解释旧事件。</li>
+</ul>
+<p>因此 Outbox 解决双写裂缝，不提供端到端 exactly-once。下游仍要以版本化幂等和对账完成闭环。</p>
+<h3 id="2-Outbox-表只追加，不原地改事件"><a href="#2-Outbox-表只追加，不原地改事件" class="headerlink" title="2. Outbox 表只追加，不原地改事件"></a>2. Outbox 表只追加，不原地改事件</h3><p>Debezium 3.6 Outbox Event Router 的文档把 Outbox 表视为队列，期望变化为 <code>INSERT</code>，并说明事件唯一 ID 可用于移除重复消息。工程上也应把已经提交的事件当不可变事实：</p>
+<ul>
+<li>载荷错误时发布更高实体版本的纠正事件；</li>
+<li>不修改旧事件让审计历史悄悄变化；</li>
+<li>清理前先确认 CDC、归档和重放窗口都已越过；</li>
+<li>Schema 演进使用显式 <code>schema_version</code>，消费者支持兼容窗口。</li>
+</ul>
+<p>事件 ID 不应由当前时间和实体 ID 简单拼接。重试创建同一业务事件时，要明确是复用原事件 ID，还是创建一个指向原事件的修复事件。两种方式均可，但语义必须稳定。</p>
+<h3 id="3-快照与增量的交界要专项测试"><a href="#3-快照与增量的交界要专项测试" class="headerlink" title="3. 快照与增量的交界要专项测试"></a>3. 快照与增量的交界要专项测试</h3><p>新建连接器或全量重建通常先扫描快照，再切换到日志增量。危险边界包括：</p>
+<ul>
+<li>快照读取 v20，增量从 v22 开始，v21 丢失；</li>
+<li>快照中的旧 v20 在增量 v21 后才写入索引，造成倒退；</li>
+<li>删除对象不在当前快照里，又没有保留历史墓碑，目标索引残片无法清除；</li>
+<li>快照按表读取正文和 ACL，两个表不在同一一致性视图，拼成从未真实存在过的组合。</li>
+</ul>
+<p>测试不能只比较最终记录数。至少要在快照进行中并发注入更新、删除、撤权、租户迁移和 Schema 变化，再验证每个实体最终版本、集合清单、ACL 摘要及墓碑都与源一致。</p>
+<h3 id="4-源纪元处理恢复与重建"><a href="#4-源纪元处理恢复与重建" class="headerlink" title="4. 源纪元处理恢复与重建"></a>4. 源纪元处理恢复与重建</h3><p>假设主库故障后从旧备份恢复，实体版本从 500 回到 470，再产生新的 471。如果消费者只看整数版本，会把恢复后的合法事件全部当旧消息丢弃。</p>
+<p>解决方式不是重置所有账本，而是引入受治理的 <code>source_epoch</code>：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">old key = (content-prod-02, version=500)</span><br><span class="line">new key = (content-prod-03, version=471)</span><br></pre></td></tr></table></figure>
+
+<p>纪元切换必须由明确恢复流程发布，并定义新纪元相对于旧纪元的优先级。不能让任意生产者随意改变纪元，否则攻击者或错误配置可以绕过墓碑。纪元变化还应触发全量对账，因为新源可能缺少旧源中存在的对象。</p>
+<h2 id="六、单调版本、幂等消费与乱序收敛"><a href="#六、单调版本、幂等消费与乱序收敛" class="headerlink" title="六、单调版本、幂等消费与乱序收敛"></a>六、单调版本、幂等消费与乱序收敛</h2><h3 id="1-不用消息到达时间裁决状态"><a href="#1-不用消息到达时间裁决状态" class="headerlink" title="1. 不用消息到达时间裁决状态"></a>1. 不用消息到达时间裁决状态</h3><p>一个常见错误是：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> event.received_at &gt; record.updated_at:</span><br><span class="line">    overwrite(record)</span><br></pre></td></tr></table></figure>
+
+<p>它把网络和调度结果误当业务因果关系。v41 可能因重试晚于 v42 到达；不同主机时间可能漂移；历史回放的接收时间必然更新。正确比较对象是源系统在事务内分配的版本键。</p>
+<p>版本比较函数应满足：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">compare((epoch_a, version_a), (epoch_b, version_b))</span><br></pre></td></tr></table></figure>
+
+<p>其中 epoch 的顺序由恢复控制面登记，version 在同一 epoch、同一实体内严格递增。若源只能提供数据库日志位置，也可以把稳定日志位置作为顺序键，但必须处理分片、事务和数据库切换语义，不能把不同数据库的 LSN 直接比较。</p>
+<h3 id="2-三类到达结果"><a href="#2-三类到达结果" class="headerlink" title="2. 三类到达结果"></a>2. 三类到达结果</h3><p>消费者看到事件后先读实体账本：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">event.version &lt; ledger.version  -&gt; STALE</span><br><span class="line">event.version = ledger.version  -&gt; DUPLICATE 或 CONFLICT</span><br><span class="line">event.version &gt; ledger.version  -&gt; APPLY</span><br></pre></td></tr></table></figure>
+
+<p>等版本并不总是安全重复。还要比较操作与目标清单哈希：</p>
+<ul>
+<li>版本相同、事件 ID 或清单哈希相同：幂等成功；</li>
+<li>版本相同、内容哈希不同：源系统违反版本不变量，进入隔离队列；</li>
+<li>版本更低：不改状态，但记录迟到指标；</li>
+<li>版本更高：按操作状态机执行。</li>
+</ul>
+<p>若同一版本允许“正文更新”和“ACL 更新”分别发生，应使用独立的 <code>content_version</code> 与 <code>acl_version</code>，或把两者统一进一个聚合版本。不能只比较正文版本后忽略更高 ACL 版本。</p>
+<h3 id="3-幂等必须覆盖外部副作用"><a href="#3-幂等必须覆盖外部副作用" class="headerlink" title="3. 幂等必须覆盖外部副作用"></a>3. 幂等必须覆盖外部副作用</h3><p>只在数据库里保存 <code>processed_event_id</code> 不够。处理步骤可能是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">1. 调 Embedding</span><br><span class="line">2. 写向量索引</span><br><span class="line">3. 删旧分片</span><br><span class="line">4. 清缓存</span><br><span class="line">5. 写完成账本</span><br><span class="line">6. 提交消息 offset</span><br></pre></td></tr></table></figure>
+
+<p>任何两步之间都可能崩溃。可靠实现需要让每一步按目标版本可重复：</p>
+<ul>
+<li>Embedding 缓存以模型版本和输入哈希为键；</li>
+<li>向量记录 ID 稳定，upsert 相同内容结果相同；</li>
+<li>删除明确列出实体的所有旧分片 ID，删除不存在 ID 也视为完成；</li>
+<li>缓存失效重复发送无副作用；</li>
+<li>账本采用条件更新，只允许版本前进；</li>
+<li>offset 只在所有必需副作用达到完成条件后提交。</li>
+</ul>
+<p>某些外部索引不能在一个事务中同时 upsert 新片和删除旧片，此时可以采用“版本可见性”协议：先写 v43 所有新片，核对完整清单，再把实体可见指针从 v42 切到 v43，最后回收 v42。查询必须按可见版本过滤，避免半成品混入。</p>
+<h3 id="4-乱序不只是-v2、v1-的简单排列"><a href="#4-乱序不只是-v2、v1-的简单排列" class="headerlink" title="4. 乱序不只是 v2、v1 的简单排列"></a>4. 乱序不只是 v2、v1 的简单排列</h3><p>需要测试的乱序至少包括：</p>
+<ul>
+<li><code>UPSERT v10</code>、<code>UPSERT v12</code>、<code>UPSERT v11</code>；</li>
+<li><code>DELETE v13</code> 后迟到 <code>UPSERT v12</code>；</li>
+<li><code>ACL_REVOKE acl=8</code> 后迟到 <code>ACL_GRANT acl=7</code>；</li>
+<li>新 Embedding 代的回填 v20 晚于实时双写 v21；</li>
+<li>修复事件与原始事件同时消费；</li>
+<li>同一事务的正文事件和 ACL 事件进入不同分区；</li>
+<li>旧源纪元的重放与新源纪元的实时流交叉。</li>
+</ul>
+<p>每一种排列都要验证最终状态和中间暴露窗口。只断言“最后数据库里是 v12”会漏掉 v11 曾短暂覆盖 v12 的倒退。</p>
+<h3 id="5-优先级不能破坏实体因果"><a href="#5-优先级不能破坏实体因果" class="headerlink" title="5. 优先级不能破坏实体因果"></a>5. 优先级不能破坏实体因果</h3><p>删除和撤权应优先，但优先调度不代表跳过版本裁决。假设队列里同时有：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">UPSERT v30</span><br><span class="line">ACL_REVOKE v31</span><br><span class="line">ACL_GRANT v32</span><br></pre></td></tr></table></figure>
+
+<p>调度器先处理 v31，可以立即阻断读取；随后 v30 必须被拒绝；最后 v32 是否恢复读取，要根据 v32 的明确授权事实。安全优先提高的是阻断速度，不是把所有后来授权永久吞掉。</p>
+<h2 id="七、删除和-ACL-撤销：安全性优先于普通内容新鲜度"><a href="#七、删除和-ACL-撤销：安全性优先于普通内容新鲜度" class="headerlink" title="七、删除和 ACL 撤销：安全性优先于普通内容新鲜度"></a>七、删除和 ACL 撤销：安全性优先于普通内容新鲜度</h2><h3 id="1-删除是业务事件，不是索引维护命令"><a href="#1-删除是业务事件，不是索引维护命令" class="headerlink" title="1. 删除是业务事件，不是索引维护命令"></a>1. 删除是业务事件，不是索引维护命令</h3><p>删除事件至少表达：</p>
+<ul>
+<li>谁或哪个策略触发；</li>
+<li>源实体最终版本；</li>
+<li>删除范围是整个文档、某附件、某租户还是某索引代；</li>
+<li>是否允许恢复；</li>
+<li>墓碑保留多久；</li>
+<li>哪些派生副本必须清理；</li>
+<li>完成时限和审计责任。</li>
+</ul>
+<p>不要只向向量库发送 <code>delete(filter=document_id)</code> 然后立即把业务状态标为完成。以 Pinecone 当前删除文档为例，它支持按 ID、元数据、命名空间等方式删除，同时明确说明其数据面最终一致，新增或变更记录到查询可见可能有短暂延迟。这个产品事实意味着调用成功与查询不可见之间需要可见性探针；其他产品必须查各自文档和实际测试，不能套用相同延迟假设。</p>
+<h3 id="2-先阻断再物理清理"><a href="#2-先阻断再物理清理" class="headerlink" title="2. 先阻断再物理清理"></a>2. 先阻断再物理清理</h3><p>高敏感删除的推荐顺序是：</p>
+<ol>
+<li>源事务提交删除版本；</li>
+<li>安全通道把 <code>(tenant, entity, deleted_version)</code> 写入查询拒绝集合；</li>
+<li>查询守卫立即拒绝该实体；</li>
+<li>删除所有在役倒排、向量、对象缓存和答案缓存副本；</li>
+<li>对生产查询路径做负向探针；</li>
+<li>写完成证据并保留墓碑；</li>
+<li>在保留期后按政策物理清理审计材料。</li>
+</ol>
+<p>拒绝集合应有版本，且失效条件不能只靠固定 TTL。若清理持续失败，TTL 到期会重新暴露。应由“所有目标已验证清理完成”驱动退出，固定 TTL 只能作为刷新机制。</p>
+<h3 id="3-ACL-撤销与-ACL-授权不是对称风险"><a href="#3-ACL-撤销与-ACL-授权不是对称风险" class="headerlink" title="3. ACL 撤销与 ACL 授权不是对称风险"></a>3. ACL 撤销与 ACL 授权不是对称风险</h3><p>授权延迟会让合法用户暂时看不到内容，主要影响可用性。撤销延迟会让不再授权的用户继续看到内容，影响保密性。二者可采用不同服务目标：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">ACL_GRANT：允许普通异步传播，超时提示稍后重试</span><br><span class="line">ACL_REVOKE：高优先级传播，查询守卫先行，超时按失败关闭</span><br></pre></td></tr></table></figure>
+
+<p>这不意味着撤权事件永远覆盖更高版本授权。状态仍按版本前进，只是调度、告警和读路径策略不同。</p>
+<h3 id="4-权限快照与主体变化"><a href="#4-权限快照与主体变化" class="headerlink" title="4. 权限快照与主体变化"></a>4. 权限快照与主体变化</h3><p>文档 ACL 可能只保存组 <code>finance-readers</code>，用户是否属于该组由身份系统决定。仅在索引时展开用户列表会产生巨大扇出：一个用户离组，需要更新成千上万文档。</p>
+<p>常见方案有三类：</p>
+<table>
+<thead>
+<tr>
+<th>方案</th>
+<th>优点</th>
+<th>风险与适用边界</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>索引主体 ID</td>
+<td>查询快；易过滤</td>
+<td>成员变化扇出大，撤权传播难</td>
+</tr>
+<tr>
+<td>索引组&#x2F;角色，查询时展开主体</td>
+<td>文档变更少</td>
+<td>身份缓存必须新鲜，查询复杂</td>
+</tr>
+<tr>
+<td>候选后权威逐项鉴权</td>
+<td>最接近当前真值</td>
+<td>延迟和权限服务容量压力大</td>
+</tr>
+</tbody></table>
+<p>高风险系统常组合使用：索引元数据做粗过滤，查询守卫做最终鉴权，紧急撤权用拒绝集合。无论采用哪种方式，都要保存本次查询使用的 <code>principal_snapshot_version</code> 和 <code>policy_version</code>，否则事故后无法证明当时为什么放行。</p>
+<h3 id="5-删除所有衍生物，而不只删向量"><a href="#5-删除所有衍生物，而不只删向量" class="headerlink" title="5. 删除所有衍生物，而不只删向量"></a>5. 删除所有衍生物，而不只删向量</h3><p>一份知识可能存在于：</p>
+<ul>
+<li>原始对象存储；</li>
+<li>解析后的纯文本；</li>
+<li>OCR 中间文件；</li>
+<li>分片清单；</li>
+<li>Embedding 缓存；</li>
+<li>向量索引；</li>
+<li>倒排索引；</li>
+<li>rerank 特征缓存；</li>
+<li>检索缓存；</li>
+<li>最终答案缓存；</li>
+<li>离线评测快照；</li>
+<li>调试 trace 和人工标注队列。</li>
+</ul>
+<p>删除合同要按用途和保留政策逐项定义。不是所有审计证据都应立即消失，也不是所有调试副本都可以无限保留。工程实现应使用数据资产清单与派生关系，而不是事故发生后靠搜索文件名发现副本。</p>
+<h3 id="6-负向验证比“删除成功”更接近用户风险"><a href="#6-负向验证比“删除成功”更接近用户风险" class="headerlink" title="6. 负向验证比“删除成功”更接近用户风险"></a>6. 负向验证比“删除成功”更接近用户风险</h3><p>删除完成探针应模拟真实查询路径：</p>
+<ul>
+<li>用原文精确词检索；</li>
+<li>用语义改写检索；</li>
+<li>用文档 ID 或标题检索；</li>
+<li>以撤权主体、同组主体、管理员和匿名主体分别查询；</li>
+<li>经过生产别名、混合召回、缓存和答案层；</li>
+<li>检查结果、上下文、引用和缓存头中均无目标实体。</li>
+</ul>
+<p>探针通过仍不是数学证明，因为查询样本有限。它与目标索引枚举、版本账本和源对账结合，才构成合理证据。</p>
+<h2 id="八、Embedding-版本迁移：双索引比原地混写更容易验证和回滚"><a href="#八、Embedding-版本迁移：双索引比原地混写更容易验证和回滚" class="headerlink" title="八、Embedding 版本迁移：双索引比原地混写更容易验证和回滚"></a>八、Embedding 版本迁移：双索引比原地混写更容易验证和回滚</h2><h3 id="1-为什么不能在同一向量空间里悄悄替换模型"><a href="#1-为什么不能在同一向量空间里悄悄替换模型" class="headerlink" title="1. 为什么不能在同一向量空间里悄悄替换模型"></a>1. 为什么不能在同一向量空间里悄悄替换模型</h3><p>Embedding 模型变化可能改变：</p>
+<ul>
+<li>向量维度；</li>
+<li>归一化方式；</li>
+<li>分词与截断；</li>
+<li>输入前缀；</li>
+<li>距离度量适配；</li>
+<li>语言和领域分布；</li>
+<li>文档与查询编码约定。</li>
+</ul>
+<p>即使维度相同，新旧向量也不一定处于可比较空间。把两代向量混写到一个索引，再依靠 <code>embedding_version</code> 过滤，会增加遗漏过滤和错误查询编码的风险。更可控的方式是建立新索引代。</p>
+<h3 id="2-双索引迁移的七个阶段"><a href="#2-双索引迁移的七个阶段" class="headerlink" title="2. 双索引迁移的七个阶段"></a>2. 双索引迁移的七个阶段</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">G0  冻结合同：旧索引 generation=A，当前读取 A</span><br><span class="line">G1  创建 B：固定模型、预处理、维度、距离和 Schema</span><br><span class="line">G2  历史回填：按源快照构建 B，保存快照水位</span><br><span class="line">G3  实时双写：快照水位后的更新同时投影 A 与 B</span><br><span class="line">G4  对账验收：覆盖、版本、ACL、墓碑、延迟和检索质量</span><br><span class="line">G5  灰度读 B：影子、少量租户、逐步扩大，保留 A</span><br><span class="line">G6  切换别名：B 成主读，A 进入限期回滚窗口后退役</span><br></pre></td></tr></table></figure>
+
+<p>关键是 G2 与 G3 的交界。回填必须记录源快照位置；实时流从该位置之后追赶。若回填 v100 晚于实时 v101 到达 B，版本条件写要拒绝 v100 覆盖 v101。</p>
+<h3 id="3-迁移验收不只比较记录数"><a href="#3-迁移验收不只比较记录数" class="headerlink" title="3. 迁移验收不只比较记录数"></a>3. 迁移验收不只比较记录数</h3><p>应至少比较：</p>
+<ul>
+<li>源有效实体数与 B 的实体数；</li>
+<li>每实体目标分片清单与 B 的实际分片清单；</li>
+<li><code>entity_version</code>、<code>acl_version</code>、内容哈希；</li>
+<li>删除墓碑在 A、B 的执行状态；</li>
+<li>不同租户、语言、文档类型和长度的覆盖；</li>
+<li>B 的索引新鲜度和失败率；</li>
+<li>查询编码器是否与 B 的文档编码器匹配；</li>
+<li>在固定评测集上的检索质量、延迟和成本；</li>
+<li>安全过滤与查询守卫是否使用同一权限版本。</li>
+</ul>
+<p>记录数相等可能同时少了实体 X、多了实体 Y。平均 Recall 提升也可能掩盖某个语言切片或受限租户的严重退化。迁移门禁必须包含集合差异和风险切片。</p>
+<h3 id="4-双写失败的语义"><a href="#4-双写失败的语义" class="headerlink" title="4. 双写失败的语义"></a>4. 双写失败的语义</h3><p>实时事件写 A 成功、写 B 失败时，不应让消息静默成功。可选策略：</p>
+<ul>
+<li>A 是当前主读：允许用户路径继续，但事件进入 B 的修复队列，B 水位停滞；</li>
+<li>B 已进入灰度：受影响实体暂时只路由 A，或停止扩大灰度；</li>
+<li>B 已成为主读：按发布策略回退 A，前提是 A 仍持续双写且新鲜。</li>
+</ul>
+<p>每个目标索引代要有独立状态，不能用一个 <code>processed=true</code> 表示全部成功。</p>
+<h3 id="5-回滚窗口不是“旧索引还在”这么简单"><a href="#5-回滚窗口不是“旧索引还在”这么简单" class="headerlink" title="5. 回滚窗口不是“旧索引还在”这么简单"></a>5. 回滚窗口不是“旧索引还在”这么简单</h3><p>旧索引要能回滚，必须继续接收切换后的增量，或者有足够快的追赶方案。停止写 A 后保留七天，只保留了一个越来越陈旧的快照，不是可用回滚目标。</p>
+<p>回滚演练要验证：</p>
+<ul>
+<li>读别名在受控时间内切回；</li>
+<li>A 已追平切换后的源水位；</li>
+<li>切回不会重新暴露 B 期间发生的删除和撤权；</li>
+<li>查询编码器同步切回 A 对应版本；</li>
+<li>缓存键包含索引代，不会把 B 的结果带到 A；</li>
+<li>回滚原因和影响租户可审计。</li>
+</ul>
+<h2 id="九、缓存失效：版本化键、依赖清单与主动撤销共同工作"><a href="#九、缓存失效：版本化键、依赖清单与主动撤销共同工作" class="headerlink" title="九、缓存失效：版本化键、依赖清单与主动撤销共同工作"></a>九、缓存失效：版本化键、依赖清单与主动撤销共同工作</h2><h3 id="1-只设置短-TTL-为什么不够"><a href="#1-只设置短-TTL-为什么不够" class="headerlink" title="1. 只设置短 TTL 为什么不够"></a>1. 只设置短 TTL 为什么不够</h3><p>TTL 可以限制普通陈旧时间，但不能精确满足删除和撤权时限：</p>
+<ul>
+<li>已经生成的长 TTL 答案可能包含原文；</li>
+<li>多层缓存 TTL 相加，实际窗口大于单层配置；</li>
+<li>热 key 在滑动过期策略下可能一直续命；</li>
+<li>节点时钟和后台淘汰并非精确计时器；</li>
+<li>缓存旁路或本地进程缓存可能不受集中失效控制。</li>
+</ul>
+<p>因此普通更新可依靠版本化键自然淘汰，安全关键变更还需主动失效。</p>
+<h3 id="2-缓存键要覆盖真正依赖"><a href="#2-缓存键要覆盖真正依赖" class="headerlink" title="2. 缓存键要覆盖真正依赖"></a>2. 缓存键要覆盖真正依赖</h3><p>一个检索缓存键可以设计为：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">hash(</span><br><span class="line">  tenant_id,</span><br><span class="line">  principal_scope_hash,</span><br><span class="line">  policy_version,</span><br><span class="line">  query_normalized,</span><br><span class="line">  index_generation,</span><br><span class="line">  retrieval_config_hash</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+
+<p>最终答案缓存还要包含 Prompt、生成模型、知识水位或引用实体版本。若键里只有 query 文本，不同租户和权限主体可能共享敏感结果。</p>
+<p>把所有实体版本都塞进缓存键并不现实。可结合反向依赖清单：缓存条目记录它引用了哪些 <code>(entity_id, version)</code>；更新、删除或撤权事件据此精确失效。无法维护反向索引时，对高敏感答案禁用跨请求缓存，通常比复杂而不可证的失效规则更稳妥。</p>
+<h3 id="3-失效消息本身也会丢和重复"><a href="#3-失效消息本身也会丢和重复" class="headerlink" title="3. 失效消息本身也会丢和重复"></a>3. 失效消息本身也会丢和重复</h3><p>缓存失效同样是分布式副作用，应具备：</p>
+<ul>
+<li>幂等失效；</li>
+<li>重试与死信；</li>
+<li>按实体或权限版本拒绝旧失效覆盖新状态；</li>
+<li>失效完成时间指标；</li>
+<li>周期性扫描异常长寿命条目；</li>
+<li>查询守卫对撤权实体的最终兜底。</li>
+</ul>
+<p>“发布了 invalidation 事件”不是“所有缓存节点都已清除”。若要求严格证明，应让节点上报消费水位，并对关键实体做端到端负向读取。</p>
+<h2 id="十、read-your-writes：把会话保证做成显式协议"><a href="#十、read-your-writes：把会话保证做成显式协议" class="headerlink" title="十、read-your-writes：把会话保证做成显式协议"></a>十、read-your-writes：把会话保证做成显式协议</h2><h3 id="1-默认异步读为什么会让用户困惑"><a href="#1-默认异步读为什么会让用户困惑" class="headerlink" title="1. 默认异步读为什么会让用户困惑"></a>1. 默认异步读为什么会让用户困惑</h3><p>编辑者保存 v88 后立即搜索，查询节点可能仍在 v87。刷新页面有时看到新内容、有时命中旧缓存。系统若没有明确协议，只能把它称为“偶发缓存问题”。</p>
+<p>写入 API 应返回：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;document_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;refund-policy&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;source_epoch&quot;</span><span class="punctuation">:</span> <span class="string">&quot;content-prod-03&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;committed_version&quot;</span><span class="punctuation">:</span> <span class="number">88</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;receipt_id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;wr_01HT...&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;consistency_hint&quot;</span><span class="punctuation">:</span> <span class="string">&quot;pass min_version=88 when reading&quot;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>读请求携带 <code>min_version=88</code>。查询层有四种可选响应：</p>
+<ol>
+<li>当前投影版本不低于 88，正常返回；</li>
+<li>在有界时间内等待该实体投影达到 88；</li>
+<li>对允许的编辑预览路径直接读取源版本；</li>
+<li>返回明确的 <code>202/STALE_REPLICA</code> 状态与重试建议。</li>
+</ol>
+<p>绝不能返回 v87 却标记成功，让调用者误以为读到了刚才的写入。</p>
+<h3 id="2-read-your-writes-的承诺范围"><a href="#2-read-your-writes-的承诺范围" class="headerlink" title="2. read-your-writes 的承诺范围"></a>2. read-your-writes 的承诺范围</h3><p>会话保证要写清：</p>
+<ul>
+<li>只对同一实体，还是对一次批量发布的所有实体；</li>
+<li>只对编辑预览，还是普通终端用户也可用；</li>
+<li>等待上限多长；</li>
+<li>超时后回源是否经过相同权限检查；</li>
+<li>回源返回原始文档还是完整检索结果；</li>
+<li>缓存是否识别最低版本；</li>
+<li>跨区域读取是否支持该保证。</li>
+</ul>
+<p>单实体最低版本不能保证“整个知识库在某事务点的一致快照”。如果一次政策发布涉及十份文档，要么使用发布批次版本和可见指针，要么承认过渡期可能混合新旧版本。</p>
+<h3 id="3-安全变更的读边界更严格"><a href="#3-安全变更的读边界更严格" class="headerlink" title="3. 安全变更的读边界更严格"></a>3. 安全变更的读边界更严格</h3><p>对于撤权，查询层不是等待“至少看到新版本”，而是只要得知撤权意图就先拒绝。也就是说：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">普通更新：版本未到 -&gt; 等待、回源或明确陈旧</span><br><span class="line">安全撤权：拒绝集合已到 -&gt; 立即拒绝；后台投影继续收敛</span><br></pre></td></tr></table></figure>
+
+<p>这正是内容新鲜度与权限一致性不能用同一个平均延迟表达的原因。</p>
+<h2 id="十一、状态机：把每种事件映射为可验证转换"><a href="#十一、状态机：把每种事件映射为可验证转换" class="headerlink" title="十一、状态机：把每种事件映射为可验证转换"></a>十一、状态机：把每种事件映射为可验证转换</h2><p><img src="/images/ai-quality/ai-38-consistency-state-machine.svg" alt="知识索引投影的一致性状态机"></p>
+<h3 id="1-ACTIVE"><a href="#1-ACTIVE" class="headerlink" title="1. ACTIVE"></a>1. ACTIVE</h3><p><code>ACTIVE vN</code> 表示目标清单完整、内容与 ACL 摘要匹配、该版本已经通过生产可见性条件。它不是“至少写入一个 chunk”。</p>
+<h3 id="2-MIGRATING"><a href="#2-MIGRATING" class="headerlink" title="2. MIGRATING"></a>2. MIGRATING</h3><p><code>MIGRATING vN</code> 表示同一源版本正在两个索引代中建立投影。状态必须分别记录 A 与 B 的完成情况。只有 B 覆盖、权限、墓碑和质量门禁通过，读别名才可灰度切换。</p>
+<h3 id="3-REVOKED"><a href="#3-REVOKED" class="headerlink" title="3. REVOKED"></a>3. REVOKED</h3><p><code>REVOKED vR</code> 表示特定主体或范围已被拒绝。索引物理记录可能短暂存在，但查询守卫必须已经生效。授权恢复需要更高权限版本和明确 <code>ACL_GRANT</code>，不能因低版本重放自动恢复。</p>
+<h3 id="4-TOMBSTONED"><a href="#4-TOMBSTONED" class="headerlink" title="4. TOMBSTONED"></a>4. TOMBSTONED</h3><p><code>TOMBSTONED vD</code> 表示实体在该源纪元的删除版本已经生效。低于或等于 vD 的 UPSERT 不得恢复；合法恢复必须由源系统产生高于 vD 的版本，并符合业务恢复政策。</p>
+<h3 id="5-RETRY-REPAIR"><a href="#5-RETRY-REPAIR" class="headerlink" title="5. RETRY &#x2F; REPAIR"></a>5. RETRY &#x2F; REPAIR</h3><p>外部副作用部分完成或对账发现差异时进入可重试状态。修复不是绕过版本检查的管理员覆盖，而是重新读取源目标版本、重新生成完整清单、幂等写入，再做复验。</p>
+<h3 id="6-四条核心不变量"><a href="#6-四条核心不变量" class="headerlink" title="6. 四条核心不变量"></a>6. 四条核心不变量</h3><p>自动化测试应持续证明：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">I1 可见版本不倒退：visible_version(t+1) &gt;= visible_version(t)</span><br><span class="line">I2 删除不复活：version &lt;= tombstone_version 的写入永远不可见</span><br><span class="line">I3 撤权优先：被撤主体在安全 SLO 后无法通过任何在役读路径访问</span><br><span class="line">I4 迁移同源：任一索引记录都能映射到唯一源版本和转换指纹</span><br></pre></td></tr></table></figure>
+
+<p>第五条运维不变量也很重要：账本声称完成的实体，必须能通过抽查或枚举在索引中得到相同清单；差异必须在约定时间内进入修复。</p>
+<h2 id="十二、指标口径：同时测延迟、暴露、缺口和最终收敛"><a href="#十二、指标口径：同时测延迟、暴露、缺口和最终收敛" class="headerlink" title="十二、指标口径：同时测延迟、暴露、缺口和最终收敛"></a>十二、指标口径：同时测延迟、暴露、缺口和最终收敛</h2><h3 id="1-内容可搜索新鲜度"><a href="#1-内容可搜索新鲜度" class="headerlink" title="1. 内容可搜索新鲜度"></a>1. 内容可搜索新鲜度</h3><p>对每个成功提交的更新事件：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">search_freshness_seconds</span><br><span class="line">  = first_searchable_at(target_version) - source_committed_at</span><br></pre></td></tr></table></figure>
+
+<p><code>first_searchable_at</code> 必须由生产等价读路径确认，而不是索引写请求返回时刻。报告 p50、p95、p99、最大值和超时比例，并按租户、文档类型、索引代、事件大小和区域切片。</p>
+<p>超时样本不能从分位数分母删除。若观察窗为 30 分钟，仍未可见的事件应作为右删失或直接计入 SLO 失败，并单列数量。</p>
+<h3 id="2-删除不可见延迟"><a href="#2-删除不可见延迟" class="headerlink" title="2. 删除不可见延迟"></a>2. 删除不可见延迟</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">delete_invisibility_seconds</span><br><span class="line">  = first_verified_absent_at - delete_committed_at</span><br></pre></td></tr></table></figure>
+
+<p>完成条件是所有在役查询路径与缓存都不能返回目标。可同时拆分：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">guard_block_seconds</span><br><span class="line">index_delete_visible_seconds</span><br><span class="line">cache_invalidation_seconds</span><br><span class="line">full_cleanup_seconds</span><br></pre></td></tr></table></figure>
+
+<p>守卫很快不代表后台清理可以无限拖延。两者分别设目标。</p>
+<h3 id="3-ACL-撤销暴露窗口"><a href="#3-ACL-撤销暴露窗口" class="headerlink" title="3. ACL 撤销暴露窗口"></a>3. ACL 撤销暴露窗口</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">revocation_exposure_seconds</span><br><span class="line">  = first_denied_at(revoked_principal) - acl_revoke_committed_at</span><br></pre></td></tr></table></figure>
+
+<p>安全事件除了 p99，还要看最大值、超过硬上限的事件数和受影响主体数。一个严重长尾不能被大量毫秒级事件平均掉。</p>
+<h3 id="4-一致实体比率"><a href="#4-一致实体比率" class="headerlink" title="4. 一致实体比率"></a>4. 一致实体比率</h3><p>在一次对账批次中：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">entity_consistency_ratio</span><br><span class="line">  = 完整满足版本、清单、ACL、墓碑的实体数 / 已核对实体总数</span><br></pre></td></tr></table></figure>
+
+<p>分子条件必须是合取，不能把四项各自 99% 平均成 99%。某实体只要任一项不一致就应进入差异队列。</p>
+<h3 id="5-缺口与积压"><a href="#5-缺口与积压" class="headerlink" title="5. 缺口与积压"></a>5. 缺口与积压</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">watermark_lag       = source_head_position - contiguous_applied_position</span><br><span class="line">oldest_pending_age  = now - min(pending.first_seen_at)</span><br><span class="line">gap_count           = 未完成且位于最大已见位置之前的事件数</span><br><span class="line">retry_amplification = projector_attempts / unique_events</span><br><span class="line">dead_letter_rate    = dead_letter_events / eligible_events</span><br></pre></td></tr></table></figure>
+
+<p>位置差不一定能跨分区比较，因此应保留每分区结果，并用最老积压年龄表达用户可理解的时间风险。</p>
+<h3 id="6-迁移差异指标"><a href="#6-迁移差异指标" class="headerlink" title="6. 迁移差异指标"></a>6. 迁移差异指标</h3><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">missing_in_B_ratio   = source_active_missing_in_B / source_active_total</span><br><span class="line">extra_in_B_ratio     = records_not_justified_by_source / B_total</span><br><span class="line">version_mismatch     = entities_with_version_difference / compared_entities</span><br><span class="line">acl_mismatch         = entities_with_acl_hash_difference / compared_entities</span><br><span class="line">tombstone_residue    = deleted_entities_still_visible / deleted_entities_checked</span><br></pre></td></tr></table></figure>
+
+<p>再叠加检索质量、查询延迟、索引成本和高风险切片。这里的检索质量沿用专门评测体系，不能由一致性指标替代。</p>
+<h3 id="7-一组构造数据怎样解释"><a href="#7-一组构造数据怎样解释" class="headerlink" title="7. 一组构造数据怎样解释"></a>7. 一组构造数据怎样解释</h3><p>假设某小时有 10,000 次内容更新、80 次删除和 40 次 ACL 撤销，以下数字均为构造数据：</p>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>结果</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>更新可搜索 p99</td>
+<td>92 秒</td>
+<td>只说明 99% 更新在 92 秒内可搜索</td>
+</tr>
+<tr>
+<td>更新超时数</td>
+<td>17</td>
+<td>不能从 p99 报告中隐藏</td>
+</tr>
+<tr>
+<td>删除守卫 p99</td>
+<td>1.8 秒</td>
+<td>大多数删除很快在入口阻断</td>
+</tr>
+<tr>
+<td>删除完整清理最大值</td>
+<td>41 分钟</td>
+<td>后台副本清理存在严重长尾</td>
+</tr>
+<tr>
+<td>撤权最大暴露</td>
+<td>14 秒</td>
+<td>若硬上限为 5 秒，应判发布失败</td>
+</tr>
+<tr>
+<td>实体一致率</td>
+<td>99.94%</td>
+<td>仍有 6 个实体需要差异分类</td>
+</tr>
+<tr>
+<td>B 索引 extra ratio</td>
+<td>0.03%</td>
+<td>可能是旧分片残留，不能用 Recall 掩盖</td>
+</tr>
+</tbody></table>
+<p>“更新 p99 达标”无法抵消撤权硬上限失败；“实体一致率接近 100%”也不能说明那 6 个实体没有安全风险。门禁应按风险分别判定。</p>
+<h2 id="十三、无需-API-Key-的事件驱动索引投影器"><a href="#十三、无需-API-Key-的事件驱动索引投影器" class="headerlink" title="十三、无需 API Key 的事件驱动索引投影器"></a>十三、无需 API Key 的事件驱动索引投影器</h2><p>下面的 Python 示例只使用标准库，不连接真实消息队列、Embedding 服务或向量数据库。它的目标不是模拟检索质量，而是把一致性不变量做成可执行状态模型：</p>
+<ul>
+<li><code>Event</code> 携带事件 ID、实体版本、源位置和操作；</li>
+<li><code>Watermark</code> 区分最大已见位置与连续完成水位；</li>
+<li><code>FakeIndex</code> 保存每个索引代的完整分片清单；</li>
+<li><code>Projector</code> 先比较版本，再执行幂等副作用；</li>
+<li>删除写墓碑并删除所有索引代；</li>
+<li>ACL 撤销先进入查询守卫，再清理索引中的主体；</li>
+<li>迁移时新增目标索引代，实时事件双写；</li>
+<li>故障注入点位于索引副作用之后、账本提交之前；</li>
+<li><code>reconcile</code> 直接比较源目标与索引实际状态，<code>repair</code> 不依赖旧事件 ID 再次消费。</li>
+</ul>
+<p>示例中的 <code>embed()</code> 只是确定性哈希，不具备任何语义能力。它让测试能验证“同一模型版本与同一输入得到稳定投影”，不能用于生产检索。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br><span class="line">146</span><br><span class="line">147</span><br><span class="line">148</span><br><span class="line">149</span><br><span class="line">150</span><br><span class="line">151</span><br><span class="line">152</span><br><span class="line">153</span><br><span class="line">154</span><br><span class="line">155</span><br><span class="line">156</span><br><span class="line">157</span><br><span class="line">158</span><br><span class="line">159</span><br><span class="line">160</span><br><span class="line">161</span><br><span class="line">162</span><br><span class="line">163</span><br><span class="line">164</span><br><span class="line">165</span><br><span class="line">166</span><br><span class="line">167</span><br><span class="line">168</span><br><span class="line">169</span><br><span class="line">170</span><br><span class="line">171</span><br><span class="line">172</span><br><span class="line">173</span><br><span class="line">174</span><br><span class="line">175</span><br><span class="line">176</span><br><span class="line">177</span><br><span class="line">178</span><br><span class="line">179</span><br><span class="line">180</span><br><span class="line">181</span><br><span class="line">182</span><br><span class="line">183</span><br><span class="line">184</span><br><span class="line">185</span><br><span class="line">186</span><br><span class="line">187</span><br><span class="line">188</span><br><span class="line">189</span><br><span class="line">190</span><br><span class="line">191</span><br><span class="line">192</span><br><span class="line">193</span><br><span class="line">194</span><br><span class="line">195</span><br><span class="line">196</span><br><span class="line">197</span><br><span class="line">198</span><br><span class="line">199</span><br><span class="line">200</span><br><span class="line">201</span><br><span class="line">202</span><br><span class="line">203</span><br><span class="line">204</span><br><span class="line">205</span><br><span class="line">206</span><br><span class="line">207</span><br><span class="line">208</span><br><span class="line">209</span><br><span class="line">210</span><br><span class="line">211</span><br><span class="line">212</span><br><span class="line">213</span><br><span class="line">214</span><br><span class="line">215</span><br><span class="line">216</span><br><span class="line">217</span><br><span class="line">218</span><br><span class="line">219</span><br><span class="line">220</span><br><span class="line">221</span><br><span class="line">222</span><br><span class="line">223</span><br><span class="line">224</span><br><span class="line">225</span><br><span class="line">226</span><br><span class="line">227</span><br><span class="line">228</span><br><span class="line">229</span><br><span class="line">230</span><br><span class="line">231</span><br><span class="line">232</span><br><span class="line">233</span><br><span class="line">234</span><br><span class="line">235</span><br><span class="line">236</span><br><span class="line">237</span><br><span class="line">238</span><br><span class="line">239</span><br><span class="line">240</span><br><span class="line">241</span><br><span class="line">242</span><br><span class="line">243</span><br><span class="line">244</span><br><span class="line">245</span><br><span class="line">246</span><br><span class="line">247</span><br><span class="line">248</span><br><span class="line">249</span><br><span class="line">250</span><br><span class="line">251</span><br><span class="line">252</span><br><span class="line">253</span><br><span class="line">254</span><br><span class="line">255</span><br><span class="line">256</span><br><span class="line">257</span><br><span class="line">258</span><br><span class="line">259</span><br><span class="line">260</span><br><span class="line">261</span><br><span class="line">262</span><br><span class="line">263</span><br><span class="line">264</span><br><span class="line">265</span><br><span class="line">266</span><br><span class="line">267</span><br><span class="line">268</span><br><span class="line">269</span><br><span class="line">270</span><br><span class="line">271</span><br><span class="line">272</span><br><span class="line">273</span><br><span class="line">274</span><br><span class="line">275</span><br><span class="line">276</span><br><span class="line">277</span><br><span class="line">278</span><br><span class="line">279</span><br><span class="line">280</span><br><span class="line">281</span><br><span class="line">282</span><br><span class="line">283</span><br><span class="line">284</span><br><span class="line">285</span><br><span class="line">286</span><br><span class="line">287</span><br><span class="line">288</span><br><span class="line">289</span><br><span class="line">290</span><br><span class="line">291</span><br><span class="line">292</span><br><span class="line">293</span><br><span class="line">294</span><br><span class="line">295</span><br><span class="line">296</span><br><span class="line">297</span><br><span class="line">298</span><br><span class="line">299</span><br><span class="line">300</span><br><span class="line">301</span><br><span class="line">302</span><br><span class="line">303</span><br><span class="line">304</span><br><span class="line">305</span><br><span class="line">306</span><br><span class="line">307</span><br><span class="line">308</span><br><span class="line">309</span><br><span class="line">310</span><br><span class="line">311</span><br><span class="line">312</span><br><span class="line">313</span><br><span class="line">314</span><br><span class="line">315</span><br><span class="line">316</span><br><span class="line">317</span><br><span class="line">318</span><br><span class="line">319</span><br><span class="line">320</span><br><span class="line">321</span><br><span class="line">322</span><br><span class="line">323</span><br><span class="line">324</span><br><span class="line">325</span><br><span class="line">326</span><br><span class="line">327</span><br><span class="line">328</span><br><span class="line">329</span><br><span class="line">330</span><br><span class="line">331</span><br><span class="line">332</span><br><span class="line">333</span><br><span class="line">334</span><br><span class="line">335</span><br><span class="line">336</span><br><span class="line">337</span><br><span class="line">338</span><br><span class="line">339</span><br><span class="line">340</span><br><span class="line">341</span><br><span class="line">342</span><br><span class="line">343</span><br><span class="line">344</span><br><span class="line">345</span><br><span class="line">346</span><br><span class="line">347</span><br><span class="line">348</span><br><span class="line">349</span><br><span class="line">350</span><br><span class="line">351</span><br><span class="line">352</span><br><span class="line">353</span><br><span class="line">354</span><br><span class="line">355</span><br><span class="line">356</span><br><span class="line">357</span><br><span class="line">358</span><br><span class="line">359</span><br><span class="line">360</span><br><span class="line">361</span><br><span class="line">362</span><br><span class="line">363</span><br><span class="line">364</span><br><span class="line">365</span><br><span class="line">366</span><br><span class="line">367</span><br><span class="line">368</span><br><span class="line">369</span><br><span class="line">370</span><br><span class="line">371</span><br><span class="line">372</span><br><span class="line">373</span><br><span class="line">374</span><br><span class="line">375</span><br><span class="line">376</span><br><span class="line">377</span><br><span class="line">378</span><br><span class="line">379</span><br><span class="line">380</span><br><span class="line">381</span><br><span class="line">382</span><br><span class="line">383</span><br><span class="line">384</span><br><span class="line">385</span><br><span class="line">386</span><br><span class="line">387</span><br><span class="line">388</span><br><span class="line">389</span><br><span class="line">390</span><br><span class="line">391</span><br><span class="line">392</span><br><span class="line">393</span><br><span class="line">394</span><br><span class="line">395</span><br><span class="line">396</span><br><span class="line">397</span><br><span class="line">398</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># ai38_projector.py</span></span><br><span class="line"><span class="keyword">from</span> __future__ <span class="keyword">import</span> annotations</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> hashlib</span><br><span class="line"><span class="keyword">import</span> unittest</span><br><span class="line"><span class="keyword">from</span> dataclasses <span class="keyword">import</span> dataclass, replace</span><br><span class="line"><span class="keyword">from</span> typing <span class="keyword">import</span> <span class="type">Dict</span>, Iterable, <span class="type">Optional</span>, <span class="type">Tuple</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">InjectedCrash</span>(<span class="title class_ inherited__">RuntimeError</span>):</span><br><span class="line">    <span class="keyword">pass</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">StaleRead</span>(<span class="title class_ inherited__">RuntimeError</span>):</span><br><span class="line">    <span class="keyword">pass</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">VersionConflict</span>(<span class="title class_ inherited__">RuntimeError</span>):</span><br><span class="line">    <span class="keyword">pass</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Event</span>:</span><br><span class="line">    event_id: <span class="built_in">str</span></span><br><span class="line">    entity_id: <span class="built_in">str</span></span><br><span class="line">    version: <span class="built_in">int</span></span><br><span class="line">    position: <span class="built_in">int</span></span><br><span class="line">    operation: <span class="built_in">str</span></span><br><span class="line">    content: <span class="built_in">str</span> = <span class="string">&quot;&quot;</span></span><br><span class="line">    principals: <span class="type">Tuple</span>[<span class="built_in">str</span>, ...] = ()</span><br><span class="line">    revoked: <span class="type">Tuple</span>[<span class="built_in">str</span>, ...] = ()</span><br><span class="line"></span><br><span class="line"><span class="meta">    @property</span></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">security_critical</span>(<span class="params">self</span>) -&gt; <span class="built_in">bool</span>:</span><br><span class="line">        <span class="keyword">return</span> <span class="variable language_">self</span>.operation <span class="keyword">in</span> &#123;<span class="string">&quot;DELETE&quot;</span>, <span class="string">&quot;ACL_REVOKE&quot;</span>&#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">fingerprint</span>(<span class="params">self</span>) -&gt; <span class="built_in">str</span>:</span><br><span class="line">        raw = <span class="string">&quot;|&quot;</span>.join(</span><br><span class="line">            [</span><br><span class="line">                <span class="variable language_">self</span>.entity_id,</span><br><span class="line">                <span class="built_in">str</span>(<span class="variable language_">self</span>.version),</span><br><span class="line">                <span class="variable language_">self</span>.operation,</span><br><span class="line">                <span class="variable language_">self</span>.content,</span><br><span class="line">                <span class="string">&quot;,&quot;</span>.join(<span class="built_in">sorted</span>(<span class="variable language_">self</span>.principals)),</span><br><span class="line">                <span class="string">&quot;,&quot;</span>.join(<span class="built_in">sorted</span>(<span class="variable language_">self</span>.revoked)),</span><br><span class="line">            ]</span><br><span class="line">        )</span><br><span class="line">        <span class="keyword">return</span> hashlib.sha256(raw.encode()).hexdigest()</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Projection</span>:</span><br><span class="line">    entity_id: <span class="built_in">str</span></span><br><span class="line">    version: <span class="built_in">int</span></span><br><span class="line">    operation: <span class="built_in">str</span></span><br><span class="line">    content_hash: <span class="built_in">str</span></span><br><span class="line">    acl_hash: <span class="built_in">str</span></span><br><span class="line">    chunk_ids: <span class="type">Tuple</span>[<span class="built_in">str</span>, ...]</span><br><span class="line">    principals: <span class="type">Tuple</span>[<span class="built_in">str</span>, ...]</span><br><span class="line">    embedding_model: <span class="built_in">str</span></span><br><span class="line">    manifest_hash: <span class="built_in">str</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass(<span class="params">frozen=<span class="literal">True</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">LedgerEntry</span>:</span><br><span class="line">    version: <span class="built_in">int</span></span><br><span class="line">    operation: <span class="built_in">str</span></span><br><span class="line">    event_id: <span class="built_in">str</span></span><br><span class="line">    event_fingerprint: <span class="built_in">str</span></span><br><span class="line">    manifest_hash: <span class="built_in">str</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Watermark</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.max_seen = <span class="number">0</span></span><br><span class="line">        <span class="variable language_">self</span>.contiguous_applied = <span class="number">0</span></span><br><span class="line">        <span class="variable language_">self</span>.completed = <span class="built_in">set</span>()</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">observe</span>(<span class="params">self, position: <span class="built_in">int</span></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.max_seen = <span class="built_in">max</span>(<span class="variable language_">self</span>.max_seen, position)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">complete</span>(<span class="params">self, position: <span class="built_in">int</span></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.completed.add(position)</span><br><span class="line">        <span class="keyword">while</span> <span class="variable language_">self</span>.contiguous_applied + <span class="number">1</span> <span class="keyword">in</span> <span class="variable language_">self</span>.completed:</span><br><span class="line">            <span class="variable language_">self</span>.contiguous_applied += <span class="number">1</span></span><br><span class="line"></span><br><span class="line"><span class="meta">    @property</span></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">gaps</span>(<span class="params">self</span>) -&gt; <span class="type">Tuple</span>[<span class="built_in">int</span>, ...]:</span><br><span class="line">        <span class="keyword">return</span> <span class="built_in">tuple</span>(</span><br><span class="line">            position</span><br><span class="line">            <span class="keyword">for</span> position <span class="keyword">in</span> <span class="built_in">range</span>(<span class="number">1</span>, <span class="variable language_">self</span>.max_seen + <span class="number">1</span>)</span><br><span class="line">            <span class="keyword">if</span> position <span class="keyword">not</span> <span class="keyword">in</span> <span class="variable language_">self</span>.completed</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">FakeIndex</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.generations: <span class="type">Dict</span>[<span class="built_in">str</span>, <span class="type">Dict</span>[<span class="built_in">str</span>, Projection]] = &#123;&#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">add_generation</span>(<span class="params">self, name: <span class="built_in">str</span></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.generations.setdefault(name, &#123;&#125;)</span><br><span class="line"></span><br><span class="line"><span class="meta">    @staticmethod</span></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">_hash</span>(<span class="params">value: <span class="built_in">str</span></span>) -&gt; <span class="built_in">str</span>:</span><br><span class="line">        <span class="keyword">return</span> hashlib.sha256(value.encode()).hexdigest()</span><br><span class="line"></span><br><span class="line"><span class="meta">    @staticmethod</span></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">_chunks</span>(<span class="params">entity_id: <span class="built_in">str</span>, version: <span class="built_in">int</span>, content: <span class="built_in">str</span></span>) -&gt; <span class="type">Tuple</span>[<span class="built_in">str</span>, ...]:</span><br><span class="line">        parts = [part.strip() <span class="keyword">for</span> part <span class="keyword">in</span> content.split(<span class="string">&quot;|&quot;</span>) <span class="keyword">if</span> part.strip()]</span><br><span class="line">        <span class="keyword">return</span> <span class="built_in">tuple</span>(</span><br><span class="line">            <span class="string">f&quot;<span class="subst">&#123;entity_id&#125;</span>:v<span class="subst">&#123;version&#125;</span>:c<span class="subst">&#123;ordinal&#125;</span>:<span class="subst">&#123;FakeIndex._<span class="built_in">hash</span>(part)[:<span class="number">8</span>]&#125;</span>&quot;</span></span><br><span class="line">            <span class="keyword">for</span> ordinal, part <span class="keyword">in</span> <span class="built_in">enumerate</span>(parts)</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">upsert</span>(<span class="params">self, generation: <span class="built_in">str</span>, event: Event, model: <span class="built_in">str</span></span>) -&gt; Projection:</span><br><span class="line">        chunks = <span class="variable language_">self</span>._chunks(event.entity_id, event.version, event.content)</span><br><span class="line">        content_hash = <span class="variable language_">self</span>._<span class="built_in">hash</span>(event.content)</span><br><span class="line">        principals = <span class="built_in">tuple</span>(<span class="built_in">sorted</span>(event.principals))</span><br><span class="line">        acl_hash = <span class="variable language_">self</span>._<span class="built_in">hash</span>(<span class="string">&quot;,&quot;</span>.join(principals))</span><br><span class="line">        manifest_hash = <span class="variable language_">self</span>._<span class="built_in">hash</span>(</span><br><span class="line">            <span class="string">&quot;|&quot;</span>.join([<span class="built_in">str</span>(event.version), content_hash, acl_hash, model, *chunks])</span><br><span class="line">        )</span><br><span class="line">        projection = Projection(</span><br><span class="line">            entity_id=event.entity_id,</span><br><span class="line">            version=event.version,</span><br><span class="line">            operation=event.operation,</span><br><span class="line">            content_hash=content_hash,</span><br><span class="line">            acl_hash=acl_hash,</span><br><span class="line">            chunk_ids=chunks,</span><br><span class="line">            principals=principals,</span><br><span class="line">            embedding_model=model,</span><br><span class="line">            manifest_hash=manifest_hash,</span><br><span class="line">        )</span><br><span class="line">        current = <span class="variable language_">self</span>.generations[generation].get(event.entity_id)</span><br><span class="line">        <span class="keyword">if</span> current <span class="keyword">is</span> <span class="literal">None</span> <span class="keyword">or</span> event.version &gt;= current.version:</span><br><span class="line">            <span class="variable language_">self</span>.generations[generation][event.entity_id] = projection</span><br><span class="line">        <span class="keyword">return</span> <span class="variable language_">self</span>.generations[generation][event.entity_id]</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">revoke</span>(<span class="params">self, generation: <span class="built_in">str</span>, event: Event</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        current = <span class="variable language_">self</span>.generations[generation].get(event.entity_id)</span><br><span class="line">        <span class="keyword">if</span> current <span class="keyword">is</span> <span class="literal">None</span> <span class="keyword">or</span> event.version &lt; current.version:</span><br><span class="line">            <span class="keyword">return</span></span><br><span class="line">        allowed = <span class="built_in">tuple</span>(p <span class="keyword">for</span> p <span class="keyword">in</span> current.principals <span class="keyword">if</span> p <span class="keyword">not</span> <span class="keyword">in</span> event.revoked)</span><br><span class="line">        acl_hash = <span class="variable language_">self</span>._<span class="built_in">hash</span>(<span class="string">&quot;,&quot;</span>.join(allowed))</span><br><span class="line">        manifest_hash = <span class="variable language_">self</span>._<span class="built_in">hash</span>(</span><br><span class="line">            <span class="string">&quot;|&quot;</span>.join(</span><br><span class="line">                [</span><br><span class="line">                    <span class="built_in">str</span>(event.version),</span><br><span class="line">                    current.content_hash,</span><br><span class="line">                    acl_hash,</span><br><span class="line">                    current.embedding_model,</span><br><span class="line">                    *current.chunk_ids,</span><br><span class="line">                ]</span><br><span class="line">            )</span><br><span class="line">        )</span><br><span class="line">        <span class="variable language_">self</span>.generations[generation][event.entity_id] = replace(</span><br><span class="line">            current,</span><br><span class="line">            version=event.version,</span><br><span class="line">            operation=<span class="string">&quot;ACL_REVOKE&quot;</span>,</span><br><span class="line">            principals=allowed,</span><br><span class="line">            acl_hash=acl_hash,</span><br><span class="line">            manifest_hash=manifest_hash,</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">delete</span>(<span class="params">self, generation: <span class="built_in">str</span>, entity_id: <span class="built_in">str</span></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.generations[generation].pop(entity_id, <span class="literal">None</span>)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">get</span>(<span class="params">self, generation: <span class="built_in">str</span>, entity_id: <span class="built_in">str</span></span>) -&gt; <span class="type">Optional</span>[Projection]:</span><br><span class="line">        <span class="keyword">return</span> <span class="variable language_">self</span>.generations[generation].get(entity_id)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Projector</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.index = FakeIndex()</span><br><span class="line">        <span class="variable language_">self</span>.targets: <span class="type">Dict</span>[<span class="built_in">str</span>, <span class="built_in">str</span>] = &#123;<span class="string">&quot;vector-v1&quot;</span>: <span class="string">&quot;embed-v1&quot;</span>&#125;</span><br><span class="line">        <span class="variable language_">self</span>.index.add_generation(<span class="string">&quot;vector-v1&quot;</span>)</span><br><span class="line">        <span class="variable language_">self</span>.ledger: <span class="type">Dict</span>[<span class="built_in">str</span>, LedgerEntry] = &#123;&#125;</span><br><span class="line">        <span class="variable language_">self</span>.processed: <span class="type">Dict</span>[<span class="built_in">str</span>, <span class="built_in">str</span>] = &#123;&#125;</span><br><span class="line">        <span class="variable language_">self</span>.tombstones: <span class="type">Dict</span>[<span class="built_in">str</span>, <span class="built_in">int</span>] = &#123;&#125;</span><br><span class="line">        <span class="variable language_">self</span>.guard_denies = <span class="built_in">set</span>()</span><br><span class="line">        <span class="variable language_">self</span>.cache: <span class="type">Dict</span>[<span class="built_in">str</span>, <span class="built_in">str</span>] = &#123;&#125;</span><br><span class="line">        <span class="variable language_">self</span>.watermark = Watermark()</span><br><span class="line">        <span class="variable language_">self</span>.crash_after_mutation_once = <span class="built_in">set</span>()</span><br><span class="line">        <span class="variable language_">self</span>.mutation_count: <span class="type">Dict</span>[<span class="built_in">str</span>, <span class="built_in">int</span>] = &#123;&#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">add_target</span>(<span class="params">self, generation: <span class="built_in">str</span>, model: <span class="built_in">str</span></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="variable language_">self</span>.targets[generation] = model</span><br><span class="line">        <span class="variable language_">self</span>.index.add_generation(generation)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">_maybe_crash</span>(<span class="params">self, event: Event</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        count = <span class="variable language_">self</span>.mutation_count.get(event.event_id, <span class="number">0</span>) + <span class="number">1</span></span><br><span class="line">        <span class="variable language_">self</span>.mutation_count[event.event_id] = count</span><br><span class="line">        <span class="keyword">if</span> event.event_id <span class="keyword">in</span> <span class="variable language_">self</span>.crash_after_mutation_once <span class="keyword">and</span> count == <span class="number">1</span>:</span><br><span class="line">            <span class="keyword">raise</span> InjectedCrash(<span class="string">&quot;crash after index mutation, before ledger commit&quot;</span>)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">apply</span>(<span class="params">self, event: Event</span>) -&gt; <span class="built_in">str</span>:</span><br><span class="line">        <span class="variable language_">self</span>.watermark.observe(event.position)</span><br><span class="line">        <span class="keyword">if</span> event.event_id <span class="keyword">in</span> <span class="variable language_">self</span>.processed:</span><br><span class="line">            <span class="variable language_">self</span>.watermark.complete(event.position)</span><br><span class="line">            <span class="keyword">return</span> <span class="string">&quot;DUPLICATE_EVENT&quot;</span></span><br><span class="line"></span><br><span class="line">        current = <span class="variable language_">self</span>.ledger.get(event.entity_id)</span><br><span class="line">        <span class="keyword">if</span> current <span class="keyword">and</span> event.version &lt; current.version:</span><br><span class="line">            <span class="variable language_">self</span>.processed[event.event_id] = <span class="string">&quot;STALE&quot;</span></span><br><span class="line">            <span class="variable language_">self</span>.watermark.complete(event.position)</span><br><span class="line">            <span class="keyword">return</span> <span class="string">&quot;STALE&quot;</span></span><br><span class="line">        <span class="keyword">if</span> current <span class="keyword">and</span> event.version == current.version:</span><br><span class="line">            <span class="keyword">if</span> current.event_fingerprint != event.fingerprint():</span><br><span class="line">                <span class="keyword">raise</span> VersionConflict(<span class="string">&quot;same entity version has different facts&quot;</span>)</span><br><span class="line">            <span class="variable language_">self</span>.processed[event.event_id] = <span class="string">&quot;DUPLICATE_VERSION&quot;</span></span><br><span class="line">            <span class="variable language_">self</span>.watermark.complete(event.position)</span><br><span class="line">            <span class="keyword">return</span> <span class="string">&quot;DUPLICATE_VERSION&quot;</span></span><br><span class="line"></span><br><span class="line">        tombstone = <span class="variable language_">self</span>.tombstones.get(event.entity_id, -<span class="number">1</span>)</span><br><span class="line">        <span class="keyword">if</span> event.operation == <span class="string">&quot;UPSERT&quot;</span> <span class="keyword">and</span> event.version &lt;= tombstone:</span><br><span class="line">            <span class="variable language_">self</span>.processed[event.event_id] = <span class="string">&quot;BLOCKED_BY_TOMBSTONE&quot;</span></span><br><span class="line">            <span class="variable language_">self</span>.watermark.complete(event.position)</span><br><span class="line">            <span class="keyword">return</span> <span class="string">&quot;BLOCKED_BY_TOMBSTONE&quot;</span></span><br><span class="line"></span><br><span class="line">        manifest_hash = <span class="string">&quot;&quot;</span></span><br><span class="line">        <span class="keyword">if</span> event.operation == <span class="string">&quot;UPSERT&quot;</span>:</span><br><span class="line">            <span class="keyword">for</span> generation, model <span class="keyword">in</span> <span class="variable language_">self</span>.targets.items():</span><br><span class="line">                projection = <span class="variable language_">self</span>.index.upsert(generation, event, model)</span><br><span class="line">                manifest_hash += projection.manifest_hash</span><br><span class="line">                <span class="variable language_">self</span>._maybe_crash(event)</span><br><span class="line">            <span class="variable language_">self</span>.guard_denies = &#123;</span><br><span class="line">                item <span class="keyword">for</span> item <span class="keyword">in</span> <span class="variable language_">self</span>.guard_denies <span class="keyword">if</span> item[<span class="number">0</span>] != event.entity_id</span><br><span class="line">            &#125;</span><br><span class="line">        <span class="keyword">elif</span> event.operation == <span class="string">&quot;DELETE&quot;</span>:</span><br><span class="line">            <span class="variable language_">self</span>.tombstones[event.entity_id] = event.version</span><br><span class="line">            <span class="variable language_">self</span>.guard_denies.add((event.entity_id, <span class="string">&quot;*&quot;</span>))</span><br><span class="line">            <span class="keyword">for</span> generation <span class="keyword">in</span> <span class="variable language_">self</span>.targets:</span><br><span class="line">                <span class="variable language_">self</span>.index.delete(generation, event.entity_id)</span><br><span class="line">                <span class="variable language_">self</span>._maybe_crash(event)</span><br><span class="line">            manifest_hash = hashlib.sha256(<span class="string">b&quot;DELETED&quot;</span>).hexdigest()</span><br><span class="line">        <span class="keyword">elif</span> event.operation == <span class="string">&quot;ACL_REVOKE&quot;</span>:</span><br><span class="line">            <span class="keyword">for</span> principal <span class="keyword">in</span> event.revoked:</span><br><span class="line">                <span class="variable language_">self</span>.guard_denies.add((event.entity_id, principal))</span><br><span class="line">            <span class="keyword">for</span> generation <span class="keyword">in</span> <span class="variable language_">self</span>.targets:</span><br><span class="line">                <span class="variable language_">self</span>.index.revoke(generation, event)</span><br><span class="line">                <span class="variable language_">self</span>._maybe_crash(event)</span><br><span class="line">            manifest_hash = hashlib.sha256(</span><br><span class="line">                (<span class="string">&quot;REVOKE|&quot;</span> + <span class="string">&quot;|&quot;</span>.join(<span class="built_in">sorted</span>(event.revoked))).encode()</span><br><span class="line">            ).hexdigest()</span><br><span class="line">        <span class="keyword">else</span>:</span><br><span class="line">            <span class="keyword">raise</span> ValueError(<span class="string">f&quot;unsupported operation: <span class="subst">&#123;event.operation&#125;</span>&quot;</span>)</span><br><span class="line"></span><br><span class="line">        <span class="variable language_">self</span>.cache.pop(event.entity_id, <span class="literal">None</span>)</span><br><span class="line">        <span class="variable language_">self</span>.ledger[event.entity_id] = LedgerEntry(</span><br><span class="line">            version=event.version,</span><br><span class="line">            operation=event.operation,</span><br><span class="line">            event_id=event.event_id,</span><br><span class="line">            event_fingerprint=event.fingerprint(),</span><br><span class="line">            manifest_hash=hashlib.sha256(manifest_hash.encode()).hexdigest(),</span><br><span class="line">        )</span><br><span class="line">        <span class="variable language_">self</span>.processed[event.event_id] = <span class="string">&quot;APPLIED&quot;</span></span><br><span class="line">        <span class="variable language_">self</span>.watermark.complete(event.position)</span><br><span class="line">        <span class="keyword">return</span> <span class="string">&quot;APPLIED&quot;</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">process_security_first</span>(<span class="params">self, events: Iterable[Event]</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        ordered = <span class="built_in">sorted</span>(events, key=<span class="keyword">lambda</span> event: (<span class="keyword">not</span> event.security_critical, event.position))</span><br><span class="line">        <span class="keyword">for</span> event <span class="keyword">in</span> ordered:</span><br><span class="line">            <span class="variable language_">self</span>.apply(event)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">read</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        entity_id: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">        principal: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">        min_version: <span class="type">Optional</span>[<span class="built_in">int</span>] = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">        generation: <span class="built_in">str</span> = <span class="string">&quot;vector-v1&quot;</span>,</span></span><br><span class="line"><span class="params">    </span>) -&gt; <span class="type">Optional</span>[Projection]:</span><br><span class="line">        current = <span class="variable language_">self</span>.ledger.get(entity_id)</span><br><span class="line">        <span class="keyword">if</span> min_version <span class="keyword">is</span> <span class="keyword">not</span> <span class="literal">None</span> <span class="keyword">and</span> (current <span class="keyword">is</span> <span class="literal">None</span> <span class="keyword">or</span> current.version &lt; min_version):</span><br><span class="line">            <span class="keyword">raise</span> StaleRead(<span class="string">f&quot;projection has not reached version <span class="subst">&#123;min_version&#125;</span>&quot;</span>)</span><br><span class="line">        <span class="keyword">if</span> (entity_id, <span class="string">&quot;*&quot;</span>) <span class="keyword">in</span> <span class="variable language_">self</span>.guard_denies:</span><br><span class="line">            <span class="keyword">return</span> <span class="literal">None</span></span><br><span class="line">        <span class="keyword">if</span> (entity_id, principal) <span class="keyword">in</span> <span class="variable language_">self</span>.guard_denies:</span><br><span class="line">            <span class="keyword">return</span> <span class="literal">None</span></span><br><span class="line">        projection = <span class="variable language_">self</span>.index.get(generation, entity_id)</span><br><span class="line">        <span class="keyword">if</span> projection <span class="keyword">is</span> <span class="literal">None</span> <span class="keyword">or</span> principal <span class="keyword">not</span> <span class="keyword">in</span> projection.principals:</span><br><span class="line">            <span class="keyword">return</span> <span class="literal">None</span></span><br><span class="line">        <span class="keyword">return</span> projection</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">reconcile</span>(<span class="params">self, sources: Iterable[Event]</span>) -&gt; <span class="type">Tuple</span>[<span class="type">Tuple</span>[<span class="built_in">str</span>, <span class="built_in">str</span>], ...]:</span><br><span class="line">        issues = []</span><br><span class="line">        <span class="keyword">for</span> source <span class="keyword">in</span> sources:</span><br><span class="line">            <span class="keyword">for</span> generation <span class="keyword">in</span> <span class="variable language_">self</span>.targets:</span><br><span class="line">                actual = <span class="variable language_">self</span>.index.get(generation, source.entity_id)</span><br><span class="line">                <span class="keyword">if</span> source.operation == <span class="string">&quot;DELETE&quot;</span>:</span><br><span class="line">                    <span class="keyword">if</span> actual <span class="keyword">is</span> <span class="keyword">not</span> <span class="literal">None</span>:</span><br><span class="line">                        issues.append((generation, source.entity_id))</span><br><span class="line">                <span class="keyword">elif</span> actual <span class="keyword">is</span> <span class="literal">None</span> <span class="keyword">or</span> actual.version != source.version:</span><br><span class="line">                    issues.append((generation, source.entity_id))</span><br><span class="line">                <span class="keyword">elif</span> actual.content_hash != hashlib.sha256(source.content.encode()).hexdigest():</span><br><span class="line">                    issues.append((generation, source.entity_id))</span><br><span class="line">        <span class="keyword">return</span> <span class="built_in">tuple</span>(issues)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">repair</span>(<span class="params">self, source: Event</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        current = <span class="variable language_">self</span>.ledger.get(source.entity_id)</span><br><span class="line">        <span class="keyword">if</span> current <span class="keyword">and</span> source.version &lt; current.version:</span><br><span class="line">            <span class="keyword">raise</span> StaleRead(<span class="string">&quot;repair source is older than the ledger&quot;</span>)</span><br><span class="line">        <span class="keyword">if</span> source.operation == <span class="string">&quot;DELETE&quot;</span>:</span><br><span class="line">            <span class="keyword">for</span> generation <span class="keyword">in</span> <span class="variable language_">self</span>.targets:</span><br><span class="line">                <span class="variable language_">self</span>.index.delete(generation, source.entity_id)</span><br><span class="line">        <span class="keyword">elif</span> source.operation == <span class="string">&quot;UPSERT&quot;</span>:</span><br><span class="line">            <span class="keyword">for</span> generation, model <span class="keyword">in</span> <span class="variable language_">self</span>.targets.items():</span><br><span class="line">                <span class="variable language_">self</span>.index.upsert(generation, source, model)</span><br><span class="line">        <span class="keyword">else</span>:</span><br><span class="line">            <span class="keyword">raise</span> ValueError(<span class="string">&quot;repair supports source snapshots and tombstones&quot;</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">upsert</span>(<span class="params">event_id: <span class="built_in">str</span>, version: <span class="built_in">int</span>, position: <span class="built_in">int</span>, content: <span class="built_in">str</span> = <span class="string">&quot;A|B&quot;</span></span>) -&gt; Event:</span><br><span class="line">    <span class="keyword">return</span> Event(</span><br><span class="line">        event_id=event_id,</span><br><span class="line">        entity_id=<span class="string">&quot;doc-1&quot;</span>,</span><br><span class="line">        version=version,</span><br><span class="line">        position=position,</span><br><span class="line">        operation=<span class="string">&quot;UPSERT&quot;</span>,</span><br><span class="line">        content=content,</span><br><span class="line">        principals=(<span class="string">&quot;alice&quot;</span>, <span class="string">&quot;bob&quot;</span>),</span><br><span class="line">    )</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">ProjectorTests</span>(unittest.TestCase):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_out_of_order_and_duplicate_converge</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        projector = Projector()</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(projector.apply(upsert(<span class="string">&quot;e2&quot;</span>, <span class="number">2</span>, <span class="number">2</span>, <span class="string">&quot;new|text&quot;</span>)), <span class="string">&quot;APPLIED&quot;</span>)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(projector.apply(upsert(<span class="string">&quot;e1&quot;</span>, <span class="number">1</span>, <span class="number">1</span>, <span class="string">&quot;old|text&quot;</span>)), <span class="string">&quot;STALE&quot;</span>)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(projector.apply(upsert(<span class="string">&quot;e2&quot;</span>, <span class="number">2</span>, <span class="number">2</span>, <span class="string">&quot;new|text&quot;</span>)), <span class="string">&quot;DUPLICATE_EVENT&quot;</span>)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(projector.index.get(<span class="string">&quot;vector-v1&quot;</span>, <span class="string">&quot;doc-1&quot;</span>).version, <span class="number">2</span>)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(projector.watermark.contiguous_applied, <span class="number">2</span>)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_tombstone_blocks_late_upsert</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        projector = Projector()</span><br><span class="line">        projector.apply(upsert(<span class="string">&quot;e1&quot;</span>, <span class="number">1</span>, <span class="number">1</span>))</span><br><span class="line">        delete = Event(<span class="string">&quot;e3&quot;</span>, <span class="string">&quot;doc-1&quot;</span>, <span class="number">3</span>, <span class="number">3</span>, <span class="string">&quot;DELETE&quot;</span>)</span><br><span class="line">        projector.apply(delete)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(projector.apply(upsert(<span class="string">&quot;e2&quot;</span>, <span class="number">2</span>, <span class="number">2</span>)), <span class="string">&quot;STALE&quot;</span>)</span><br><span class="line">        <span class="variable language_">self</span>.assertIsNone(projector.read(<span class="string">&quot;doc-1&quot;</span>, <span class="string">&quot;alice&quot;</span>))</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(projector.tombstones[<span class="string">&quot;doc-1&quot;</span>], <span class="number">3</span>)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_acl_revoke_is_scheduled_before_old_update</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        projector = Projector()</span><br><span class="line">        revoke = Event(<span class="string">&quot;e2&quot;</span>, <span class="string">&quot;doc-1&quot;</span>, <span class="number">2</span>, <span class="number">2</span>, <span class="string">&quot;ACL_REVOKE&quot;</span>, revoked=(<span class="string">&quot;alice&quot;</span>,))</span><br><span class="line">        projector.process_security_first([upsert(<span class="string">&quot;e1&quot;</span>, <span class="number">1</span>, <span class="number">1</span>), revoke])</span><br><span class="line">        <span class="variable language_">self</span>.assertIsNone(projector.read(<span class="string">&quot;doc-1&quot;</span>, <span class="string">&quot;alice&quot;</span>))</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(projector.ledger[<span class="string">&quot;doc-1&quot;</span>].version, <span class="number">2</span>)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_crash_after_side_effect_is_safe_to_retry</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        projector = Projector()</span><br><span class="line">        event = upsert(<span class="string">&quot;crash-once&quot;</span>, <span class="number">1</span>, <span class="number">1</span>)</span><br><span class="line">        projector.crash_after_mutation_once.add(event.event_id)</span><br><span class="line">        <span class="keyword">with</span> <span class="variable language_">self</span>.assertRaises(InjectedCrash):</span><br><span class="line">            projector.apply(event)</span><br><span class="line">        <span class="variable language_">self</span>.assertNotIn(<span class="string">&quot;doc-1&quot;</span>, projector.ledger)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(projector.apply(event), <span class="string">&quot;APPLIED&quot;</span>)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(projector.index.get(<span class="string">&quot;vector-v1&quot;</span>, <span class="string">&quot;doc-1&quot;</span>).version, <span class="number">1</span>)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_dual_index_receives_same_source_version</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        projector = Projector()</span><br><span class="line">        projector.add_target(<span class="string">&quot;vector-v2&quot;</span>, <span class="string">&quot;embed-v2&quot;</span>)</span><br><span class="line">        projector.apply(upsert(<span class="string">&quot;e7&quot;</span>, <span class="number">7</span>, <span class="number">1</span>, <span class="string">&quot;policy|v7&quot;</span>))</span><br><span class="line">        left = projector.index.get(<span class="string">&quot;vector-v1&quot;</span>, <span class="string">&quot;doc-1&quot;</span>)</span><br><span class="line">        right = projector.index.get(<span class="string">&quot;vector-v2&quot;</span>, <span class="string">&quot;doc-1&quot;</span>)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(left.version, right.version)</span><br><span class="line">        <span class="variable language_">self</span>.assertNotEqual(left.embedding_model, right.embedding_model)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_read_your_writes_rejects_stale_projection</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        projector = Projector()</span><br><span class="line">        projector.apply(upsert(<span class="string">&quot;e4&quot;</span>, <span class="number">4</span>, <span class="number">1</span>))</span><br><span class="line">        <span class="keyword">with</span> <span class="variable language_">self</span>.assertRaises(StaleRead):</span><br><span class="line">            projector.read(<span class="string">&quot;doc-1&quot;</span>, <span class="string">&quot;alice&quot;</span>, min_version=<span class="number">5</span>)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(projector.read(<span class="string">&quot;doc-1&quot;</span>, <span class="string">&quot;alice&quot;</span>, min_version=<span class="number">4</span>).version, <span class="number">4</span>)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_reconcile_and_repair_do_not_depend_on_event_dedupe</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        projector = Projector()</span><br><span class="line">        source = upsert(<span class="string">&quot;e9&quot;</span>, <span class="number">9</span>, <span class="number">1</span>, <span class="string">&quot;correct|content&quot;</span>)</span><br><span class="line">        projector.apply(source)</span><br><span class="line">        actual = projector.index.get(<span class="string">&quot;vector-v1&quot;</span>, <span class="string">&quot;doc-1&quot;</span>)</span><br><span class="line">        projector.index.generations[<span class="string">&quot;vector-v1&quot;</span>][<span class="string">&quot;doc-1&quot;</span>] = replace(</span><br><span class="line">            actual, content_hash=<span class="string">&quot;corrupted&quot;</span></span><br><span class="line">        )</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(projector.reconcile([source]), ((<span class="string">&quot;vector-v1&quot;</span>, <span class="string">&quot;doc-1&quot;</span>),))</span><br><span class="line">        projector.repair(source)</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(projector.reconcile([source]), ())</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">test_watermark_exposes_gap_until_missing_position_finishes</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        projector = Projector()</span><br><span class="line">        projector.apply(upsert(<span class="string">&quot;e1&quot;</span>, <span class="number">1</span>, <span class="number">1</span>))</span><br><span class="line">        projector.apply(upsert(<span class="string">&quot;e3&quot;</span>, <span class="number">3</span>, <span class="number">3</span>))</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(projector.watermark.gaps, (<span class="number">2</span>,))</span><br><span class="line">        projector.apply(upsert(<span class="string">&quot;e2&quot;</span>, <span class="number">2</span>, <span class="number">2</span>))</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(projector.watermark.gaps, ())</span><br><span class="line">        <span class="variable language_">self</span>.assertEqual(projector.watermark.contiguous_applied, <span class="number">3</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&quot;__main__&quot;</span>:</span><br><span class="line">    unittest.main(verbosity=<span class="number">2</span>)</span><br></pre></td></tr></table></figure>
+
+<p>把代码保存为 <code>/tmp/ai38_projector.py</code> 后执行：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">python3 /tmp/ai38_projector.py</span><br></pre></td></tr></table></figure>
+
+<p>本文写作时的实际执行结果为：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">test_acl_revoke_is_scheduled_before_old_update ... ok</span><br><span class="line">test_crash_after_side_effect_is_safe_to_retry ... ok</span><br><span class="line">test_dual_index_receives_same_source_version ... ok</span><br><span class="line">test_out_of_order_and_duplicate_converge ... ok</span><br><span class="line">test_read_your_writes_rejects_stale_projection ... ok</span><br><span class="line">test_reconcile_and_repair_do_not_depend_on_event_dedupe ... ok</span><br><span class="line">test_tombstone_blocks_late_upsert ... ok</span><br><span class="line">test_watermark_exposes_gap_until_missing_position_finishes ... ok</span><br><span class="line"></span><br><span class="line">Ran 8 tests</span><br><span class="line"></span><br><span class="line">OK</span><br></pre></td></tr></table></figure>
+
+<h3 id="代码没有假装解决的生产问题"><a href="#代码没有假装解决的生产问题" class="headerlink" title="代码没有假装解决的生产问题"></a>代码没有假装解决的生产问题</h3><p>这个最小实现有意不宣称以下能力：</p>
+<ul>
+<li>内存字典没有持久化、复制与并发事务；</li>
+<li>单个实体只保存一份逻辑投影，生产系统还要管理海量 chunk；</li>
+<li><code>process_security_first</code> 是测试调度器，不是具备容量隔离的消息系统；</li>
+<li>ACL 撤销示例只演示主体移除，没有实现复杂策略求值；</li>
+<li>哈希 <code>embed</code> 只服务确定性测试，不表示语义质量；</li>
+<li>账本与外部索引没有原子提交，生产依赖幂等、条件写、重试与对账；</li>
+<li>read-your-writes 只验证最低实体版本，不提供跨实体事务快照。</li>
+</ul>
+<p>正因为这些边界被写清，测试结果才有明确含义：它证明状态机在给定模型中满足版本和恢复不变量，不证明某个真实向量产品已经端到端正确。</p>
+<h2 id="十四、自动化测试与失败注入设计"><a href="#十四、自动化测试与失败注入设计" class="headerlink" title="十四、自动化测试与失败注入设计"></a>十四、自动化测试与失败注入设计</h2><h3 id="1-契约测试"><a href="#1-契约测试" class="headerlink" title="1. 契约测试"></a>1. 契约测试</h3><p>事件生产者与消费者共同维护版本化 Schema，并测试：</p>
+<ul>
+<li>必填身份、版本、操作和提交时间不可缺失；</li>
+<li>未知操作进入隔离，不默认为 UPSERT；</li>
+<li>相同实体版本出现不同内容哈希时硬失败；</li>
+<li>旧 Schema 在兼容窗口内仍能解码；</li>
+<li>新字段默认值不会放宽权限；</li>
+<li>载荷引用必须包含不可变版本或内容哈希；</li>
+<li>租户 ID 不能由下游从可变路径猜测。</li>
+</ul>
+<p>Schema 通过只能说明事件形状合法。它不能说明源版本真实、ACL 符合政策或正文业务正确。</p>
+<h3 id="2-顺序与重复测试"><a href="#2-顺序与重复测试" class="headerlink" title="2. 顺序与重复测试"></a>2. 顺序与重复测试</h3><p>为每类操作生成所有关键排列：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">UPSERT 10 -&gt; UPSERT 11</span><br><span class="line">UPSERT 11 -&gt; UPSERT 10</span><br><span class="line">UPSERT 10 -&gt; UPSERT 10 duplicate</span><br><span class="line">DELETE 12 -&gt; UPSERT 11</span><br><span class="line">ACL_REVOKE 13 -&gt; UPSERT 12</span><br><span class="line">UPSERT 14 -&gt; ACL_REVOKE 13</span><br><span class="line">old_epoch 999 -&gt; new_epoch 1</span><br></pre></td></tr></table></figure>
+
+<p>测试中不仅断言最终版本，还在每一步查询，确保没有短暂倒退或越权窗口超过合同。</p>
+<h3 id="3-崩溃点注入"><a href="#3-崩溃点注入" class="headerlink" title="3. 崩溃点注入"></a>3. 崩溃点注入</h3><p>至少在以下边界主动终止进程：</p>
+<ul>
+<li>读取消息后、任何副作用前；</li>
+<li>Embedding 生成后、索引写前；</li>
+<li>第一个索引代成功后、第二个索引代前；</li>
+<li>upsert 新片后、删除旧片前；</li>
+<li>向量索引成功后、倒排索引前；</li>
+<li>索引完成后、缓存失效前；</li>
+<li>缓存失效后、账本提交前；</li>
+<li>账本提交后、offset 提交前。</li>
+</ul>
+<p>每个点恢复后重放同一事件，验证：</p>
+<ul>
+<li>版本不倒退；</li>
+<li>不产生重复可见分片；</li>
+<li>删除与撤权不会因重试暂时恢复；</li>
+<li>账本最终与所有目标副作用一致；</li>
+<li>重试次数和失败阶段被记录。</li>
+</ul>
+<h3 id="4-依赖故障注入"><a href="#4-依赖故障注入" class="headerlink" title="4. 依赖故障注入"></a>4. 依赖故障注入</h3><p>模拟：</p>
+<ul>
+<li>Embedding 超时、限流和返回错误维度；</li>
+<li>向量索引写成功但客户端超时；</li>
+<li>倒排索引 refresh 延迟；</li>
+<li>缓存节点部分不可达；</li>
+<li>权限服务超时与返回旧快照；</li>
+<li>消息分区暂停、重分配和重复投递；</li>
+<li>对象存储读到不存在或哈希不符的版本；</li>
+<li>双索引中只有一代写入失败；</li>
+<li>对账扫描被限流或中途中断。</li>
+</ul>
+<p>权限服务不可用时的策略必须预先决定。高敏感路径通常失败关闭；低风险公开知识可以使用带明确版本和短期限的缓存。不能在异常分支里临时“为了可用性”跳过鉴权。</p>
+<h3 id="5-性能与积压测试"><a href="#5-性能与积压测试" class="headerlink" title="5. 性能与积压测试"></a>5. 性能与积压测试</h3><p>大批量回填容易挤压实时撤权。压测应同时放入：</p>
+<ul>
+<li>稳态更新流；</li>
+<li>突发大文档；</li>
+<li>全量迁移回填；</li>
+<li>删除风暴；</li>
+<li>ACL 大组成员变更；</li>
+<li>消费者扩缩容和分区重平衡。</li>
+</ul>
+<p>验收目标不是总吞吐最高，而是普通更新新鲜度、撤权最大暴露、队列隔离和恢复时间都在预算内。测试要观察最老事件年龄，不能只看每秒消费数。</p>
+<h3 id="6-查询旁路测试"><a href="#6-查询旁路测试" class="headerlink" title="6. 查询旁路测试"></a>6. 查询旁路测试</h3><p>列出所有真实读入口：Web 搜索、聊天、内部 API、批量导出、管理后台预览、调试工具、离线评测和缓存直读。对同一撤权实体逐一验证。主入口有守卫而导出 API 直接查索引，是常见的安全缺口。</p>
+<h2 id="十五、对账与修复：事件链路之外的第二条正确性防线"><a href="#十五、对账与修复：事件链路之外的第二条正确性防线" class="headerlink" title="十五、对账与修复：事件链路之外的第二条正确性防线"></a>十五、对账与修复：事件链路之外的第二条正确性防线</h2><h3 id="1-为什么成功消费仍需对账"><a href="#1-为什么成功消费仍需对账" class="headerlink" title="1. 为什么成功消费仍需对账"></a>1. 为什么成功消费仍需对账</h3><p>事件链路可能发生不可见错误：</p>
+<ul>
+<li>生产者漏写 Outbox；</li>
+<li>CDC 配置排除了某张表；</li>
+<li>消费者代码错误地确认消息；</li>
+<li>索引服务返回成功但写入错误租户；</li>
+<li>人工脚本直接修改索引；</li>
+<li>恢复备份带回旧记录；</li>
+<li>账本和副作用在崩溃窗口分叉。</li>
+</ul>
+<p>对账从源真值重新推导“应该是什么”，不相信此前每个绿色状态。</p>
+<h3 id="2-三层对账"><a href="#2-三层对账" class="headerlink" title="2. 三层对账"></a>2. 三层对账</h3><p>第一层是清单对账：比较每租户的有效实体集合、墓碑集合和分片数量摘要，快速发现大面积缺失或多余。</p>
+<p>第二层是实体对账：比较源版本、内容哈希、ACL 哈希、目标分片清单、Embedding 版本和索引代。</p>
+<p>第三层是生产可见性对账：通过生产等价查询验证目标版本可搜索、删除不可见、撤权主体被拒绝。</p>
+<p>三层频率可以不同。清单每小时，实体采用持续哈希分桶，生产探针重点覆盖安全事件和近期变更。高风险租户可以提高频率。</p>
+<h3 id="3-哈希分桶减少全量扫描成本"><a href="#3-哈希分桶减少全量扫描成本" class="headerlink" title="3. 哈希分桶减少全量扫描成本"></a>3. 哈希分桶减少全量扫描成本</h3><p>把实体按稳定键分桶：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">bucket = sha256(tenant_id + document_id) mod 4096</span><br></pre></td></tr></table></figure>
+
+<p>源和索引分别计算每桶的实体数、版本摘要和内容摘要。摘要不同再下钻实体。分桶数、哈希算法和规范化规则必须版本化，否则两边摘要不可比较。</p>
+<p>摘要相同只能在所用哈希和清单模型下提供高概率一致证据。删除与 ACL 高风险对象仍应进行直接核验。</p>
+<h3 id="4-差异分类决定修复动作"><a href="#4-差异分类决定修复动作" class="headerlink" title="4. 差异分类决定修复动作"></a>4. 差异分类决定修复动作</h3><table>
+<thead>
+<tr>
+<th>差异</th>
+<th>可能根因</th>
+<th>修复动作</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>源有、索引无</td>
+<td>漏事件、永久失败、错误过滤</td>
+<td>按源当前版本重建</td>
+</tr>
+<tr>
+<td>源无、索引有</td>
+<td>删除漏传播、恢复残留</td>
+<td>写&#x2F;恢复墓碑并删除所有代</td>
+</tr>
+<tr>
+<td>索引版本落后</td>
+<td>积压、乱序错误、修复失败</td>
+<td>重放当前源快照</td>
+</tr>
+<tr>
+<td>索引版本超前</td>
+<td>源恢复、写错环境、纪元错误</td>
+<td>隔离并人工裁决，不能盲目覆盖</td>
+</tr>
+<tr>
+<td>内容哈希不同</td>
+<td>读取可变 URL、解析非确定</td>
+<td>固定输入与转换指纹后重建</td>
+</tr>
+<tr>
+<td>ACL 哈希不同</td>
+<td>权限事件漏失、组快照旧</td>
+<td>先守卫阻断，再重算 ACL</td>
+</tr>
+<tr>
+<td>分片有残留</td>
+<td>更新未删旧清单</td>
+<td>以目标 manifest 做集合替换</td>
+</tr>
+<tr>
+<td>模型版本混写</td>
+<td>迁移路由或元数据错误</td>
+<td>隔离索引代并重新嵌入</td>
+</tr>
+</tbody></table>
+<p>“索引超前”尤其不能自动按源覆盖。它可能表示源从旧备份恢复，也可能是生产索引被测试环境写入。先冻结相关实体、核对源纪元和审计，再决定方向。</p>
+<h3 id="5-修复任务也要有版本保护"><a href="#5-修复任务也要有版本保护" class="headerlink" title="5. 修复任务也要有版本保护"></a>5. 修复任务也要有版本保护</h3><p>对账在 10:00 发现 v30 缺失，10:01 创建修复任务；源在 10:02 更新到 v31；修复任务 10:03 执行。如果它携带旧快照并无条件覆盖，会把索引降回 v30。</p>
+<p>修复任务应在执行时重新确认目标源版本，或者由条件写要求 <code>repair.version &gt;= current.version</code>。修复完成后再次对账，不能仅以任务执行成功关闭差异。</p>
+<h3 id="6-修复风暴控制"><a href="#6-修复风暴控制" class="headerlink" title="6. 修复风暴控制"></a>6. 修复风暴控制</h3><p>当解析器 bug 导致百万实体不一致时，立即全速重建可能压垮源、Embedding 和在线索引。修复器需要：</p>
+<ul>
+<li>按安全风险、租户等级和差异年龄排序；</li>
+<li>为在线流预留容量；</li>
+<li>限制每租户并发；</li>
+<li>支持暂停、续跑和幂等重放；</li>
+<li>对同一根因聚合告警；</li>
+<li>在修复前验证新转换版本；</li>
+<li>记录预计完成时间与未修复暴露面。</li>
+</ul>
+<h2 id="十六、完整失败案例：撤权事件被回填流压住，旧答案缓存继续泄露"><a href="#十六、完整失败案例：撤权事件被回填流压住，旧答案缓存继续泄露" class="headerlink" title="十六、完整失败案例：撤权事件被回填流压住，旧答案缓存继续泄露"></a>十六、完整失败案例：撤权事件被回填流压住，旧答案缓存继续泄露</h2><p>下面是一组构造事故，用于展示如何从证据定位，而不是描述某个真实厂商事故。</p>
+<h3 id="1-系统背景"><a href="#1-系统背景" class="headerlink" title="1. 系统背景"></a>1. 系统背景</h3><p>某企业知识助手正在把 <code>vector-A/embed-v1</code> 迁移到 <code>vector-B/embed-v2</code>。生产读取仍以 A 为主，10% 租户灰度 B。实时正文更新采用同一个普通 topic 双写 A&#x2F;B；ACL 变化也进入该 topic。查询先查 15 分钟 TTL 的候选缓存，再根据候选元数据做权限过滤。团队以为索引里的 <code>allowed_groups</code> 足够，没有独立权威守卫。</p>
+<p>目标合同是：</p>
+<ul>
+<li>正文更新 p99 在 120 秒内可搜索；</li>
+<li>ACL 撤销 p99 在 5 秒内生效，任何单次不得超过 30 秒；</li>
+<li>所有缓存条目按租户、主体组摘要和索引代隔离；</li>
+<li>A、B 在迁移期间都必须接收删除和撤权。</li>
+</ul>
+<h3 id="2-事故时间线"><a href="#2-事故时间线" class="headerlink" title="2. 事故时间线"></a>2. 事故时间线</h3><p>以下时间和数量均为构造数据。</p>
+<table>
+<thead>
+<tr>
+<th>时间</th>
+<th>事件</th>
+<th>实际状态</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>10:00:00</td>
+<td>开始 B 的 300 万文档回填</td>
+<td>普通 topic 消费延迟开始上升</td>
+</tr>
+<tr>
+<td>10:02:11</td>
+<td>权限服务把 Alice 移出 <code>finance-readers</code>，提交 ACL v12</td>
+<td>源真值已撤权，Outbox 产生事件 v59</td>
+</tr>
+<tr>
+<td>10:02:12</td>
+<td>CDC 发布 <code>ACL_REVOKE</code> 到分区 7</td>
+<td>路由器把它标成普通优先级</td>
+</tr>
+<tr>
+<td>10:02:20</td>
+<td>Alice 曾经访问过的查询缓存仍有效</td>
+<td>key 只有租户、query、索引代，没有主体组版本</td>
+</tr>
+<tr>
+<td>10:04:03</td>
+<td>Alice 再次询问“并购预算审批线”</td>
+<td>候选缓存直接返回文档 v58，元数据含旧组</td>
+</tr>
+<tr>
+<td>10:04:04</td>
+<td>生成层返回带原文摘要的答案，HTTP 200</td>
+<td>协议成功，但发生越权暴露</td>
+</tr>
+<tr>
+<td>10:13:48</td>
+<td>消费者终于处理 ACL v12</td>
+<td>A 更新 ACL；B 因一次超时进入重试</td>
+</tr>
+<tr>
+<td>10:14:02</td>
+<td>账本错误标记事件完成</td>
+<td>完成字段没有分目标索引代</td>
+</tr>
+<tr>
+<td>10:17:11</td>
+<td>B 灰度用户仍可召回旧记录</td>
+<td>B 的修复任务未被总账本触发</td>
+</tr>
+<tr>
+<td>10:22:20</td>
+<td>候选缓存自然过期</td>
+<td>Alice 在 A 主路径不再看到目标</td>
+</tr>
+<tr>
+<td>11:00:00</td>
+<td>小时对账发现 B 的 ACL 哈希不一致</td>
+<td>才开始清理 B</td>
+</tr>
+</tbody></table>
+<p>从源提交到 Alice 首次被可靠拒绝超过 20 分钟，远超 30 秒硬上限。</p>
+<h3 id="3-为什么第一轮监控没有报警"><a href="#3-为什么第一轮监控没有报警" class="headerlink" title="3. 为什么第一轮监控没有报警"></a>3. 为什么第一轮监控没有报警</h3><p>当时看板显示：</p>
+<ul>
+<li>Debezium 连接器 <code>RUNNING</code>；</li>
+<li>消息生产成功率 100%；</li>
+<li>消费者无进程崩溃；</li>
+<li>向量写 API 2xx 比率 99.99%；</li>
+<li>全站搜索可用率 99.98%；</li>
+<li>RAG 答案“有引用率”正常；</li>
+<li>A 与 B 的记录总数差异小于 0.1%。</li>
+</ul>
+<p>这些都不是撤权正确性指标。系统没有测：</p>
+<ul>
+<li>安全关键事件最老排队年龄；</li>
+<li>源 ACL 提交到被撤主体首次拒绝的暴露时间；</li>
+<li>每个目标索引代的独立完成状态；</li>
+<li>缓存条目使用的主体快照版本；</li>
+<li>B 中 ACL 哈希与源的差异；</li>
+<li>真实读路径的负向权限探针。</li>
+</ul>
+<p>HTTP 200 只说明请求完成。Schema 合法只说明字段可解析。向量相似度高只说明旧内容与问题相近。三者反而可能让越权答案更稳定地返回。</p>
+<h3 id="4-证据包怎样一步步排查"><a href="#4-证据包怎样一步步排查" class="headerlink" title="4. 证据包怎样一步步排查"></a>4. 证据包怎样一步步排查</h3><h4 id="证据-A：源事务"><a href="#证据-A：源事务" class="headerlink" title="证据 A：源事务"></a>证据 A：源事务</h4><p>权限数据库显示：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">principal=alice</span><br><span class="line">group=finance-readers</span><br><span class="line">membership_state=REMOVED</span><br><span class="line">acl_version=12</span><br><span class="line">committed_at=10:02:11.482</span><br><span class="line">source_epoch=authz-prod-07</span><br></pre></td></tr></table></figure>
+
+<p>这证明撤权事实已经提交，但还不能证明事件产生。</p>
+<h4 id="证据-B：Outbox-与-CDC"><a href="#证据-B：Outbox-与-CDC" class="headerlink" title="证据 B：Outbox 与 CDC"></a>证据 B：Outbox 与 CDC</h4><p>Outbox 中存在唯一事件 ID <code>rev-59</code>，数据库事务 ID 与成员关系更新一致。CDC 日志显示它发布到 <code>knowledge-change-7</code>，offset <code>88421</code>，没有源侧漏事件。</p>
+<p>这把怀疑点从“生产者漏写”移到消息调度和下游。</p>
+<h4 id="证据-C：分区水位"><a href="#证据-C：分区水位" class="headerlink" title="证据 C：分区水位"></a>证据 C：分区水位</h4><p>10:04 时分区 7 的：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">source_head_offset=90184</span><br><span class="line">max_seen_offset=88702</span><br><span class="line">contiguous_applied_offset=88397</span><br><span class="line">oldest_pending_age=11m37s</span><br><span class="line">security_pending_age=未采集</span><br></pre></td></tr></table></figure>
+
+<p>撤权事件 88421 位于连续水位之后。总吞吐仍高，因为回填事件体积小且其他分区正常。只看每秒消费数掩盖了关键分区长尾。</p>
+<h4 id="证据-D：投影账本"><a href="#证据-D：投影账本" class="headerlink" title="证据 D：投影账本"></a>证据 D：投影账本</h4><p>实体账本仍是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">document=merger-budget-policy</span><br><span class="line">content_version=58</span><br><span class="line">acl_version=11</span><br><span class="line">targets=&#123;vector-A: SUCCEEDED&#125;</span><br><span class="line">overall_status=SUCCEEDED</span><br></pre></td></tr></table></figure>
+
+<p>账本 Schema 没有 <code>vector-B</code> 独立状态。B 是后加目标，旧代码仍根据 A 成功写总状态。这解释了为什么 B 超时后没有持续告警。</p>
+<h4 id="证据-E：索引实际记录"><a href="#证据-E：索引实际记录" class="headerlink" title="证据 E：索引实际记录"></a>证据 E：索引实际记录</h4><p>A 与 B 当时都含：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">allowed_groups=[finance-readers]</span><br><span class="line">content_version=58</span><br><span class="line">acl_version=11</span><br></pre></td></tr></table></figure>
+
+<p>10:13 后 A 变为 ACL v12，B 仍是 v11。记录数对比发现不了字段级错配。</p>
+<h4 id="证据-F：查询-trace-与缓存"><a href="#证据-F：查询-trace-与缓存" class="headerlink" title="证据 F：查询 trace 与缓存"></a>证据 F：查询 trace 与缓存</h4><p>Alice 的 trace 显示：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">candidate_cache=HIT</span><br><span class="line">cache_created_at=10:02:20</span><br><span class="line">principal_membership_version=未记录</span><br><span class="line">policy_version=未记录</span><br><span class="line">index_generation=vector-A</span><br><span class="line">candidate_acl_version=11</span><br><span class="line">authorization_guard=SKIPPED</span><br><span class="line">response_status=200</span><br></pre></td></tr></table></figure>
+
+<p>这直接证明查询使用旧权限候选且没有权威复核。答案中的引用能定位旧文档，却不能证明 Alice 有权读取。</p>
+<h3 id="5-根因树"><a href="#5-根因树" class="headerlink" title="5. 根因树"></a>5. 根因树</h3><p>直接原因有三个：</p>
+<ol>
+<li>ACL 撤销与批量回填共享普通队列和消费者，发生优先级反转；</li>
+<li>查询缓存键和条目元数据没有主体成员版本，撤权也没有主动失效；</li>
+<li>迁移账本只有总成功状态，A 成功掩盖 B 失败。</li>
+</ol>
+<p>系统性原因还有四个：</p>
+<ul>
+<li>团队把索引元数据过滤当作最终授权，而没有定义撤权窗口；</li>
+<li>上线门禁只看平均新鲜度与索引记录数；</li>
+<li>故障测试覆盖更新重试，没有覆盖回填压力下的撤权；</li>
+<li>对账每小时运行，且先比数量，ACL 哈希只在下钻时检查。</li>
+</ul>
+<h3 id="6-临时止血"><a href="#6-临时止血" class="headerlink" title="6. 临时止血"></a>6. 临时止血</h3><p>事故处理中按以下顺序操作：</p>
+<ol>
+<li>暂停 B 灰度扩张和低优先级回填；</li>
+<li>将受影响主体与实体写入集中拒绝集合；</li>
+<li>清除包含目标实体的候选与答案缓存；</li>
+<li>直接从源生成 ACL v12 修复任务，分别投影 A&#x2F;B；</li>
+<li>对该主体通过所有读入口做负向验证；</li>
+<li>扩大同时间窗撤权事件审计，确认影响范围；</li>
+<li>保留源、消息、账本、索引和查询 trace 证据。</li>
+</ol>
+<p>没有直接删除整个索引或清空共享缓存集群，因为那会扩大可用性影响并破坏证据。止血动作仍遵守最小范围和可审计原则。</p>
+<h3 id="7-永久修复"><a href="#7-永久修复" class="headerlink" title="7. 永久修复"></a>7. 永久修复</h3><ul>
+<li>把 <code>ACL_REVOKE/DELETE/tenant_freeze</code> 路由到独立安全 topic 和预留消费者；</li>
+<li>查询入口订阅安全事件，先更新拒绝集合，再异步清理索引；</li>
+<li>缓存键加入 <code>principal_scope_hash</code> 与 <code>policy_version</code>，条目保存引用实体反向依赖；</li>
+<li>账本改为每个索引代、倒排索引和缓存分别记录状态；</li>
+<li>只有所有必需目标达到可见性条件，事件才标记完整完成；</li>
+<li>安全 SLI 采集源提交、守卫拒绝、索引不可见和缓存失效四个时间点；</li>
+<li>对账直接比较 ACL 哈希，并提高近期安全事件的核验频率；</li>
+<li>在全量回填压力下持续注入撤权，验证最大暴露时间；</li>
+<li>枚举并测试批量导出、调试搜索和离线工具等旁路。</li>
+</ul>
+<h3 id="8-关闭事故需要什么证据"><a href="#8-关闭事故需要什么证据" class="headerlink" title="8. 关闭事故需要什么证据"></a>8. 关闭事故需要什么证据</h3><p>不能因为当前 Alice 搜不到就关闭。至少需要：</p>
+<ul>
+<li>受影响时间窗全部撤权事件清单；</li>
+<li>每个事件的源版本、分区 offset、各目标完成时间；</li>
+<li>A&#x2F;B 与缓存的当前 ACL 或不可见证明；</li>
+<li>所有读入口的负向探针结果；</li>
+<li>同根因历史残留扫描；</li>
+<li>修复后在峰值与回填压力下的故障测试；</li>
+<li>新 SLI 和告警已实际触发演练；</li>
+<li>回滚和拒绝集合退出条件经过复核。</li>
+</ul>
+<h2 id="十七、值班排查手册：从用户证据反向走到源真值"><a href="#十七、值班排查手册：从用户证据反向走到源真值" class="headerlink" title="十七、值班排查手册：从用户证据反向走到源真值"></a>十七、值班排查手册：从用户证据反向走到源真值</h2><h3 id="1-先冻结问题描述"><a href="#1-先冻结问题描述" class="headerlink" title="1. 先冻结问题描述"></a>1. 先冻结问题描述</h3><p>记录：</p>
+<ul>
+<li>租户、主体、查询和实体 ID；</li>
+<li>用户看到的具体内容与时间；</li>
+<li>请求 trace ID、区域、读入口和索引代；</li>
+<li>期望源版本、删除版本或 ACL 版本；</li>
+<li>是否属于仍在暴露的安全事件。</li>
+</ul>
+<p>若是潜在越权，先阻断读取再深挖，不等待根因完整确定。</p>
+<h3 id="2-检查源状态"><a href="#2-检查源状态" class="headerlink" title="2. 检查源状态"></a>2. 检查源状态</h3><p>确认当前正文、生命周期、ACL、源纪元和实体版本。找出对应事务与 Outbox 行。若源本身错误，投影链路再一致也应由源所有者纠正。</p>
+<h3 id="3-检查事件存在与路由"><a href="#3-检查事件存在与路由" class="headerlink" title="3. 检查事件存在与路由"></a>3. 检查事件存在与路由</h3><p>按事件 ID、实体键和事务位置查 CDC。确认 topic、分区、offset、Schema 版本和优先级。没有事件时调查事务边界与 CDC 配置；有事件时继续看水位。</p>
+<h3 id="4-检查积压和缺口"><a href="#4-检查积压和缺口" class="headerlink" title="4. 检查积压和缺口"></a>4. 检查积压和缺口</h3><p>同时看最大已见、连续完成、最老待处理和安全待处理年龄。不要只看 consumer group 总 lag；某个分区或租户可能独自阻塞。</p>
+<h3 id="5-检查每个副作用"><a href="#5-检查每个副作用" class="headerlink" title="5. 检查每个副作用"></a>5. 检查每个副作用</h3><p>逐项核对解析、Embedding、向量 A&#x2F;B、倒排索引、缓存、查询守卫和账本。保存实际记录的版本、哈希和 ACL，不用“任务成功”替代读取事实。</p>
+<h3 id="6-检查生产可见性"><a href="#6-检查生产可见性" class="headerlink" title="6. 检查生产可见性"></a>6. 检查生产可见性</h3><p>以受影响主体和对照主体走真实路径。禁用某层缓存只适合定位，不代表用户路径已修复。修复后必须恢复正常配置再次验证。</p>
+<h3 id="7-选择修复方向"><a href="#7-选择修复方向" class="headerlink" title="7. 选择修复方向"></a>7. 选择修复方向</h3><ul>
+<li>索引落后：以当前源目标版本幂等重建；</li>
+<li>索引多余：根据墓碑删除并保留版本屏障；</li>
+<li>权限不一致：先拒绝，再更新所有目标和缓存；</li>
+<li>索引超前或源纪元冲突：隔离并人工裁决；</li>
+<li>大面积转换错误：停止扩散、修复转换器、分批重建。</li>
+</ul>
+<h3 id="8-复验并扩大范围"><a href="#8-复验并扩大范围" class="headerlink" title="8. 复验并扩大范围"></a>8. 复验并扩大范围</h3><p>验证单实体后，按相同代码版本、事件类型、分区、租户和时间窗扩大扫描。一个用户报告往往只是差异集合中的第一个样本。</p>
+<h2 id="十八、上线前检查表"><a href="#十八、上线前检查表" class="headerlink" title="十八、上线前检查表"></a>十八、上线前检查表</h2><h3 id="真值与合同"><a href="#真值与合同" class="headerlink" title="真值与合同"></a>真值与合同</h3><ul>
+<li><input disabled="" type="checkbox"> 每个正文、生命周期和权限字段都有唯一真值所有者</li>
+<li><input disabled="" type="checkbox"> 索引被定义为可重建投影，不接受反向覆盖源</li>
+<li><input disabled="" type="checkbox"> 实体键包含租户边界</li>
+<li><input disabled="" type="checkbox"> 源纪元与实体单调版本的分配规则明确</li>
+<li><input disabled="" type="checkbox"> 更新、删除、撤权和授权使用不同操作语义</li>
+<li><input disabled="" type="checkbox"> 内容新鲜、删除不可见和撤权暴露分别定义起止点</li>
+<li><input disabled="" type="checkbox"> read-your-writes 的实体范围、等待上限和回退行为明确</li>
+<li><input disabled="" type="checkbox"> 不支持的跨实体快照保证已经写入接口合同</li>
+</ul>
+<h3 id="CDC-与事件"><a href="#CDC-与事件" class="headerlink" title="CDC 与事件"></a>CDC 与事件</h3><ul>
+<li><input disabled="" type="checkbox"> 业务变更和 Outbox 在同一事务提交</li>
+<li><input disabled="" type="checkbox"> Outbox 事件不可变且有唯一事件 ID</li>
+<li><input disabled="" type="checkbox"> 事件载荷或引用绑定不可变源版本和哈希</li>
+<li><input disabled="" type="checkbox"> 同实体路由到稳定分区</li>
+<li><input disabled="" type="checkbox"> 消费者不依赖到达时间判断新旧</li>
+<li><input disabled="" type="checkbox"> 相同版本不同事实会进入隔离</li>
+<li><input disabled="" type="checkbox"> 快照到增量边界经过并发更新、删除和撤权测试</li>
+<li><input disabled="" type="checkbox"> Outbox、日志和墓碑保留期覆盖最大重放窗口</li>
+</ul>
+<h3 id="投影与幂等"><a href="#投影与幂等" class="headerlink" title="投影与幂等"></a>投影与幂等</h3><ul>
+<li><input disabled="" type="checkbox"> 每个外部副作用都能按目标版本安全重试</li>
+<li><input disabled="" type="checkbox"> 新分片清单完成后才切换可见版本</li>
+<li><input disabled="" type="checkbox"> 旧分片通过 manifest 集合差删除</li>
+<li><input disabled="" type="checkbox"> 账本使用条件更新，只允许版本前进</li>
+<li><input disabled="" type="checkbox"> 账本按每个索引代和缓存目标记录状态</li>
+<li><input disabled="" type="checkbox"> offset 在必需副作用完成后提交</li>
+<li><input disabled="" type="checkbox"> 所有崩溃边界都做过故障注入</li>
+<li><input disabled="" type="checkbox"> 重复、乱序和旧纪元重放不会改变最终正确状态</li>
+</ul>
+<h3 id="删除与权限"><a href="#删除与权限" class="headerlink" title="删除与权限"></a>删除与权限</h3><ul>
+<li><input disabled="" type="checkbox"> 删除产生可审计墓碑，且不会被低版本更新复活</li>
+<li><input disabled="" type="checkbox"> ACL 撤销拥有独立队列、容量和告警</li>
+<li><input disabled="" type="checkbox"> 高敏感查询有权威守卫或等效同步拒绝机制</li>
+<li><input disabled="" type="checkbox"> 权限服务异常时的失败开闭策略已按风险确定</li>
+<li><input disabled="" type="checkbox"> 索引过滤、候选后鉴权和主体展开的责任明确</li>
+<li><input disabled="" type="checkbox"> 缓存键包含租户、主体范围和权限版本</li>
+<li><input disabled="" type="checkbox"> 删除与撤权主动失效候选及答案缓存</li>
+<li><input disabled="" type="checkbox"> 所有读入口和旁路都通过负向权限测试</li>
+</ul>
+<h3 id="Embedding-迁移"><a href="#Embedding-迁移" class="headerlink" title="Embedding 迁移"></a>Embedding 迁移</h3><ul>
+<li><input disabled="" type="checkbox"> 新旧模型、预处理、维度、距离和查询编码器均有指纹</li>
+<li><input disabled="" type="checkbox"> 新模型使用独立索引代，没有原地混写不可比向量</li>
+<li><input disabled="" type="checkbox"> 回填快照水位与实时双写交界可证明</li>
+<li><input disabled="" type="checkbox"> 回填旧版本不能覆盖实时新版本</li>
+<li><input disabled="" type="checkbox"> A&#x2F;B 分别核对实体、分片、版本、ACL 和墓碑</li>
+<li><input disabled="" type="checkbox"> 检索质量按业务与风险切片验收</li>
+<li><input disabled="" type="checkbox"> 旧索引在回滚窗口持续接收增量</li>
+<li><input disabled="" type="checkbox"> 切回不会复活迁移期间的删除和撤权</li>
+</ul>
+<h3 id="指标、对账与运维"><a href="#指标、对账与运维" class="headerlink" title="指标、对账与运维"></a>指标、对账与运维</h3><ul>
+<li><input disabled="" type="checkbox"> 新鲜度终点是生产等价路径可搜索，而非写请求返回</li>
+<li><input disabled="" type="checkbox"> 超时和未完成事件保留在 SLO 分母</li>
+<li><input disabled="" type="checkbox"> 安全事件报告最大暴露时间与超硬上限数量</li>
+<li><input disabled="" type="checkbox"> 水位同时展示最大已见、连续完成、缺口和最老年龄</li>
+<li><input disabled="" type="checkbox"> 对账比较集合、版本、内容哈希、ACL 哈希与索引代</li>
+<li><input disabled="" type="checkbox"> 修复任务执行前重新确认源版本</li>
+<li><input disabled="" type="checkbox"> 修复完成后再次对账和生产探测</li>
+<li><input disabled="" type="checkbox"> 修复风暴有容量隔离、限速、暂停和续跑机制</li>
+<li><input disabled="" type="checkbox"> 证据能从用户 trace 回到源事务和每个副作用</li>
+<li><input disabled="" type="checkbox"> 告警、拒绝集合、索引切换与回滚经过演练</li>
+</ul>
+<h2 id="十九、总结"><a href="#十九、总结" class="headerlink" title="十九、总结"></a>十九、总结</h2><p>知识库新鲜度与一致性的核心，不是把所有组件改造成强一致数据库，而是建立一条可恢复、可裁决、可观测的投影协议。</p>
+<p>这条协议从源系统开始：正文、删除和 ACL 都有明确真值所有者；业务变更与 Outbox 在同一事务中产生；事件携带源纪元、实体单调版本和唯一事件 ID。</p>
+<p>进入异步链路后，系统默认接受重复、乱序和部分失败。消费者先比较版本，所有外部副作用按目标版本幂等，低版本不能覆盖高版本，墓碑不能被旧更新复活。最大已见水位不能掩盖中间缺口，账本成功也不能替代对索引实际状态的核验。</p>
+<p>删除与 ACL 撤销采用更严格路径：安全事件拥有独立容量和硬暴露上限，查询守卫先阻断，索引和缓存随后清理，最终以负向探针与对账证明不可见。授权成功、Schema 合法、HTTP 200、相似度或模型信心都不能替代这个证明。</p>
+<p>Embedding 迁移使用独立双索引：固定新代指纹，从有水位的源快照回填，实时双写，用实体集合、版本、ACL、墓碑、检索质量和运行指标联合验收。旧索引只有持续接收增量，才是真正的回滚目标。</p>
+<p>最后，事件链路之外必须有对账与修复。对账从源清单重新推导目标状态，发现缺失、多余、版本、ACL、分片和模型代差异；修复仍受版本保护，并在完成后复验。</p>
+<p>可以把全文压缩成五条发布原则：</p>
+<ol>
+<li>索引是带来源证据的派生投影，不是第二份业务真值。</li>
+<li>新旧由源单调版本裁决，不由到达时间、写响应或相似度裁决。</li>
+<li>删除和撤权的安全时限优先于普通更新吞吐。</li>
+<li>双索引、缓存和 read-your-writes 都必须进入显式一致性合同。</li>
+<li>只有事件证据、生产可见性探针和周期对账共同闭环，系统才有资格声称最终收敛。</li>
+</ol>
+<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><ol>
+<li>Debezium，<a target="_blank" rel="noopener" href="https://debezium.io/documentation/reference/stable/">Debezium 3.6 Documentation</a>，CDC 架构、连接器与运行文档；本文按 <code>2026-07-26</code> 页面所示稳定版 3.6 限定。</li>
+<li>Debezium，<a target="_blank" rel="noopener" href="https://debezium.io/documentation/reference/stable/transformations/outbox-event-router.html">Outbox Event Router</a>，Outbox 表、事件 ID、聚合键与路由配置的官方文档。</li>
+<li>Elastic，<a target="_blank" rel="noopener" href="https://www.elastic.co/docs/manage-data/data-store/near-real-time-search">Near real-time search</a>，Elasticsearch refresh 与搜索可见性的官方说明。</li>
+<li>Elastic，<a target="_blank" rel="noopener" href="https://www.elastic.co/docs/reference/elasticsearch/rest-apis/optimistic-concurrency-control">Optimistic concurrency control</a>，Elasticsearch 条件更新与并发控制的官方说明。</li>
+<li>Pinecone，<a target="_blank" rel="noopener" href="https://docs.pinecone.io/guides/manage-data/delete-data">Delete records</a>，按 ID、元数据与命名空间删除，以及数据新鲜度边界的产品文档。</li>
+<li>W3C，<a target="_blank" rel="noopener" href="https://www.w3.org/TR/prov-o/">PROV-O: The PROV Ontology</a>，实体、活动、代理、派生与修订关系的 W3C Recommendation。</li>
+<li>Apache Kafka，<a target="_blank" rel="noopener" href="https://kafka.apache.org/documentation/#semantics">Design: Message Delivery Semantics</a>，消息投递语义及幂等、事务边界的官方设计文档。</li>
+<li>Apache Kafka，<a target="_blank" rel="noopener" href="https://kafka.apache.org/documentation/#topicconfigs_cleanup.policy">Topic Configurations: cleanup.policy</a>，日志压缩与删除保留行为的官方配置说明。</li>
+<li>PostgreSQL，<a target="_blank" rel="noopener" href="https://www.postgresql.org/docs/current/logicaldecoding-explanation.html">Logical Decoding Concepts</a>，逻辑解码、复制槽与 WAL 保留的官方文档。</li>
+<li>OpenTelemetry，<a target="_blank" rel="noopener" href="https://opentelemetry.io/docs/specs/semconv/general/trace/">Trace Semantic Conventions</a>，跨组件 trace 属性与语义约定的官方规范。</li>
+</ol>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/AI%E6%B5%8B%E8%AF%95/" rel="tag"># AI测试</a>
+              <a href="/tags/%E6%9D%83%E9%99%90%E6%B2%BB%E7%90%86/" rel="tag"># 权限治理</a>
+              <a href="/tags/%E7%9F%A5%E8%AF%86%E5%BA%93/" rel="tag"># 知识库</a>
+              <a href="/tags/CDC/" rel="tag"># CDC</a>
+              <a href="/tags/%E7%B4%A2%E5%BC%95%E4%B8%80%E8%87%B4%E6%80%A7/" rel="tag"># 索引一致性</a>
+              <a href="/tags/Embedding%E8%BF%81%E7%A7%BB/" rel="tag"># Embedding迁移</a>
+              <a href="/tags/%E6%95%B0%E6%8D%AE%E6%96%B0%E9%B2%9C%E5%BA%A6/" rel="tag"># 数据新鲜度</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2026/04/30/AI%E6%B5%8B%E8%AF%95-37-%E7%9F%A5%E8%AF%86%E5%BA%93%E6%91%84%E5%8F%96%E6%B5%81%E6%B0%B4%E7%BA%BF%E6%80%8E%E4%B9%88%E5%A4%84%E7%90%86%E8%A7%A3%E6%9E%90%E6%B8%85%E6%B4%97%E5%8E%BB%E9%87%8D%E6%9D%83%E9%99%90%E5%92%8C%E6%95%B0%E6%8D%AE%E8%A1%80%E7%BC%98/" rel="prev" title="AI测试-37-知识库摄取流水线怎么处理解析清洗去重权限和数据血缘">
+                  <i class="fa fa-angle-left"></i> AI测试-37-知识库摄取流水线怎么处理解析清洗去重权限和数据血缘
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2026/05/04/AI%E6%B5%8B%E8%AF%95-39-%E5%BE%AE%E8%B0%83%E9%A1%B9%E7%9B%AE%E6%80%8E%E4%B9%88%E8%AE%BE%E8%AE%A1%E8%AE%AD%E7%BB%83%E6%95%B0%E6%8D%AE%E5%9F%BA%E7%BA%BF%E9%AA%8C%E6%94%B6%E5%92%8C%E5%9B%9E%E6%BB%9A/" rel="next" title="AI测试-39-微调项目怎么设计训练数据基线验收和回滚">
+                  AI测试-39-微调项目怎么设计训练数据基线验收和回滚 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 2019 – 
+    <span itemprop="copyrightYear">2026</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Payne Winn</span>
+  </div>
+<div class="wordcount">
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-line"></i>
+    </span>
+    <span title="站点总字数">2.1m</span>
+  </span>
+  <span class="post-meta-item">
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="站点阅读时长">129:05</span>
+  </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/paynewinnt" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+</body>
+</html>
